@@ -1,22 +1,22 @@
 {
   "manifestVersion": 1,
-  "id": "plugin_template",
-  "name": "Plugin Template",
+  "id": "remnote-openai-connector",
+  "name": "RemNote OpenAI Connector",
   "author": "remnote",
-  "repoUrl": "",
+  "repoUrl": "https://github.com/HTGit63/remnote-plugin-template-react",
   "version": {
     "major": 0,
-    "minor": 0,
-    "patch": 1
+    "minor": 1,
+    "patch": 0
   },
   "theme": [],
   "enableOnMobile": false,
-  "description": "",
+  "description": "A broad connector to read, write, and manage KB content with OpenAI.",
   "requestNative": false,
   "requiredScopes": [
     {
       "type": "All",
-      "level": "Read"
+      "level": "ReadCreateModifyDelete"
     }
   ]
 }

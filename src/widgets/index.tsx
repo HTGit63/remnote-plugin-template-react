@@ -1,43 +1,45 @@
 import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote/plugin-sdk';
 import '../style.css';
-import '../index.css'; // import <widget-name>.css
+import '../index.css';
 
 async function onActivate(plugin: ReactRNPlugin) {
-  // Register settings
+  const openConnector = async () => {
+    await plugin.window.openWidgetInRightSidebar('connector');
+  };
+
+  // Register OpenAI API Key setting
   await plugin.settings.registerStringSetting({
-    id: 'name',
-    title: 'What is your Name?',
-    defaultValue: 'Bob',
+    id: 'openai-api-key',
+    title: 'OpenAI API Key',
+    defaultValue: '',
   });
 
-  await plugin.settings.registerBooleanSetting({
-    id: 'pizza',
-    title: 'Do you like pizza?',
-    defaultValue: true,
+  await plugin.settings.registerStringSetting({
+    id: 'openai-model',
+    title: 'OpenAI Model',
+    defaultValue: 'gpt-5-mini',
   });
 
-  await plugin.settings.registerNumberSetting({
-    id: 'favorite-number',
-    title: 'What is your favorite number?',
-    defaultValue: 42,
-  });
-
-  // A command that inserts text into the editor if focused.
-  await plugin.app.registerCommand({
-    id: 'editor-command',
-    name: 'Editor Command',
-    action: async () => {
-      plugin.editor.insertPlainText('Hello World!');
-    },
-  });
-
-  // Show a toast notification to the user.
-  await plugin.app.toast("I'm a toast!");
-
-  // Register a sidebar widget.
-  await plugin.app.registerWidget('sample_widget', WidgetLocation.RightSidebar, {
+  // Register the connector sidebar widget
+  await plugin.app.registerWidget('connector', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
+    widgetTabTitle: 'OpenAI',
+    dontOpenByDefaultInTabLocation: false,
   });
+
+  await plugin.app.registerCommand({
+    id: 'remnote-openai-connector.open-sidebar',
+    name: 'Open RemNote OpenAI Connector',
+    description: 'Open the OpenAI connector in the right sidebar.',
+    keywords: 'openai ai chatgpt connector sidebar remnote',
+    action: openConnector,
+  });
+
+  try {
+    await openConnector();
+  } catch (error) {
+    console.error('Failed to auto-open connector widget:', error);
+  }
 }
 
 async function onDeactivate(_: ReactRNPlugin) {}

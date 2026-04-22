@@ -1,0 +1,32 @@
+Starting RemNote watch build + static server at http://localhost:8091
+Serving dist files from C:\Users\hunde\Documents\WebDEV\web.dev.projects\Remnote\remnote-plugin-template-react\dist
+Use http://localhost:8091 in RemNote. No /manifest.json.
+Wait for first webpack compile before loading plugin.
+assets by path [1m[32m*.js[39m[22m 3.95 MiB
+  asset [1m[32mconnector.js[39m[22m 1020 KiB [1m[32m[emitted][39m[22m (name: connector) 1 related asset
+  asset [1m[32mconnector-sandbox.js[39m[22m 1020 KiB [1m[32m[emitted][39m[22m (name: connector-sandbox) 1 related asset
+  asset [1m[32mindex.js[39m[22m 1000 KiB [1m[32m[emitted][39m[22m (name: index) 1 related asset
+  asset [1m[32mindex-sandbox.js[39m[22m 1000 KiB [1m[32m[emitted][39m[22m (name: index-sandbox) 1 related asset
+assets by path [1m[32m*.css[39m[22m 36.9 KiB
+  asset [1m[32mindex.css[39m[22m 18.5 KiB [1m[32m[emitted][39m[22m (name: index) 1 related asset
+  asset [1m[32mindex-sandbox.css[39m[22m 18.4 KiB [1m[32m[emitted][39m[22m (name: index-sandbox) 1 related asset
+asset [1m[32mREADME.md[39m[22m 1.15 KiB [1m[32m[emitted][39m[22m [from: README.md] [1m[32m[copied][39m[22m
+asset [1m[32mindex.html[39m[22m 535 bytes [1m[32m[emitted][39m[22m
+asset [1m[32mmanifest.json[39m[22m 521 bytes [1m[32m[emitted][39m[22m [from: public/manifest.json] [1m[32m[copied][39m[22m
+Entrypoint [1mconnector[39m[22m 1020 KiB (1.28 MiB) = [1m[32mconnector.js[39m[22m 1 auxiliary asset
+Entrypoint [1mconnector-sandbox[39m[22m 1020 KiB (1.28 MiB) = [1m[32mconnector-sandbox.js[39m[22m 1 auxiliary asset
+Entrypoint [1mindex[39m[22m 1020 KiB (1.27 MiB) = [1m[32mindex.css[39m[22m 18.5 KiB [1m[32mindex.js[39m[22m 1000 KiB 2 auxiliary assets
+Entrypoint [1mindex-sandbox[39m[22m 1020 KiB (1.27 MiB) = [1m[32mindex-sandbox.css[39m[22m 18.4 KiB [1m[32mindex-sandbox.js[39m[22m 1000 KiB 2 auxiliary assets
+runtime modules 6.35 KiB 28 modules
+orphan modules 29.2 KiB [1m[33m[orphan][39m[22m 4 modules
+cacheable modules 1010 KiB (javascript) 17.6 KiB (css/mini-extract)
+  javascript modules 1010 KiB
+    modules by path [1m./node_modules/[39m[22m 994 KiB 10 modules
+    modules by path [1m./src/[39m[22m 19.2 KiB
+      modules by path [1m./src/widgets/*.tsx[39m[22m 15.8 KiB 2 modules
+      modules by path [1m./src/*.css[39m[22m 100 bytes 2 modules
+      [1m./src/services/openai.ts[39m[22m 3.26 KiB [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
+  css modules 17.6 KiB
+    css ./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[1].use[1]!./node_modules/postcss-loader/dist/cjs.js![1m./src/style.css[39m[22m 17.5 KiB [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
+    css ./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[1].use[1]!./node_modules/postcss-loader/dist/cjs.js![1m./src/index.css[39m[22m 96 bytes [1m[33m[built][39m[22m [1m[33m[code generated][39m[22m
+webpack 5.73.0 compiled [1m[32msuccessfully[39m[22m in 5157 ms
