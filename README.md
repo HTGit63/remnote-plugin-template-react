@@ -44,14 +44,16 @@ Implemented now:
 
 ## Local Setup
 
-1. Run `npm install`
-2. Run `npm run dev`
-3. In RemNote open `Settings -> Plugins -> Build`
-4. Use `Develop from localhost`
-5. Enter `http://localhost:8080`
-6. Enable the plugin
+1. Terminal A: run `npm install` once, then run `npm run dev` and keep that process open.
+2. Wait for the first webpack compile to finish.
+3. Terminal B: start the companion server with `npm run server:dev`.
+4. In RemNote open `Settings -> Plugins -> Build`.
+5. Use `Develop from localhost`.
+6. Enter `http://localhost:8080`.
+7. Enable the plugin.
 
 Do not enter `/manifest.json` in RemNote. Use `http://localhost:8080` only.
+If RemNote says `Failed to load manifest`, Terminal A is not reachable or was stopped. Open `http://localhost:8080/manifest.json` in a browser to confirm the plugin dev server is alive.
 
 ## Companion Server Setup
 
@@ -71,6 +73,8 @@ Then enter the same token in the plugin's `Bridge Token` setting. The server lis
 The server binds to `127.0.0.1` by default. Remote bind or CORS requires a token, and CORS also requires `REMNOTE_BRIDGE_ALLOWED_ORIGINS`.
 
 `REMNOTE_BRIDGE_TOKEN` is required by default. Use `REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1` only for isolated local development.
+
+The plugin dev server and the companion server are separate processes. The manifest comes from Terminal A on port 8080; the bridge comes from Terminal B on ports 47391 and 47392.
 
 ## MCP Tools
 
