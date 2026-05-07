@@ -1,0 +1,200 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "RemNote ChatGPT Bridge",
+    "subtitle": "Use RemNote from ChatGPT",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can read the focused Rem, read specific Rems, inspect bounded Rem trees, and create or append Rem content after the plugin permission flow allows it.",
+    "category": "PRODUCTIVITY"
+  },
+  "tools": {
+    "get_bridge_status": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reports local bridge connection metadata and does not modify RemNote.",
+        "open_world_justification": "Does not write to public internet state or any external third-party system.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "ping_remnote_plugin": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only sends a small ping through the local plugin connection and returns the response.",
+        "open_world_justification": "Operates only on the local bridge connection and does not publish or send external messages.",
+        "destructive_justification": "Does not alter RemNote content or perform irreversible actions."
+      }
+    },
+    "get_plugin_status": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves plugin permission mode and focused Rem availability.",
+        "open_world_justification": "Reads local plugin state and does not change public or external systems.",
+        "destructive_justification": "Does not delete, overwrite, or mutate RemNote data."
+      }
+    },
+    "get_focused_rem": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only serializes the Rem currently focused in RemNote.",
+        "open_world_justification": "Reads local private RemNote data and does not publish it to external systems.",
+        "destructive_justification": "Does not alter, overwrite, or delete RemNote content."
+      }
+    },
+    "get_rem": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads a specific Rem by ID and returns a serialized payload.",
+        "open_world_justification": "Accesses the user's local RemNote data without changing public internet state.",
+        "destructive_justification": "Does not modify or remove the requested Rem."
+      }
+    },
+    "get_rem_tree": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads a bounded Rem subtree with capped depth and serialized output.",
+        "open_world_justification": "Reads local RemNote content and does not write to external systems.",
+        "destructive_justification": "Does not modify, replace, or delete any Rem in the subtree."
+      }
+    },
+    "create_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a new Rem in the user's RemNote workspace when the plugin permission flow allows it.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish public content.",
+        "destructive_justification": "Creates new content and does not delete or overwrite existing Rems."
+      }
+    },
+    "append_to_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Appends a new child Rem under an existing Rem when the plugin permission flow allows it.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Adds child content without deleting or overwriting the target Rem."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Check whether the local RemNote bridge is connected.",
+      "user_prompt": "Is my RemNote bridge connected right now?",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_bridge_status",
+      "expected_output": "Reports whether the local companion server currently has a RemNote plugin connection.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Verify that ChatGPT can reach the running plugin through the bridge.",
+      "user_prompt": "Ping my RemNote plugin before reading anything.",
+      "file_attachment_urls": null,
+      "tools_triggered": "ping_remnote_plugin",
+      "expected_output": "Returns a successful ping response from the local RemNote plugin connection.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read the Rem currently focused in RemNote.",
+      "user_prompt": "Read the Rem I am focused on in RemNote and summarize what it says.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_focused_rem",
+      "expected_output": "Returns the focused Rem content in structured form and summarizes it for the user.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read a known Rem by ID.",
+      "user_prompt": "Read Rem rem_12345 and tell me the front and back text.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_rem",
+      "expected_output": "Returns the requested Rem content or a clear not-found error.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect a small bounded subtree.",
+      "user_prompt": "Inspect Rem rem_12345 and its children up to depth 2.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_rem_tree",
+      "expected_output": "Returns a bounded serialized Rem tree with truncated markers if limits are reached.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a new Rem from markdown after permission flow allows it.",
+      "user_prompt": "Create a new Rem under rem_parent_1 with this markdown: ## Study plan\\n- Review proofs\\n- Practice recall.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_rem",
+      "expected_output": "Creates the Rem only after the plugin permission flow allows it and returns the new Rem ID.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Append a child Rem after user approval.",
+      "user_prompt": "Append a child under my focused Rem with three follow-up questions.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_focused_rem, append_to_rem",
+      "expected_output": "Reads the focused Rem, proposes child markdown, waits for approval when required, and returns the appended child Rem ID.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for unrelated calendar requests.",
+      "user_prompt": "What meetings do I have tomorrow morning?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not be invoked because it has no calendar workflow.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not expose direct OpenAI configuration inside RemNote.",
+      "user_prompt": "Set my OpenAI API key in the RemNote plugin and switch to a different model.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should explain that the plugin does not store OpenAI API keys or choose models.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger destructive note replacement or deletion.",
+      "user_prompt": "Delete this Rem and all of its children from RemNote.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should not call a tool because destructive MCP tools are not exposed.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not attempt unbounded knowledge-base extraction.",
+      "user_prompt": "Export my entire RemNote knowledge base into this chat.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "The app should decline unbounded extraction and offer focused or bounded Rem reads instead.",
+      "expected_output_url": null
+    }
+  ]
+}

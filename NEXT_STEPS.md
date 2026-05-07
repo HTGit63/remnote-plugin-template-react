@@ -1,14 +1,48 @@
 # Next Steps
 
-The MVP has established a fundamental path to use OpenAI directly against targeted KB ranges. Moving forward, the plugin is architecturally prepared for these upgrades:
+## Completed Milestones
 
-### Scheduled Note Generation & Calendar Source Integration
-- **Concept**: Periodically sync external endpoints (like Google Calendar API) into native RemNote daily documents via `automation.ts` stubs.
-- **Implementation Status**: Deferred. The data structures and `AutomationQueue` are present but not wired to an external polling interval yet.
+1. Documentation and product direction updated.
+2. OpenAI runtime dependency removed from the active plugin path.
+3. RemNote SDK logic refactored into service files.
+4. AI sidebar replaced with bridge-status widget.
+5. Typed bridge protocol added.
+6. WebSocket bridge client added inside the plugin.
+7. Local companion server skeleton added.
+8. Read-only tool flow implemented through MCP and the bridge.
+9. Safe create/append write flow implemented with RemNote-side approval.
+10. MCP/ChatGPT tool layer added.
 
-### Remote / Background Automation 
-- **Concept**: An App-like server layer where tasks are completed offline.
-- **Implementation Status**: RemNote’s API architecture prioritizes the active SDK client. Until RemNote exposes a full Headless/Server API, we emulate this by treating this plugin as the "always on" desktop runner that polls an external server.
+## Shipping Verification
 
-### Advanced Knowledge Base Syncing (Semantic Search)
-- Enhancing AI prompts to fetch siblings or search nodes before rewriting. This involves injecting more contextual history directly into the OpenAI prompt structure.
+Run these before release:
+
+```bash
+npm run check-types
+npm run validate
+npm run build
+npm run server:build
+npm run server:smoke
+```
+
+## Manual RemNote QA
+
+Use a sandbox document first:
+
+```text
+Test KB Space / ChatGPT Bridge Sandbox
+```
+
+Manual checks:
+
+- start plugin dev server with `npm run dev`;
+- start companion server with a generated `REMNOTE_BRIDGE_TOKEN`;
+- enter the same token in the plugin setting;
+- confirm the bridge-status widget shows connected;
+- focus a test Rem and call `get_focused_rem`;
+- call `append_to_rem`, approve in RemNote, and verify child creation;
+- call `append_to_rem`, reject in RemNote, and verify no child is created.
+
+## Release Notes
+
+The MCP layer intentionally exposes only read tools plus safe create/append writes. Internal `replace_rem` and `delete_rem` bridge operations remain blocked from ChatGPT/MCP exposure until a separate destructive-action review is completed.

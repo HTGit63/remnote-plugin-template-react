@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
-  "id": "remnote-openai-connector",
-  "name": "RemNote OpenAI Connector",
+  "id": "remnote-chatgpt-bridge",
+  "name": "RemNote ChatGPT Bridge",
   "author": "remnote",
   "repoUrl": "https://github.com/HTGit63/remnote-plugin-template-react",
   "version": {
@@ -11,7 +11,7 @@
   },
   "theme": [],
   "enableOnMobile": false,
-  "description": "A broad connector to read, write, and manage KB content with OpenAI.",
+  "description": "A local bridge for controlled ChatGPT/Vivy access to RemNote SDK tools.",
   "requestNative": false,
   "requiredScopes": [
     {

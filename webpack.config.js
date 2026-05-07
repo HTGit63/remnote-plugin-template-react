@@ -31,6 +31,10 @@ const config = {
     filename: `[name].js`,
     publicPath: '',
   },
+  performance: {
+    maxAssetSize: 350000,
+    maxEntrypointSize: 350000,
+  },
   resolve: {
     extensions: ['.js', '.jsx', '.ts', '.tsx'],
   },
@@ -65,7 +69,7 @@ const config = {
       <script type="text/javascript">
       const urlSearchParams = new URLSearchParams(window.location.search);
       const queryParams = Object.fromEntries(urlSearchParams.entries());
-      const widgetName = queryParams["widgetName"] || "connector";
+      const widgetName = queryParams["widgetName"] || "bridge-status";
       if (widgetName == undefined) {document.body.innerHTML+="Widget ID not specified."}
 
       const s = document.createElement('script');
