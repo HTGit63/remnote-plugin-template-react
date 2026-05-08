@@ -11,6 +11,19 @@ import type { BridgeHub } from './bridge-hub.js';
 
 const REM_ID_SCHEMA = z.string().trim().min(1).max(256);
 const MARKDOWN_SCHEMA = z.string().trim().min(1).max(20000);
+const POSITION_SCHEMA = z.enum(['start', 'end']).default('end');
+
+interface RemTreeNodeInput {
+  title: string;
+  children?: RemTreeNodeInput[];
+}
+
+const REM_TREE_NODE_SCHEMA: z.ZodType<RemTreeNodeInput> = z.lazy(() =>
+  z.object({
+    title: z.string().trim().min(1).max(1000).describe('Text/markdown title for this Rem node.'),
+    children: z.array(REM_TREE_NODE_SCHEMA).max(100).optional().describe('Ordered child Rem nodes.'),
+  })
+);
 
 type McpToolResult = {
   content: Array<{ type: 'text'; text: string }>;
@@ -177,6 +190,30 @@ export function createMcpServer(hub: BridgeHub): McpServer {
   );
 
   server.registerTool(
+    'get_rem_rich',
+    {
+      title: 'Get Rem rich content',
+      description: 'Use this when the user needs normalized rich text, math hints, and plain text for a Rem.',
+      inputSchema: z.object({
+        remId: REM_ID_SCHEMA.describe('The RemNote Rem ID to read.'),
+      }),
+      annotations: annotationsFor('get_rem_rich'),
+    },
+    async ({ remId }) => bridgeToolResult(() => hub.callPlugin('get_rem_rich', { remId }), 'Read rich Rem content.')
+  );
+
+  server.registerTool(
+    'get_current_selection',
+    {
+      title: 'Get current RemNote selection',
+      description: 'Use this when the user asks what Rem is focused or selected in RemNote.',
+      inputSchema: z.object({}),
+      annotations: annotationsFor('get_current_selection'),
+    },
+    async () => bridgeToolResult(() => hub.callPlugin('get_current_selection', {}), 'Read current RemNote selection.')
+  );
+
+  server.registerTool(
     'create_rem',
     {
       title: 'Create Rem',
@@ -202,11 +239,83 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target RemNote Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown content to append under the target Rem.'),
+        position: POSITION_SCHEMA.describe('Where to place the new child under the target Rem.'),
       }),
       annotations: annotationsFor('append_to_rem'),
     },
+    async ({ remId, markdown, position }) =>
+      bridgeToolResult(
+        () => hub.callPlugin('append_to_rem', { remId, markdown, position }),
+        'Append request processed.'
+      )
+  );
+
+  server.registerTool(
+    'update_rem',
+    {
+      title: 'Update Rem text',
+      description: 'Use this when the user explicitly asks to replace the text of an existing Rem.',
+      inputSchema: z.object({
+        remId: REM_ID_SCHEMA.describe('The target RemNote Rem ID.'),
+        markdown: MARKDOWN_SCHEMA.describe('Markdown content that replaces the target Rem text.'),
+      }),
+      annotations: annotationsFor('update_rem'),
+    },
     async ({ remId, markdown }) =>
-      bridgeToolResult(() => hub.callPlugin('append_to_rem', { remId, markdown }), 'Append request processed.')
+      bridgeToolResult(() => hub.callPlugin('update_rem', { remId, markdown }), 'Update request processed.')
+  );
+
+  server.registerTool(
+    'move_rem',
+    {
+      title: 'Move Rem',
+      description: 'Use this when the user explicitly asks to move a Rem under another Rem at a specific index.',
+      inputSchema: z.object({
+        remId: REM_ID_SCHEMA.describe('The Rem ID to move.'),
+        newParentId: REM_ID_SCHEMA.describe('The new parent Rem ID.'),
+        index: z.number().int().min(0).describe('Zero-based child index under the new parent.'),
+      }),
+      annotations: annotationsFor('move_rem'),
+    },
+    async ({ remId, newParentId, index }) =>
+      bridgeToolResult(() => hub.callPlugin('move_rem', { remId, newParentId, index }), 'Move request processed.')
+  );
+
+  server.registerTool(
+    'delete_rem',
+    {
+      title: 'Delete Rem',
+      description: 'Use this when the user explicitly asks to delete a Rem and has provided confirmText DELETE.',
+      inputSchema: z.object({
+        remId: REM_ID_SCHEMA.describe('The Rem ID to delete.'),
+        recursive: z.boolean().default(false).describe('Whether to delete descendants too. Defaults to false.'),
+        confirmText: z.literal('DELETE').describe('Required literal confirmation text.'),
+      }),
+      annotations: annotationsFor('delete_rem'),
+    },
+    async ({ remId, recursive, confirmText }) =>
+      bridgeToolResult(
+        () => hub.callPlugin('delete_rem', { remId, recursive, confirmText }),
+        'Delete request processed.'
+      )
+  );
+
+  server.registerTool(
+    'create_rem_tree',
+    {
+      title: 'Create Rem tree',
+      description: 'Use this when the user explicitly asks to create a nested Rem tree from structured JSON.',
+      inputSchema: z.object({
+        parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the created tree root.'),
+        tree: REM_TREE_NODE_SCHEMA.describe('Structured Rem tree to create.'),
+      }),
+      annotations: annotationsFor('create_rem_tree'),
+    },
+    async ({ parentId, tree }) =>
+      bridgeToolResult(
+        () => hub.callPlugin('create_rem_tree', { parentId, tree }),
+        'Create Rem tree request processed.'
+      )
   );
 
   return server;
