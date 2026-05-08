@@ -37,6 +37,7 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('bridge-status', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'Bridge',
+    widgetTabIcon: '🔌',
     dontOpenByDefaultInTabLocation: false,
   });
 

@@ -15,6 +15,13 @@ import { BrowserBridgeClient } from '../bridge/client';
 import { getPermissionDecision, getPermissionModeLabel, normalizePermissionMode } from '../remnote/permissions';
 import { getFocusedRemStatus } from '../remnote/read';
 
+const statusToneClass: Record<string, string> = {
+  connected: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-100',
+  connecting: 'border-amber-400/35 bg-amber-400/15 text-amber-100',
+  disconnected: 'border-slate-500/35 bg-slate-500/20 text-slate-100',
+  error: 'border-rose-400/40 bg-rose-500/15 text-rose-100',
+};
+
 function formatToolName(tool: BridgeToolName): string {
   return tool.replace(/_/g, ' ');
 }
@@ -31,6 +38,31 @@ function getToolImpactLabel(tool: BridgeToolName): string {
   }
 
   return 'Safe write';
+}
+
+function DetailRow({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: React.ReactNode;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
+      <dd
+        className={[
+          'mt-1 min-w-0 overflow-hidden break-words text-sm leading-5 text-slate-100',
+          mono ? 'font-mono text-[12px]' : '',
+        ].join(' ')}
+        style={{ overflowWrap: 'anywhere' }}
+      >
+        {value}
+      </dd>
+    </div>
+  );
 }
 
 export function BridgeStatusWidget() {
@@ -164,93 +196,84 @@ export function BridgeStatusWidget() {
 
   return (
     <div
-      className="h-full w-full overflow-y-auto bg-white p-4 text-gray-900 dark:bg-gray-900 dark:text-gray-100"
-      style={{ fontFamily: 'var(--font-primary, sans-serif)', minHeight: '300px' }}
+      className="h-full w-full overflow-y-auto bg-[#090b0f] px-3 py-4 text-slate-100"
+      style={{ fontFamily: 'var(--font-primary, Inter, sans-serif)', minHeight: '300px' }}
     >
-      <div className="mb-4 border-b border-gray-200 pb-3 dark:border-gray-700">
-        <h2 className="text-lg font-semibold">RemNote ChatGPT Bridge</h2>
-        <p className="mt-1 text-xs text-gray-600 dark:text-gray-300">
-          RemNote SDK access layer. AI reasoning runs outside this plugin.
-        </p>
+      <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
+      <div className="rounded-lg border border-white/10 bg-[#111721] px-4 py-4 shadow-sm">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 text-lg">
+            🔌
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-[17px] font-semibold leading-6 text-white">RemNote Bridge</h2>
+            <p className="mt-1 text-[12px] leading-5 text-slate-400">
+              Local SDK access. Writes wait for permission.
+            </p>
+          </div>
+        </div>
       </div>
 
-      <section className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="mb-2 text-sm font-semibold">Bridge Status</h3>
-        <dl className="space-y-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-gray-600 dark:text-gray-300">Connection</dt>
-            <dd className="rounded bg-gray-200 px-2 py-1 text-xs font-semibold dark:bg-gray-700">
+      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
+        <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-white">Bridge Status</h3>
+          <span
+            className={[
+              'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
+              statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected,
+            ].join(' ')}
+          >
               {getBridgeStatusLabel(bridgeStatus.state)}
-            </dd>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <dt className="text-gray-600 dark:text-gray-300">Local Server</dt>
-            <dd className="break-all text-right font-mono text-xs">{bridgeStatus.serverUrl}</dd>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <dt className="text-gray-600 dark:text-gray-300">Last Event</dt>
-            <dd className="text-right text-xs">{bridgeStatus.lastEvent}</dd>
-          </div>
+          </span>
+        </div>
+        <dl className="grid min-w-0 gap-2">
+          <DetailRow label="Local Server" value={bridgeStatus.serverUrl} mono />
+          <DetailRow label="Last Event" value={bridgeStatus.lastEvent} />
           {bridgeStatus.lastError && (
-            <div className="flex items-start justify-between gap-3">
-              <dt className="text-gray-600 dark:text-gray-300">Error</dt>
-              <dd className="text-right text-xs text-red-600 dark:text-red-300">{bridgeStatus.lastError}</dd>
-            </div>
+            <DetailRow label="Error" value={<span className="text-rose-200">{bridgeStatus.lastError}</span>} />
           )}
         </dl>
       </section>
 
-      <section className="mb-4 rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="mb-2 text-sm font-semibold">RemNote Context</h3>
-        <dl className="space-y-2 text-sm">
-          <div className="flex items-center justify-between gap-3">
-            <dt className="text-gray-600 dark:text-gray-300">Permission Mode</dt>
-            <dd className="rounded bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
+        <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+          <h3 className="text-sm font-semibold text-white">RemNote Context</h3>
+          <span className="shrink-0 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-100">
               {getPermissionModeLabel(permissionMode)}
-            </dd>
-          </div>
-          <div className="flex items-start justify-between gap-3">
-            <dt className="text-gray-600 dark:text-gray-300">Focused Rem</dt>
-            <dd className="text-right text-xs">
-              {focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
-            </dd>
-          </div>
+          </span>
+        </div>
+        <dl className="grid min-w-0 gap-2">
+          <DetailRow
+            label="Focused Rem"
+            value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
+          />
           {focusedRemStatus?.remId && (
-            <div className="flex items-start justify-between gap-3">
-              <dt className="text-gray-600 dark:text-gray-300">Rem ID</dt>
-              <dd className="break-all text-right font-mono text-xs">{focusedRemStatus.remId}</dd>
-            </div>
+            <DetailRow label="Rem ID" value={focusedRemStatus.remId} mono />
           )}
         </dl>
       </section>
 
-      <section className="rounded border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800">
-        <h3 className="mb-2 text-sm font-semibold">Pending Request</h3>
+      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
+        <h3 className="mb-3 text-sm font-semibold text-white">Pending Request</h3>
         {pendingRequest ? (
           <div className="space-y-3 text-sm">
             <div className="grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Tool</div>
-                <div className="font-semibold">{formatToolName(pendingRequest.tool)}</div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Impact</div>
-                <div className="font-semibold">{getToolImpactLabel(pendingRequest.tool)}</div>
-              </div>
+              <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
+              <DetailRow label="Impact" value={getToolImpactLabel(pendingRequest.tool)} />
             </div>
             {pendingRequest.targetRemId && (
-              <div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">Target</div>
-                <div className="break-all font-mono text-xs">{pendingRequest.targetRemId}</div>
-              </div>
+              <DetailRow label="Target" value={pendingRequest.targetRemId} mono />
             )}
             {pendingRequest.previewMarkdown && (
-              <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded border border-gray-200 bg-white p-2 text-xs dark:border-gray-700 dark:bg-gray-900">
+              <pre
+                className="max-h-44 min-w-0 overflow-y-auto whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 p-3 text-[12px] leading-5 text-slate-100"
+                style={{ overflowWrap: 'anywhere' }}
+              >
                 {pendingRequest.previewMarkdown}
               </pre>
             )}
             {pendingDecision && (
-              <div className="rounded bg-yellow-50 p-2 text-xs text-yellow-900 dark:bg-yellow-900 dark:text-yellow-100">
+              <div className="rounded-md border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">
                 {pendingDecision.reason}
               </div>
             )}
@@ -259,26 +282,30 @@ export function BridgeStatusWidget() {
                 type="button"
                 onClick={handleApprove}
                 disabled={!pendingDecision?.allowed}
-                className="flex-1 rounded bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+                className="min-h-[38px] flex-1 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
               >
                 Approve
               </button>
               <button
                 type="button"
                 onClick={handleReject}
-                className="flex-1 rounded bg-gray-200 px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+                className="min-h-[38px] flex-1 rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/15"
               >
                 Reject
               </button>
             </div>
           </div>
         ) : (
-          <div className="rounded border border-dashed border-gray-300 p-3 text-sm text-gray-600 dark:border-gray-600 dark:text-gray-300">
+          <div
+            className="min-w-0 rounded-md border border-dashed border-white/20 bg-white/[0.04] p-3 text-sm leading-5 text-slate-300"
+            style={{ overflowWrap: 'anywhere' }}
+          >
             No pending request. Read/write requests from local bridge will appear here before writes run.
           </div>
         )}
-        <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">{lastApprovalEvent}</div>
+        <div className="mt-3 min-w-0 break-words text-xs leading-5 text-slate-500">{lastApprovalEvent}</div>
       </section>
+      </div>
     </div>
   );
 }
