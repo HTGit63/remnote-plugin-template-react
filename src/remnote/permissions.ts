@@ -15,9 +15,17 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'get_focused_rem',
   'get_rem',
   'get_rem_tree',
+  'get_rem_rich',
+  'get_current_selection',
 ]);
 
-const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set(['create_rem', 'append_to_rem']);
+const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
+  'create_rem',
+  'append_to_rem',
+  'update_rem',
+  'move_rem',
+  'create_rem_tree',
+]);
 const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set(['replace_rem', 'delete_rem']);
 
 export function normalizePermissionMode(value: string | undefined): PermissionMode {

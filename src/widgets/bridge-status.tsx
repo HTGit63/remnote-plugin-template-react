@@ -3,10 +3,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import '../style.css';
 import '../index.css';
 import {
+  type ApprovalResolution,
   type BridgeToolName,
   type PendingApprovalRequest,
   type PermissionMode,
   BRIDGE_TOOL_ANNOTATIONS,
+  WRITE_APPROVAL_TIMEOUT_MS,
 } from '../bridge/protocol';
 import {
   DEFAULT_BRIDGE_SERVER_URL,
@@ -66,7 +68,7 @@ export function BridgeStatusWidget() {
   const [pendingRequest, setPendingRequest] = useState<PendingApprovalRequest | null>(null);
   const [lastApprovalEvent, setLastApprovalEvent] = useState('No approval activity yet.');
   const [bridgeStatus, setBridgeStatus] = useState(INITIAL_BRIDGE_STATUS);
-  const approvalResolverRef = useRef<((approved: boolean) => void) | undefined>();
+  const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const permissionModeRef = useRef<PermissionMode>('confirm_writes');
 
@@ -116,14 +118,15 @@ export function BridgeStatusWidget() {
   };
 
   const resolveApproval = useCallback(
-    async (approved: boolean) => {
+    async (resolution: ApprovalResolution) => {
       if (!pendingRequest || !approvalResolverRef.current) {
         return;
       }
 
       clearApprovalTimeout();
-      approvalResolverRef.current(approved);
+      approvalResolverRef.current(resolution);
       approvalResolverRef.current = undefined;
+      const approved = resolution === 'APPROVED';
       setLastApprovalEvent(
         `${approved ? 'Approved' : 'Rejected'} ${pendingRequest.tool} request ${pendingRequest.id}.`
       );
@@ -133,22 +136,22 @@ export function BridgeStatusWidget() {
     [pendingRequest, plugin]
   );
 
-  const requestApproval = useCallback((request: PendingApprovalRequest): Promise<boolean> => {
+  const requestApproval = useCallback((request: PendingApprovalRequest): Promise<ApprovalResolution> => {
     if (approvalResolverRef.current) {
-      return Promise.resolve(false);
+      return Promise.resolve('APPROVAL_REJECTED');
     }
 
     setPendingRequest(request);
     setLastApprovalEvent(`Awaiting approval for ${request.tool} request ${request.id}.`);
 
-    return new Promise<boolean>((resolve) => {
+    return new Promise<ApprovalResolution>((resolve) => {
       approvalResolverRef.current = resolve;
       approvalTimeoutRef.current = setTimeout(() => {
         approvalResolverRef.current = undefined;
         setPendingRequest(null);
         setLastApprovalEvent(`Approval timed out for ${request.tool} request ${request.id}.`);
-        resolve(false);
-      }, 90000);
+        resolve('APPROVAL_TIMEOUT');
+      }, WRITE_APPROVAL_TIMEOUT_MS);
     });
   }, []);
 
@@ -167,7 +170,7 @@ export function BridgeStatusWidget() {
       client.disconnect();
       clearApprovalTimeout();
       if (approvalResolverRef.current) {
-        approvalResolverRef.current(false);
+        approvalResolverRef.current('APPROVAL_REJECTED');
         approvalResolverRef.current = undefined;
       }
       setPendingRequest(null);
@@ -179,7 +182,7 @@ export function BridgeStatusWidget() {
       return;
     }
 
-    await resolveApproval(true);
+    await resolveApproval('APPROVED');
   };
 
   const handleReject = async () => {
@@ -187,7 +190,7 @@ export function BridgeStatusWidget() {
       return;
     }
 
-    await resolveApproval(false);
+    await resolveApproval('APPROVAL_REJECTED');
   };
 
   const approveLabel = pendingDecision?.destructive
@@ -226,8 +229,21 @@ export function BridgeStatusWidget() {
             <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
             <DetailRow label="Mode" value={getPermissionModeLabel(pendingRequest.permissionMode)} />
           </div>
+          <DetailRow label="Summary" value={pendingRequest.summary} />
           {pendingRequest.targetRemId && <DetailRow label="Target Rem" value={pendingRequest.targetRemId} mono />}
+          {pendingRequest.targetTitle && <DetailRow label="Target Title" value={pendingRequest.targetTitle} />}
+          <div className="bridge-two-col">
+            <DetailRow label="Risk" value={pendingRequest.riskLevel.replace(/_/g, ' ')} />
+            <DetailRow label="Deadline" value={new Date(pendingRequest.timeoutDeadline).toLocaleTimeString()} />
+          </div>
+          {pendingRequest.hasChildren !== undefined && (
+            <DetailRow label="Has Children" value={pendingRequest.hasChildren ? 'Yes' : 'No'} />
+          )}
+          {pendingRequest.confirmTextRequired && (
+            <DetailRow label="Required Confirm Text" value={pendingRequest.confirmTextRequired} mono />
+          )}
           {pendingRequest.previewMarkdown && <pre className="bridge-preview">{pendingRequest.previewMarkdown}</pre>}
+          {pendingRequest.warning && <div className="bridge-decision-note">{pendingRequest.warning}</div>}
           {pendingDecision && <div className="bridge-decision-note">{pendingDecision.reason}</div>}
           <div className="bridge-actions" role="group" aria-label="Bridge approval actions">
             <button

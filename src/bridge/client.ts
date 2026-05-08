@@ -6,6 +6,7 @@ import {
   type BridgeServerMessage,
   type PendingApprovalRequest,
   type PermissionMode,
+  type ApprovalResolution,
   createBridgeFailure,
 } from './protocol';
 import { type BridgeStatusSnapshot } from './status';
@@ -20,7 +21,7 @@ export interface BrowserBridgeClientOptions {
   serverUrl: string;
   token?: string;
   getPermissionMode: () => PermissionMode;
-  requestApproval: (request: PendingApprovalRequest) => Promise<boolean>;
+  requestApproval: (request: PendingApprovalRequest) => Promise<ApprovalResolution>;
   onStatus: (status: BridgeStatusSnapshot) => void;
 }
 
