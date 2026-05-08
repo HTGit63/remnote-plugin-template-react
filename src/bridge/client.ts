@@ -154,10 +154,22 @@ export class BrowserBridgeClient {
       return;
     }
 
-    const response = await handleBridgeRequest(this.options.plugin, requestOrFailure as BridgeRequest, {
-      permissionMode: this.options.getPermissionMode(),
-      requestApproval: this.options.requestApproval,
-    });
+    let response: BridgeResponse;
+    try {
+      response = await handleBridgeRequest(this.options.plugin, requestOrFailure as BridgeRequest, {
+        permissionMode: this.options.getPermissionMode(),
+        requestApproval: this.options.requestApproval,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('Bridge request failed internally:', message);
+      response = createBridgeFailure(
+        (requestOrFailure as BridgeRequest).id,
+        'INTERNAL_ERROR',
+        'Bridge request failed internally.',
+        { message }
+      );
+    }
     this.send(response as BridgeResponse);
   }
 

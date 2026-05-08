@@ -41,9 +41,28 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'get_focused_rem':
       return { id: request.id, ok: true, result: fakeRem };
     case 'append_to_rem':
-      return { id: request.id, ok: true, result: { remId: 'rem-child-1', parentId: request.args.remId } };
+      if (request.args.remId === 'missing-rem') {
+        return {
+          id: request.id,
+          ok: false,
+          error: {
+            code: 'REM_NOT_FOUND',
+            message: 'Target Rem was not found.',
+          },
+        };
+      }
+
+      return {
+        id: request.id,
+        ok: true,
+        result: { targetRemId: request.args.remId, createdRemId: 'rem-child-1', status: 'appended' },
+      };
     case 'create_rem':
-      return { id: request.id, ok: true, result: { remId: 'rem-created-1', parentId: request.args.parentId ?? null } };
+      return {
+        id: request.id,
+        ok: true,
+        result: { createdRemId: 'rem-created-1', parentId: request.args.parentId ?? null, status: 'created' },
+      };
     default:
       return {
         id: request.id,
@@ -130,6 +149,31 @@ try {
   );
   if (!append.includes('rem-child-1')) {
     throw new Error('append_to_rem did not return mock child Rem ID.');
+  }
+
+  const create = JSON.stringify(
+    await callMcpTool(mcp, 'create_rem', {
+      parentId: fakeRem.remId,
+      markdown: 'Created Rem from smoke test',
+    })
+  );
+  if (!create.includes('rem-created-1') || !create.includes('created')) {
+    throw new Error('create_rem did not return mock created Rem ID.');
+  }
+
+  const failedAppend = JSON.stringify(
+    await callMcpTool(mcp, 'append_to_rem', {
+      remId: 'missing-rem',
+      markdown: 'This should fail cleanly',
+    })
+  );
+  if (!failedAppend.includes('REM_NOT_FOUND')) {
+    throw new Error('append_to_rem failure did not return REM_NOT_FOUND.');
+  }
+
+  const statusAfterFailure = JSON.stringify(await callMcpTool(mcp, 'get_bridge_status', {}));
+  if (!statusAfterFailure.includes('"connected":true')) {
+    throw new Error('Bridge status did not survive failed append request.');
   }
 
   console.log('Server smoke passed.');

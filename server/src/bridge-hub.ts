@@ -61,11 +61,12 @@ export class BridgeHub {
   }
 
   async stop(): Promise<void> {
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timeout);
-      pending.resolve(createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Bridge server stopped.'));
+    for (const id of Array.from(this.pending.keys())) {
+      this.resolvePending(
+        id,
+        createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Bridge server stopped.')
+      );
     }
-    this.pending.clear();
 
     this.pluginSocket?.close();
     this.pluginSocket = undefined;
@@ -119,8 +120,7 @@ export class BridgeHub {
 
     return new Promise<BridgeResponse>((resolve) => {
       const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        resolve(createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
+        this.resolvePending(id, createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
       }, timeoutMs);
 
       this.pending.set(id, {
@@ -130,7 +130,28 @@ export class BridgeHub {
         startedAt: Date.now(),
       });
 
-      this.pluginSocket?.send(JSON.stringify(request));
+      try {
+        this.pluginSocket?.send(JSON.stringify(request), (error) => {
+          if (!error) {
+            return;
+          }
+
+          this.resolvePending(
+            id,
+            createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Failed to send request to RemNote plugin.', {
+              message: error.message,
+            })
+          );
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.resolvePending(
+          id,
+          createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Failed to send request to RemNote plugin.', {
+            message,
+          })
+        );
+      }
     });
   }
 
@@ -177,11 +198,12 @@ export class BridgeHub {
     this.pluginSocket = undefined;
     this.lastDisconnectedAt = new Date().toISOString();
 
-    for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timeout);
-      pending.resolve(createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'RemNote plugin disconnected.'));
+    for (const id of Array.from(this.pending.keys())) {
+      this.resolvePending(
+        id,
+        createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'RemNote plugin disconnected.')
+      );
     }
-    this.pending.clear();
   }
 
   private handlePluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
@@ -194,14 +216,24 @@ export class BridgeHub {
       return;
     }
 
-    const pending = this.pending.get(message.id);
+    this.resolvePending(message.id, message);
+  }
+
+  private resolvePending(id: string, response: BridgeResponse) {
+    const pending = this.pending.get(id);
     if (!pending) {
       return;
     }
 
     clearTimeout(pending.timeout);
-    this.pending.delete(message.id);
-    pending.resolve(message);
+    this.pending.delete(id);
+    console.info('Bridge hub request completed', {
+      requestId: id,
+      tool: pending.tool,
+      errorCode: response.ok ? undefined : response.error.code,
+      durationMs: Date.now() - pending.startedAt,
+    });
+    pending.resolve(response);
   }
 
   private isPluginHello(message: BridgeClientMessage | undefined): message is BridgePluginHello {

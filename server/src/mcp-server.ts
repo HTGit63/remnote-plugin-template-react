@@ -38,6 +38,22 @@ function failureToToolResult(failure: BridgeFailure): McpToolResult {
   };
 }
 
+function internalErrorToToolResult(error: unknown): McpToolResult {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error('MCP bridge tool failed:', message);
+  return failureToToolResult({
+    id: 'unknown',
+    ok: false,
+    error: {
+      code: 'INTERNAL_ERROR',
+      message: 'Bridge tool call failed internally.',
+      details: {
+        message,
+      },
+    },
+  });
+}
+
 function successToToolResult(response: BridgeResponse, message: string): McpToolResult {
   if (!response.ok) {
     return failureToToolResult(response);
@@ -55,6 +71,17 @@ function successToToolResult(response: BridgeResponse, message: string): McpTool
       result: response.result,
     },
   };
+}
+
+async function bridgeToolResult(
+  call: () => Promise<BridgeResponse>,
+  successMessage: string
+): Promise<McpToolResult> {
+  try {
+    return successToToolResult(await call(), successMessage);
+  } catch (error: unknown) {
+    return internalErrorToToolResult(error);
+  }
 }
 
 export function createMcpServer(hub: BridgeHub): McpServer {
@@ -96,7 +123,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       annotations: annotationsFor('ping'),
     },
     async ({ message }) =>
-      successToToolResult(await hub.callPlugin('ping', { message }), 'RemNote plugin ping completed.')
+      bridgeToolResult(() => hub.callPlugin('ping', { message }), 'RemNote plugin ping completed.')
   );
 
   server.registerTool(
@@ -107,7 +134,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       inputSchema: z.object({}),
       annotations: annotationsFor('get_status'),
     },
-    async () => successToToolResult(await hub.callPlugin('get_status', {}), 'Read RemNote plugin status.')
+    async () => bridgeToolResult(() => hub.callPlugin('get_status', {}), 'Read RemNote plugin status.')
   );
 
   server.registerTool(
@@ -118,7 +145,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       inputSchema: z.object({}),
       annotations: annotationsFor('get_focused_rem'),
     },
-    async () => successToToolResult(await hub.callPlugin('get_focused_rem', {}), 'Read focused Rem.')
+    async () => bridgeToolResult(() => hub.callPlugin('get_focused_rem', {}), 'Read focused Rem.')
   );
 
   server.registerTool(
@@ -131,7 +158,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       }),
       annotations: annotationsFor('get_rem'),
     },
-    async ({ remId }) => successToToolResult(await hub.callPlugin('get_rem', { remId }), 'Read Rem by ID.')
+    async ({ remId }) => bridgeToolResult(() => hub.callPlugin('get_rem', { remId }), 'Read Rem by ID.')
   );
 
   server.registerTool(
@@ -146,7 +173,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       annotations: annotationsFor('get_rem_tree'),
     },
     async ({ remId, depth }) =>
-      successToToolResult(await hub.callPlugin('get_rem_tree', { remId, depth }), 'Read bounded Rem tree.')
+      bridgeToolResult(() => hub.callPlugin('get_rem_tree', { remId, depth }), 'Read bounded Rem tree.')
   );
 
   server.registerTool(
@@ -161,8 +188,8 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       annotations: annotationsFor('create_rem'),
     },
     async ({ parentId, markdown }) =>
-      successToToolResult(
-        await hub.callPlugin('create_rem', { parentId: parentId ?? null, markdown }),
+      bridgeToolResult(
+        () => hub.callPlugin('create_rem', { parentId: parentId ?? null, markdown }),
         'Create Rem request processed.'
       )
   );
@@ -179,7 +206,7 @@ export function createMcpServer(hub: BridgeHub): McpServer {
       annotations: annotationsFor('append_to_rem'),
     },
     async ({ remId, markdown }) =>
-      successToToolResult(await hub.callPlugin('append_to_rem', { remId, markdown }), 'Append request processed.')
+      bridgeToolResult(() => hub.callPlugin('append_to_rem', { remId, markdown }), 'Append request processed.')
   );
 
   return server;
