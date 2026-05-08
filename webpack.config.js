@@ -72,6 +72,17 @@ const config = {
       const widgetName = queryParams["widgetName"] || "bridge-status";
       if (widgetName == undefined) {document.body.innerHTML+="Widget ID not specified."}
 
+      const css = document.createElement('link');
+      css.rel = "stylesheet";
+      css.href = widgetName+"${SANDBOX_SUFFIX}.css";
+      css.onerror = () => {
+        if (!css.dataset.fallback) {
+          css.dataset.fallback = "true";
+          css.href = widgetName+".css";
+        }
+      };
+      document.head.appendChild(css);
+
       const s = document.createElement('script');
       s.type = "module";
       s.src = widgetName+"${SANDBOX_SUFFIX}.js";

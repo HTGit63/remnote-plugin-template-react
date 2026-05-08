@@ -53,10 +53,10 @@ function DetailRow({
 }) {
   return (
     <div className="bridge-detail-row">
-      <dt className="bridge-detail-label">{label}</dt>
-      <dd className={['bridge-detail-value', mono ? 'bridge-detail-value--mono' : ''].filter(Boolean).join(' ')}>
+      <div className="bridge-detail-label">{label}</div>
+      <div className={['bridge-detail-value', mono ? 'bridge-detail-value--mono' : ''].filter(Boolean).join(' ')}>
         {value}
-      </dd>
+      </div>
     </div>
   );
 }
@@ -190,6 +190,69 @@ export function BridgeStatusWidget() {
     await resolveApproval(false);
   };
 
+  const approveLabel = pendingDecision?.destructive
+    ? 'Approve Destructive Write'
+    : pendingRequest
+      ? 'Approve Write'
+      : 'Approve';
+
+  const pendingSection = (
+    <section
+      className={['bridge-section bridge-request-section', pendingRequest ? 'bridge-section--attention' : '']
+        .filter(Boolean)
+        .join(' ')}
+      aria-live="polite"
+    >
+      <div className="bridge-section-head bridge-request-head">
+        <div className="bridge-heading-copy">
+          <h3>{pendingRequest ? 'Approval Needed' : 'Pending Request'}</h3>
+          {pendingRequest && <p>Review request before RemNote changes.</p>}
+        </div>
+        {pendingRequest && (
+          <span
+            className={[
+              'bridge-pill',
+              pendingDecision?.destructive ? 'bridge-pill-danger' : 'bridge-pill-warning',
+            ].join(' ')}
+          >
+            {getToolImpactLabel(pendingRequest.tool)}
+          </span>
+        )}
+      </div>
+
+      {pendingRequest ? (
+        <div className="bridge-pending">
+          <div className="bridge-two-col">
+            <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
+            <DetailRow label="Mode" value={getPermissionModeLabel(pendingRequest.permissionMode)} />
+          </div>
+          {pendingRequest.targetRemId && <DetailRow label="Target Rem" value={pendingRequest.targetRemId} mono />}
+          {pendingRequest.previewMarkdown && <pre className="bridge-preview">{pendingRequest.previewMarkdown}</pre>}
+          {pendingDecision && <div className="bridge-decision-note">{pendingDecision.reason}</div>}
+          <div className="bridge-actions" role="group" aria-label="Bridge approval actions">
+            <button
+              type="button"
+              onClick={handleApprove}
+              disabled={!pendingDecision?.allowed}
+              className={[
+                'bridge-button bridge-button-approve',
+                pendingDecision?.destructive ? 'bridge-button-danger' : '',
+              ].join(' ')}
+            >
+              {approveLabel}
+            </button>
+            <button type="button" onClick={handleReject} className="bridge-button bridge-button-reject">
+              Reject
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bridge-empty">No write request waiting.</div>
+      )}
+      <div className="bridge-footnote">{lastApprovalEvent}</div>
+    </section>
+  );
+
   return (
     <div className="bridge-shell">
       <div className="bridge-stack">
@@ -202,6 +265,8 @@ export function BridgeStatusWidget() {
             <p className="bridge-subtitle">Local SDK access. Writes wait for permission.</p>
           </div>
         </header>
+
+        {pendingSection}
 
         <section className="bridge-section">
           <div className="bridge-section-head">
@@ -231,45 +296,6 @@ export function BridgeStatusWidget() {
             />
             {focusedRemStatus?.remId && <DetailRow label="Rem ID" value={focusedRemStatus.remId} mono />}
           </dl>
-        </section>
-
-        <section className="bridge-section">
-          <div className="bridge-section-head">
-            <h3>Pending Request</h3>
-          </div>
-          {pendingRequest ? (
-            <div className="bridge-pending">
-              <div className="bridge-two-col">
-                <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
-                <DetailRow label="Impact" value={getToolImpactLabel(pendingRequest.tool)} />
-              </div>
-              {pendingRequest.targetRemId && (
-                <DetailRow label="Target" value={pendingRequest.targetRemId} mono />
-              )}
-              {pendingRequest.previewMarkdown && (
-                <pre className="bridge-preview">{pendingRequest.previewMarkdown}</pre>
-              )}
-              {pendingDecision && <div className="bridge-decision-note">{pendingDecision.reason}</div>}
-              <div className="bridge-actions">
-                <button
-                  type="button"
-                  onClick={handleApprove}
-                  disabled={!pendingDecision?.allowed}
-                  className="bridge-button bridge-button-approve"
-                >
-                  Approve
-                </button>
-                <button type="button" onClick={handleReject} className="bridge-button bridge-button-reject">
-                  Reject
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="bridge-empty">
-              No pending request. Read/write requests from local bridge will appear here before writes run.
-            </div>
-          )}
-          <div className="bridge-footnote">{lastApprovalEvent}</div>
         </section>
       </div>
     </div>
