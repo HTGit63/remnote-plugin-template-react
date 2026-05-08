@@ -1,5 +1,7 @@
 import { renderWidget, usePlugin, useTracker } from '@remnote/plugin-sdk';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import '../style.css';
+import '../index.css';
 import {
   type BridgeToolName,
   type PendingApprovalRequest,
@@ -16,10 +18,10 @@ import { getPermissionDecision, getPermissionModeLabel, normalizePermissionMode 
 import { getFocusedRemStatus } from '../remnote/read';
 
 const statusToneClass: Record<string, string> = {
-  connected: 'border-emerald-500/35 bg-emerald-500/15 text-emerald-100',
-  connecting: 'border-amber-400/35 bg-amber-400/15 text-amber-100',
-  disconnected: 'border-slate-500/35 bg-slate-500/20 text-slate-100',
-  error: 'border-rose-400/40 bg-rose-500/15 text-rose-100',
+  connected: 'bridge-pill bridge-pill-success',
+  connecting: 'bridge-pill bridge-pill-warning',
+  disconnected: 'bridge-pill bridge-pill-muted',
+  error: 'bridge-pill bridge-pill-danger',
 };
 
 function formatToolName(tool: BridgeToolName): string {
@@ -50,15 +52,9 @@ function DetailRow({
   mono?: boolean;
 }) {
   return (
-    <div className="min-w-0 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{label}</dt>
-      <dd
-        className={[
-          'mt-1 min-w-0 overflow-hidden break-words text-sm leading-5 text-slate-100',
-          mono ? 'font-mono text-[12px]' : '',
-        ].join(' ')}
-        style={{ overflowWrap: 'anywhere' }}
-      >
+    <div className="bridge-detail-row">
+      <dt className="bridge-detail-label">{label}</dt>
+      <dd className={['bridge-detail-value', mono ? 'bridge-detail-value--mono' : ''].filter(Boolean).join(' ')}>
         {value}
       </dd>
     </div>
@@ -195,116 +191,86 @@ export function BridgeStatusWidget() {
   };
 
   return (
-    <div
-      className="h-full w-full overflow-y-auto bg-[#090b0f] px-3 py-4 text-slate-100"
-      style={{ fontFamily: 'var(--font-primary, Inter, sans-serif)', minHeight: '300px' }}
-    >
-      <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
-      <div className="rounded-lg border border-white/10 bg-[#111721] px-4 py-4 shadow-sm">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-cyan-300/25 bg-cyan-300/10 text-lg">
-            🔌
+    <div className="bridge-shell">
+      <div className="bridge-stack">
+        <header className="bridge-hero">
+          <div className="bridge-mark" aria-hidden="true">
+            B
           </div>
-          <div className="min-w-0">
-            <h2 className="text-[17px] font-semibold leading-6 text-white">RemNote Bridge</h2>
-            <p className="mt-1 text-[12px] leading-5 text-slate-400">
-              Local SDK access. Writes wait for permission.
-            </p>
+          <div className="bridge-hero-copy">
+            <h2 className="bridge-title">RemNote Bridge</h2>
+            <p className="bridge-subtitle">Local SDK access. Writes wait for permission.</p>
           </div>
-        </div>
-      </div>
+        </header>
 
-      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
-        <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-white">Bridge Status</h3>
-          <span
-            className={[
-              'shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold',
-              statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected,
-            ].join(' ')}
-          >
+        <section className="bridge-section">
+          <div className="bridge-section-head">
+            <h3>Bridge Status</h3>
+            <span className={statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}>
               {getBridgeStatusLabel(bridgeStatus.state)}
-          </span>
-        </div>
-        <dl className="grid min-w-0 gap-2">
-          <DetailRow label="Local Server" value={bridgeStatus.serverUrl} mono />
-          <DetailRow label="Last Event" value={bridgeStatus.lastEvent} />
-          {bridgeStatus.lastError && (
-            <DetailRow label="Error" value={<span className="text-rose-200">{bridgeStatus.lastError}</span>} />
-          )}
-        </dl>
-      </section>
-
-      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
-        <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-white">RemNote Context</h3>
-          <span className="shrink-0 rounded-full border border-cyan-300/25 bg-cyan-300/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-100">
-              {getPermissionModeLabel(permissionMode)}
-          </span>
-        </div>
-        <dl className="grid min-w-0 gap-2">
-          <DetailRow
-            label="Focused Rem"
-            value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
-          />
-          {focusedRemStatus?.remId && (
-            <DetailRow label="Rem ID" value={focusedRemStatus.remId} mono />
-          )}
-        </dl>
-      </section>
-
-      <section className="rounded-lg border border-white/10 bg-[#111721] p-4 shadow-sm">
-        <h3 className="mb-3 text-sm font-semibold text-white">Pending Request</h3>
-        {pendingRequest ? (
-          <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
-              <DetailRow label="Impact" value={getToolImpactLabel(pendingRequest.tool)} />
-            </div>
-            {pendingRequest.targetRemId && (
-              <DetailRow label="Target" value={pendingRequest.targetRemId} mono />
+            </span>
+          </div>
+          <dl className="bridge-detail-list">
+            <DetailRow label="Local Server" value={bridgeStatus.serverUrl} mono />
+            <DetailRow label="Last Event" value={bridgeStatus.lastEvent} />
+            {bridgeStatus.lastError && (
+              <DetailRow label="Error" value={<span className="bridge-error-text">{bridgeStatus.lastError}</span>} />
             )}
-            {pendingRequest.previewMarkdown && (
-              <pre
-                className="max-h-44 min-w-0 overflow-y-auto whitespace-pre-wrap rounded-md border border-white/10 bg-black/30 p-3 text-[12px] leading-5 text-slate-100"
-                style={{ overflowWrap: 'anywhere' }}
-              >
-                {pendingRequest.previewMarkdown}
-              </pre>
-            )}
-            {pendingDecision && (
-              <div className="rounded-md border border-amber-300/20 bg-amber-300/10 p-3 text-xs leading-5 text-amber-100">
-                {pendingDecision.reason}
+          </dl>
+        </section>
+
+        <section className="bridge-section">
+          <div className="bridge-section-head">
+            <h3>RemNote Context</h3>
+            <span className="bridge-pill bridge-pill-accent">{getPermissionModeLabel(permissionMode)}</span>
+          </div>
+          <dl className="bridge-detail-list">
+            <DetailRow
+              label="Focused Rem"
+              value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
+            />
+            {focusedRemStatus?.remId && <DetailRow label="Rem ID" value={focusedRemStatus.remId} mono />}
+          </dl>
+        </section>
+
+        <section className="bridge-section">
+          <div className="bridge-section-head">
+            <h3>Pending Request</h3>
+          </div>
+          {pendingRequest ? (
+            <div className="bridge-pending">
+              <div className="bridge-two-col">
+                <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
+                <DetailRow label="Impact" value={getToolImpactLabel(pendingRequest.tool)} />
               </div>
-            )}
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleApprove}
-                disabled={!pendingDecision?.allowed}
-                className="min-h-[38px] flex-1 rounded-md bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                onClick={handleReject}
-                className="min-h-[38px] flex-1 rounded-md border border-white/10 bg-white/10 px-3 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/15"
-              >
-                Reject
-              </button>
+              {pendingRequest.targetRemId && (
+                <DetailRow label="Target" value={pendingRequest.targetRemId} mono />
+              )}
+              {pendingRequest.previewMarkdown && (
+                <pre className="bridge-preview">{pendingRequest.previewMarkdown}</pre>
+              )}
+              {pendingDecision && <div className="bridge-decision-note">{pendingDecision.reason}</div>}
+              <div className="bridge-actions">
+                <button
+                  type="button"
+                  onClick={handleApprove}
+                  disabled={!pendingDecision?.allowed}
+                  className="bridge-button bridge-button-approve"
+                >
+                  Approve
+                </button>
+                <button type="button" onClick={handleReject} className="bridge-button bridge-button-reject">
+                  Reject
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div
-            className="min-w-0 rounded-md border border-dashed border-white/20 bg-white/[0.04] p-3 text-sm leading-5 text-slate-300"
-            style={{ overflowWrap: 'anywhere' }}
-          >
-            No pending request. Read/write requests from local bridge will appear here before writes run.
-          </div>
-        )}
-        <div className="mt-3 min-w-0 break-words text-xs leading-5 text-slate-500">{lastApprovalEvent}</div>
-      </section>
+          ) : (
+            <div className="bridge-empty">
+              No pending request. Read/write requests from local bridge will appear here before writes run.
+            </div>
+          )}
+          <div className="bridge-footnote">{lastApprovalEvent}</div>
+        </section>
       </div>
     </div>
   );

@@ -1,1 +1,328 @@
 /* Add your plugin styles here. This file is named <widget-name>.css; in this case, index.css*/
+
+.bridge-shell {
+  min-height: 100vh;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #1f1e2b;
+  color: #f2f3ff;
+  padding: 14px 12px 18px;
+  font-family: var(
+    --font-primary,
+    Inter,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif
+  );
+}
+
+.bridge-shell *,
+.bridge-shell *::before,
+.bridge-shell *::after {
+  box-sizing: border-box;
+}
+
+.bridge-stack {
+  display: grid;
+  width: 100%;
+  max-width: 460px;
+  margin: 0 auto;
+  gap: 12px;
+}
+
+.bridge-hero,
+.bridge-section {
+  border: 1px solid rgba(112, 109, 150, 0.34);
+  border-radius: 10px;
+  background: #252437;
+  box-shadow: 0 10px 28px rgba(4, 5, 12, 0.2);
+}
+
+.bridge-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+}
+
+.bridge-mark {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  place-items: center;
+  border: 1px solid rgba(142, 128, 255, 0.62);
+  border-radius: 999px;
+  background: #302d4e;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 0 0 4px rgba(126, 103, 255, 0.1);
+}
+
+.bridge-hero-copy {
+  min-width: 0;
+}
+
+.bridge-title {
+  margin: 0;
+  color: #f6f6ff;
+  font-size: 18px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.25;
+}
+
+.bridge-subtitle {
+  margin: 4px 0 0;
+  color: #bbbcd3;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bridge-section {
+  padding: 13px 14px 14px;
+}
+
+.bridge-section-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.bridge-section-head h3 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #f4f5ff;
+  font-size: 14px;
+  font-weight: 720;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.bridge-pill {
+  display: inline-flex;
+  min-height: 24px;
+  max-width: 58%;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 3px 9px;
+  overflow-wrap: anywhere;
+  text-align: center;
+  color: #f8f8ff;
+  font-size: 11px;
+  font-weight: 720;
+  line-height: 1.2;
+}
+
+.bridge-pill-success {
+  border-color: rgba(64, 221, 151, 0.38);
+  background: rgba(64, 221, 151, 0.14);
+  color: #c7f8df;
+}
+
+.bridge-pill-warning {
+  border-color: rgba(245, 188, 86, 0.42);
+  background: rgba(245, 188, 86, 0.14);
+  color: #ffe3a5;
+}
+
+.bridge-pill-muted {
+  border-color: rgba(167, 169, 197, 0.24);
+  background: rgba(167, 169, 197, 0.12);
+  color: #dedff0;
+}
+
+.bridge-pill-danger {
+  border-color: rgba(255, 116, 133, 0.48);
+  background: rgba(255, 116, 133, 0.13);
+  color: #ffd0d6;
+}
+
+.bridge-pill-accent {
+  border-color: rgba(139, 124, 246, 0.5);
+  background: rgba(139, 124, 246, 0.15);
+  color: #ede9ff;
+}
+
+.bridge-detail-list,
+.bridge-pending {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+}
+
+.bridge-detail-row,
+.bridge-empty,
+.bridge-preview,
+.bridge-decision-note {
+  min-width: 0;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+.bridge-detail-row {
+  border: 1px solid rgba(112, 109, 150, 0.28);
+  background: #201f30;
+  padding: 9px 10px;
+}
+
+.bridge-detail-label {
+  margin: 0;
+  color: #b9bad3;
+  font-size: 10.5px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.bridge-detail-value {
+  min-width: 0;
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: #f7f7ff;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.bridge-detail-value--mono {
+  color: #f1f1fa;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.bridge-error-text {
+  color: #ffd0d6;
+}
+
+.bridge-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bridge-preview {
+  max-height: 176px;
+  margin: 0;
+  overflow-y: auto;
+  border: 1px solid rgba(112, 109, 150, 0.28);
+  background: #181724;
+  padding: 10px;
+  white-space: pre-wrap;
+  color: #f4f4ff;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.bridge-decision-note {
+  border: 1px solid rgba(245, 188, 86, 0.32);
+  background: rgba(245, 188, 86, 0.1);
+  padding: 9px 10px;
+  color: #ffe1a1;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bridge-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bridge-button {
+  min-height: 38px;
+  min-width: 0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 760;
+  line-height: 1.2;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 120ms ease;
+}
+
+.bridge-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.bridge-button-approve {
+  border: 1px solid rgba(64, 221, 151, 0.64);
+  background: #47d990;
+  color: #10151c;
+}
+
+.bridge-button-approve:not(:disabled):hover {
+  background: #5ee6a1;
+}
+
+.bridge-button-reject {
+  border: 1px solid rgba(167, 169, 197, 0.32);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f2f3ff;
+}
+
+.bridge-button-reject:hover {
+  border-color: rgba(197, 199, 224, 0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.bridge-empty {
+  border: 1px dashed rgba(167, 169, 197, 0.26);
+  background: #201f30;
+  padding: 10px 11px;
+  color: #ececff;
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.bridge-footnote {
+  min-width: 0;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+  color: #b6b7cd;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 420px) {
+  .bridge-shell {
+    padding: 12px 10px 16px;
+  }
+
+  .bridge-hero,
+  .bridge-section {
+    border-radius: 9px;
+  }
+
+  .bridge-section-head {
+    align-items: flex-start;
+  }
+
+  .bridge-two-col,
+  .bridge-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .bridge-pill {
+    max-width: 52%;
+  }
+}

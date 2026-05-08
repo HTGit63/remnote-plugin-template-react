@@ -2,6 +2,9 @@ import { declareIndexPlugin, type ReactRNPlugin, WidgetLocation } from '@remnote
 import '../style.css';
 import '../index.css';
 
+const BRIDGE_TAB_ICON =
+  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23252337'/%3E%3Cpath d='M8 4v5M16 4v5M7 9h10v3a5 5 0 0 1-4 4.9V20h-2v-3.1A5 5 0 0 1 7 12V9Z' fill='none' stroke='%23f4f3ff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M9 4v5M15 4v5' stroke='%238b7cf6' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E";
+
 async function onActivate(plugin: ReactRNPlugin) {
   const openBridgeStatus = async () => {
     await plugin.window.openWidgetInRightSidebar('bridge-status');
@@ -37,7 +40,7 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('bridge-status', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'Bridge',
-    widgetTabIcon: '🔌',
+    widgetTabIcon: BRIDGE_TAB_ICON,
     dontOpenByDefaultInTabLocation: false,
   });
 
