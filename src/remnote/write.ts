@@ -2,6 +2,7 @@ import type { RNPlugin } from '@remnote/plugin-sdk';
 import type {
   AppendToRemArgs,
   AppendToRemResult,
+  BridgeErrorCode,
   CreateRemArgs,
   CreateRemResult,
   DeleteRemArgs,
@@ -12,18 +13,66 @@ import type {
 
 const MAX_MARKDOWN_CHARS = 20000;
 
+export class RemnoteWriteError extends Error {
+  constructor(
+    readonly code: BridgeErrorCode,
+    message: string,
+    readonly details?: unknown
+  ) {
+    super(message);
+    this.name = 'RemnoteWriteError';
+  }
+}
+
 function normalizeMarkdown(markdown: string): string {
   const trimmed = markdown.trim();
 
   if (!trimmed) {
-    throw new Error('Markdown payload is empty.');
+    throw new RemnoteWriteError('INVALID_ARGS', 'Markdown payload is empty.');
   }
 
   if (trimmed.length > MAX_MARKDOWN_CHARS) {
-    throw new Error(`Markdown payload exceeds ${MAX_MARKDOWN_CHARS} characters.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Markdown payload exceeds ${MAX_MARKDOWN_CHARS} characters.`);
   }
 
   return trimmed;
+}
+
+function getSdkErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function runSdkOperation<T>(
+  operationName: string,
+  operation: () => Promise<T>
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error: unknown) {
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote SDK operation failed.', {
+      operation: operationName,
+      sdkMessage: getSdkErrorMessage(error),
+    });
+  }
+}
+
+async function findRequiredRem(plugin: RNPlugin, remId: string, label: 'Parent' | 'Target') {
+  let rem;
+  try {
+    rem = await plugin.rem.findOne(remId);
+  } catch {
+    throw new RemnoteWriteError('REM_NOT_FOUND', `${label} Rem was not found.`, {
+      remId,
+    });
+  }
+
+  if (!rem) {
+    throw new RemnoteWriteError('REM_NOT_FOUND', `${label} Rem was not found.`, {
+      remId,
+    });
+  }
+
+  return rem;
 }
 
 export async function createRemFromMarkdown(
@@ -32,24 +81,28 @@ export async function createRemFromMarkdown(
 ): Promise<CreateRemResult> {
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
-  const createdRem = await plugin.rem.createWithMarkdown(markdown);
+  const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent') : null;
+  const richText = await runSdkOperation('richText.parseFromMarkdown', () =>
+    plugin.richText.parseFromMarkdown(markdown)
+  );
+  const createdRem = await runSdkOperation('rem.createRem', () => plugin.rem.createRem());
 
   if (!createdRem) {
-    throw new Error('RemNote did not return a created Rem.');
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return a created Rem.', {
+      operation: 'rem.createRem',
+    });
   }
 
-  if (parentId) {
-    const parent = await plugin.rem.findOne(parentId);
-    if (!parent) {
-      throw new Error(`Parent Rem not found: ${parentId}`);
-    }
+  await runSdkOperation('rem.setText', () => createdRem.setText(richText));
 
-    await createdRem.setParent(parent, 0);
+  if (parent) {
+    await runSdkOperation('rem.setParent', () => createdRem.setParent(parent, 0));
   }
 
   return {
-    remId: createdRem._id,
+    createdRemId: createdRem._id,
     parentId,
+    status: 'created',
   };
 }
 
@@ -57,11 +110,7 @@ export async function appendMarkdownToRem(
   plugin: RNPlugin,
   args: AppendToRemArgs
 ): Promise<AppendToRemResult> {
-  const parent = await plugin.rem.findOne(args.remId);
-
-  if (!parent) {
-    throw new Error(`Target Rem not found: ${args.remId}`);
-  }
+  const parent = await findRequiredRem(plugin, args.remId, 'Target');
 
   const createdRem = await createRemFromMarkdown(plugin, {
     parentId: parent._id,
@@ -69,8 +118,9 @@ export async function appendMarkdownToRem(
   });
 
   return {
-    remId: createdRem.remId,
-    parentId: parent._id,
+    targetRemId: parent._id,
+    createdRemId: createdRem.createdRemId,
+    status: 'appended',
   };
 }
 
@@ -82,11 +132,15 @@ export async function replaceRemMarkdown(
   const rem = await plugin.rem.findOne(args.remId);
 
   if (!rem) {
-    throw new Error(`Target Rem not found: ${args.remId}`);
+    throw new RemnoteWriteError('REM_NOT_FOUND', 'Target Rem was not found.', {
+      remId: args.remId,
+    });
   }
 
-  const richText = await plugin.richText.parseFromMarkdown(markdown);
-  await rem.setText(richText);
+  const richText = await runSdkOperation('richText.parseFromMarkdown', () =>
+    plugin.richText.parseFromMarkdown(markdown)
+  );
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
 
   return {
     remId: rem._id,
@@ -97,13 +151,14 @@ export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<
   const rem = await plugin.rem.findOne(args.remId);
 
   if (!rem) {
-    throw new Error(`Target Rem not found: ${args.remId}`);
+    throw new RemnoteWriteError('REM_NOT_FOUND', 'Target Rem was not found.', {
+      remId: args.remId,
+    });
   }
 
-  await rem.remove();
+  await runSdkOperation('rem.remove', () => rem.remove());
 
   return {
     remId: rem._id,
   };
 }
-

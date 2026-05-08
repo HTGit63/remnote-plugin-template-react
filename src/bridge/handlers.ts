@@ -23,6 +23,7 @@ import {
   createRemFromMarkdown,
   deleteRem,
   replaceRemMarkdown,
+  RemnoteWriteError,
 } from '../remnote/write';
 
 const MAX_REQUEST_ID_CHARS = 128;
@@ -188,8 +189,13 @@ export function parseBridgeRequest(raw: unknown): BridgeRequest | BridgeResponse
 }
 
 function getRequestTargetRemId(request: BridgeRequest): string | undefined {
-  const args = request.args as Partial<GetRemArgs & AppendToRemArgs & ReplaceRemArgs & DeleteRemArgs>;
-  return typeof args.remId === 'string' ? args.remId : undefined;
+  const args = request.args as Partial<
+    GetRemArgs & AppendToRemArgs & ReplaceRemArgs & DeleteRemArgs & CreateRemArgs
+  >;
+  if (typeof args.remId === 'string') {
+    return args.remId;
+  }
+  return typeof args.parentId === 'string' ? args.parentId : undefined;
 }
 
 function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
@@ -198,17 +204,49 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
 }
 
 function mapSdkError(id: string, error: unknown): BridgeResponse {
+  if (error instanceof RemnoteWriteError) {
+    return createBridgeFailure(id, error.code, error.message, error.details);
+  }
+
   const message = error instanceof Error ? error.message : String(error);
 
   if (/not found/i.test(message)) {
     return createBridgeFailure(id, 'REM_NOT_FOUND', message);
   }
 
-  if (/missing|invalid|empty|too long|exceeds/i.test(message)) {
+  if (/missing|empty|too long|exceeds/i.test(message)) {
     return createBridgeFailure(id, 'INVALID_ARGS', message);
   }
 
   return createBridgeFailure(id, 'SDK_ERROR', 'RemNote SDK operation failed.');
+}
+
+function getCreatedRemId(response: BridgeResponse): string | undefined {
+  if (!response.ok || typeof response.result !== 'object' || response.result === null) {
+    return undefined;
+  }
+
+  const result = response.result as Record<string, unknown>;
+  return typeof result.createdRemId === 'string' ? result.createdRemId : undefined;
+}
+
+function logBridgeResponse(
+  request: BridgeRequest,
+  permissionMode: PermissionMode,
+  approvalStatus: 'not_required' | 'approved' | 'rejected' | 'denied',
+  response: BridgeResponse,
+  startedAt: number
+) {
+  console.info('Bridge request completed', {
+    requestId: request.id,
+    tool: request.tool,
+    permissionMode,
+    approvalStatus,
+    targetRemId: getRequestTargetRemId(request),
+    createdRemId: getCreatedRemId(response),
+    errorCode: response.ok ? undefined : response.error.code,
+    durationMs: Date.now() - startedAt,
+  });
 }
 
 async function withApprovalTimeout(
@@ -234,80 +272,126 @@ export async function handleBridgeRequest(
   request: BridgeRequest,
   context: BridgeHandlerContext
 ): Promise<BridgeResponse> {
+  const startedAt = Date.now();
+  let approvalStatus: 'not_required' | 'approved' | 'rejected' | 'denied' = 'not_required';
   const decision = getPermissionDecision(context.permissionMode, request.tool);
 
   if (!decision.allowed) {
-    return createBridgeFailure(request.id, 'PERMISSION_DENIED', decision.reason);
+    approvalStatus = 'denied';
+    const response = createBridgeFailure(request.id, 'PERMISSION_DENIED', decision.reason);
+    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+    return response;
   }
 
   if (decision.approvalRequired) {
-    const approved = await withApprovalTimeout(
-      {
-        id: request.id,
-        tool: request.tool,
-        args: request.args,
-        permissionMode: context.permissionMode,
-        requestedAt: new Date().toISOString(),
-        targetRemId: getRequestTargetRemId(request),
-        previewMarkdown: getRequestPreviewMarkdown(request),
-      },
-      context.requestApproval,
-      request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS
-    );
+    let approved: boolean;
+    try {
+      approved = await withApprovalTimeout(
+        {
+          id: request.id,
+          tool: request.tool,
+          args: request.args,
+          permissionMode: context.permissionMode,
+          requestedAt: new Date().toISOString(),
+          targetRemId: getRequestTargetRemId(request),
+          previewMarkdown: getRequestPreviewMarkdown(request),
+        },
+        context.requestApproval,
+        request.timeoutMs ?? DEFAULT_APPROVAL_TIMEOUT_MS
+      );
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const response = createBridgeFailure(request.id, 'INTERNAL_ERROR', 'Approval handling failed.', {
+        message,
+      });
+      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+      return response;
+    }
 
     if (!approved) {
-      return createBridgeFailure(request.id, 'APPROVAL_REJECTED', 'User rejected or did not approve the request.');
+      approvalStatus = 'rejected';
+      const response = createBridgeFailure(
+        request.id,
+        'APPROVAL_REJECTED',
+        'User rejected or did not approve the request.'
+      );
+      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+      return response;
     }
+
+    approvalStatus = 'approved';
   }
 
   try {
+    let response: BridgeResponse;
     switch (request.tool) {
       case 'ping':
-        return createBridgeSuccess(request, {
+        response = createBridgeSuccess(request, {
           message: request.args.message || 'pong',
         });
+        break;
       case 'get_status':
-        return createBridgeSuccess(request, {
+        response = createBridgeSuccess(request, {
           connected: true,
           permissionMode: context.permissionMode,
           focusedRem: await getFocusedRemStatus(plugin),
         });
+        break;
       case 'get_focused_rem': {
         const focusedRem = await readFocusedRem(plugin);
         if (!focusedRem) {
-          return createBridgeFailure(request.id, 'NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+          response = createBridgeFailure(
+            request.id,
+            'NO_FOCUSED_REM',
+            'No Rem is currently focused in RemNote.'
+          );
+          break;
         }
 
-        return createBridgeSuccess(request, focusedRem);
+        response = createBridgeSuccess(request, focusedRem);
+        break;
       }
       case 'get_rem': {
         const rem = await readRem(plugin, request.args);
         if (!rem) {
-          return createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          break;
         }
 
-        return createBridgeSuccess(request, rem);
+        response = createBridgeSuccess(request, rem);
+        break;
       }
       case 'get_rem_tree': {
         const rem = await readRemTree(plugin, request.args);
         if (!rem) {
-          return createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          break;
         }
 
-        return createBridgeSuccess(request, rem);
+        response = createBridgeSuccess(request, rem);
+        break;
       }
       case 'create_rem':
-        return createBridgeSuccess(request, await createRemFromMarkdown(plugin, request.args));
+        response = createBridgeSuccess(request, await createRemFromMarkdown(plugin, request.args));
+        break;
       case 'append_to_rem':
-        return createBridgeSuccess(request, await appendMarkdownToRem(plugin, request.args));
+        response = createBridgeSuccess(request, await appendMarkdownToRem(plugin, request.args));
+        break;
       case 'replace_rem':
-        return createBridgeSuccess(request, await replaceRemMarkdown(plugin, request.args));
+        response = createBridgeSuccess(request, await replaceRemMarkdown(plugin, request.args));
+        break;
       case 'delete_rem':
-        return createBridgeSuccess(request, await deleteRem(plugin, request.args));
+        response = createBridgeSuccess(request, await deleteRem(plugin, request.args));
+        break;
       default:
-        return createBridgeFailure('unknown', 'UNKNOWN_TOOL', 'Unknown bridge tool.');
+        response = createBridgeFailure('unknown', 'UNKNOWN_TOOL', 'Unknown bridge tool.');
+        break;
     }
+    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+    return response;
   } catch (error: unknown) {
-    return mapSdkError(request.id, error);
+    const response = mapSdkError(request.id, error);
+    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+    return response;
   }
 }

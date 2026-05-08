@@ -91,13 +91,15 @@ export interface DeleteRemArgs {
 }
 
 export interface CreateRemResult {
-  remId: string;
+  createdRemId: string;
   parentId: string | null;
+  status: 'created';
 }
 
 export interface AppendToRemResult {
-  remId: string;
-  parentId: string;
+  targetRemId: string;
+  createdRemId: string;
+  status: 'appended';
 }
 
 export interface ReplaceRemResult {
