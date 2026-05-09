@@ -1,12 +1,22 @@
-import type { Rem, RNPlugin } from '@remnote/plugin-sdk';
+import type { Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   DetectedContentType,
+  GetChildrenArgs,
+  GetChildrenResult,
   GetCurrentSelectionArgs,
   GetCurrentSelectionResult,
+  GetDocumentOrFolderTreeArgs,
+  GetDocumentOrFolderTreeResult,
   GetRemArgs,
+  GetRemBreadcrumbsArgs,
+  GetRemBreadcrumbsResult,
   GetRemRichArgs,
   GetRemRichResult,
   GetRemTreeArgs,
+  RemChildSummary,
+  RemStructureType,
+  SearchRemsArgs,
+  SearchRemsResult,
   SerializedRem,
 } from '../bridge/protocol';
 import { getRemPlainText, serializeRem } from './serialize';
@@ -16,6 +26,11 @@ const MAX_RICH_STRING_CHARS = 2000;
 const MAX_RICH_OBJECT_DEPTH = 5;
 const REM_TYPE_CONCEPT = 1;
 const REM_TYPE_DESCRIPTOR = 2;
+const DEFAULT_CHILD_LIMIT = 25;
+const MAX_CHILD_LIMIT = 100;
+const DEFAULT_SEARCH_LIMIT = 10;
+const MAX_SEARCH_LIMIT = 25;
+const MAX_SUMMARY_TITLE_CHARS = 500;
 
 export interface FocusedRemStatus {
   found: boolean;
@@ -61,6 +76,193 @@ export async function readRemTree(plugin: RNPlugin, args: GetRemTreeArgs): Promi
   }
 
   return serializeRem(plugin, rem, { depth: args.depth });
+}
+
+function clampLimit(value: number | undefined, fallback: number, max: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.min(Math.max(Math.floor(value), 1), max);
+}
+
+async function getRemTitle(plugin: RNPlugin, rem: Rem): Promise<string> {
+  const { frontText, plainText } = await getRemPlainText(plugin, rem);
+  const title = frontText || plainText || rem._id;
+  if (title.length <= MAX_SUMMARY_TITLE_CHARS) {
+    return title;
+  }
+
+  return `${title.slice(0, MAX_SUMMARY_TITLE_CHARS).trimEnd()}...`;
+}
+
+export async function getRemStructureType(rem: Rem): Promise<RemStructureType> {
+  try {
+    if (await rem.isDocument()) {
+      return 'document';
+    }
+  } catch {
+    return 'unknown';
+  }
+
+  const remType = Number(rem.type);
+  if (remType === REM_TYPE_CONCEPT || remType === REM_TYPE_DESCRIPTOR || remType === 0) {
+    return 'rem';
+  }
+
+  return 'unknown';
+}
+
+async function summarizeRem(
+  plugin: RNPlugin,
+  rem: Rem,
+  index: number
+): Promise<RemChildSummary> {
+  return {
+    remId: rem._id,
+    title: await getRemTitle(plugin, rem),
+    index,
+    hasChildren: rem.children.length > 0,
+    type: await getRemStructureType(rem),
+  };
+}
+
+export async function readChildren(
+  plugin: RNPlugin,
+  args: GetChildrenArgs
+): Promise<GetChildrenResult | undefined> {
+  const parent = await plugin.rem.findOne(args.parentRemId);
+
+  if (!parent) {
+    return undefined;
+  }
+
+  const maxChildren = clampLimit(args.maxChildren, DEFAULT_CHILD_LIMIT, MAX_CHILD_LIMIT);
+  const children = await parent.getChildrenRem();
+  const limitedChildren = children.slice(0, maxChildren);
+  const summaries: RemChildSummary[] = [];
+
+  for (let index = 0; index < limitedChildren.length; index += 1) {
+    summaries.push(await summarizeRem(plugin, limitedChildren[index], index));
+  }
+
+  return {
+    parentRemId: parent._id,
+    children: summaries,
+    truncated: children.length > limitedChildren.length,
+  };
+}
+
+export async function readRemBreadcrumbs(
+  plugin: RNPlugin,
+  args: GetRemBreadcrumbsArgs
+): Promise<GetRemBreadcrumbsResult | undefined> {
+  const rem = await plugin.rem.findOne(args.remId);
+
+  if (!rem) {
+    return undefined;
+  }
+
+  const breadcrumbs: GetRemBreadcrumbsResult['breadcrumbs'] = [];
+  const seen = new Set<string>();
+  let current: Rem | undefined = rem;
+
+  while (current && breadcrumbs.length < 12 && !seen.has(current._id)) {
+    seen.add(current._id);
+    breadcrumbs.unshift({
+      remId: current._id,
+      title: await getRemTitle(plugin, current),
+    });
+
+    if (!current.parent) {
+      break;
+    }
+
+    current = await plugin.rem.findOne(current.parent);
+  }
+
+  return {
+    remId: rem._id,
+    breadcrumbs,
+  };
+}
+
+export async function searchRems(
+  plugin: RNPlugin,
+  args: SearchRemsArgs
+): Promise<SearchRemsResult> {
+  const query = args.query.trim();
+  const maxResults = clampLimit(args.maxResults, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
+  let contextRem: Rem | undefined;
+
+  if (args.contextRemId) {
+    contextRem = await plugin.rem.findOne(args.contextRemId);
+    if (!contextRem) {
+      return {
+        query,
+        contextRemId: args.contextRemId,
+        results: [],
+        truncated: false,
+        searchSupported: true,
+      };
+    }
+  }
+
+  const queryRichText: RichTextInterface = [{ i: 'm', text: query }];
+  const results = await plugin.search.search(queryRichText, contextRem, {
+    numResults: maxResults + 1,
+  });
+  const limitedResults = results.slice(0, maxResults);
+  const summaries: RemChildSummary[] = [];
+
+  for (let index = 0; index < limitedResults.length; index += 1) {
+    summaries.push(await summarizeRem(plugin, limitedResults[index], index));
+  }
+
+  return {
+    query,
+    contextRemId: contextRem?._id ?? null,
+    results: summaries,
+    truncated: results.length > limitedResults.length,
+    searchSupported: true,
+  };
+}
+
+export async function readDocumentOrFolderTree(
+  plugin: RNPlugin,
+  args: GetDocumentOrFolderTreeArgs
+): Promise<GetDocumentOrFolderTreeResult | undefined> {
+  let root: Rem | undefined;
+  let source: GetDocumentOrFolderTreeResult['source'] = 'requested_root';
+
+  if (args.rootRemId) {
+    root = await plugin.rem.findOne(args.rootRemId);
+  } else {
+    root = await plugin.focus.getFocusedPortal();
+    source = 'focused_portal';
+
+    if (!root) {
+      root = await plugin.focus.getFocusedRem();
+      source = 'focused_rem';
+    }
+  }
+
+  if (!root) {
+    return undefined;
+  }
+
+  const tree = await serializeRem(plugin, root, {
+    depth: args.depth,
+    maxChildren: clampLimit(args.maxChildren, DEFAULT_CHILD_LIMIT, MAX_CHILD_LIMIT),
+  });
+
+  return {
+    rootRemId: root._id,
+    rootType: await getRemStructureType(root),
+    source,
+    tree,
+    truncated: tree.truncated ?? false,
+  };
 }
 
 function truncateRichString(value: string): string {

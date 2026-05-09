@@ -8,15 +8,20 @@ export interface CompanionServerConfig {
   allowNoToken: boolean;
   allowRemote: boolean;
   allowCors: boolean;
+  enableDeleteTool: boolean;
+  hostedMode: boolean;
+  auditLog: boolean;
   allowedOrigins: string[];
   requestTimeoutMs: number;
   maxBodyBytes: number;
+  maxBridgeMessageBytes: number;
 }
 
 const DEFAULT_BRIDGE_PORT = 47391;
 const DEFAULT_MCP_PORT = 47392;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
 const DEFAULT_MAX_BODY_BYTES = 128 * 1024;
+const DEFAULT_MAX_BRIDGE_MESSAGE_BYTES = 2 * 1024 * 1024;
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -39,6 +44,12 @@ function listFromEnv(value: string | undefined): string[] {
 }
 
 export function validateConfig(config: CompanionServerConfig): void {
+  if (config.hostedMode) {
+    throw new Error(
+      'REMNOTE_BRIDGE_HOSTED_MODE is reserved for future OAuth/pairing support and is not production-ready.'
+    );
+  }
+
   if ((config.allowRemote || config.allowCors) && !config.bridgeToken) {
     throw new Error('REMNOTE_BRIDGE_TOKEN is required when remote access or CORS is enabled.');
   }
@@ -72,9 +83,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     allowNoToken,
     allowRemote,
     allowCors,
+    enableDeleteTool: boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_DELETE_TOOL),
+    hostedMode: boolFromEnv(env.REMNOTE_BRIDGE_HOSTED_MODE),
+    auditLog: env.REMNOTE_BRIDGE_AUDIT_LOG === undefined ? true : boolFromEnv(env.REMNOTE_BRIDGE_AUDIT_LOG),
     allowedOrigins: listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS),
     requestTimeoutMs: numberFromEnv(env.REMNOTE_BRIDGE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
     maxBodyBytes: numberFromEnv(env.REMNOTE_BRIDGE_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES),
+    maxBridgeMessageBytes: numberFromEnv(
+      env.REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES,
+      DEFAULT_MAX_BRIDGE_MESSAGE_BYTES
+    ),
   };
   return config;
 }

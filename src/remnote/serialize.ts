@@ -5,16 +5,20 @@ const DEFAULT_TREE_DEPTH = 0;
 const HARD_MAX_TREE_DEPTH = 3;
 const DEFAULT_MAX_CHILDREN = 25;
 const DEFAULT_MAX_CHARS = 6000;
+const DEFAULT_MAX_TREE_NODES = 50;
 const MAX_BREADCRUMB_DEPTH = 12;
 
 export interface SerializeRemOptions {
   depth?: number;
   maxChildren?: number;
   maxChars?: number;
+  maxNodes?: number;
 }
 
 interface SerializeState {
   seenRemIds: Set<string>;
+  nodeCount: number;
+  truncatedByNodeLimit: boolean;
 }
 
 export function clampTreeDepth(depth: number | undefined): number {
@@ -84,11 +88,17 @@ export async function serializeRem(
   plugin: RNPlugin,
   rem: Rem,
   options: SerializeRemOptions = {},
-  state: SerializeState = { seenRemIds: new Set<string>() }
+  state: SerializeState = {
+    seenRemIds: new Set<string>(),
+    nodeCount: 0,
+    truncatedByNodeLimit: false,
+  }
 ): Promise<SerializedRem> {
   const depth = clampTreeDepth(options.depth);
   const maxChildren = options.maxChildren ?? DEFAULT_MAX_CHILDREN;
   const maxChars = options.maxChars ?? DEFAULT_MAX_CHARS;
+  const maxNodes = options.maxNodes ?? DEFAULT_MAX_TREE_NODES;
+  state.nodeCount += 1;
   const { frontText, backText, plainText } = await getRemPlainText(plugin, rem);
   const front = truncateText(frontText, maxChars);
   const back = truncateText(backText, maxChars);
@@ -105,6 +115,12 @@ export async function serializeRem(
     truncated = truncated || childRems.length > limitedChildren.length;
 
     for (const child of limitedChildren) {
+      if (state.nodeCount >= maxNodes) {
+        state.truncatedByNodeLimit = true;
+        truncated = true;
+        break;
+      }
+
       children.push(
         await serializeRem(
           plugin,
@@ -119,6 +135,8 @@ export async function serializeRem(
     }
   }
 
+  truncated = truncated || state.truncatedByNodeLimit;
+
   return {
     remId: rem._id,
     frontText: front.text,
@@ -130,4 +148,3 @@ export async function serializeRem(
     ...(truncated ? { truncated: true } : {}),
   };
 }
-

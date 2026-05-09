@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can read the focused Rem, read specific Rems, inspect bounded Rem trees, and create or append Rem content after the plugin permission flow allows it.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, create trees, or delete focused/selected Rems after local scope and approval checks allow it.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -17,6 +17,18 @@
       "justifications": {
         "read_only_justification": "Only reports local bridge connection metadata and does not modify RemNote.",
         "open_world_justification": "Does not write to public internet state or any external third-party system.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "get_bridge_diagnostics": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reports local tool registry, pending request count, and recent request outcomes without modifying RemNote.",
+        "open_world_justification": "Reads local bridge diagnostics and does not write to public internet state or external systems.",
         "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
       }
     },
@@ -80,6 +92,78 @@
         "destructive_justification": "Does not modify, replace, or delete any Rem in the subtree."
       }
     },
+    "get_rem_rich": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads one Rem and returns normalized rich text metadata with bounded fields.",
+        "open_world_justification": "Reads local private RemNote data and does not publish externally.",
+        "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
+      }
+    },
+    "get_current_selection": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reports focused and selected Rem IDs available from the RemNote editor.",
+        "open_world_justification": "Reads local editor state and does not write to external systems.",
+        "destructive_justification": "Does not alter or remove RemNote data."
+      }
+    },
+    "get_children": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads direct child Rems for one parent and returns capped ordered summaries.",
+        "open_world_justification": "Reads local RemNote structure without changing public or third-party systems.",
+        "destructive_justification": "Does not create, update, move, or delete Rems."
+      }
+    },
+    "get_rem_breadcrumbs": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads the parent chain for one Rem and returns IDs and titles.",
+        "open_world_justification": "Reads local RemNote hierarchy and does not transmit changes to external systems.",
+        "destructive_justification": "Does not modify or delete any Rem in the breadcrumb chain."
+      }
+    },
+    "search_rems": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only performs a bounded RemNote SDK search and returns capped result summaries.",
+        "open_world_justification": "Searches the user's local RemNote data and does not publish or update external systems.",
+        "destructive_justification": "Does not create, update, move, overwrite, or delete Rems."
+      }
+    },
+    "get_document_or_folder_tree": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads a bounded tree for a requested or focused RemNote document-like root.",
+        "open_world_justification": "Reads local RemNote structure and does not write to external systems.",
+        "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
+      }
+    },
     "create_rem": {
       "annotations": {
         "readOnlyHint": false,
@@ -103,6 +187,114 @@
         "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
         "destructive_justification": "Adds child content without deleting or overwriting the target Rem."
       }
+    },
+    "create_document": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a document Rem in the user's RemNote workspace when local scope and approval allow it.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish public content.",
+        "destructive_justification": "Creates a new document Rem without deleting or overwriting existing Rems."
+      }
+    },
+    "create_folder": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Attempts folder creation only after local policy allows it, then reports SDK_UNSUPPORTED with the installed SDK.",
+        "open_world_justification": "Does not publish or send external messages; any future folder creation would stay in the private RemNote workspace.",
+        "destructive_justification": "Does not delete or overwrite RemNote content and currently performs no mutation because folder creation is unsupported."
+      }
+    },
+    "update_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Updates the visible text of one existing Rem when the plugin permission flow allows it.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Does not delete Rems or descendants, though it changes existing Rem text after permission."
+      }
+    },
+    "replace_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Overwrites the visible text of one existing Rem after local scope and destructive approval checks allow it.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Overwrites existing Rem text, so it is treated as destructive even though it does not delete children."
+      }
+    },
+    "move_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Moves one Rem under another private RemNote parent when the permission flow allows it.",
+        "open_world_justification": "Changes only private RemNote hierarchy and does not write to public internet state.",
+        "destructive_justification": "Does not delete or overwrite Rem content; moves with children require approval in the plugin."
+      }
+    },
+    "reorder_children": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reorders direct child Rems under one parent after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote hierarchy and does not write to public internet state.",
+        "destructive_justification": "Does not delete or overwrite Rem content and rejects child lists that omit or add children."
+      }
+    },
+    "create_rem_tree": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a bounded ordered tree of new Rems when the plugin permission flow allows it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds new Rems without deleting or overwriting existing RemNote content."
+      }
+    },
+    "delete_focused_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Deletes the currently focused Rem only after local scope, preview, typed DELETE, and approval checks pass.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Deletes a Rem and may delete descendants when recursive mode is explicitly requested."
+      }
+    },
+    "delete_selected_rem": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Deletes exactly one currently selected Rem only after local scope, preview, typed DELETE, and approval checks pass.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Deletes a selected Rem and may delete descendants when recursive mode is explicitly requested."
+      }
     }
   },
   "test_cases": [
@@ -112,6 +304,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "get_bridge_status",
       "expected_output": "Reports whether the local companion server currently has a RemNote plugin connection.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect live bridge diagnostics when tool visibility looks stale.",
+      "user_prompt": "ChatGPT only shows a few RemNote tools. Check the live bridge diagnostics and tell me the registry count.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_bridge_diagnostics",
+      "expected_output": "Reports the live tool registry version, tool count, connection status, pending requests, and recent request outcomes.",
       "expected_output_url": null
     },
     {
@@ -161,6 +361,102 @@
       "tools_triggered": "get_focused_rem, append_to_rem",
       "expected_output": "Reads the focused Rem, proposes child markdown, waits for approval when required, and returns the appended child Rem ID.",
       "expected_output_url": null
+    },
+    {
+      "description": "Inspect direct children in RemNote order.",
+      "user_prompt": "Show the direct children under Rem rem_parent_1 in their current order.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_children",
+      "expected_output": "Returns capped child summaries with zero-based indexes in RemNote order.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read breadcrumb context before editing.",
+      "user_prompt": "Before changing Rem rem_child_1, show me where it lives in my RemNote hierarchy.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_rem_breadcrumbs",
+      "expected_output": "Returns the Rem parent chain with Rem IDs and titles so the user can confirm context.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Search Rems with bounded results.",
+      "user_prompt": "Find my Rems about spaced repetition, but only show the top 10 matches.",
+      "file_attachment_urls": null,
+      "tools_triggered": "search_rems",
+      "expected_output": "Returns capped matching Rem summaries and indicates whether results were truncated.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect current document-like tree.",
+      "user_prompt": "Show a bounded tree for the document I am currently viewing in RemNote.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_document_or_folder_tree",
+      "expected_output": "Returns a bounded tree rooted at the focused portal or focused Rem with truncation markers.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Update one Rem after permission flow allows it.",
+      "user_prompt": "Update Rem rem_12345 to say: Updated definition for active recall.",
+      "file_attachment_urls": null,
+      "tools_triggered": "update_rem",
+      "expected_output": "Updates only the target Rem text after the plugin permission flow allows it.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create an ordered Rem tree.",
+      "user_prompt": "Create a three-item outline under rem_parent_1 with children First, Second, and Third in that exact order.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_rem_tree",
+      "expected_output": "Creates a bounded tree after permission flow allows it and preserves the provided child order.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a RemNote document.",
+      "user_prompt": "Create a new RemNote document under rem_parent_1 titled Weekly Review.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_document",
+      "expected_output": "Creates a document Rem after local scope and approval checks allow it, then returns the new Rem ID.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Report unsupported folder creation honestly.",
+      "user_prompt": "Create a RemNote folder called Research Inbox under rem_parent_1.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_folder",
+      "expected_output": "Returns a clear SDK_UNSUPPORTED error if the installed RemNote SDK does not expose folder creation.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Replace one Rem after destructive approval.",
+      "user_prompt": "Replace the text of Rem rem_12345 with: Final definition of active recall.",
+      "file_attachment_urls": null,
+      "tools_triggered": "replace_rem",
+      "expected_output": "Shows destructive approval in RemNote, then replaces only the target Rem text if approved.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Reorder direct children deterministically.",
+      "user_prompt": "Reorder the children of rem_parent_1 to this exact order: rem_c, rem_a, rem_b.",
+      "file_attachment_urls": null,
+      "tools_triggered": "reorder_children",
+      "expected_output": "Reorders only if the provided list exactly matches the current direct child IDs.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Delete the focused Rem with strict confirmation.",
+      "user_prompt": "Delete the Rem I am focused on in RemNote. I confirm with DELETE.",
+      "file_attachment_urls": null,
+      "tools_triggered": "delete_focused_rem",
+      "expected_output": "Shows a delete preview in RemNote and deletes only after the user types DELETE and approves.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Delete exactly one selected Rem with strict confirmation.",
+      "user_prompt": "Delete the selected Rem in RemNote. I confirm with DELETE.",
+      "file_attachment_urls": null,
+      "tools_triggered": "delete_selected_rem",
+      "expected_output": "Deletes exactly one selected Rem only after preview, typed DELETE, and user approval.",
+      "expected_output_url": null
     }
   ],
   "negative_test_cases": [
@@ -181,11 +477,11 @@
       "expected_output_url": null
     },
     {
-      "description": "Do not trigger destructive note replacement or deletion.",
-      "user_prompt": "Delete this Rem and all of its children from RemNote.",
+      "description": "Do not delete without strict confirmation.",
+      "user_prompt": "Delete this Rem from RemNote without asking me again.",
       "file_attachment_urls": null,
       "tools_triggered": null,
-      "expected_output": "The app should not call a tool because destructive MCP tools are not exposed.",
+      "expected_output": "The app should not call a delete tool unless the request targets focused or selected Rem and includes the required DELETE confirmation path.",
       "expected_output_url": null
     },
     {

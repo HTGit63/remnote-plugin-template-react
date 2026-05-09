@@ -37,6 +37,27 @@ async function onActivate(plugin: ReactRNPlugin) {
     ],
   });
 
+  await plugin.settings.registerDropdownSetting({
+    id: 'bridge-permission-scope',
+    title: 'Bridge Permission Scope',
+    description: 'Limits which Rems ChatGPT can read or change through the local bridge.',
+    defaultValue: 'focused_rem_only',
+    options: [
+      { key: 'focused_rem_only', label: 'Focused Rem Only', value: 'focused_rem_only' },
+      { key: 'selected_rem_only', label: 'Selected Rem Only', value: 'selected_rem_only' },
+      { key: 'descendants_of_selected_rem', label: 'Selected Rem Descendants', value: 'descendants_of_selected_rem' },
+      { key: 'approved_document_or_folder', label: 'Approved Document or Folder', value: 'approved_document_or_folder' },
+      { key: 'workspace_allowed', label: 'Workspace Allowed', value: 'workspace_allowed' },
+    ],
+  });
+
+  await plugin.settings.registerStringSetting({
+    id: 'bridge-approved-root-rem-id',
+    title: 'Approved Root Rem ID',
+    description: 'Required for Approved Document or Folder scope. Use a sandbox document/folder Rem ID.',
+    defaultValue: '',
+  });
+
   await plugin.app.registerWidget('bridge-status', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'Bridge',

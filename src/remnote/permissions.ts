@@ -1,6 +1,7 @@
-import type { BridgeToolName, PermissionMode } from '../bridge/protocol';
+import type { BridgeToolName, PermissionMode, PermissionScope } from '../bridge/protocol';
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'confirm_writes';
+export const DEFAULT_PERMISSION_SCOPE: PermissionScope = 'focused_rem_only';
 
 export interface PermissionDecision {
   allowed: boolean;
@@ -17,16 +18,28 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'get_rem_tree',
   'get_rem_rich',
   'get_current_selection',
+  'get_children',
+  'get_rem_breadcrumbs',
+  'search_rems',
+  'get_document_or_folder_tree',
 ]);
 
 const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'create_rem',
   'append_to_rem',
+  'create_document',
+  'create_folder',
   'update_rem',
   'move_rem',
+  'reorder_children',
   'create_rem_tree',
 ]);
-const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set(['replace_rem', 'delete_rem']);
+const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
+  'replace_rem',
+  'delete_focused_rem',
+  'delete_selected_rem',
+  'delete_rem',
+]);
 
 export function normalizePermissionMode(value: string | undefined): PermissionMode {
   switch (value) {
@@ -37,6 +50,19 @@ export function normalizePermissionMode(value: string | undefined): PermissionMo
       return value;
     default:
       return DEFAULT_PERMISSION_MODE;
+  }
+}
+
+export function normalizePermissionScope(value: string | undefined): PermissionScope {
+  switch (value) {
+    case 'focused_rem_only':
+    case 'selected_rem_only':
+    case 'descendants_of_selected_rem':
+    case 'approved_document_or_folder':
+    case 'workspace_allowed':
+      return value;
+    default:
+      return DEFAULT_PERMISSION_SCOPE;
   }
 }
 
@@ -51,6 +77,22 @@ export function getPermissionModeLabel(mode: PermissionMode): string {
     case 'confirm_writes':
     default:
       return 'Confirm Writes';
+  }
+}
+
+export function getPermissionScopeLabel(scope: PermissionScope): string {
+  switch (scope) {
+    case 'selected_rem_only':
+      return 'Selected Rem Only';
+    case 'descendants_of_selected_rem':
+      return 'Selected Descendants';
+    case 'approved_document_or_folder':
+      return 'Approved Document/Folder';
+    case 'workspace_allowed':
+      return 'Workspace Allowed';
+    case 'focused_rem_only':
+    default:
+      return 'Focused Rem Only';
   }
 }
 

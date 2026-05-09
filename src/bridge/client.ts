@@ -1,11 +1,13 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
   type BridgePluginHello,
+  type BridgeCancelRequest,
   type BridgeRequest,
   type BridgeResponse,
-  type BridgeServerMessage,
+  type BridgeServerHello,
   type PendingApprovalRequest,
   type PermissionMode,
+  type PermissionScope,
   type ApprovalResolution,
   createBridgeFailure,
 } from './protocol';
@@ -21,7 +23,10 @@ export interface BrowserBridgeClientOptions {
   serverUrl: string;
   token?: string;
   getPermissionMode: () => PermissionMode;
+  getPermissionScope: () => PermissionScope;
+  getApprovedRootRemId: () => string | null;
   requestApproval: (request: PendingApprovalRequest) => Promise<ApprovalResolution>;
+  cancelApproval: (requestId: string, message: string) => void;
   onStatus: (status: BridgeStatusSnapshot) => void;
 }
 
@@ -30,6 +35,11 @@ export class BrowserBridgeClient {
   private stopped = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectDelayMs = INITIAL_RECONNECT_MS;
+  private cancelledRequestIds = new Set<string>();
+  private serverInfo: Pick<
+    BridgeStatusSnapshot,
+    'toolRegistryVersion' | 'publicToolCount' | 'publicTools' | 'serverStartedAt'
+  > = {};
 
   constructor(private readonly options: BrowserBridgeClientOptions) {}
 
@@ -53,13 +63,18 @@ export class BrowserBridgeClient {
   private updateStatus(
     state: BridgeStatusSnapshot['state'],
     lastEvent: string,
-    lastError?: string
+    lastError?: string,
+    serverInfo: Pick<
+      BridgeStatusSnapshot,
+      'toolRegistryVersion' | 'publicToolCount' | 'publicTools' | 'serverStartedAt'
+    > = this.serverInfo
   ) {
     this.options.onStatus({
       state,
       serverUrl: this.options.serverUrl,
       lastEvent,
       ...(lastError ? { lastError } : {}),
+      ...serverInfo,
     });
   }
 
@@ -145,7 +160,20 @@ export class BrowserBridgeClient {
     }
 
     if (this.isServerHello(parsed)) {
+      this.serverInfo = {
+        toolRegistryVersion: parsed.toolRegistryVersion,
+        publicToolCount: parsed.publicToolCount,
+        publicTools: parsed.publicTools,
+        serverStartedAt: parsed.serverStartedAt,
+      };
       this.updateStatus('connected', 'Server handshake complete.');
+      return;
+    }
+
+    if (this.isCancelRequest(parsed)) {
+      this.cancelledRequestIds.add(parsed.id);
+      this.options.cancelApproval(parsed.id, parsed.message);
+      this.updateStatus('connected', `Server cancelled request ${parsed.id}: ${parsed.reason}.`);
       return;
     }
 
@@ -159,6 +187,8 @@ export class BrowserBridgeClient {
     try {
       response = await handleBridgeRequest(this.options.plugin, requestOrFailure as BridgeRequest, {
         permissionMode: this.options.getPermissionMode(),
+        permissionScope: this.options.getPermissionScope(),
+        approvedRootRemId: this.options.getApprovedRootRemId(),
         requestApproval: this.options.requestApproval,
       });
     } catch (error: unknown) {
@@ -171,14 +201,28 @@ export class BrowserBridgeClient {
         { message }
       );
     }
+
+    if (this.cancelledRequestIds.delete((requestOrFailure as BridgeRequest).id)) {
+      return;
+    }
+
     this.send(response as BridgeResponse);
   }
 
-  private isServerHello(message: unknown): message is BridgeServerMessage {
+  private isServerHello(message: unknown): message is BridgeServerHello {
     return (
       typeof message === 'object' &&
       message !== null &&
       (message as { type?: unknown }).type === 'server_hello'
+    );
+  }
+
+  private isCancelRequest(message: unknown): message is BridgeCancelRequest {
+    return (
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { type?: unknown }).type === 'cancel_request' &&
+      typeof (message as { id?: unknown }).id === 'string'
     );
   }
 }

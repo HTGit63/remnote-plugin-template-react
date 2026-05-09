@@ -1,4 +1,22 @@
-/* Add your plugin styles here. This file is named <widget-name>.css; in this case, index.css*/
+/* RemNote bridge operator panel */
+
+:root {
+  --bridge-bg: #0f172a;
+  --bridge-panel: #172033;
+  --bridge-panel-strong: #1e293b;
+  --bridge-muted: #94a3b8;
+  --bridge-text: #f8fafc;
+  --bridge-border: #334155;
+  --bridge-soft-border: rgba(148, 163, 184, 0.22);
+  --bridge-green: #22c55e;
+  --bridge-green-soft: rgba(34, 197, 94, 0.14);
+  --bridge-amber: #f59e0b;
+  --bridge-amber-soft: rgba(245, 158, 11, 0.16);
+  --bridge-red: #ef4444;
+  --bridge-red-soft: rgba(239, 68, 68, 0.15);
+  --bridge-blue: #38bdf8;
+  --bridge-blue-soft: rgba(56, 189, 248, 0.14);
+}
 
 .bridge-shell {
   min-height: 100vh;
@@ -6,9 +24,9 @@
   box-sizing: border-box;
   overflow-x: hidden;
   overflow-y: auto;
-  background: #20202a;
-  color: #f2f3ff;
-  padding: 16px 14px 20px;
+  background: var(--bridge-bg);
+  color: var(--bridge-text);
+  padding: 14px 12px 18px;
   font-family: var(
     --font-primary,
     Inter,
@@ -28,40 +46,40 @@
 .bridge-stack {
   display: grid;
   width: 100%;
-  max-width: 520px;
+  max-width: 560px;
   margin: 0 auto;
-  gap: 12px;
+  gap: 10px;
 }
 
 .bridge-hero,
-.bridge-section {
-  border: 1px solid rgba(112, 109, 150, 0.4);
-  border-radius: 10px;
-  background: #282737;
-  box-shadow: 0 10px 24px rgba(4, 5, 12, 0.16);
+.bridge-panel,
+.bridge-task-banner,
+.bridge-metric {
+  border: 1px solid var(--bridge-soft-border);
+  border-radius: 8px;
+  background: var(--bridge-panel);
 }
 
 .bridge-hero {
-  display: flex;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 13px 14px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .bridge-mark {
   display: grid;
-  width: 36px;
-  height: 36px;
-  flex: 0 0 36px;
+  width: 40px;
+  height: 40px;
   place-items: center;
-  border: 1px solid rgba(142, 128, 255, 0.62);
-  border-radius: 999px;
-  background: #302d4e;
-  color: #ffffff;
-  font-size: 15px;
+  border: 1px solid rgba(56, 189, 248, 0.48);
+  border-radius: 8px;
+  background: var(--bridge-blue-soft);
+  color: #e0f2fe;
+  font-size: 13px;
   font-weight: 800;
   line-height: 1;
-  box-shadow: 0 0 0 4px rgba(126, 103, 255, 0.1);
 }
 
 .bridge-hero-copy {
@@ -70,32 +88,117 @@
 
 .bridge-title {
   margin: 0;
-  color: #f6f6ff;
+  color: var(--bridge-text);
   font-size: 18px;
-  font-weight: 720;
+  font-weight: 750;
   letter-spacing: 0;
-  line-height: 1.25;
+  line-height: 1.2;
 }
 
 .bridge-subtitle {
   margin: 4px 0 0;
-  color: #bbbcd3;
+  color: var(--bridge-muted);
   font-size: 12.5px;
   line-height: 1.45;
 }
 
-.bridge-section {
-  padding: 13px 14px 14px;
+.bridge-task-banner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
 }
 
-.bridge-section--attention {
-  border-color: rgba(245, 188, 86, 0.52);
-  background:
-    linear-gradient(180deg, rgba(245, 188, 86, 0.08), rgba(245, 188, 86, 0) 52%),
-    #282737;
-  box-shadow:
-    0 0 0 1px rgba(245, 188, 86, 0.08),
-    0 14px 28px rgba(4, 5, 12, 0.22);
+.bridge-task-banner h3,
+.bridge-section-head h3 {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--bridge-text);
+  font-size: 14px;
+  font-weight: 760;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.bridge-task-banner p,
+.bridge-notice-copy,
+.bridge-heading-copy p {
+  margin: 4px 0 0;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bridge-task-banner--ready {
+  border-color: rgba(34, 197, 94, 0.38);
+  background: var(--bridge-green-soft);
+}
+
+.bridge-task-banner--warning {
+  border-color: rgba(245, 158, 11, 0.48);
+  background: var(--bridge-amber-soft);
+}
+
+.bridge-task-banner--offline {
+  border-color: rgba(239, 68, 68, 0.44);
+  background: var(--bridge-red-soft);
+}
+
+.bridge-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bridge-metric {
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.bridge-metric--success {
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.bridge-metric--warning {
+  border-color: rgba(245, 158, 11, 0.42);
+}
+
+.bridge-metric--danger {
+  border-color: rgba(239, 68, 68, 0.42);
+}
+
+.bridge-metric-label {
+  color: var(--bridge-muted);
+  font-size: 10.5px;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.bridge-metric-value {
+  margin-top: 5px;
+  color: var(--bridge-text);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.bridge-panel {
+  padding: 12px;
+}
+
+.bridge-panel--attention {
+  border-color: rgba(245, 158, 11, 0.55);
+  background: #211a12;
+}
+
+.bridge-panel--notice {
+  border-color: rgba(56, 189, 248, 0.32);
+  background: var(--bridge-blue-soft);
 }
 
 .bridge-section-head {
@@ -107,30 +210,12 @@
   margin-bottom: 10px;
 }
 
-.bridge-section-head h3 {
-  min-width: 0;
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: #f4f5ff;
-  font-size: 14px;
-  font-weight: 720;
-  letter-spacing: 0;
-  line-height: 1.3;
+.bridge-request-head {
+  align-items: flex-start;
 }
 
 .bridge-heading-copy {
   min-width: 0;
-}
-
-.bridge-heading-copy p {
-  margin: 4px 0 0;
-  color: #c6c7dc;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.bridge-request-head {
-  align-items: flex-start;
 }
 
 .bridge-pill {
@@ -145,71 +230,73 @@
   padding: 3px 9px;
   overflow-wrap: anywhere;
   text-align: center;
-  color: #f8f8ff;
+  color: var(--bridge-text);
   font-size: 11px;
-  font-weight: 720;
+  font-weight: 760;
   line-height: 1.2;
 }
 
 .bridge-pill-success {
-  border-color: rgba(64, 221, 151, 0.38);
-  background: rgba(64, 221, 151, 0.14);
-  color: #c7f8df;
+  border-color: rgba(34, 197, 94, 0.38);
+  background: var(--bridge-green-soft);
+  color: #bbf7d0;
 }
 
 .bridge-pill-warning {
-  border-color: rgba(245, 188, 86, 0.42);
-  background: rgba(245, 188, 86, 0.14);
-  color: #ffe3a5;
+  border-color: rgba(245, 158, 11, 0.44);
+  background: var(--bridge-amber-soft);
+  color: #fde68a;
 }
 
 .bridge-pill-muted {
-  border-color: rgba(167, 169, 197, 0.24);
-  background: rgba(167, 169, 197, 0.12);
-  color: #dedff0;
+  border-color: rgba(148, 163, 184, 0.28);
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
 }
 
 .bridge-pill-danger {
-  border-color: rgba(255, 116, 133, 0.48);
-  background: rgba(255, 116, 133, 0.13);
-  color: #ffd0d6;
+  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--bridge-red-soft);
+  color: #fecaca;
 }
 
 .bridge-pill-accent {
-  border-color: rgba(139, 124, 246, 0.5);
-  background: rgba(139, 124, 246, 0.15);
-  color: #ede9ff;
+  border-color: rgba(56, 189, 248, 0.44);
+  background: var(--bridge-blue-soft);
+  color: #bae6fd;
 }
 
 .bridge-detail-list,
 .bridge-pending {
   display: grid;
   min-width: 0;
-  gap: 9px;
+  gap: 8px;
   margin: 0;
 }
 
 .bridge-detail-row,
 .bridge-empty,
 .bridge-preview,
-.bridge-decision-note {
+.bridge-decision-note,
+.bridge-confirm-label,
+.bridge-confirm-input {
   min-width: 0;
   border-radius: 8px;
   overflow-wrap: anywhere;
 }
 
 .bridge-detail-row {
-  border: 1px solid rgba(112, 109, 150, 0.28);
-  background: #201f30;
+  border: 1px solid var(--bridge-soft-border);
+  background: rgba(15, 23, 42, 0.72);
   padding: 9px 10px;
 }
 
 .bridge-detail-label {
   margin: 0;
-  color: #b9bad3;
+  color: var(--bridge-muted);
   font-size: 10.5px;
   font-weight: 760;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   line-height: 1.25;
   text-transform: uppercase;
 }
@@ -218,19 +305,19 @@
   min-width: 0;
   margin: 4px 0 0;
   overflow-wrap: anywhere;
-  color: #f7f7ff;
+  color: var(--bridge-text);
   font-size: 14px;
   line-height: 1.45;
 }
 
 .bridge-detail-value--mono {
-  color: #f1f1fa;
+  color: #e2e8f0;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 12.5px;
 }
 
 .bridge-error-text {
-  color: #ffd0d6;
+  color: #fecaca;
 }
 
 .bridge-two-col {
@@ -240,26 +327,56 @@
 }
 
 .bridge-preview {
-  max-height: 148px;
+  max-height: 150px;
   margin: 0;
   overflow-y: auto;
-  border: 1px solid rgba(112, 109, 150, 0.28);
-  background: #1c1b29;
+  border: 1px solid var(--bridge-soft-border);
+  background: #020617;
   padding: 10px;
   white-space: pre-wrap;
-  color: #f4f4ff;
+  color: var(--bridge-text);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 12px;
   line-height: 1.5;
 }
 
 .bridge-decision-note {
-  border: 1px solid rgba(245, 188, 86, 0.32);
-  background: rgba(245, 188, 86, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.34);
+  background: var(--bridge-amber-soft);
   padding: 9px 10px;
-  color: #ffe1a1;
+  color: #fde68a;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.bridge-confirm-label {
+  display: grid;
+  gap: 6px;
+  border: 1px solid rgba(239, 68, 68, 0.42);
+  background: var(--bridge-red-soft);
+  padding: 9px 10px;
+  color: #fecaca;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.35;
+  text-transform: uppercase;
+}
+
+.bridge-confirm-input {
+  min-height: 44px;
+  border: 1px solid rgba(239, 68, 68, 0.58);
+  background: #020617;
+  color: #ffffff;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+  padding: 9px 10px;
+  text-transform: none;
+}
+
+.bridge-confirm-input:focus {
+  outline: 2px solid rgba(248, 113, 113, 0.86);
+  outline-offset: 2px;
 }
 
 .bridge-actions {
@@ -273,7 +390,7 @@
 }
 
 .bridge-button {
-  min-height: 46px;
+  min-height: 44px;
   min-width: 0;
   border-radius: 8px;
   padding: 10px 12px;
@@ -283,9 +400,14 @@
   font-weight: 760;
   line-height: 1.2;
   transition:
-    background-color 120ms ease,
-    border-color 120ms ease,
-    opacity 120ms ease;
+    background-color 150ms ease,
+    border-color 150ms ease,
+    opacity 150ms ease;
+}
+
+.bridge-button:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
 }
 
 .bridge-button:disabled {
@@ -294,41 +416,43 @@
 }
 
 .bridge-button-approve {
-  border: 1px solid rgba(64, 221, 151, 0.64);
-  background: #47d990;
-  color: #10151c;
+  border: 1px solid rgba(34, 197, 94, 0.72);
+  background: var(--bridge-green);
+  color: #052e16;
 }
 
 .bridge-button-approve:not(:disabled):hover {
-  background: #5ee6a1;
+  background: #4ade80;
 }
 
 .bridge-button-danger {
-  border-color: rgba(255, 116, 133, 0.72);
-  background: #ff7485;
-  color: #161018;
+  border-color: rgba(239, 68, 68, 0.74);
+  background: var(--bridge-red);
+  color: #ffffff;
 }
 
 .bridge-button-danger:not(:disabled):hover {
-  background: #ff8c99;
+  background: #f87171;
 }
 
-.bridge-button-reject {
-  border: 1px solid rgba(167, 169, 197, 0.32);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f2f3ff;
+.bridge-button-reject,
+.bridge-button-secondary {
+  border: 1px solid var(--bridge-border);
+  background: var(--bridge-panel-strong);
+  color: var(--bridge-text);
 }
 
-.bridge-button-reject:hover {
-  border-color: rgba(197, 199, 224, 0.5);
-  background: rgba(255, 255, 255, 0.1);
+.bridge-button-reject:hover,
+.bridge-button-secondary:hover {
+  border-color: #64748b;
+  background: #26364f;
 }
 
 .bridge-empty {
-  border: 1px dashed rgba(167, 169, 197, 0.26);
-  background: #201f30;
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  background: rgba(15, 23, 42, 0.72);
   padding: 10px 11px;
-  color: #ececff;
+  color: #e2e8f0;
   font-size: 13.5px;
   line-height: 1.45;
 }
@@ -337,31 +461,36 @@
   min-width: 0;
   margin-top: 10px;
   overflow-wrap: anywhere;
-  color: #b6b7cd;
+  color: #cbd5e1;
   font-size: 12px;
   line-height: 1.45;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 460px) {
   .bridge-shell {
     padding: 12px 10px 16px;
   }
 
   .bridge-hero,
-  .bridge-section {
-    border-radius: 9px;
-  }
-
-  .bridge-section-head {
-    align-items: flex-start;
-  }
-
+  .bridge-task-banner,
+  .bridge-metrics,
   .bridge-two-col,
   .bridge-actions {
     grid-template-columns: 1fr;
   }
 
+  .bridge-hero {
+    align-items: start;
+  }
+
   .bridge-pill {
-    max-width: 52%;
+    max-width: 100%;
+    justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bridge-button {
+    transition: none;
   }
 }

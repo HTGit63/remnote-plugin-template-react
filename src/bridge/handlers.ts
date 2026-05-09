@@ -6,17 +6,27 @@ import {
   type BridgeResponse,
   type BridgeToolArgs,
   type BridgeToolName,
+  type CreateDocumentArgs,
+  type CreateFolderArgs,
+  type GetChildrenArgs,
   type CreateRemTreeArgs,
   type CreateRemArgs,
+  type DeleteFocusedRemArgs,
   type DeleteRemArgs,
+  type DeleteSelectedRemArgs,
+  type GetDocumentOrFolderTreeArgs,
   type GetCurrentSelectionArgs,
   type GetRemArgs,
+  type GetRemBreadcrumbsArgs,
   type GetRemRichArgs,
   type GetRemTreeArgs,
   type MoveRemArgs,
   type PendingApprovalRequest,
   type PermissionMode,
+  type PermissionScope,
   type ReplaceRemArgs,
+  type ReorderChildrenArgs,
+  type SearchRemsArgs,
   type UpdateRemArgs,
   WRITE_APPROVAL_TIMEOUT_MS,
   createBridgeFailure,
@@ -26,20 +36,30 @@ import {
 import { getPermissionDecision } from '../remnote/permissions';
 import {
   getCurrentSelection,
+  readChildren,
+  readDocumentOrFolderTree,
   getFocusedRemStatus,
+  readRemBreadcrumbs,
   readFocusedRem,
   readRem,
   readRemRich,
   readRemTree,
+  searchRems,
 } from '../remnote/read';
 import {
   appendMarkdownToRem,
+  buildDeletePreview,
+  createDocumentFromMarkdown,
+  createFolderFromMarkdown,
   createRemFromMarkdown,
   createRemTree,
+  deleteFocusedRem,
   deleteRem,
+  deleteSelectedRem,
   getRemApprovalContext,
   moveRem,
   replaceRemMarkdown,
+  reorderChildren,
   RemnoteWriteError,
   updateRemMarkdown,
 } from '../remnote/write';
@@ -47,9 +67,12 @@ import {
 const MAX_REQUEST_ID_CHARS = 128;
 const MAX_REM_ID_CHARS = 256;
 const MAX_MARKDOWN_CHARS = 20000;
+const MAX_SEARCH_QUERY_CHARS = 500;
 
 export interface BridgeHandlerContext {
   permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
+  approvedRootRemId: string | null;
   requestApproval: (request: PendingApprovalRequest) => Promise<ApprovalResolution>;
 }
 
@@ -134,6 +157,28 @@ function requiredParentId(args: unknown, field = 'parentId'): string {
   return requiredRemId(args, field);
 }
 
+function optionalRemId(args: unknown, field: string): string | null {
+  if (!isPlainObject(args)) {
+    return null;
+  }
+
+  const value = args[field];
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  if (typeof value !== 'string') {
+    throw new Error(`${field} must be a string or null.`);
+  }
+
+  const remId = value.trim();
+  if (remId.length > MAX_REM_ID_CHARS) {
+    throw new Error(`${field} is too long.`);
+  }
+
+  return remId || null;
+}
+
 function getTreeDepth(args: unknown): number | undefined {
   if (!isPlainObject(args)) {
     return undefined;
@@ -149,6 +194,37 @@ function getTreeDepth(args: unknown): number | undefined {
   }
 
   return value;
+}
+
+function optionalBoundedNumber(args: unknown, field: string): number | undefined {
+  if (!isPlainObject(args)) {
+    return undefined;
+  }
+
+  const value = args[field];
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`${field} must be a finite number.`);
+  }
+
+  return value;
+}
+
+function requiredSearchQuery(args: unknown): string {
+  const query = getStringField(args, 'query')?.trim();
+
+  if (!query) {
+    throw new Error('Missing query.');
+  }
+
+  if (query.length > MAX_SEARCH_QUERY_CHARS) {
+    throw new Error(`query exceeds ${MAX_SEARCH_QUERY_CHARS} characters.`);
+  }
+
+  return query;
 }
 
 function optionalAppendPosition(args: unknown): 'start' | 'end' {
@@ -179,6 +255,29 @@ function requiredIndex(args: unknown): number {
   }
 
   return value;
+}
+
+function requiredOrderedChildRemIds(args: unknown): string[] {
+  if (!isPlainObject(args) || !Array.isArray(args.orderedChildRemIds)) {
+    throw new Error('Missing orderedChildRemIds.');
+  }
+
+  if (args.orderedChildRemIds.length > 500) {
+    throw new Error('orderedChildRemIds exceeds 500 IDs.');
+  }
+
+  return args.orderedChildRemIds.map((item, index) => {
+    if (typeof item !== 'string') {
+      throw new Error(`orderedChildRemIds[${index}] must be a string.`);
+    }
+
+    const remId = item.trim();
+    if (!remId || remId.length > MAX_REM_ID_CHARS) {
+      throw new Error(`orderedChildRemIds[${index}] is invalid.`);
+    }
+
+    return remId;
+  });
 }
 
 function optionalRecursive(args: unknown): boolean {
@@ -237,6 +336,27 @@ function normalizeArgs<TTool extends BridgeToolName>(
       } as BridgeToolArgs[TTool];
     case 'get_current_selection':
       return {} as BridgeToolArgs[TTool];
+    case 'get_children':
+      return {
+        parentRemId: requiredRemId(args, 'parentRemId'),
+        maxChildren: optionalBoundedNumber(args, 'maxChildren'),
+      } as BridgeToolArgs[TTool];
+    case 'get_rem_breadcrumbs':
+      return {
+        remId: requiredRemId(args),
+      } as BridgeToolArgs[TTool];
+    case 'search_rems':
+      return {
+        query: requiredSearchQuery(args),
+        contextRemId: optionalRemId(args, 'contextRemId'),
+        maxResults: optionalBoundedNumber(args, 'maxResults'),
+      } as BridgeToolArgs[TTool];
+    case 'get_document_or_folder_tree':
+      return {
+        rootRemId: optionalRemId(args, 'rootRemId'),
+        depth: getTreeDepth(args),
+        maxChildren: optionalBoundedNumber(args, 'maxChildren'),
+      } as BridgeToolArgs[TTool];
     case 'create_rem':
       return {
         parentId: optionalParentId(args),
@@ -247,6 +367,12 @@ function normalizeArgs<TTool extends BridgeToolName>(
         remId: requiredRemId(args),
         markdown: requiredMarkdown(args),
         position: optionalAppendPosition(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_document':
+    case 'create_folder':
+      return {
+        parentId: optionalParentId(args),
+        markdown: requiredMarkdown(args),
       } as BridgeToolArgs[TTool];
     case 'update_rem':
       return {
@@ -259,6 +385,11 @@ function normalizeArgs<TTool extends BridgeToolName>(
         newParentId: requiredRemId(args, 'newParentId'),
         index: requiredIndex(args),
       } as BridgeToolArgs[TTool];
+    case 'reorder_children':
+      return {
+        parentRemId: requiredRemId(args, 'parentRemId'),
+        orderedChildRemIds: requiredOrderedChildRemIds(args),
+      } as BridgeToolArgs[TTool];
     case 'create_rem_tree':
       return {
         parentId: requiredParentId(args),
@@ -268,6 +399,12 @@ function normalizeArgs<TTool extends BridgeToolName>(
       return {
         remId: requiredRemId(args),
         markdown: requiredMarkdown(args),
+      } as BridgeToolArgs[TTool];
+    case 'delete_focused_rem':
+    case 'delete_selected_rem':
+      return {
+        recursive: optionalRecursive(args),
+        confirmText: requiredConfirmText(args),
       } as BridgeToolArgs[TTool];
     case 'delete_rem':
       return {
@@ -316,17 +453,30 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       MoveRemArgs &
       ReplaceRemArgs &
       DeleteRemArgs &
+      CreateDocumentArgs &
+      CreateFolderArgs &
       CreateRemArgs &
-      CreateRemTreeArgs
+      CreateRemTreeArgs &
+      GetChildrenArgs &
+      GetDocumentOrFolderTreeArgs &
+      ReorderChildrenArgs
   >;
   if (typeof args.remId === 'string') {
     return args.remId;
+  }
+  if (typeof args.parentRemId === 'string') {
+    return args.parentRemId;
+  }
+  if (typeof args.rootRemId === 'string') {
+    return args.rootRemId;
   }
   return typeof args.parentId === 'string' ? args.parentId : undefined;
 }
 
 function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
-  const args = request.args as Partial<CreateRemArgs & AppendToRemArgs & UpdateRemArgs & ReplaceRemArgs>;
+  const args = request.args as Partial<
+    CreateRemArgs & CreateDocumentArgs & CreateFolderArgs & AppendToRemArgs & UpdateRemArgs & ReplaceRemArgs
+  >;
   return typeof args.markdown === 'string' ? args.markdown.slice(0, 3000) : undefined;
 }
 
@@ -346,6 +496,279 @@ function mapSdkError(id: string, error: unknown): BridgeResponse {
   }
 
   return createBridgeFailure(id, 'SDK_ERROR', 'RemNote SDK operation failed.');
+}
+
+function uniqueRemIds(ids: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(ids.filter((id): id is string => typeof id === 'string' && id.length > 0)));
+}
+
+function requestHasWorkspaceCreateTarget(request: BridgeRequest): boolean {
+  if (request.tool !== 'create_rem' && request.tool !== 'create_document' && request.tool !== 'create_folder') {
+    return false;
+  }
+
+  return !(request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId;
+}
+
+function requestNeedsImplicitScopedRoot(request: BridgeRequest): boolean {
+  if (request.tool === 'search_rems') {
+    return !(request.args as SearchRemsArgs).contextRemId;
+  }
+
+  if (request.tool === 'get_document_or_folder_tree') {
+    return !(request.args as GetDocumentOrFolderTreeArgs).rootRemId;
+  }
+
+  return false;
+}
+
+async function getFocusedRemId(plugin: RNPlugin): Promise<string | null> {
+  const focusedRem = await plugin.focus.getFocusedRem();
+  return focusedRem?._id ?? null;
+}
+
+async function getSelectedRemIds(plugin: RNPlugin): Promise<string[]> {
+  const selection = await getCurrentSelection(plugin, {});
+  return selection.selectedRemIds;
+}
+
+async function getSingleSelectedRemId(plugin: RNPlugin): Promise<string> {
+  const selectedRemIds = await getSelectedRemIds(plugin);
+  if (selectedRemIds.length !== 1) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'delete_selected_rem requires exactly one selected Rem.',
+      {
+        selectedRemCount: selectedRemIds.length,
+      }
+    );
+  }
+
+  return selectedRemIds[0];
+}
+
+async function resolveDeleteTargetRemId(plugin: RNPlugin, request: BridgeRequest): Promise<string | undefined> {
+  if (request.tool === 'delete_focused_rem') {
+    const focusedRemId = await getFocusedRemId(plugin);
+    if (!focusedRemId) {
+      throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+    }
+
+    return focusedRemId;
+  }
+
+  if (request.tool === 'delete_selected_rem') {
+    return getSingleSelectedRemId(plugin);
+  }
+
+  return undefined;
+}
+
+function getStaticScopeTargetIds(request: BridgeRequest): string[] {
+  switch (request.tool) {
+    case 'get_rem':
+    case 'get_rem_tree':
+    case 'get_rem_rich':
+    case 'get_rem_breadcrumbs':
+    case 'append_to_rem':
+    case 'update_rem':
+    case 'replace_rem':
+    case 'delete_rem':
+      return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemArgs).remId]);
+    case 'get_children':
+    case 'reorder_children':
+      return uniqueRemIds([
+        (request.args as GetChildrenArgs | ReorderChildrenArgs).parentRemId,
+        ...(request.tool === 'reorder_children' ? (request.args as ReorderChildrenArgs).orderedChildRemIds : []),
+      ]);
+    case 'search_rems':
+      return uniqueRemIds([(request.args as SearchRemsArgs).contextRemId]);
+    case 'get_document_or_folder_tree':
+      return uniqueRemIds([(request.args as GetDocumentOrFolderTreeArgs).rootRemId]);
+    case 'create_rem':
+    case 'create_document':
+    case 'create_folder':
+      return uniqueRemIds([(request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId]);
+    case 'create_rem_tree':
+      return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
+    case 'move_rem':
+      return uniqueRemIds([(request.args as MoveRemArgs).remId, (request.args as MoveRemArgs).newParentId]);
+    default:
+      return [];
+  }
+}
+
+async function isRemWithinRoot(plugin: RNPlugin, remId: string, rootRemId: string): Promise<boolean> {
+  if (remId === rootRemId) {
+    return true;
+  }
+
+  const seen = new Set<string>();
+  let current = await plugin.rem.findOne(remId);
+
+  while (current && current.parent && !seen.has(current._id)) {
+    seen.add(current._id);
+    if (current.parent === rootRemId) {
+      return true;
+    }
+
+    current = await plugin.rem.findOne(current.parent);
+  }
+
+  if (!current) {
+    throw new RemnoteWriteError('REM_NOT_FOUND', 'Target Rem was not found.', { remId });
+  }
+
+  return false;
+}
+
+async function assertTargetsInsideRoots(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  targetRemIds: string[],
+  rootRemIds: string[],
+  reason: string
+): Promise<void> {
+  if (rootRemIds.length === 0) {
+    throw new RemnoteWriteError('OUT_OF_SCOPE', reason, {
+      tool: request.tool,
+    });
+  }
+
+  for (const targetRemId of targetRemIds) {
+    let inside = false;
+    for (const rootRemId of rootRemIds) {
+      if (await isRemWithinRoot(plugin, targetRemId, rootRemId)) {
+        inside = true;
+        break;
+      }
+    }
+
+    if (!inside) {
+      throw new RemnoteWriteError('OUT_OF_SCOPE', reason, {
+        tool: request.tool,
+        targetRemId,
+        allowedRootRemIds: rootRemIds,
+      });
+    }
+  }
+}
+
+async function enforceScope(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): Promise<void> {
+  if (context.permissionScope === 'workspace_allowed') {
+    return;
+  }
+
+  if (requestHasWorkspaceCreateTarget(request)) {
+    throw new RemnoteWriteError(
+      'OUT_OF_SCOPE',
+      'Workspace-level create requires workspace_allowed scope.',
+      { tool: request.tool, permissionScope: context.permissionScope }
+    );
+  }
+
+  if (
+    requestNeedsImplicitScopedRoot(request) &&
+    !(context.permissionScope === 'approved_document_or_folder' && context.approvedRootRemId)
+  ) {
+    throw new RemnoteWriteError(
+      'OUT_OF_SCOPE',
+      'This tool requires an explicit scoped root unless workspace_allowed is enabled.',
+      { tool: request.tool, permissionScope: context.permissionScope }
+    );
+  }
+
+  const deleteTargetRemId = await resolveDeleteTargetRemId(plugin, request);
+  const implicitApprovedRoot =
+    requestNeedsImplicitScopedRoot(request) && context.permissionScope === 'approved_document_or_folder'
+      ? context.approvedRootRemId
+      : null;
+  const targetRemIds = uniqueRemIds([
+    ...getStaticScopeTargetIds(request),
+    deleteTargetRemId,
+    implicitApprovedRoot,
+  ]);
+
+  if (targetRemIds.length === 0) {
+    return;
+  }
+
+  if (context.permissionScope === 'focused_rem_only') {
+    const focusedRemId = await getFocusedRemId(plugin);
+    if (!focusedRemId || targetRemIds.some((targetRemId) => targetRemId !== focusedRemId)) {
+      throw new RemnoteWriteError(
+        'OUT_OF_SCOPE',
+        'Request target is outside the focused Rem scope.',
+        { tool: request.tool, focusedRemId, targetRemIds }
+      );
+    }
+    return;
+  }
+
+  if (context.permissionScope === 'selected_rem_only') {
+    const selectedRemIds = await getSelectedRemIds(plugin);
+    const selectedSet = new Set(selectedRemIds);
+    if (targetRemIds.some((targetRemId) => !selectedSet.has(targetRemId))) {
+      throw new RemnoteWriteError(
+        'OUT_OF_SCOPE',
+        'Request target is outside the selected Rem scope.',
+        { tool: request.tool, selectedRemIds, targetRemIds }
+      );
+    }
+    return;
+  }
+
+  if (context.permissionScope === 'descendants_of_selected_rem') {
+    await assertTargetsInsideRoots(
+      plugin,
+      request,
+      targetRemIds,
+      await getSelectedRemIds(plugin),
+      'Request target is outside the selected Rem descendant scope.'
+    );
+    return;
+  }
+
+  if (context.permissionScope === 'approved_document_or_folder') {
+    await assertTargetsInsideRoots(
+      plugin,
+      request,
+      targetRemIds,
+      context.approvedRootRemId ? [context.approvedRootRemId] : [],
+      'Request target is outside the approved document or folder scope.'
+    );
+  }
+}
+
+function effectiveSearchArgs(request: BridgeRequest, context: BridgeHandlerContext): SearchRemsArgs {
+  const args = request.args as SearchRemsArgs;
+  if (!args.contextRemId && context.permissionScope === 'approved_document_or_folder') {
+    return {
+      ...args,
+      contextRemId: context.approvedRootRemId,
+    };
+  }
+
+  return args;
+}
+
+function effectiveDocumentOrFolderTreeArgs(
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): GetDocumentOrFolderTreeArgs {
+  const args = request.args as GetDocumentOrFolderTreeArgs;
+  if (!args.rootRemId && context.permissionScope === 'approved_document_or_folder') {
+    return {
+      ...args,
+      rootRemId: context.approvedRootRemId,
+    };
+  }
+
+  return args;
 }
 
 function getCreatedRemId(response: BridgeResponse): string | undefined {
@@ -368,7 +791,7 @@ function getCreatedRemId(response: BridgeResponse): string | undefined {
 function logBridgeResponse(
   request: BridgeRequest,
   permissionMode: PermissionMode,
-  approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'denied' | 'failed',
+  approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'denied' | 'failed',
   response: BridgeResponse,
   startedAt: number
 ) {
@@ -406,16 +829,26 @@ function approvalSummary(request: BridgeRequest): string {
   switch (request.tool) {
     case 'create_rem':
       return 'Create one Rem from markdown.';
+    case 'create_document':
+      return 'Create one document Rem from markdown.';
+    case 'create_folder':
+      return 'Create one folder if the SDK supports folders.';
     case 'append_to_rem':
       return `Append one child Rem at ${(request.args as AppendToRemArgs).position ?? 'end'}.`;
     case 'update_rem':
       return 'Replace target Rem text. Children stay untouched.';
     case 'move_rem':
       return `Move Rem to index ${(request.args as MoveRemArgs).index}.`;
+    case 'reorder_children':
+      return 'Reorder one parent Rem child list.';
     case 'create_rem_tree':
       return 'Create structured Rem tree from JSON.';
     case 'replace_rem':
       return 'Replace target Rem text.';
+    case 'delete_focused_rem':
+      return 'Delete the currently focused Rem.';
+    case 'delete_selected_rem':
+      return 'Delete the currently selected Rem.';
     case 'delete_rem':
       return 'Delete target Rem.';
     default:
@@ -426,27 +859,43 @@ function approvalSummary(request: BridgeRequest): string {
 async function buildApprovalRequest(
   plugin: RNPlugin,
   request: BridgeRequest,
-  permissionMode: PermissionMode,
+  context: BridgeHandlerContext,
   timeoutMs: number,
   destructive: boolean
 ): Promise<PendingApprovalRequest> {
-  const targetRemId = getRequestTargetRemId(request);
+  const targetRemId =
+    (await resolveDeleteTargetRemId(plugin, request)) ??
+    getRequestTargetRemId(request) ??
+    undefined;
+  const deletePreview =
+    targetRemId &&
+    (request.tool === 'delete_rem' ||
+      request.tool === 'delete_focused_rem' ||
+      request.tool === 'delete_selected_rem')
+      ? await buildDeletePreview(plugin, targetRemId, (request.args as DeleteRemArgs | DeleteFocusedRemArgs | DeleteSelectedRemArgs).recursive ?? false)
+      : undefined;
   const target =
-    targetRemId && (request.tool === 'create_rem' || request.tool === 'create_rem_tree')
+    deletePreview
+      ? undefined
+      : targetRemId && (request.tool === 'create_rem' || request.tool === 'create_document' || request.tool === 'create_folder' || request.tool === 'create_rem_tree')
       ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
       : targetRemId
         ? await getRemApprovalContext(plugin, targetRemId)
         : undefined;
-  const hasChildren = target?.hasChildren;
+  const hasChildren = deletePreview ? deletePreview.childCount > 0 : target?.hasChildren;
   const deadline = new Date(Date.now() + timeoutMs).toISOString();
   let warning: string | undefined;
 
-  if (request.tool === 'delete_rem') {
-    warning = hasChildren
-      ? 'This delete request targets a Rem with children. Recursive delete removes descendants.'
-      : 'Delete permanently removes the target Rem.';
+  if (request.tool === 'delete_rem' || request.tool === 'delete_focused_rem' || request.tool === 'delete_selected_rem') {
+    warning = deletePreview?.recursive
+      ? `Recursive delete removes ${deletePreview.descendantCount} descendants.`
+      : hasChildren
+        ? 'This Rem has children. Non-recursive delete is blocked.'
+        : 'Delete permanently removes the target Rem.';
   } else if (request.tool === 'move_rem' && hasChildren) {
-    warning = 'This move request moves a Rem with children.';
+    warning = `This move request moves a Rem with ${target?.childCount ?? 0} direct children.`;
+  } else if (request.tool === 'replace_rem') {
+    warning = 'This replace request overwrites the visible text of the target Rem.';
   } else if (request.tool === 'update_rem') {
     warning = 'This update replaces the visible text of the target Rem.';
   }
@@ -455,17 +904,18 @@ async function buildApprovalRequest(
     id: request.id,
     tool: request.tool,
     args: request.args,
-    permissionMode,
+    permissionMode: context.permissionMode,
+    permissionScope: context.permissionScope,
     requestedAt: new Date().toISOString(),
     timeoutDeadline: deadline,
     targetRemId,
-    targetTitle: target?.title,
+    targetTitle: deletePreview?.targetTitle ?? target?.title,
     hasChildren,
     previewMarkdown: getRequestPreviewMarkdown(request),
     riskLevel: destructive ? 'destructive' : 'safe_write',
     summary: approvalSummary(request),
     ...(warning ? { warning } : {}),
-    ...(request.tool === 'delete_rem' ? { confirmTextRequired: 'DELETE' as const } : {}),
+    ...(deletePreview ? { confirmTextRequired: 'DELETE' as const, deletePreview } : {}),
   };
 }
 
@@ -484,7 +934,7 @@ export async function handleBridgeRequest(
   context: BridgeHandlerContext
 ): Promise<BridgeResponse> {
   const startedAt = Date.now();
-  let approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'denied' | 'failed' =
+  let approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'denied' | 'failed' =
     'not_required';
   const decision = getPermissionDecision(context.permissionMode, request.tool);
 
@@ -492,6 +942,14 @@ export async function handleBridgeRequest(
     approvalStatus = 'denied';
     const response = createBridgeFailure(request.id, 'PERMISSION_DENIED', decision.reason);
     logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+    return response;
+  }
+
+  try {
+    await enforceScope(plugin, request, context);
+  } catch (error: unknown) {
+    const response = mapSdkError(request.id, error);
+    logBridgeResponse(request, context.permissionMode, 'denied', response, startedAt);
     return response;
   }
 
@@ -511,7 +969,7 @@ export async function handleBridgeRequest(
         ? Math.min(request.timeoutMs, WRITE_APPROVAL_TIMEOUT_MS)
         : WRITE_APPROVAL_TIMEOUT_MS;
       approval = await withApprovalTimeout(
-        await buildApprovalRequest(plugin, request, context.permissionMode, timeoutMs, decision.destructive),
+        await buildApprovalRequest(plugin, request, context, timeoutMs, decision.destructive),
         context.requestApproval,
         timeoutMs
       );
@@ -533,6 +991,28 @@ export async function handleBridgeRequest(
     if (approval === 'APPROVAL_TIMEOUT') {
       approvalStatus = 'timeout';
       const response = createBridgeFailure(request.id, 'APPROVAL_TIMEOUT', 'User did not approve the request before timeout.');
+      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+      return response;
+    }
+
+    if (approval === 'APPROVAL_PENDING') {
+      approvalStatus = 'rejected';
+      const response = createBridgeFailure(
+        request.id,
+        'APPROVAL_PENDING',
+        'Another approval request is already pending in RemNote.'
+      );
+      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
+      return response;
+    }
+
+    if (approval === 'REQUEST_CANCELLED') {
+      approvalStatus = 'cancelled';
+      const response = createBridgeFailure(
+        request.id,
+        'CLIENT_DISCONNECTED',
+        'MCP caller disconnected before approval completed.'
+      );
       logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
       return response;
     }
@@ -563,6 +1043,8 @@ export async function handleBridgeRequest(
         response = createBridgeSuccess(request, {
           connected: true,
           permissionMode: context.permissionMode,
+          permissionScope: context.permissionScope,
+          approvedRootRemId: context.approvedRootRemId,
           focusedRem: await getFocusedRemStatus(plugin),
         });
         break;
@@ -613,11 +1095,54 @@ export async function handleBridgeRequest(
       case 'get_current_selection':
         response = createBridgeSuccess(request, await getCurrentSelection(plugin, request.args));
         break;
+      case 'get_children': {
+        const children = await readChildren(plugin, request.args);
+        if (!children) {
+          response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Parent Rem was not found.');
+          break;
+        }
+
+        response = createBridgeSuccess(request, children);
+        break;
+      }
+      case 'get_rem_breadcrumbs': {
+        const breadcrumbs = await readRemBreadcrumbs(plugin, request.args);
+        if (!breadcrumbs) {
+          response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          break;
+        }
+
+        response = createBridgeSuccess(request, breadcrumbs);
+        break;
+      }
+      case 'search_rems':
+        response = createBridgeSuccess(request, await searchRems(plugin, effectiveSearchArgs(request, context)));
+        break;
+      case 'get_document_or_folder_tree': {
+        const tree = await readDocumentOrFolderTree(plugin, effectiveDocumentOrFolderTreeArgs(request, context));
+        if (!tree) {
+          response = createBridgeFailure(
+            request.id,
+            'NO_FOCUSED_REM',
+            'No document, folder, or focused Rem is available.'
+          );
+          break;
+        }
+
+        response = createBridgeSuccess(request, tree);
+        break;
+      }
       case 'create_rem':
         response = createBridgeSuccess(request, await createRemFromMarkdown(plugin, request.args));
         break;
       case 'append_to_rem':
         response = createBridgeSuccess(request, await appendMarkdownToRem(plugin, request.args));
+        break;
+      case 'create_document':
+        response = createBridgeSuccess(request, await createDocumentFromMarkdown(plugin, request.args));
+        break;
+      case 'create_folder':
+        response = createBridgeSuccess(request, await createFolderFromMarkdown(plugin, request.args));
         break;
       case 'update_rem':
         response = createBridgeSuccess(request, await updateRemMarkdown(plugin, request.args));
@@ -625,11 +1150,20 @@ export async function handleBridgeRequest(
       case 'move_rem':
         response = createBridgeSuccess(request, await moveRem(plugin, request.args));
         break;
+      case 'reorder_children':
+        response = createBridgeSuccess(request, await reorderChildren(plugin, request.args));
+        break;
       case 'create_rem_tree':
         response = createBridgeSuccess(request, await createRemTree(plugin, request.args));
         break;
       case 'replace_rem':
         response = createBridgeSuccess(request, await replaceRemMarkdown(plugin, request.args));
+        break;
+      case 'delete_focused_rem':
+        response = createBridgeSuccess(request, await deleteFocusedRem(plugin, request.args));
+        break;
+      case 'delete_selected_rem':
+        response = createBridgeSuccess(request, await deleteSelectedRem(plugin, request.args));
         break;
       case 'delete_rem':
         response = createBridgeSuccess(request, await deleteRem(plugin, request.args));

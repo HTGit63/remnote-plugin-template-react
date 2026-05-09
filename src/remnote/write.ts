@@ -3,17 +3,26 @@ import type {
   AppendToRemArgs,
   AppendToRemResult,
   BridgeErrorCode,
+  CreateDocumentArgs,
+  CreateDocumentResult,
+  CreateFolderArgs,
+  CreateFolderResult,
   CreateRemTreeArgs,
   CreateRemTreeNode,
   CreateRemTreeResult,
   CreateRemArgs,
   CreateRemResult,
+  DeleteFocusedRemArgs,
+  DeletePreview,
   DeleteRemArgs,
   DeleteRemResult,
+  DeleteSelectedRemArgs,
   MoveRemArgs,
   MoveRemResult,
   ReplaceRemArgs,
   ReplaceRemResult,
+  ReorderChildrenArgs,
+  ReorderChildrenResult,
   UpdateRemArgs,
   UpdateRemResult,
 } from '../bridge/protocol';
@@ -136,6 +145,19 @@ function getInsertIndex(parent: Rem, position: 'start' | 'end' | undefined): num
   return position === 'start' ? 0 : parent.children.length;
 }
 
+async function getFreshInsertIndex(
+  plugin: RNPlugin,
+  parent: Rem,
+  position: 'start' | 'end' | undefined
+): Promise<number> {
+  if (position === 'start') {
+    return 0;
+  }
+
+  const refreshedParent = await findRequiredRem(plugin, parent._id, 'Parent', 'PARENT_NOT_FOUND');
+  return getInsertIndex(refreshedParent, 'end');
+}
+
 function validateTreeNode(
   rawNode: unknown,
   depth: number,
@@ -215,6 +237,7 @@ export async function getRemApprovalContext(
   remId: string;
   title: string;
   hasChildren: boolean;
+  childCount: number;
 }> {
   const rem = await findRequiredRem(plugin, remId, label, code);
   const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
@@ -223,7 +246,13 @@ export async function getRemApprovalContext(
     remId: rem._id,
     title: title.trim() || rem._id,
     hasChildren: rem.children.length > 0,
+    childCount: rem.children.length,
   };
+}
+
+async function getRemTitle(plugin: RNPlugin, rem: Rem): Promise<string> {
+  const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
+  return title.trim() || rem._id;
 }
 
 export async function createRemFromMarkdown(
@@ -234,18 +263,52 @@ export async function createRemFromMarkdown(
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
   const richText = await parseMarkdownToRichText(plugin, markdown);
+  const insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
   const createdRem = await createRemWithRichText(
     plugin,
     richText,
     parent,
-    parent ? parent.children.length : undefined
+    insertIndex
   );
 
   return {
     createdRemId: createdRem._id,
     parentId,
+    ...(insertIndex !== undefined ? { insertIndex, insertPosition: 'end' as const } : {}),
     status: 'created',
   };
+}
+
+export async function createDocumentFromMarkdown(
+  plugin: RNPlugin,
+  args: CreateDocumentArgs
+): Promise<CreateDocumentResult> {
+  const markdown = normalizeMarkdown(args.markdown);
+  const parentId = args.parentId ?? null;
+  const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
+  const richText = await parseMarkdownToRichText(plugin, markdown);
+  const insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
+  const createdRem = await createRemWithRichText(plugin, richText, parent, insertIndex);
+
+  await runSdkOperation('rem.setIsDocument', () => createdRem.setIsDocument(true));
+
+  return {
+    createdRemId: createdRem._id,
+    parentId,
+    ...(insertIndex !== undefined ? { insertIndex, insertPosition: 'end' as const } : {}),
+    document: true,
+    status: 'created_document',
+  };
+}
+
+export async function createFolderFromMarkdown(
+  _plugin: RNPlugin,
+  _args: CreateFolderArgs
+): Promise<CreateFolderResult> {
+  throw new RemnoteWriteError(
+    'SDK_UNSUPPORTED',
+    'Folder creation is not exposed by the installed @remnote/plugin-sdk typings. Document creation is supported through setIsDocument(true).'
+  );
 }
 
 export async function appendMarkdownToRem(
@@ -255,16 +318,19 @@ export async function appendMarkdownToRem(
   const parent = await findRequiredRem(plugin, args.remId, 'Target');
   const markdown = normalizeMarkdown(args.markdown);
   const richText = await parseMarkdownToRichText(plugin, markdown);
+  const insertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
   const createdRem = await createRemWithRichText(
     plugin,
     richText,
     parent,
-    getInsertIndex(parent, args.position ?? 'end')
+    insertIndex
   );
 
   return {
     targetRemId: parent._id,
     createdRemId: createdRem._id,
+    insertIndex,
+    position: args.position ?? 'end',
     status: 'appended',
   };
 }
@@ -310,6 +376,54 @@ export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<Move
   };
 }
 
+export async function reorderChildren(
+  plugin: RNPlugin,
+  args: ReorderChildrenArgs
+): Promise<ReorderChildrenResult> {
+  const parent = await findRequiredRem(plugin, args.parentRemId, 'Parent', 'PARENT_NOT_FOUND');
+  const currentChildren = await runSdkOperation('rem.getChildrenRem', () => parent.getChildrenRem());
+  const currentIds = currentChildren.map((child) => child._id);
+  const requestedIds = args.orderedChildRemIds;
+  const currentSet = new Set(currentIds);
+  const requestedSet = new Set(requestedIds);
+
+  if (requestedSet.size !== requestedIds.length) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'orderedChildRemIds contains duplicate Rem IDs.');
+  }
+
+  const missingIds = currentIds.filter((id) => !requestedSet.has(id));
+  const extraIds = requestedIds.filter((id) => !currentSet.has(id));
+  if (missingIds.length > 0 || extraIds.length > 0) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'orderedChildRemIds must contain exactly the current direct child IDs.',
+      {
+        parentRemId: parent._id,
+        missingIds,
+        extraIds,
+      }
+    );
+  }
+
+  const childrenById = new Map(currentChildren.map((child) => [child._id, child]));
+  for (let index = 0; index < requestedIds.length; index += 1) {
+    const child = childrenById.get(requestedIds[index]);
+    if (!child) {
+      throw new RemnoteWriteError('REM_NOT_FOUND', 'Child Rem was not found during reorder.', {
+        remId: requestedIds[index],
+      });
+    }
+
+    await runSdkOperation('rem.setParent', () => child.setParent(parent, index));
+  }
+
+  return {
+    parentRemId: parent._id,
+    orderedChildRemIds: requestedIds,
+    status: 'reordered',
+  };
+}
+
 export async function createRemTree(
   plugin: RNPlugin,
   args: CreateRemTreeArgs
@@ -332,11 +446,13 @@ export async function createRemTree(
   }
 
   try {
-    const root = await createNode(tree, parent, parent.children.length);
+    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, 'end');
+    const root = await createNode(tree, parent, rootInsertIndex);
     return {
       rootCreatedRemId: root._id,
       createdNodeCount: createdRemIds.length,
       createdRemIds,
+      rootInsertIndex,
       status: 'created_tree',
     };
   } catch (error: unknown) {
@@ -367,18 +483,46 @@ export async function replaceRemMarkdown(
   };
 }
 
-export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<DeleteRemResult> {
+export async function buildDeletePreview(
+  plugin: RNPlugin,
+  remId: string,
+  recursive: boolean
+): Promise<DeletePreview> {
+  const rem = await findRequiredRem(plugin, remId, 'Target');
+  const parent = await runSdkOperation('rem.getParentRem', () => rem.getParentRem());
+  const descendants = recursive
+    ? await runSdkOperation('rem.getDescendants', () => rem.getDescendants())
+    : [];
+
+  return {
+    targetRemId: rem._id,
+    targetTitle: await getRemTitle(plugin, rem),
+    parentRemId: parent?._id ?? null,
+    parentTitle: parent ? await getRemTitle(plugin, parent) : null,
+    childCount: rem.children.length,
+    descendantCount: descendants.length,
+    recursive,
+    requiresConfirmText: 'DELETE',
+  };
+}
+
+async function deleteRemById(
+  plugin: RNPlugin,
+  remId: string,
+  args: Pick<DeleteRemArgs, 'recursive' | 'confirmText'>
+): Promise<DeleteRemResult> {
   if (args.confirmText !== 'DELETE') {
-    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem requires confirmText "DELETE".');
+    throw new RemnoteWriteError('INVALID_ARGS', 'Delete requires confirmText "DELETE".');
   }
 
   const recursive = args.recursive ?? false;
-  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const preview = await buildDeletePreview(plugin, remId, recursive);
+  const rem = await findRequiredRem(plugin, remId, 'Target');
 
-  if (rem.children.length > 0 && !recursive) {
+  if (preview.childCount > 0 && !recursive) {
     throw new RemnoteWriteError('SDK_UNSUPPORTED', 'Non-recursive delete of a Rem with children is not supported safely.', {
-      remId: rem._id,
-      childCount: rem.children.length,
+      remId: preview.targetRemId,
+      childCount: preview.childCount,
     });
   }
 
@@ -387,6 +531,48 @@ export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<
   return {
     deletedRemId: rem._id,
     recursive,
+    preview,
     status: 'deleted',
   };
+}
+
+export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<DeleteRemResult> {
+  return deleteRemById(plugin, args.remId, args);
+}
+
+export async function deleteFocusedRem(
+  plugin: RNPlugin,
+  args: DeleteFocusedRemArgs
+): Promise<DeleteRemResult> {
+  const focusedRem = await plugin.focus.getFocusedRem();
+  if (!focusedRem) {
+    throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+  }
+
+  return deleteRemById(plugin, focusedRem._id, args);
+}
+
+export async function deleteSelectedRem(
+  plugin: RNPlugin,
+  args: DeleteSelectedRemArgs
+): Promise<DeleteRemResult> {
+  const selection = await plugin.editor.getSelection();
+  const selectedRemIds =
+    selection?.type === 'Rem'
+      ? selection.remIds
+      : selection?.type === 'Text'
+        ? [selection.remId]
+        : [];
+
+  if (selectedRemIds.length !== 1) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'delete_selected_rem requires exactly one selected Rem.',
+      {
+        selectedRemCount: selectedRemIds.length,
+      }
+    );
+  }
+
+  return deleteRemById(plugin, selectedRemIds[0], args);
 }

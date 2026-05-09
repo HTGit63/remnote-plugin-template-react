@@ -5,6 +5,10 @@ export interface BridgeStatusSnapshot {
   serverUrl: string;
   lastEvent: string;
   lastError?: string;
+  toolRegistryVersion?: string;
+  publicToolCount?: number;
+  publicTools?: string[];
+  serverStartedAt?: string;
 }
 
 export const DEFAULT_BRIDGE_SERVER_URL = 'ws://localhost:47391/remnote-bridge';
@@ -12,7 +16,7 @@ export const DEFAULT_BRIDGE_SERVER_URL = 'ws://localhost:47391/remnote-bridge';
 export const INITIAL_BRIDGE_STATUS: BridgeStatusSnapshot = {
   state: 'disconnected',
   serverUrl: DEFAULT_BRIDGE_SERVER_URL,
-  lastEvent: 'WebSocket client pending Milestone 6.',
+  lastEvent: 'Waiting for local companion server.',
 };
 
 export function getBridgeStatusLabel(state: BridgeConnectionState): string {
@@ -28,4 +32,3 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
       return 'Disconnected';
   }
 }
-

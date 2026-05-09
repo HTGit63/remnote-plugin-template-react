@@ -3,6 +3,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { CompanionServerConfig } from './config.js';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
+const SECURITY_HEADERS = {
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'no-referrer',
+  'cache-control': 'no-store',
+};
 
 export function isLoopbackHost(hostHeader: string | undefined): boolean {
   if (!hostHeader) {
@@ -45,6 +50,7 @@ function safeTokenEquals(actual: string | string[] | undefined, expected: string
 
 export function writeJson(res: ServerResponse, statusCode: number, body: unknown) {
   res.writeHead(statusCode, {
+    ...SECURITY_HEADERS,
     'content-type': 'application/json; charset=utf-8',
   });
   res.end(JSON.stringify(body));
@@ -52,9 +58,16 @@ export function writeJson(res: ServerResponse, statusCode: number, body: unknown
 
 export function writeText(res: ServerResponse, statusCode: number, text: string) {
   res.writeHead(statusCode, {
+    ...SECURITY_HEADERS,
     'content-type': 'text/plain; charset=utf-8',
   });
   res.end(text);
+}
+
+export function setSecurityHeaders(res: ServerResponse) {
+  for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+    res.setHeader(name, value);
+  }
 }
 
 export function applyCors(req: IncomingMessage, res: ServerResponse, config: CompanionServerConfig): boolean {

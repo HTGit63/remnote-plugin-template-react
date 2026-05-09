@@ -1,4 +1,10 @@
 export type PermissionMode = 'read_only' | 'confirm_writes' | 'trusted_writes' | 'danger_zone';
+export type PermissionScope =
+  | 'focused_rem_only'
+  | 'selected_rem_only'
+  | 'descendants_of_selected_rem'
+  | 'approved_document_or_folder'
+  | 'workspace_allowed';
 
 export const WRITE_APPROVAL_TIMEOUT_MS = 30000;
 
@@ -10,12 +16,21 @@ export type BridgeToolName =
   | 'get_rem_tree'
   | 'get_rem_rich'
   | 'get_current_selection'
+  | 'get_children'
+  | 'get_rem_breadcrumbs'
+  | 'search_rems'
+  | 'get_document_or_folder_tree'
   | 'create_rem'
   | 'append_to_rem'
+  | 'create_document'
+  | 'create_folder'
   | 'update_rem'
   | 'move_rem'
+  | 'reorder_children'
   | 'create_rem_tree'
   | 'replace_rem'
+  | 'delete_focused_rem'
+  | 'delete_selected_rem'
   | 'delete_rem';
 
 export type ReadOnlyBridgeToolName =
@@ -23,14 +38,25 @@ export type ReadOnlyBridgeToolName =
   | 'get_rem'
   | 'get_rem_tree'
   | 'get_rem_rich'
-  | 'get_current_selection';
+  | 'get_current_selection'
+  | 'get_children'
+  | 'get_rem_breadcrumbs'
+  | 'search_rems'
+  | 'get_document_or_folder_tree';
 export type SafeWriteBridgeToolName =
   | 'create_rem'
   | 'append_to_rem'
+  | 'create_document'
+  | 'create_folder'
   | 'update_rem'
   | 'move_rem'
+  | 'reorder_children'
   | 'create_rem_tree';
-export type DangerousBridgeToolName = 'replace_rem' | 'delete_rem';
+export type DangerousBridgeToolName =
+  | 'replace_rem'
+  | 'delete_focused_rem'
+  | 'delete_selected_rem'
+  | 'delete_rem';
 
 export type BridgeErrorCode =
   | 'NO_FOCUSED_REM'
@@ -39,16 +65,23 @@ export type BridgeErrorCode =
   | 'PLUGIN_NOT_CONNECTED'
   | 'INVALID_ARGS'
   | 'PERMISSION_DENIED'
+  | 'OUT_OF_SCOPE'
   | 'APPROVAL_REJECTED'
   | 'APPROVAL_TIMEOUT'
   | 'SDK_UNSUPPORTED'
   | 'SDK_ERROR'
   | 'TIMEOUT'
+  | 'CLIENT_DISCONNECTED'
   | 'UNKNOWN_TOOL'
   | 'APPROVAL_PENDING'
   | 'INTERNAL_ERROR';
 
-export type ApprovalResolution = 'APPROVED' | 'APPROVAL_REJECTED' | 'APPROVAL_TIMEOUT';
+export type ApprovalResolution =
+  | 'APPROVED'
+  | 'APPROVAL_REJECTED'
+  | 'APPROVAL_TIMEOUT'
+  | 'APPROVAL_PENDING'
+  | 'REQUEST_CANCELLED';
 export type ApprovalRiskLevel = 'safe_write' | 'destructive';
 
 export interface SerializedRem {
@@ -60,6 +93,21 @@ export interface SerializedRem {
   hasChildren: boolean;
   children?: SerializedRem[];
   truncated?: boolean;
+}
+
+export type RemStructureType = 'rem' | 'document' | 'folder' | 'unknown';
+
+export interface RemChildSummary {
+  remId: string;
+  title: string;
+  index: number;
+  hasChildren: boolean;
+  type: RemStructureType;
+}
+
+export interface RemBreadcrumbSummary {
+  remId: string;
+  title: string;
 }
 
 export interface PingArgs {
@@ -75,6 +123,8 @@ export interface GetStatusArgs {}
 export interface BridgePluginStatus {
   connected: true;
   permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
+  approvedRootRemId: string | null;
   focusedRem?: {
     found: boolean;
     remId?: string;
@@ -100,6 +150,27 @@ export interface GetRemRichArgs {
 
 export interface GetCurrentSelectionArgs {}
 
+export interface GetChildrenArgs {
+  parentRemId: string;
+  maxChildren?: number;
+}
+
+export interface GetRemBreadcrumbsArgs {
+  remId: string;
+}
+
+export interface SearchRemsArgs {
+  query: string;
+  contextRemId?: string | null;
+  maxResults?: number;
+}
+
+export interface GetDocumentOrFolderTreeArgs {
+  rootRemId?: string | null;
+  depth?: number;
+  maxChildren?: number;
+}
+
 export interface CreateRemArgs {
   parentId?: string | null;
   markdown: string;
@@ -111,6 +182,16 @@ export interface AppendToRemArgs {
   position?: 'start' | 'end';
 }
 
+export interface CreateDocumentArgs {
+  parentId?: string | null;
+  markdown: string;
+}
+
+export interface CreateFolderArgs {
+  parentId?: string | null;
+  markdown: string;
+}
+
 export interface UpdateRemArgs {
   remId: string;
   markdown: string;
@@ -120,6 +201,11 @@ export interface MoveRemArgs {
   remId: string;
   newParentId: string;
   index: number;
+}
+
+export interface ReorderChildrenArgs {
+  parentRemId: string;
+  orderedChildRemIds: string[];
 }
 
 export interface CreateRemTreeNode {
@@ -143,15 +229,47 @@ export interface DeleteRemArgs {
   confirmText: string;
 }
 
+export interface DeleteFocusedRemArgs {
+  recursive?: boolean;
+  confirmText: string;
+}
+
+export interface DeleteSelectedRemArgs {
+  recursive?: boolean;
+  confirmText: string;
+}
+
 export interface CreateRemResult {
   createdRemId: string;
   parentId: string | null;
+  insertIndex?: number;
+  insertPosition?: 'end';
   status: 'created';
+}
+
+export interface CreateDocumentResult {
+  createdRemId: string;
+  parentId: string | null;
+  insertIndex?: number;
+  insertPosition?: 'end';
+  document: true;
+  status: 'created_document';
+}
+
+export interface CreateFolderResult {
+  createdRemId: string;
+  parentId: string | null;
+  insertIndex?: number;
+  insertPosition?: 'end';
+  folder: true;
+  status: 'created_folder';
 }
 
 export interface AppendToRemResult {
   targetRemId: string;
   createdRemId: string;
+  insertIndex?: number;
+  position?: 'start' | 'end';
   status: 'appended';
 }
 
@@ -167,10 +285,17 @@ export interface MoveRemResult {
   status: 'moved';
 }
 
+export interface ReorderChildrenResult {
+  parentRemId: string;
+  orderedChildRemIds: string[];
+  status: 'reordered';
+}
+
 export interface CreateRemTreeResult {
   rootCreatedRemId: string;
   createdNodeCount: number;
   createdRemIds: string[];
+  rootInsertIndex?: number;
   status: 'created_tree';
 }
 
@@ -181,7 +306,19 @@ export interface ReplaceRemResult {
 export interface DeleteRemResult {
   deletedRemId: string;
   recursive: boolean;
+  preview: DeletePreview;
   status: 'deleted';
+}
+
+export interface DeletePreview {
+  targetRemId: string;
+  targetTitle: string;
+  parentRemId: string | null;
+  parentTitle: string | null;
+  childCount: number;
+  descendantCount: number;
+  recursive: boolean;
+  requiresConfirmText: 'DELETE';
 }
 
 export type DetectedContentType =
@@ -210,6 +347,33 @@ export interface GetCurrentSelectionResult {
   selectionSupported: boolean;
 }
 
+export interface GetChildrenResult {
+  parentRemId: string;
+  children: RemChildSummary[];
+  truncated: boolean;
+}
+
+export interface GetRemBreadcrumbsResult {
+  remId: string;
+  breadcrumbs: RemBreadcrumbSummary[];
+}
+
+export interface SearchRemsResult {
+  query: string;
+  contextRemId: string | null;
+  results: RemChildSummary[];
+  truncated: boolean;
+  searchSupported: boolean;
+}
+
+export interface GetDocumentOrFolderTreeResult {
+  rootRemId: string;
+  rootType: RemStructureType;
+  source: 'requested_root' | 'focused_portal' | 'focused_rem';
+  tree: SerializedRem;
+  truncated: boolean;
+}
+
 export interface BridgeToolArgs {
   ping: PingArgs;
   get_status: GetStatusArgs;
@@ -218,12 +382,21 @@ export interface BridgeToolArgs {
   get_rem_tree: GetRemTreeArgs;
   get_rem_rich: GetRemRichArgs;
   get_current_selection: GetCurrentSelectionArgs;
+  get_children: GetChildrenArgs;
+  get_rem_breadcrumbs: GetRemBreadcrumbsArgs;
+  search_rems: SearchRemsArgs;
+  get_document_or_folder_tree: GetDocumentOrFolderTreeArgs;
   create_rem: CreateRemArgs;
   append_to_rem: AppendToRemArgs;
+  create_document: CreateDocumentArgs;
+  create_folder: CreateFolderArgs;
   update_rem: UpdateRemArgs;
   move_rem: MoveRemArgs;
+  reorder_children: ReorderChildrenArgs;
   create_rem_tree: CreateRemTreeArgs;
   replace_rem: ReplaceRemArgs;
+  delete_focused_rem: DeleteFocusedRemArgs;
+  delete_selected_rem: DeleteSelectedRemArgs;
   delete_rem: DeleteRemArgs;
 }
 
@@ -235,12 +408,21 @@ export interface BridgeToolResults {
   get_rem_tree: SerializedRem;
   get_rem_rich: GetRemRichResult;
   get_current_selection: GetCurrentSelectionResult;
+  get_children: GetChildrenResult;
+  get_rem_breadcrumbs: GetRemBreadcrumbsResult;
+  search_rems: SearchRemsResult;
+  get_document_or_folder_tree: GetDocumentOrFolderTreeResult;
   create_rem: CreateRemResult;
   append_to_rem: AppendToRemResult;
+  create_document: CreateDocumentResult;
+  create_folder: CreateFolderResult;
   update_rem: UpdateRemResult;
   move_rem: MoveRemResult;
+  reorder_children: ReorderChildrenResult;
   create_rem_tree: CreateRemTreeResult;
   replace_rem: ReplaceRemResult;
+  delete_focused_rem: DeleteRemResult;
+  delete_selected_rem: DeleteRemResult;
   delete_rem: DeleteRemResult;
 }
 
@@ -277,6 +459,7 @@ export interface PendingApprovalRequest<TTool extends BridgeToolName = BridgeToo
   tool: TTool;
   args: BridgeToolArgs[TTool];
   permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
   requestedAt: string;
   timeoutDeadline: string;
   targetRemId?: string;
@@ -287,6 +470,7 @@ export interface PendingApprovalRequest<TTool extends BridgeToolName = BridgeToo
   summary: string;
   warning?: string;
   confirmTextRequired?: 'DELETE';
+  deletePreview?: DeletePreview;
 }
 
 export interface BridgePluginHello {
@@ -300,10 +484,21 @@ export interface BridgeServerHello {
   type: 'server_hello';
   protocolVersion: 1;
   serverName: 'remnote-companion';
+  toolRegistryVersion?: string;
+  publicTools?: string[];
+  publicToolCount?: number;
+  serverStartedAt?: string;
+}
+
+export interface BridgeCancelRequest {
+  type: 'cancel_request';
+  id: string;
+  reason: 'client_disconnected' | 'server_timeout' | 'server_shutdown';
+  message: string;
 }
 
 export type BridgeClientMessage = BridgePluginHello | BridgeResponse;
-export type BridgeServerMessage = BridgeServerHello | BridgeRequest;
+export type BridgeServerMessage = BridgeServerHello | BridgeRequest | BridgeCancelRequest;
 
 export interface BridgeToolAnnotations {
   readOnlyHint: boolean;
@@ -320,12 +515,21 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'get_rem_tree',
   'get_rem_rich',
   'get_current_selection',
+  'get_children',
+  'get_rem_breadcrumbs',
+  'search_rems',
+  'get_document_or_folder_tree',
   'create_rem',
   'append_to_rem',
+  'create_document',
+  'create_folder',
   'update_rem',
   'move_rem',
+  'reorder_children',
   'create_rem_tree',
   'replace_rem',
+  'delete_focused_rem',
+  'delete_selected_rem',
   'delete_rem',
 ] as const;
 
@@ -372,12 +576,46 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     destructiveHint: false,
     idempotentHint: true,
   },
+  get_children: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  get_rem_breadcrumbs: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  search_rems: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  get_document_or_folder_tree: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
   create_rem: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
   },
   append_to_rem: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_document: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_folder: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
@@ -392,12 +630,27 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     openWorldHint: false,
     destructiveHint: false,
   },
+  reorder_children: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
   create_rem_tree: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
   },
   replace_rem: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+  },
+  delete_focused_rem: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+  },
+  delete_selected_rem: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: true,
