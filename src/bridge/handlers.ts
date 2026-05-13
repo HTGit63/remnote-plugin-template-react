@@ -6,11 +6,17 @@ import {
   type BridgeResponse,
   type BridgeToolArgs,
   type BridgeToolName,
+  type ClearRemFormattingArgs,
   type CreateDocumentArgs,
+  type CreateFlashcardArgs,
   type CreateFolderArgs,
+  type CreateListAnswerCardArgs,
+  type CreateMultipleChoiceCardArgs,
   type GetChildrenArgs,
   type CreateRemTreeArgs,
   type CreateRemArgs,
+  type CreateClozeCardArgs,
+  type CreateStyledRemTreeArgs,
   type DeleteFocusedRemArgs,
   type DeleteRemArgs,
   type DeleteSelectedRemArgs,
@@ -26,8 +32,18 @@ import {
   type PermissionScope,
   type ReplaceRemArgs,
   type ReorderChildrenArgs,
+  type RichTextSpanInput,
   type SearchRemsArgs,
+  type SetHideBulletArgs,
+  type SetRemHeadingLevelArgs,
+  type SetRemHighlightColorArgs,
+  type SetRemTextColorArgs,
+  type SetRemTypeArgs,
+  type SetTextSpanColorArgs,
+  type SetTextSpanHighlightArgs,
+  type StyledRemTreeNode,
   type UpdateRemArgs,
+  type UpdateRemRichArgs,
   WRITE_APPROVAL_TIMEOUT_MS,
   createBridgeFailure,
   createBridgeSuccess,
@@ -49,10 +65,16 @@ import {
 import {
   appendMarkdownToRem,
   buildDeletePreview,
+  clearRemFormatting,
+  createBasicFlashcard,
+  createClozeCard,
   createDocumentFromMarkdown,
   createFolderFromMarkdown,
+  createListAnswerCard,
+  createMultipleChoiceCard,
   createRemFromMarkdown,
   createRemTree,
+  createStyledRemTree,
   deleteFocusedRem,
   deleteRem,
   deleteSelectedRem,
@@ -61,6 +83,14 @@ import {
   replaceRemMarkdown,
   reorderChildren,
   RemnoteWriteError,
+  setHideBullet,
+  setRemHeadingLevel,
+  setRemHighlightColor,
+  setRemTextColor,
+  setRemType,
+  setTextSpanColor,
+  setTextSpanHighlight,
+  updateRemRich,
   updateRemMarkdown,
 } from '../remnote/write';
 
@@ -101,6 +131,21 @@ function requiredRemId(args: unknown, field = 'remId'): string {
   }
 
   return remId;
+}
+
+function requiredRemIdFromFields(args: unknown, fields: string[]): string {
+  for (const field of fields) {
+    const remId = getStringField(args, field)?.trim();
+    if (remId) {
+      if (remId.length > MAX_REM_ID_CHARS) {
+        throw new Error(`${field} is too long.`);
+      }
+
+      return remId;
+    }
+  }
+
+  throw new Error(`Missing ${fields.join(' or ')}.`);
 }
 
 function requiredMarkdown(args: unknown): string {
@@ -258,15 +303,25 @@ function requiredIndex(args: unknown): number {
 }
 
 function requiredOrderedChildRemIds(args: unknown): string[] {
-  if (!isPlainObject(args) || !Array.isArray(args.orderedChildRemIds)) {
+  if (!isPlainObject(args)) {
     throw new Error('Missing orderedChildRemIds.');
   }
 
-  if (args.orderedChildRemIds.length > 500) {
+  const rawIds = Array.isArray(args.orderedChildRemIds)
+    ? args.orderedChildRemIds
+    : Array.isArray(args.orderedChildIds)
+      ? args.orderedChildIds
+      : undefined;
+
+  if (!rawIds) {
+    throw new Error('Missing orderedChildRemIds or orderedChildIds.');
+  }
+
+  if (rawIds.length > 500) {
     throw new Error('orderedChildRemIds exceeds 500 IDs.');
   }
 
-  return args.orderedChildRemIds.map((item, index) => {
+  return rawIds.map((item, index) => {
     if (typeof item !== 'string') {
       throw new Error(`orderedChildRemIds[${index}] must be a string.`);
     }
@@ -309,6 +364,145 @@ function requiredTree(args: unknown): CreateRemTreeArgs['tree'] {
   return args.tree as unknown as CreateRemTreeArgs['tree'];
 }
 
+function requiredStyledTree(args: unknown): StyledRemTreeNode {
+  if (!isPlainObject(args) || !isPlainObject(args.tree)) {
+    throw new Error('Missing tree.');
+  }
+
+  return args.tree as StyledRemTreeNode;
+}
+
+function requiredRichText(args: unknown): RichTextSpanInput[] {
+  if (!isPlainObject(args) || !Array.isArray(args.richText)) {
+    throw new Error('Missing richText.');
+  }
+
+  if (args.richText.length > 200) {
+    throw new Error('richText exceeds 200 spans.');
+  }
+
+  return args.richText as RichTextSpanInput[];
+}
+
+function requiredColor(args: unknown, field = 'color') {
+  const value = getStringField(args, field);
+  switch (value) {
+    case 'red':
+    case 'orange':
+    case 'yellow':
+    case 'green':
+    case 'blue':
+    case 'purple':
+    case 'pink':
+    case 'gray':
+    case 'default':
+      return value;
+    default:
+      throw new Error(`${field} must be a supported RemNote color.`);
+  }
+}
+
+function requiredHeadingLevel(args: unknown) {
+  const value = getStringField(args, 'level');
+  switch (value) {
+    case 'H1':
+    case 'H2':
+    case 'H3':
+    case 'normal':
+      return value;
+    default:
+      throw new Error('level must be H1, H2, H3, or normal.');
+  }
+}
+
+function requiredRemType(args: unknown) {
+  const value = getStringField(args, 'type');
+  switch (value) {
+    case 'normal':
+    case 'concept':
+    case 'descriptor':
+      return value;
+    default:
+      throw new Error('type must be normal, concept, or descriptor.');
+  }
+}
+
+function optionalPracticeDirection(args: unknown) {
+  const value = getStringField(args, 'direction');
+  switch (value) {
+    case undefined:
+    case '':
+      return undefined;
+    case 'forward':
+    case 'backward':
+    case 'none':
+    case 'both':
+      return value;
+    default:
+      throw new Error('direction must be forward, backward, none, or both.');
+  }
+}
+
+function requiredBoolean(args: unknown, field: string): boolean {
+  if (!isPlainObject(args) || typeof args[field] !== 'boolean') {
+    throw new Error(`${field} must be a boolean.`);
+  }
+
+  return args[field] as boolean;
+}
+
+function requiredRange(args: unknown): { start: number; end: number } {
+  if (!isPlainObject(args) || !isPlainObject(args.range)) {
+    throw new Error('Missing range.');
+  }
+
+  const { start, end } = args.range as Record<string, unknown>;
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    throw new Error('range.start and range.end must be integers.');
+  }
+
+  return { start: start as number, end: end as number };
+}
+
+function requiredStringArray(args: unknown, field: string, maxItems = 50): string[] {
+  if (!isPlainObject(args) || !Array.isArray(args[field])) {
+    throw new Error(`Missing ${field}.`);
+  }
+
+  const items = args[field] as unknown[];
+  if (!items.length || items.length > maxItems) {
+    throw new Error(`${field} must contain 1-${maxItems} items.`);
+  }
+
+  return items.map((item, index) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      throw new Error(`${field}[${index}] must be a non-empty string.`);
+    }
+
+    return item.trim();
+  });
+}
+
+function optionalScope(args: unknown): SearchRemsArgs['scope'] {
+  if (!isPlainObject(args)) {
+    return undefined;
+  }
+
+  const value = args.scope;
+  switch (value) {
+    case 'current_permission_scope':
+    case 'focused_rem_only':
+    case 'focused_rem_and_descendants':
+    case 'selected_rem_only':
+    case 'selected_rem_and_descendants':
+    case 'approved_document_or_folder':
+    case 'workspace_allowed':
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 function normalizeArgs<TTool extends BridgeToolName>(
   tool: TTool,
   args: unknown
@@ -338,8 +532,8 @@ function normalizeArgs<TTool extends BridgeToolName>(
       return {} as BridgeToolArgs[TTool];
     case 'get_children':
       return {
-        parentRemId: requiredRemId(args, 'parentRemId'),
-        maxChildren: optionalBoundedNumber(args, 'maxChildren'),
+        parentRemId: requiredRemIdFromFields(args, ['parentRemId', 'remId']),
+        maxChildren: optionalBoundedNumber(args, 'maxChildren') ?? optionalBoundedNumber(args, 'limit'),
       } as BridgeToolArgs[TTool];
     case 'get_rem_breadcrumbs':
       return {
@@ -349,7 +543,8 @@ function normalizeArgs<TTool extends BridgeToolName>(
       return {
         query: requiredSearchQuery(args),
         contextRemId: optionalRemId(args, 'contextRemId'),
-        maxResults: optionalBoundedNumber(args, 'maxResults'),
+        maxResults: optionalBoundedNumber(args, 'maxResults') ?? optionalBoundedNumber(args, 'limit'),
+        scope: optionalScope(args),
       } as BridgeToolArgs[TTool];
     case 'get_document_or_folder_tree':
       return {
@@ -387,13 +582,97 @@ function normalizeArgs<TTool extends BridgeToolName>(
       } as BridgeToolArgs[TTool];
     case 'reorder_children':
       return {
-        parentRemId: requiredRemId(args, 'parentRemId'),
+        parentRemId: requiredRemIdFromFields(args, ['parentRemId', 'parentId']),
         orderedChildRemIds: requiredOrderedChildRemIds(args),
       } as BridgeToolArgs[TTool];
     case 'create_rem_tree':
       return {
         parentId: requiredParentId(args),
+        position: optionalAppendPosition(args),
         tree: requiredTree(args),
+      } as BridgeToolArgs[TTool];
+    case 'update_rem_rich':
+      return {
+        remId: requiredRemId(args),
+        richText: requiredRichText(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_rem_heading_level':
+      return {
+        remId: requiredRemId(args),
+        level: requiredHeadingLevel(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_rem_text_color':
+      return {
+        remId: requiredRemId(args),
+        color: requiredColor(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_rem_highlight_color':
+      return {
+        remId: requiredRemId(args),
+        color: requiredColor(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_text_span_color':
+      return {
+        remId: requiredRemId(args),
+        range: requiredRange(args),
+        color: requiredColor(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_text_span_highlight':
+      return {
+        remId: requiredRemId(args),
+        range: requiredRange(args),
+        color: requiredColor(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_rem_type':
+      return {
+        remId: requiredRemId(args),
+        type: requiredRemType(args),
+      } as BridgeToolArgs[TTool];
+    case 'set_hide_bullet':
+      return {
+        remId: requiredRemId(args),
+        hideBullet: requiredBoolean(args, 'hideBullet'),
+      } as BridgeToolArgs[TTool];
+    case 'clear_rem_formatting':
+      return {
+        remId: requiredRemId(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_styled_rem_tree':
+      return {
+        parentId: requiredParentId(args),
+        position: optionalAppendPosition(args),
+        tree: requiredStyledTree(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_basic_flashcard':
+    case 'create_concept_card':
+    case 'create_descriptor_card':
+      return {
+        parentId: requiredParentId(args),
+        front: requiredTextField(args, 'front'),
+        back: requiredTextField(args, 'back'),
+        direction: optionalPracticeDirection(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_cloze_card':
+      return {
+        parentId: requiredParentId(args),
+        text: requiredTextField(args, 'text'),
+        clozeText: getStringField(args, 'clozeText')?.trim() || undefined,
+        direction: optionalPracticeDirection(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_multiple_choice_card':
+      return {
+        parentId: requiredParentId(args),
+        question: requiredTextField(args, 'question'),
+        choices: requiredStringArray(args, 'choices', 20),
+        correctChoice: requiredTextField(args, 'correctChoice'),
+        direction: optionalPracticeDirection(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_list_answer_card':
+      return {
+        parentId: requiredParentId(args),
+        prompt: requiredTextField(args, 'prompt'),
+        items: requiredStringArray(args, 'items', 50),
+        direction: optionalPracticeDirection(args),
       } as BridgeToolArgs[TTool];
     case 'replace_rem':
       return {
@@ -457,6 +736,20 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       CreateFolderArgs &
       CreateRemArgs &
       CreateRemTreeArgs &
+      CreateStyledRemTreeArgs &
+      UpdateRemRichArgs &
+      SetRemHeadingLevelArgs &
+      SetRemTextColorArgs &
+      SetRemHighlightColorArgs &
+      SetTextSpanColorArgs &
+      SetTextSpanHighlightArgs &
+      SetRemTypeArgs &
+      SetHideBulletArgs &
+      ClearRemFormattingArgs &
+      CreateFlashcardArgs &
+      CreateClozeCardArgs &
+      CreateMultipleChoiceCardArgs &
+      CreateListAnswerCardArgs &
       GetChildrenArgs &
       GetDocumentOrFolderTreeArgs &
       ReorderChildrenArgs
@@ -475,9 +768,38 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
 
 function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
   const args = request.args as Partial<
-    CreateRemArgs & CreateDocumentArgs & CreateFolderArgs & AppendToRemArgs & UpdateRemArgs & ReplaceRemArgs
+    CreateRemArgs &
+      CreateDocumentArgs &
+      CreateFolderArgs &
+      AppendToRemArgs &
+      UpdateRemArgs &
+      ReplaceRemArgs &
+      UpdateRemRichArgs &
+      CreateStyledRemTreeArgs &
+      CreateFlashcardArgs &
+      CreateClozeCardArgs &
+      CreateMultipleChoiceCardArgs &
+      CreateListAnswerCardArgs
   >;
-  return typeof args.markdown === 'string' ? args.markdown.slice(0, 3000) : undefined;
+  if (typeof args.markdown === 'string') {
+    return args.markdown.slice(0, 3000);
+  }
+  if (typeof args.front === 'string' || typeof args.back === 'string') {
+    return `Front: ${args.front ?? ''}\nBack: ${args.back ?? ''}`.slice(0, 3000);
+  }
+  if (typeof args.text === 'string') {
+    return args.text.slice(0, 3000);
+  }
+  if (typeof args.question === 'string') {
+    return `Question: ${args.question}\nChoices: ${(args.choices ?? []).join(', ')}`.slice(0, 3000);
+  }
+  if (typeof args.prompt === 'string') {
+    return `Prompt: ${args.prompt}\nItems: ${(args.items ?? []).join(', ')}`.slice(0, 3000);
+  }
+  if (args.richText || args.tree) {
+    return JSON.stringify(args.richText ?? args.tree, null, 2).slice(0, 3000);
+  }
+  return undefined;
 }
 
 function mapSdkError(id: string, error: unknown): BridgeResponse {
@@ -572,6 +894,15 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
     case 'get_rem_breadcrumbs':
     case 'append_to_rem':
     case 'update_rem':
+    case 'update_rem_rich':
+    case 'set_rem_heading_level':
+    case 'set_rem_text_color':
+    case 'set_rem_highlight_color':
+    case 'set_text_span_color':
+    case 'set_text_span_highlight':
+    case 'set_rem_type':
+    case 'set_hide_bullet':
+    case 'clear_rem_formatting':
     case 'replace_rem':
     case 'delete_rem':
       return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemArgs).remId]);
@@ -591,6 +922,18 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([(request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId]);
     case 'create_rem_tree':
       return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
+    case 'create_styled_rem_tree':
+      return uniqueRemIds([(request.args as CreateStyledRemTreeArgs).parentId]);
+    case 'create_basic_flashcard':
+    case 'create_concept_card':
+    case 'create_descriptor_card':
+      return uniqueRemIds([(request.args as CreateFlashcardArgs).parentId]);
+    case 'create_cloze_card':
+      return uniqueRemIds([(request.args as CreateClozeCardArgs).parentId]);
+    case 'create_multiple_choice_card':
+      return uniqueRemIds([(request.args as CreateMultipleChoiceCardArgs).parentId]);
+    case 'create_list_answer_card':
+      return uniqueRemIds([(request.args as CreateListAnswerCardArgs).parentId]);
     case 'move_rem':
       return uniqueRemIds([(request.args as MoveRemArgs).remId, (request.args as MoveRemArgs).newParentId]);
     default:
@@ -654,6 +997,39 @@ async function assertTargetsInsideRoots(
   }
 }
 
+async function getImplicitScopedRootRemId(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): Promise<string | null> {
+  if (!requestNeedsImplicitScopedRoot(request)) {
+    return null;
+  }
+
+  if (context.permissionScope === 'approved_document_or_folder') {
+    return context.approvedRootRemId;
+  }
+
+  if (context.permissionScope === 'focused_rem_and_descendants') {
+    return getFocusedRemId(plugin);
+  }
+
+  if (context.permissionScope === 'selected_rem_and_descendants') {
+    const selectedRemIds = await getSelectedRemIds(plugin);
+    if (selectedRemIds.length === 1) {
+      return selectedRemIds[0];
+    }
+
+    throw new RemnoteWriteError(
+      'OUT_OF_SCOPE',
+      'Implicit selected descendant scope requires exactly one selected Rem.',
+      { tool: request.tool, selectedRemCount: selectedRemIds.length }
+    );
+  }
+
+  return null;
+}
+
 async function enforceScope(
   plugin: RNPlugin,
   request: BridgeRequest,
@@ -671,26 +1047,21 @@ async function enforceScope(
     );
   }
 
-  if (
-    requestNeedsImplicitScopedRoot(request) &&
-    !(context.permissionScope === 'approved_document_or_folder' && context.approvedRootRemId)
-  ) {
+  const implicitScopedRoot = await getImplicitScopedRootRemId(plugin, request, context);
+
+  if (requestNeedsImplicitScopedRoot(request) && !implicitScopedRoot) {
     throw new RemnoteWriteError(
       'OUT_OF_SCOPE',
-      'This tool requires an explicit scoped root unless workspace_allowed is enabled.',
+      'This tool requires an explicit scoped root unless a descendant scope can provide one.',
       { tool: request.tool, permissionScope: context.permissionScope }
     );
   }
 
   const deleteTargetRemId = await resolveDeleteTargetRemId(plugin, request);
-  const implicitApprovedRoot =
-    requestNeedsImplicitScopedRoot(request) && context.permissionScope === 'approved_document_or_folder'
-      ? context.approvedRootRemId
-      : null;
   const targetRemIds = uniqueRemIds([
     ...getStaticScopeTargetIds(request),
     deleteTargetRemId,
-    implicitApprovedRoot,
+    implicitScopedRoot,
   ]);
 
   if (targetRemIds.length === 0) {
@@ -722,7 +1093,18 @@ async function enforceScope(
     return;
   }
 
-  if (context.permissionScope === 'descendants_of_selected_rem') {
+  if (context.permissionScope === 'focused_rem_and_descendants') {
+    await assertTargetsInsideRoots(
+      plugin,
+      request,
+      targetRemIds,
+      uniqueRemIds([await getFocusedRemId(plugin)]),
+      'Request target is outside the focused Rem descendant scope.'
+    );
+    return;
+  }
+
+  if (context.permissionScope === 'selected_rem_and_descendants') {
     await assertTargetsInsideRoots(
       plugin,
       request,
@@ -744,27 +1126,32 @@ async function enforceScope(
   }
 }
 
-function effectiveSearchArgs(request: BridgeRequest, context: BridgeHandlerContext): SearchRemsArgs {
+async function effectiveSearchArgs(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): Promise<SearchRemsArgs> {
   const args = request.args as SearchRemsArgs;
-  if (!args.contextRemId && context.permissionScope === 'approved_document_or_folder') {
+  if (!args.contextRemId) {
     return {
       ...args,
-      contextRemId: context.approvedRootRemId,
+      contextRemId: await getImplicitScopedRootRemId(plugin, request, context),
     };
   }
 
   return args;
 }
 
-function effectiveDocumentOrFolderTreeArgs(
+async function effectiveDocumentOrFolderTreeArgs(
+  plugin: RNPlugin,
   request: BridgeRequest,
   context: BridgeHandlerContext
-): GetDocumentOrFolderTreeArgs {
+): Promise<GetDocumentOrFolderTreeArgs> {
   const args = request.args as GetDocumentOrFolderTreeArgs;
-  if (!args.rootRemId && context.permissionScope === 'approved_document_or_folder') {
+  if (!args.rootRemId) {
     return {
       ...args,
-      rootRemId: context.approvedRootRemId,
+      rootRemId: await getImplicitScopedRootRemId(plugin, request, context),
     };
   }
 
@@ -843,6 +1230,38 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Reorder one parent Rem child list.';
     case 'create_rem_tree':
       return 'Create structured Rem tree from JSON.';
+    case 'update_rem_rich':
+      return 'Replace target Rem with structured rich text.';
+    case 'set_rem_heading_level':
+      return 'Apply a RemNote heading level.';
+    case 'set_rem_text_color':
+      return 'Apply whole-Rem text color.';
+    case 'set_rem_highlight_color':
+      return 'Apply whole-Rem highlight color.';
+    case 'set_text_span_color':
+      return 'Apply partial text color.';
+    case 'set_text_span_highlight':
+      return 'Apply partial text highlight.';
+    case 'set_rem_type':
+      return 'Set Rem type.';
+    case 'set_hide_bullet':
+      return 'Toggle Rem bullet visibility.';
+    case 'clear_rem_formatting':
+      return 'Clear visible text formatting.';
+    case 'create_styled_rem_tree':
+      return 'Create styled nested Rem tree.';
+    case 'create_basic_flashcard':
+      return 'Create a basic flashcard.';
+    case 'create_concept_card':
+      return 'Create a concept card.';
+    case 'create_descriptor_card':
+      return 'Create a descriptor card.';
+    case 'create_cloze_card':
+      return 'Create a cloze card.';
+    case 'create_multiple_choice_card':
+      return 'Create a multiple-choice card.';
+    case 'create_list_answer_card':
+      return 'Create a list-answer card.';
     case 'replace_rem':
       return 'Replace target Rem text.';
     case 'delete_focused_rem':
@@ -879,6 +1298,15 @@ async function buildApprovalRequest(
       ? undefined
       : targetRemId && (request.tool === 'create_rem' || request.tool === 'create_document' || request.tool === 'create_folder' || request.tool === 'create_rem_tree')
       ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
+      : targetRemId &&
+          (request.tool === 'create_styled_rem_tree' ||
+            request.tool === 'create_basic_flashcard' ||
+            request.tool === 'create_concept_card' ||
+            request.tool === 'create_descriptor_card' ||
+            request.tool === 'create_cloze_card' ||
+            request.tool === 'create_multiple_choice_card' ||
+            request.tool === 'create_list_answer_card')
+        ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
       : targetRemId
         ? await getRemApprovalContext(plugin, targetRemId)
         : undefined;
@@ -1116,10 +1544,13 @@ export async function handleBridgeRequest(
         break;
       }
       case 'search_rems':
-        response = createBridgeSuccess(request, await searchRems(plugin, effectiveSearchArgs(request, context)));
+        response = createBridgeSuccess(request, await searchRems(plugin, await effectiveSearchArgs(plugin, request, context)));
         break;
       case 'get_document_or_folder_tree': {
-        const tree = await readDocumentOrFolderTree(plugin, effectiveDocumentOrFolderTreeArgs(request, context));
+        const tree = await readDocumentOrFolderTree(
+          plugin,
+          await effectiveDocumentOrFolderTreeArgs(plugin, request, context)
+        );
         if (!tree) {
           response = createBridgeFailure(
             request.id,
@@ -1155,6 +1586,60 @@ export async function handleBridgeRequest(
         break;
       case 'create_rem_tree':
         response = createBridgeSuccess(request, await createRemTree(plugin, request.args));
+        break;
+      case 'update_rem_rich':
+        response = createBridgeSuccess(request, await updateRemRich(plugin, request.args));
+        break;
+      case 'set_rem_heading_level':
+        response = createBridgeSuccess(request, await setRemHeadingLevel(plugin, request.args));
+        break;
+      case 'set_rem_text_color':
+        response = createBridgeSuccess(request, await setRemTextColor(plugin, request.args));
+        break;
+      case 'set_rem_highlight_color':
+        response = createBridgeSuccess(request, await setRemHighlightColor(plugin, request.args));
+        break;
+      case 'set_text_span_color':
+        response = createBridgeSuccess(request, await setTextSpanColor(plugin, request.args));
+        break;
+      case 'set_text_span_highlight':
+        response = createBridgeSuccess(request, await setTextSpanHighlight(plugin, request.args));
+        break;
+      case 'set_rem_type':
+        response = createBridgeSuccess(request, await setRemType(plugin, request.args));
+        break;
+      case 'set_hide_bullet':
+        response = createBridgeSuccess(request, await setHideBullet(plugin, request.args));
+        break;
+      case 'clear_rem_formatting':
+        response = createBridgeSuccess(request, await clearRemFormatting(plugin, request.args));
+        break;
+      case 'create_styled_rem_tree':
+        response = createBridgeSuccess(request, await createStyledRemTree(plugin, request.args));
+        break;
+      case 'create_basic_flashcard':
+        response = createBridgeSuccess(request, await createBasicFlashcard(plugin, request.args));
+        break;
+      case 'create_concept_card':
+        response = createBridgeSuccess(
+          request,
+          await createBasicFlashcard(plugin, request.args, 'concept', 'concept')
+        );
+        break;
+      case 'create_descriptor_card':
+        response = createBridgeSuccess(
+          request,
+          await createBasicFlashcard(plugin, request.args, 'descriptor', 'descriptor')
+        );
+        break;
+      case 'create_cloze_card':
+        response = createBridgeSuccess(request, await createClozeCard(plugin, request.args));
+        break;
+      case 'create_multiple_choice_card':
+        response = createBridgeSuccess(request, await createMultipleChoiceCard(plugin, request.args));
+        break;
+      case 'create_list_answer_card':
+        response = createBridgeSuccess(request, await createListAnswerCard(plugin, request.args));
         break;
       case 'replace_rem':
         response = createBridgeSuccess(request, await replaceRemMarkdown(plugin, request.args));

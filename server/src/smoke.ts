@@ -8,6 +8,7 @@ import {
 } from '../../src/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 import { callMcpTool, initializeMcp, listMcpTools } from './mcp-client.js';
+import { getPublicMcpToolNames } from './tool-registry.js';
 
 const token = 'smoke-token';
 
@@ -22,6 +23,35 @@ const fakeRem: SerializedRem = {
 
 type MockBridgeResponder = (request: BridgeRequest, socket: WebSocket) => BridgeResponse | undefined;
 type MockCancelHandler = (request: BridgeCancelRequest) => void;
+
+function getResultPayload(response: unknown): Record<string, unknown> {
+  if (typeof response !== 'object' || response === null) {
+    return {};
+  }
+
+  const result = (response as { result?: unknown }).result;
+  return typeof result === 'object' && result !== null ? (result as Record<string, unknown>) : {};
+}
+
+function getStructuredContent(response: unknown): Record<string, unknown> {
+  const result = getResultPayload(response);
+  const structuredContent = result.structuredContent;
+  return typeof structuredContent === 'object' && structuredContent !== null
+    ? (structuredContent as Record<string, unknown>)
+    : {};
+}
+
+function getToolNamesFromList(response: unknown): string[] {
+  const result = getResultPayload(response);
+  const tools = result.tools;
+  if (!Array.isArray(tools)) {
+    return [];
+  }
+
+  return tools
+    .map((tool) => (typeof tool === 'object' && tool !== null ? (tool as { name?: unknown }).name : undefined))
+    .filter((name): name is string => typeof name === 'string');
+}
 
 function bridgeResponse(request: BridgeRequest): BridgeResponse {
   switch (request.tool) {
@@ -79,10 +109,14 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           parentRemId: request.args.parentRemId,
+          remId: request.args.parentRemId,
           children: [
             {
               remId: 'rem-existing-1',
               title: 'Existing 1',
+              frontText: 'Existing 1',
+              plainText: 'Existing 1',
+              breadcrumbs: [fakeRem.frontText, 'Existing 1'],
               index: 0,
               hasChildren: false,
               type: 'rem',
@@ -90,11 +124,15 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
             {
               remId: 'rem-existing-2',
               title: 'Existing 2',
+              frontText: 'Existing 2',
+              plainText: 'Existing 2',
+              breadcrumbs: [fakeRem.frontText, 'Existing 2'],
               index: 1,
               hasChildren: false,
               type: 'rem',
             },
           ],
+          childCount: 2,
           truncated: false,
         },
       };
@@ -105,8 +143,8 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         result: {
           remId: request.args.remId,
           breadcrumbs: [
-            { remId: 'rem-root', title: 'Root' },
-            { remId: request.args.remId, title: fakeRem.frontText },
+            { remId: 'rem-root', title: 'Root', text: 'Root' },
+            { remId: request.args.remId, title: fakeRem.frontText, text: fakeRem.frontText },
           ],
         },
       };
@@ -121,6 +159,9 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
             {
               remId: fakeRem.remId,
               title: fakeRem.frontText,
+              frontText: fakeRem.frontText,
+              plainText: fakeRem.plainText,
+              breadcrumbs: [fakeRem.frontText],
               index: 0,
               hasChildren: fakeRem.hasChildren,
               type: 'rem',
@@ -245,7 +286,9 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           parentRemId: request.args.parentRemId,
+          parentId: request.args.parentRemId,
           orderedChildRemIds: request.args.orderedChildRemIds,
+          orderedChildIds: request.args.orderedChildRemIds,
           status: 'reordered',
         },
       };
@@ -294,7 +337,148 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           createdNodeCount: 3,
           createdRemIds: ['rem-tree-root-1', 'rem-tree-child-1', 'rem-tree-child-2'],
           rootInsertIndex: 2,
+          rootInsertPosition: request.args.position ?? 'end',
           status: 'created_tree',
+        },
+      };
+    case 'update_rem_rich':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'updated_rich' },
+      };
+    case 'set_rem_heading_level':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'heading_set' },
+      };
+    case 'set_rem_text_color':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'text_color_set' },
+      };
+    case 'set_rem_highlight_color':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'highlight_set' },
+      };
+    case 'set_text_span_color':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'span_color_set' },
+      };
+    case 'set_text_span_highlight':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'span_highlight_set' },
+      };
+    case 'set_rem_type':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'rem_type_set' },
+      };
+    case 'set_hide_bullet':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'hide_bullet_set' },
+      };
+    case 'clear_rem_formatting':
+      return {
+        id: request.id,
+        ok: true,
+        result: { remId: request.args.remId, status: 'formatting_cleared' },
+      };
+    case 'create_styled_rem_tree':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          rootCreatedRemId: 'rem-styled-root-1',
+          createdNodeCount: 2,
+          createdRemIds: ['rem-styled-root-1', 'rem-styled-child-1'],
+          createdNodes: [
+            {
+              remId: 'rem-styled-root-1',
+              parentId: request.args.parentId,
+              depth: 0,
+              index: 2,
+              type: 'rem',
+            },
+            {
+              remId: 'rem-styled-child-1',
+              parentId: 'rem-styled-root-1',
+              depth: 1,
+              index: 0,
+              type: 'rem',
+            },
+          ],
+          rootInsertIndex: 2,
+          rootInsertPosition: request.args.position ?? 'end',
+          status: 'created_styled_tree',
+        },
+      };
+    case 'create_basic_flashcard':
+    case 'create_concept_card':
+    case 'create_descriptor_card':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          createdRemId: 'rem-card-1',
+          parentId: request.args.parentId,
+          cardType:
+            request.tool === 'create_concept_card'
+              ? 'concept'
+              : request.tool === 'create_descriptor_card'
+                ? 'descriptor'
+                : 'basic',
+          direction: request.args.direction ?? 'both',
+          status: 'created_flashcard',
+        },
+      };
+    case 'create_cloze_card':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          createdRemId: 'rem-cloze-card-1',
+          parentId: request.args.parentId,
+          cardType: 'cloze',
+          direction: request.args.direction ?? 'both',
+          status: 'created_flashcard',
+        },
+      };
+    case 'create_multiple_choice_card':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          createdRemId: 'rem-mc-card-1',
+          parentId: request.args.parentId,
+          cardType: 'multiple_choice',
+          direction: request.args.direction ?? 'forward',
+          createdChildRemIds: ['rem-choice-1', 'rem-choice-2'],
+          status: 'created_flashcard',
+        },
+      };
+    case 'create_list_answer_card':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          createdRemId: 'rem-list-card-1',
+          parentId: request.args.parentId,
+          cardType: 'list_answer',
+          direction: request.args.direction ?? 'forward',
+          createdChildRemIds: ['rem-list-item-1'],
+          status: 'created_flashcard',
         },
       };
     default: {
@@ -473,34 +657,17 @@ const mcp = {
 
 try {
   await initializeMcp(mcp);
-  const tools = JSON.stringify(await listMcpTools(mcp));
-  if (
-    !tools.includes('ping_remnote_plugin') ||
-    !tools.includes('get_bridge_diagnostics') ||
-    !tools.includes('get_plugin_status') ||
-    !tools.includes('get_focused_rem') ||
-    !tools.includes('create_rem') ||
-    !tools.includes('append_to_rem') ||
-    !tools.includes('create_document') ||
-    !tools.includes('create_folder') ||
-    !tools.includes('update_rem') ||
-    !tools.includes('replace_rem') ||
-    !tools.includes('move_rem') ||
-    !tools.includes('reorder_children') ||
-    !tools.includes('create_rem_tree') ||
-    !tools.includes('delete_focused_rem') ||
-    !tools.includes('delete_selected_rem') ||
-    !tools.includes('get_rem_rich') ||
-    !tools.includes('get_current_selection') ||
-    !tools.includes('get_children') ||
-    !tools.includes('get_rem_breadcrumbs') ||
-    !tools.includes('search_rems') ||
-    !tools.includes('get_document_or_folder_tree')
-  ) {
-    throw new Error('Expected MCP tools were not listed.');
+  const toolListResponse = await listMcpTools(mcp);
+  const toolNames = getToolNamesFromList(toolListResponse);
+  const expectedToolNames = getPublicMcpToolNames(false);
+  const tools = JSON.stringify(toolListResponse);
+  if (JSON.stringify(toolNames) !== JSON.stringify(expectedToolNames)) {
+    throw new Error(
+      `MCP tools/list does not match public registry. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
+    );
   }
 
-  if (tools.includes('delete_rem')) {
+  if (toolNames.includes('delete_rem')) {
     throw new Error('arbitrary ID delete must not be exposed through MCP by default.');
   }
 
@@ -508,14 +675,55 @@ try {
     throw new Error('Expected MCP tools to declare outputSchema.');
   }
 
+  const noAuthMcp = { url: mcp.url };
+  await initializeMcp(noAuthMcp);
+  const noAuthToolNames = getToolNamesFromList(await listMcpTools(noAuthMcp));
+  if (JSON.stringify(noAuthToolNames) !== JSON.stringify(expectedToolNames)) {
+    throw new Error(
+      `No-auth MCP discovery does not expose public registry. Expected ${expectedToolNames.length}, got ${noAuthToolNames.length}.`
+    );
+  }
+
+  const status = await callMcpTool(mcp, 'get_bridge_status', {});
+  const statusResult = getStructuredContent(status).result as { publicTools?: string[]; publicToolCount?: number } | undefined;
+  if (
+    !statusResult ||
+    JSON.stringify(statusResult.publicTools) !== JSON.stringify(toolNames) ||
+    statusResult.publicToolCount !== toolNames.length
+  ) {
+    throw new Error('get_bridge_status publicTools did not match MCP tools/list.');
+  }
+
+  const unknownTool = JSON.stringify(await callMcpTool(mcp, 'not_a_real_bridge_tool', {}));
+  if (!unknownTool.includes('UNKNOWN_TOOL')) {
+    throw new Error('Unknown MCP tool did not return structured UNKNOWN_TOOL.');
+  }
+
   const ping = JSON.stringify(await callMcpTool(mcp, 'ping_remnote_plugin', { message: 'smoke' }));
   if (!ping.includes('pong')) {
     throw new Error('ping_remnote_plugin did not round-trip through the mock plugin.');
   }
 
-  const diagnostics = JSON.stringify(await callMcpTool(mcp, 'get_bridge_diagnostics', {}));
-  if (!diagnostics.includes('"publicToolCount":24') || !diagnostics.includes('toolRegistryVersion')) {
-    throw new Error('get_bridge_diagnostics did not report the live 24-tool registry.');
+  const diagnosticsResponse = await callMcpTool(mcp, 'get_bridge_diagnostics', {});
+  const diagnostics = JSON.stringify(diagnosticsResponse);
+  const diagnosticsResult = getStructuredContent(diagnosticsResponse).result as
+    | { hiddenTools?: Array<{ name: string }>; callableTools?: string[]; registryMismatch?: { missing?: string[]; unexpected?: string[] } }
+    | undefined;
+  if (
+    !diagnostics.includes(`"publicToolCount":${expectedToolNames.length}`) ||
+    !diagnostics.includes('toolRegistryVersion') ||
+    !diagnostics.includes('"discoveryAuthMode":"no_auth_required"')
+  ) {
+    throw new Error('get_bridge_diagnostics did not report the live registry and discovery auth mode.');
+  }
+  if (
+    !diagnosticsResult ||
+    JSON.stringify(diagnosticsResult.callableTools) !== JSON.stringify(toolNames) ||
+    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_rem') ||
+    diagnosticsResult.registryMismatch?.missing?.length ||
+    diagnosticsResult.registryMismatch?.unexpected?.length
+  ) {
+    throw new Error('get_bridge_diagnostics did not return callable/hidden registry parity fields.');
   }
 
   const pluginStatus = JSON.stringify(await callMcpTool(mcp, 'get_plugin_status', {}));
@@ -526,6 +734,16 @@ try {
   const focused = JSON.stringify(await callMcpTool(mcp, 'get_focused_rem', {}));
   if (!focused.includes('Smoke focused Rem')) {
     throw new Error('get_focused_rem did not return mock Rem content.');
+  }
+
+  const rem = JSON.stringify(await callMcpTool(mcp, 'get_rem', { remId: fakeRem.remId }));
+  if (!rem.includes('Smoke focused Rem')) {
+    throw new Error('get_rem did not return mock Rem content.');
+  }
+
+  const remTree = JSON.stringify(await callMcpTool(mcp, 'get_rem_tree', { remId: fakeRem.remId, depth: 1 }));
+  if (!remTree.includes('Smoke focused Rem')) {
+    throw new Error('get_rem_tree did not return mock Rem tree content.');
   }
 
   const append = JSON.stringify(
@@ -612,25 +830,111 @@ try {
 
   const reorder = JSON.stringify(
     await callMcpTool(mcp, 'reorder_children', {
-      parentRemId: fakeRem.remId,
-      orderedChildRemIds: ['rem-existing-2', 'rem-existing-1'],
+      parentId: fakeRem.remId,
+      orderedChildIds: ['rem-existing-2', 'rem-existing-1'],
     })
   );
-  if (!reorder.includes('reordered') || !reorder.includes('rem-existing-2')) {
-    throw new Error('reorder_children did not return deterministic reorder status.');
+  if (!reorder.includes('reordered') || !reorder.includes('orderedChildIds') || !reorder.includes('rem-existing-2')) {
+    throw new Error('reorder_children did not return deterministic reorder status with alias fields.');
   }
 
   const tree = JSON.stringify(
     await callMcpTool(mcp, 'create_rem_tree', {
       parentId: fakeRem.remId,
+      position: 'end',
       tree: {
         title: 'Smoke tree',
         children: [{ title: 'Child A' }, { title: 'Child B' }],
       },
     })
   );
-  if (!tree.includes('created_tree') || !tree.includes('rem-tree-root-1') || !tree.includes('"rootInsertIndex":2')) {
+  if (
+    !tree.includes('created_tree') ||
+    !tree.includes('rem-tree-root-1') ||
+    !tree.includes('"rootInsertIndex":2') ||
+    !tree.includes('"rootInsertPosition":"end"')
+  ) {
     throw new Error('create_rem_tree did not return ordered append status.');
+  }
+
+  const updateRich = JSON.stringify(
+    await callMcpTool(mcp, 'update_rem_rich', {
+      remId: fakeRem.remId,
+      richText: [
+        { text: 'Quadratic Functions Clean Paste-Style ' },
+        { text: 'Note', styles: { color: 'green' } },
+      ],
+    })
+  );
+  if (!updateRich.includes('updated_rich')) {
+    throw new Error('update_rem_rich did not return rich update status.');
+  }
+
+  const heading = JSON.stringify(
+    await callMcpTool(mcp, 'set_rem_heading_level', {
+      remId: fakeRem.remId,
+      level: 'H2',
+    })
+  );
+  if (!heading.includes('heading_set')) {
+    throw new Error('set_rem_heading_level did not return heading status.');
+  }
+
+  const spanColor = JSON.stringify(
+    await callMcpTool(mcp, 'set_text_span_color', {
+      remId: fakeRem.remId,
+      range: { start: 0, end: 4 },
+      color: 'green',
+    })
+  );
+  if (!spanColor.includes('span_color_set')) {
+    throw new Error('set_text_span_color did not return span color status.');
+  }
+
+  const styledTree = JSON.stringify(
+    await callMcpTool(mcp, 'create_styled_rem_tree', {
+      parentId: fakeRem.remId,
+      position: 'end',
+      tree: {
+        richText: [
+          { text: 'Quadratic Functions Clean Paste-Style ' },
+          { text: 'Note', styles: { color: 'green' } },
+        ],
+        style: { headingLevel: 'H2' },
+        children: [
+          {
+            text: 'Core Idea',
+            style: { headingLevel: 'H3' },
+          },
+        ],
+      },
+    })
+  );
+  if (!styledTree.includes('created_styled_tree') || !styledTree.includes('rem-styled-root-1')) {
+    throw new Error('create_styled_rem_tree did not return styled tree status.');
+  }
+
+  const basicCard = JSON.stringify(
+    await callMcpTool(mcp, 'create_basic_flashcard', {
+      parentId: fakeRem.remId,
+      front: 'Quadratic function',
+      back: 'A function whose highest power is 2.',
+      direction: 'both',
+    })
+  );
+  if (!basicCard.includes('created_flashcard')) {
+    throw new Error('create_basic_flashcard did not return card status.');
+  }
+
+  const clozeCard = JSON.stringify(
+    await callMcpTool(mcp, 'create_cloze_card', {
+      parentId: fakeRem.remId,
+      text: 'A parabola has a vertex.',
+      clozeText: 'vertex',
+    })
+  );
+  if (!clozeCard.includes('cloze')) {
+    throw new Error('create_cloze_card did not return cloze card status.');
   }
 
   const rich = JSON.stringify(await callMcpTool(mcp, 'get_rem_rich', { remId: fakeRem.remId }));
@@ -643,9 +947,14 @@ try {
     throw new Error('get_current_selection did not return selection support metadata.');
   }
 
-  const children = JSON.stringify(await callMcpTool(mcp, 'get_children', { parentRemId: fakeRem.remId }));
-  if (!children.includes('"index":0') || !children.includes('Existing 1') || !children.includes('Existing 2')) {
-    throw new Error('get_children did not return ordered direct children.');
+  const children = JSON.stringify(await callMcpTool(mcp, 'get_children', { remId: fakeRem.remId, limit: 10 }));
+  if (
+    !children.includes('"index":0') ||
+    !children.includes('"childCount":2') ||
+    !children.includes('Existing 1') ||
+    !children.includes('Existing 2')
+  ) {
+    throw new Error('get_children did not return ordered direct children with alias fields.');
   }
 
   const breadcrumbs = JSON.stringify(await callMcpTool(mcp, 'get_rem_breadcrumbs', { remId: fakeRem.remId }));
@@ -653,7 +962,13 @@ try {
     throw new Error('get_rem_breadcrumbs did not return breadcrumb IDs and titles.');
   }
 
-  const search = JSON.stringify(await callMcpTool(mcp, 'search_rems', { query: 'Smoke' }));
+  const search = JSON.stringify(
+    await callMcpTool(mcp, 'search_rems', {
+      query: 'Smoke',
+      limit: 5,
+      scope: 'focused_rem_and_descendants',
+    })
+  );
   if (!search.includes('searchSupported') || !search.includes(fakeRem.remId)) {
     throw new Error('search_rems did not return bounded search results.');
   }

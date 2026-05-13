@@ -1,8 +1,9 @@
 export type PermissionMode = 'read_only' | 'confirm_writes' | 'trusted_writes' | 'danger_zone';
 export type PermissionScope =
   | 'focused_rem_only'
+  | 'focused_rem_and_descendants'
   | 'selected_rem_only'
-  | 'descendants_of_selected_rem'
+  | 'selected_rem_and_descendants'
   | 'approved_document_or_folder'
   | 'workspace_allowed';
 
@@ -28,6 +29,22 @@ export type BridgeToolName =
   | 'move_rem'
   | 'reorder_children'
   | 'create_rem_tree'
+  | 'update_rem_rich'
+  | 'set_rem_heading_level'
+  | 'set_rem_text_color'
+  | 'set_rem_highlight_color'
+  | 'set_text_span_color'
+  | 'set_text_span_highlight'
+  | 'set_rem_type'
+  | 'set_hide_bullet'
+  | 'clear_rem_formatting'
+  | 'create_styled_rem_tree'
+  | 'create_basic_flashcard'
+  | 'create_concept_card'
+  | 'create_descriptor_card'
+  | 'create_cloze_card'
+  | 'create_multiple_choice_card'
+  | 'create_list_answer_card'
   | 'replace_rem'
   | 'delete_focused_rem'
   | 'delete_selected_rem'
@@ -51,7 +68,23 @@ export type SafeWriteBridgeToolName =
   | 'update_rem'
   | 'move_rem'
   | 'reorder_children'
-  | 'create_rem_tree';
+  | 'create_rem_tree'
+  | 'update_rem_rich'
+  | 'set_rem_heading_level'
+  | 'set_rem_text_color'
+  | 'set_rem_highlight_color'
+  | 'set_text_span_color'
+  | 'set_text_span_highlight'
+  | 'set_rem_type'
+  | 'set_hide_bullet'
+  | 'clear_rem_formatting'
+  | 'create_styled_rem_tree'
+  | 'create_basic_flashcard'
+  | 'create_concept_card'
+  | 'create_descriptor_card'
+  | 'create_cloze_card'
+  | 'create_multiple_choice_card'
+  | 'create_list_answer_card';
 export type DangerousBridgeToolName =
   | 'replace_rem'
   | 'delete_focused_rem'
@@ -100,6 +133,9 @@ export type RemStructureType = 'rem' | 'document' | 'folder' | 'unknown';
 export interface RemChildSummary {
   remId: string;
   title: string;
+  frontText: string;
+  plainText: string;
+  breadcrumbs: string[];
   index: number;
   hasChildren: boolean;
   type: RemStructureType;
@@ -108,6 +144,7 @@ export interface RemChildSummary {
 export interface RemBreadcrumbSummary {
   remId: string;
   title: string;
+  text: string;
 }
 
 export interface PingArgs {
@@ -163,6 +200,7 @@ export interface SearchRemsArgs {
   query: string;
   contextRemId?: string | null;
   maxResults?: number;
+  scope?: PermissionScope | 'current_permission_scope';
 }
 
 export interface GetDocumentOrFolderTreeArgs {
@@ -215,6 +253,7 @@ export interface CreateRemTreeNode {
 
 export interface CreateRemTreeArgs {
   parentId: string;
+  position?: 'start' | 'end';
   tree: CreateRemTreeNode;
 }
 
@@ -237,6 +276,161 @@ export interface DeleteFocusedRemArgs {
 export interface DeleteSelectedRemArgs {
   recursive?: boolean;
   confirmText: string;
+}
+
+export type RemHeadingLevel = 'H1' | 'H2' | 'H3' | 'normal';
+export type RemColorName =
+  | 'red'
+  | 'orange'
+  | 'yellow'
+  | 'green'
+  | 'blue'
+  | 'purple'
+  | 'pink'
+  | 'gray'
+  | 'default';
+export type RichTextNodeType = 'text' | 'inlineMath' | 'mathBlock';
+export type RemTypeName = 'normal' | 'concept' | 'descriptor';
+export type PracticeDirection = 'forward' | 'backward' | 'none' | 'both';
+
+export interface TextRange {
+  start: number;
+  end: number;
+}
+
+export interface RichTextSpanStyle {
+  color?: RemColorName;
+  highlight?: RemColorName;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  quote?: boolean;
+  cloze?: boolean;
+}
+
+export interface RichTextSpanInput {
+  type?: RichTextNodeType;
+  text?: string;
+  latex?: string;
+  styles?: RichTextSpanStyle;
+}
+
+export interface RemStyleInput {
+  headingLevel?: RemHeadingLevel;
+  color?: RemColorName;
+  highlight?: RemColorName;
+  hideBullet?: boolean;
+  remType?: RemTypeName;
+}
+
+export type StyledRemTreeNodeType =
+  | 'rem'
+  | 'mathBlock'
+  | 'inlineMath'
+  | 'basicFlashcard'
+  | 'conceptCard'
+  | 'descriptorCard'
+  | 'clozeCard'
+  | 'multipleChoiceCard'
+  | 'listAnswerCard';
+
+export interface StyledRemTreeNode {
+  type?: StyledRemTreeNodeType;
+  title?: string;
+  text?: string;
+  richText?: RichTextSpanInput[];
+  latex?: string;
+  front?: string;
+  back?: string;
+  answer?: string;
+  clozeText?: string;
+  choices?: string[];
+  correctChoice?: string;
+  items?: string[];
+  direction?: PracticeDirection;
+  style?: RemStyleInput;
+  children?: StyledRemTreeNode[];
+}
+
+export interface UpdateRemRichArgs {
+  remId: string;
+  richText: RichTextSpanInput[];
+}
+
+export interface SetRemHeadingLevelArgs {
+  remId: string;
+  level: RemHeadingLevel;
+}
+
+export interface SetRemTextColorArgs {
+  remId: string;
+  color: RemColorName;
+}
+
+export interface SetRemHighlightColorArgs {
+  remId: string;
+  color: RemColorName;
+}
+
+export interface SetTextSpanColorArgs {
+  remId: string;
+  range: TextRange;
+  color: RemColorName;
+}
+
+export interface SetTextSpanHighlightArgs {
+  remId: string;
+  range: TextRange;
+  color: RemColorName;
+}
+
+export interface SetRemTypeArgs {
+  remId: string;
+  type: RemTypeName;
+}
+
+export interface SetHideBulletArgs {
+  remId: string;
+  hideBullet: boolean;
+}
+
+export interface ClearRemFormattingArgs {
+  remId: string;
+}
+
+export interface CreateStyledRemTreeArgs {
+  parentId: string;
+  position?: 'start' | 'end';
+  tree: StyledRemTreeNode;
+}
+
+export interface CreateFlashcardArgs {
+  parentId: string;
+  front: string;
+  back: string;
+  direction?: PracticeDirection;
+}
+
+export interface CreateClozeCardArgs {
+  parentId: string;
+  text: string;
+  clozeText?: string;
+  direction?: PracticeDirection;
+}
+
+export interface CreateMultipleChoiceCardArgs {
+  parentId: string;
+  question: string;
+  choices: string[];
+  correctChoice: string;
+  direction?: PracticeDirection;
+}
+
+export interface CreateListAnswerCardArgs {
+  parentId: string;
+  prompt: string;
+  items: string[];
+  direction?: PracticeDirection;
 }
 
 export interface CreateRemResult {
@@ -287,7 +481,9 @@ export interface MoveRemResult {
 
 export interface ReorderChildrenResult {
   parentRemId: string;
+  parentId: string;
   orderedChildRemIds: string[];
+  orderedChildIds: string[];
   status: 'reordered';
 }
 
@@ -296,7 +492,47 @@ export interface CreateRemTreeResult {
   createdNodeCount: number;
   createdRemIds: string[];
   rootInsertIndex?: number;
+  rootInsertPosition?: 'start' | 'end';
   status: 'created_tree';
+}
+
+export interface FormatRemResult {
+  remId: string;
+  status:
+    | 'updated_rich'
+    | 'heading_set'
+    | 'text_color_set'
+    | 'highlight_set'
+    | 'span_color_set'
+    | 'span_highlight_set'
+    | 'rem_type_set'
+    | 'hide_bullet_set'
+    | 'formatting_cleared';
+}
+
+export interface CreateStyledRemTreeResult {
+  rootCreatedRemId: string;
+  createdNodeCount: number;
+  createdRemIds: string[];
+  createdNodes: Array<{
+    remId: string;
+    parentId: string;
+    depth: number;
+    index: number;
+    type: StyledRemTreeNodeType;
+  }>;
+  rootInsertIndex?: number;
+  rootInsertPosition?: 'start' | 'end';
+  status: 'created_styled_tree';
+}
+
+export interface CreateFlashcardResult {
+  createdRemId: string;
+  parentId: string;
+  cardType: 'basic' | 'concept' | 'descriptor' | 'cloze' | 'multiple_choice' | 'list_answer';
+  direction: PracticeDirection;
+  createdChildRemIds?: string[];
+  status: 'created_flashcard';
 }
 
 export interface ReplaceRemResult {
@@ -333,11 +569,28 @@ export interface GetRemRichResult {
   frontText: string;
   backText: string;
   plainText: string;
+  remStyle?: {
+    headingLevel: RemHeadingLevel;
+    hideBullet: boolean;
+    highlightColor?: RemColorName;
+    remType: RemTypeName | 'unknown';
+  };
+  richText?: RichTextSpanInput[];
+  backRichText?: RichTextSpanInput[];
+  children?: RemChildSummary[];
+  card?: {
+    hasCards: boolean;
+    cards: Array<{
+      id?: string;
+      type?: unknown;
+    }>;
+  };
   rich: {
     front: unknown[];
     back: unknown[];
   };
   richSupported: boolean;
+  reason?: string;
   detectedContentTypes: DetectedContentType[];
 }
 
@@ -345,11 +598,14 @@ export interface GetCurrentSelectionResult {
   focusedRemId: string | null;
   selectedRemIds: string[];
   selectionSupported: boolean;
+  reason?: string;
 }
 
 export interface GetChildrenResult {
   parentRemId: string;
+  remId: string;
   children: RemChildSummary[];
+  childCount: number;
   truncated: boolean;
 }
 
@@ -394,6 +650,22 @@ export interface BridgeToolArgs {
   move_rem: MoveRemArgs;
   reorder_children: ReorderChildrenArgs;
   create_rem_tree: CreateRemTreeArgs;
+  update_rem_rich: UpdateRemRichArgs;
+  set_rem_heading_level: SetRemHeadingLevelArgs;
+  set_rem_text_color: SetRemTextColorArgs;
+  set_rem_highlight_color: SetRemHighlightColorArgs;
+  set_text_span_color: SetTextSpanColorArgs;
+  set_text_span_highlight: SetTextSpanHighlightArgs;
+  set_rem_type: SetRemTypeArgs;
+  set_hide_bullet: SetHideBulletArgs;
+  clear_rem_formatting: ClearRemFormattingArgs;
+  create_styled_rem_tree: CreateStyledRemTreeArgs;
+  create_basic_flashcard: CreateFlashcardArgs;
+  create_concept_card: CreateFlashcardArgs;
+  create_descriptor_card: CreateFlashcardArgs;
+  create_cloze_card: CreateClozeCardArgs;
+  create_multiple_choice_card: CreateMultipleChoiceCardArgs;
+  create_list_answer_card: CreateListAnswerCardArgs;
   replace_rem: ReplaceRemArgs;
   delete_focused_rem: DeleteFocusedRemArgs;
   delete_selected_rem: DeleteSelectedRemArgs;
@@ -420,6 +692,22 @@ export interface BridgeToolResults {
   move_rem: MoveRemResult;
   reorder_children: ReorderChildrenResult;
   create_rem_tree: CreateRemTreeResult;
+  update_rem_rich: FormatRemResult;
+  set_rem_heading_level: FormatRemResult;
+  set_rem_text_color: FormatRemResult;
+  set_rem_highlight_color: FormatRemResult;
+  set_text_span_color: FormatRemResult;
+  set_text_span_highlight: FormatRemResult;
+  set_rem_type: FormatRemResult;
+  set_hide_bullet: FormatRemResult;
+  clear_rem_formatting: FormatRemResult;
+  create_styled_rem_tree: CreateStyledRemTreeResult;
+  create_basic_flashcard: CreateFlashcardResult;
+  create_concept_card: CreateFlashcardResult;
+  create_descriptor_card: CreateFlashcardResult;
+  create_cloze_card: CreateFlashcardResult;
+  create_multiple_choice_card: CreateFlashcardResult;
+  create_list_answer_card: CreateFlashcardResult;
   replace_rem: ReplaceRemResult;
   delete_focused_rem: DeleteRemResult;
   delete_selected_rem: DeleteRemResult;
@@ -485,8 +773,15 @@ export interface BridgeServerHello {
   protocolVersion: 1;
   serverName: 'remnote-companion';
   toolRegistryVersion?: string;
+  serverToolRegistryVersion?: string;
+  mcpDiscoveryVersion?: string;
+  pluginProtocolVersion?: number;
+  registeredTools?: string[];
   publicTools?: string[];
   publicToolCount?: number;
+  exposedTools?: string[];
+  callableTools?: string[];
+  hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }
 
@@ -527,6 +822,22 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'move_rem',
   'reorder_children',
   'create_rem_tree',
+  'update_rem_rich',
+  'set_rem_heading_level',
+  'set_rem_text_color',
+  'set_rem_highlight_color',
+  'set_text_span_color',
+  'set_text_span_highlight',
+  'set_rem_type',
+  'set_hide_bullet',
+  'clear_rem_formatting',
+  'create_styled_rem_tree',
+  'create_basic_flashcard',
+  'create_concept_card',
+  'create_descriptor_card',
+  'create_cloze_card',
+  'create_multiple_choice_card',
+  'create_list_answer_card',
   'replace_rem',
   'delete_focused_rem',
   'delete_selected_rem',
@@ -636,6 +947,86 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     destructiveHint: false,
   },
   create_rem_tree: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  update_rem_rich: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_rem_heading_level: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_rem_text_color: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_rem_highlight_color: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_text_span_color: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_text_span_highlight: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_rem_type: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  set_hide_bullet: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  clear_rem_formatting: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_styled_rem_tree: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_basic_flashcard: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_concept_card: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_descriptor_card: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_cloze_card: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_multiple_choice_card: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  create_list_answer_card: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,

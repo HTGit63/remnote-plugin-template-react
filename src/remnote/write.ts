@@ -1,29 +1,55 @@
-import type { Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import { SetRemType } from '@remnote/plugin-sdk';
+import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   AppendToRemArgs,
   AppendToRemResult,
   BridgeErrorCode,
+  ClearRemFormattingArgs,
   CreateDocumentArgs,
   CreateDocumentResult,
+  CreateFlashcardArgs,
+  CreateFlashcardResult,
   CreateFolderArgs,
   CreateFolderResult,
+  CreateListAnswerCardArgs,
+  CreateMultipleChoiceCardArgs,
   CreateRemTreeArgs,
   CreateRemTreeNode,
   CreateRemTreeResult,
   CreateRemArgs,
   CreateRemResult,
+  CreateClozeCardArgs,
+  CreateStyledRemTreeArgs,
+  CreateStyledRemTreeResult,
   DeleteFocusedRemArgs,
   DeletePreview,
   DeleteRemArgs,
   DeleteRemResult,
   DeleteSelectedRemArgs,
+  FormatRemResult,
   MoveRemArgs,
   MoveRemResult,
+  PracticeDirection,
   ReplaceRemArgs,
   ReplaceRemResult,
   ReorderChildrenArgs,
   ReorderChildrenResult,
+  RemColorName,
+  RemHeadingLevel,
+  RemStyleInput,
+  RemTypeName,
+  RichTextSpanInput,
+  SetHideBulletArgs,
+  SetRemHeadingLevelArgs,
+  SetRemHighlightColorArgs,
+  SetRemTextColorArgs,
+  SetRemTypeArgs,
+  SetTextSpanColorArgs,
+  SetTextSpanHighlightArgs,
+  StyledRemTreeNode,
+  StyledRemTreeNodeType,
   UpdateRemArgs,
+  UpdateRemRichArgs,
   UpdateRemResult,
 } from '../bridge/protocol';
 
@@ -42,6 +68,20 @@ interface ValidatedTreeNode {
 interface TreeValidationState {
   nodeCount: number;
 }
+
+const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
+  red: 'Red',
+  orange: 'Orange',
+  yellow: 'Yellow',
+  green: 'Green',
+  blue: 'Blue',
+  purple: 'Purple',
+  pink: undefined,
+  gray: undefined,
+  default: undefined,
+};
+
+const COLOR_FORMAT_NAMES: RichTextFormatName[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
 
 export class RemnoteWriteError extends Error {
   constructor(
@@ -90,6 +130,220 @@ async function parseMarkdownToRichText(plugin: RNPlugin, markdown: string): Prom
   return runSdkOperation('richText.parseFromMarkdown', () =>
     plugin.richText.parseFromMarkdown(markdown)
   );
+}
+
+function getColorFormat(color: RemColorName): RichTextFormatName | undefined {
+  const format = COLOR_FORMATS[color];
+  if (!format && color !== 'default' && color !== 'pink' && color !== 'gray') {
+    throw new RemnoteWriteError('INVALID_ARGS', `Unsupported color "${color}".`);
+  }
+
+  if (!format && (color === 'pink' || color === 'gray')) {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      `The installed RemNote SDK rich text formatter only exposes red, orange, yellow, green, blue, and purple.`
+    );
+  }
+
+  return format;
+}
+
+function normalizeHeading(level: RemHeadingLevel): 'H1' | 'H2' | 'H3' | undefined {
+  return level === 'normal' ? undefined : level;
+}
+
+function getRemTypeValue(type: RemTypeName): SetRemType {
+  switch (type) {
+    case 'concept':
+      return SetRemType.CONCEPT;
+    case 'descriptor':
+      return SetRemType.DESCRIPTOR;
+    case 'normal':
+    default:
+      return SetRemType.DEFAULT_TYPE;
+  }
+}
+
+function getTextFormats(styles: RichTextSpanInput['styles']): Exclude<RichTextFormatName, 'cloze'>[] {
+  const formats: Exclude<RichTextFormatName, 'cloze'>[] = [];
+  if (!styles) {
+    return formats;
+  }
+
+  if (styles.bold) {
+    formats.push('bold');
+  }
+  if (styles.italic) {
+    formats.push('italic');
+  }
+  if (styles.underline) {
+    formats.push('underline');
+  }
+  if (styles.quote) {
+    formats.push('quote');
+  }
+
+  const color = styles.color && styles.color !== 'default' ? styles.color : styles.highlight;
+  if (color && color !== 'default') {
+    const format = getColorFormat(color);
+    if (format) {
+      formats.push(format as Exclude<RichTextFormatName, 'cloze'>);
+    }
+  }
+
+  return formats;
+}
+
+async function buildRichTextFromSpans(
+  plugin: RNPlugin,
+  spans: RichTextSpanInput[]
+): Promise<RichTextInterface> {
+  if (!Array.isArray(spans) || spans.length === 0) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'richText must contain at least one span.');
+  }
+
+  let builder: ReturnType<RNPlugin['richText']['text']> | undefined;
+  let appended = false;
+
+  for (const span of spans) {
+    const type = span.type ?? (span.latex ? 'inlineMath' : 'text');
+    if (type === 'mathBlock' || type === 'inlineMath') {
+      const latex = span.latex ?? span.text ?? '';
+      if (!latex) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'Math span requires latex.');
+      }
+
+      builder = builder
+        ? builder.latex(latex, type === 'mathBlock')
+        : plugin.richText.latex(latex, type === 'mathBlock');
+      appended = true;
+      continue;
+    }
+
+    const text = span.text ?? '';
+    if (!text) {
+      continue;
+    }
+
+    builder = builder
+      ? builder.text(text, getTextFormats(span.styles))
+      : plugin.richText.text(text, getTextFormats(span.styles));
+    appended = true;
+  }
+
+  if (!builder || !appended) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'richText did not contain text or math content.');
+  }
+
+  const completedBuilder = builder;
+  return runSdkOperation('richText.value', () => completedBuilder.value());
+}
+
+async function buildStyledText(
+  plugin: RNPlugin,
+  text: string,
+  style?: RemStyleInput
+): Promise<RichTextInterface> {
+  return buildRichTextFromSpans(plugin, [
+    {
+      text,
+      styles: {
+        color: style?.color,
+        highlight: style?.highlight,
+      },
+    },
+  ]);
+}
+
+async function getRemPlainString(plugin: RNPlugin, rem: Rem): Promise<string> {
+  return runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
+}
+
+function validateTextRange(range: { start: number; end: number }, textLength: number) {
+  if (
+    !Number.isInteger(range.start) ||
+    !Number.isInteger(range.end) ||
+    range.start < 0 ||
+    range.end <= range.start ||
+    range.end > textLength
+  ) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'range must be inside the Rem plain text.', {
+      range,
+      textLength,
+    });
+  }
+}
+
+async function clearColorFormatsInRange(
+  plugin: RNPlugin,
+  richText: RichTextInterface,
+  start: number,
+  end: number
+): Promise<RichTextInterface> {
+  let next = richText;
+  for (const format of COLOR_FORMAT_NAMES) {
+    next = await runSdkOperation('richText.removeTextFormatFromRange', () =>
+      plugin.richText.removeTextFormatFromRange(next, start, end, format)
+    );
+  }
+
+  return next;
+}
+
+async function setColorInRange(
+  plugin: RNPlugin,
+  rem: Rem,
+  range: { start: number; end: number },
+  color: RemColorName,
+  status: FormatRemResult['status']
+): Promise<FormatRemResult> {
+  const plain = await getRemPlainString(plugin, rem);
+  validateTextRange(range, plain.length);
+
+  let richText = await clearColorFormatsInRange(plugin, rem.text, range.start, range.end);
+  const format = getColorFormat(color);
+  if (format) {
+    richText = await runSdkOperation('richText.applyTextFormatToRange', () =>
+      plugin.richText.applyTextFormatToRange(richText, range.start, range.end, format)
+    );
+  }
+
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
+  return { remId: rem._id, status };
+}
+
+async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleInput | undefined) {
+  if (!style) {
+    return;
+  }
+
+  if (style.headingLevel) {
+    const headingLevel = style.headingLevel;
+    await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(headingLevel)));
+  }
+
+  if (style.hideBullet !== undefined) {
+    await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!style.hideBullet));
+  }
+
+  if (style.remType) {
+    const remType = style.remType;
+    await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(remType)));
+  }
+
+  if (style.highlight && style.highlight !== 'default') {
+    const color = getColorFormat(style.highlight);
+    if (color) {
+      await runSdkOperation('rem.setHighlightColor', () => rem.setHighlightColor(color as never));
+    }
+  }
+
+  if (style.color && style.color !== 'default') {
+    const plain = await getRemPlainString(plugin, rem);
+    if (plain.length > 0) {
+      await setColorInRange(plugin, rem, { start: 0, end: plain.length }, style.color, 'text_color_set');
+    }
+  }
 }
 
 export async function findRequiredRem(
@@ -351,6 +605,106 @@ export async function updateRemMarkdown(
   };
 }
 
+export async function updateRemRich(
+  plugin: RNPlugin,
+  args: UpdateRemRichArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const richText = await buildRichTextFromSpans(plugin, args.richText);
+
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
+
+  return {
+    remId: rem._id,
+    status: 'updated_rich',
+  };
+}
+
+export async function setRemHeadingLevel(
+  plugin: RNPlugin,
+  args: SetRemHeadingLevelArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(args.level)));
+  return { remId: rem._id, status: 'heading_set' };
+}
+
+export async function setRemTextColor(
+  plugin: RNPlugin,
+  args: SetRemTextColorArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const plain = await getRemPlainString(plugin, rem);
+  if (!plain.length) {
+    return { remId: rem._id, status: 'text_color_set' };
+  }
+
+  return setColorInRange(plugin, rem, { start: 0, end: plain.length }, args.color, 'text_color_set');
+}
+
+export async function setTextSpanColor(
+  plugin: RNPlugin,
+  args: SetTextSpanColorArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  return setColorInRange(plugin, rem, args.range, args.color, 'span_color_set');
+}
+
+export async function setTextSpanHighlight(
+  plugin: RNPlugin,
+  args: SetTextSpanHighlightArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  return setColorInRange(plugin, rem, args.range, args.color, 'span_highlight_set');
+}
+
+export async function setRemHighlightColor(
+  plugin: RNPlugin,
+  args: SetRemHighlightColorArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const format = getColorFormat(args.color);
+
+  await runSdkOperation('rem.setHighlightColor', () =>
+    rem.setHighlightColor((format ?? undefined) as never)
+  );
+
+  return { remId: rem._id, status: 'highlight_set' };
+}
+
+export async function setRemType(
+  plugin: RNPlugin,
+  args: SetRemTypeArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(args.type)));
+  return { remId: rem._id, status: 'rem_type_set' };
+}
+
+export async function setHideBullet(
+  plugin: RNPlugin,
+  args: SetHideBulletArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!args.hideBullet));
+  return { remId: rem._id, status: 'hide_bullet_set' };
+}
+
+export async function clearRemFormatting(
+  plugin: RNPlugin,
+  args: ClearRemFormattingArgs
+): Promise<FormatRemResult> {
+  const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const plain = await getRemPlainString(plugin, rem);
+  const richText = await buildRichTextFromSpans(plugin, [{ text: plain || ' ' }]);
+
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
+  await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
+  await runSdkOperation('rem.setType', () => rem.setType(SetRemType.DEFAULT_TYPE));
+
+  return { remId: rem._id, status: 'formatting_cleared' };
+}
+
 export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<MoveRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const newParent = await findRequiredRem(plugin, args.newParentId, 'Parent', 'PARENT_NOT_FOUND');
@@ -419,7 +773,9 @@ export async function reorderChildren(
 
   return {
     parentRemId: parent._id,
+    parentId: parent._id,
     orderedChildRemIds: requestedIds,
+    orderedChildIds: requestedIds,
     status: 'reordered',
   };
 }
@@ -446,13 +802,14 @@ export async function createRemTree(
   }
 
   try {
-    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, 'end');
+    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
     const root = await createNode(tree, parent, rootInsertIndex);
     return {
       rootCreatedRemId: root._id,
       createdNodeCount: createdRemIds.length,
       createdRemIds,
       rootInsertIndex,
+      rootInsertPosition: args.position ?? 'end',
       status: 'created_tree',
     };
   } catch (error: unknown) {
@@ -465,6 +822,309 @@ export async function createRemTree(
     }
 
     throw new RemnoteWriteError('SDK_ERROR', 'RemNote tree creation failed.', {
+      createdNodeCount: createdRemIds.length,
+      createdRemIds,
+      sdkMessage: getSdkErrorMessage(error),
+    });
+  }
+}
+
+function normalizeStyledNode(
+  rawNode: StyledRemTreeNode,
+  depth: number,
+  state: TreeValidationState
+): StyledRemTreeNode {
+  if (typeof rawNode !== 'object' || rawNode === null || Array.isArray(rawNode)) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Styled tree node must be an object.');
+  }
+
+  if (depth > CREATE_TREE_MAX_DEPTH) {
+    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree depth exceeds ${CREATE_TREE_MAX_DEPTH}.`);
+  }
+
+  state.nodeCount += 1;
+  if (state.nodeCount > CREATE_TREE_MAX_NODES) {
+    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree node count exceeds ${CREATE_TREE_MAX_NODES}.`);
+  }
+
+  const children = rawNode.children ?? [];
+  if (!Array.isArray(children)) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Styled tree node children must be an array.');
+  }
+
+  return {
+    ...rawNode,
+    children: children.map((child) => normalizeStyledNode(child, depth + 1, state)),
+  };
+}
+
+async function createFlashcardRem(
+  plugin: RNPlugin,
+  parent: Rem,
+  index: number,
+  cardType: CreateFlashcardResult['cardType'],
+  front: string,
+  back: string,
+  direction: PracticeDirection = 'both',
+  remType?: RemTypeName
+): Promise<{ rem: Rem; childIds: string[] }> {
+  const frontRichText = await buildRichTextFromSpans(plugin, [{ text: front }]);
+  const backRichText = await buildRichTextFromSpans(plugin, [{ text: back }]);
+  const rem = await createRemWithRichText(plugin, frontRichText, parent, index);
+  const childIds: string[] = [];
+
+  if (remType) {
+    await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(remType)));
+  }
+
+  await runSdkOperation('rem.setBackText', () => rem.setBackText(backRichText));
+  await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
+  await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(direction));
+
+  if (cardType === 'multiple_choice' || cardType === 'list_answer') {
+    const choices = back
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    for (let childIndex = 0; childIndex < choices.length; childIndex += 1) {
+      const childText = await buildRichTextFromSpans(plugin, [{ text: choices[childIndex] }]);
+      const child = await createRemWithRichText(plugin, childText, rem, childIndex);
+      await runSdkOperation('rem.setIsCardItem', () => child.setIsCardItem(true));
+      childIds.push(child._id);
+    }
+  }
+
+  return { rem, childIds };
+}
+
+export async function createBasicFlashcard(
+  plugin: RNPlugin,
+  args: CreateFlashcardArgs,
+  cardType: CreateFlashcardResult['cardType'] = 'basic',
+  remType?: RemTypeName
+): Promise<CreateFlashcardResult> {
+  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
+  const { rem, childIds } = await createFlashcardRem(
+    plugin,
+    parent,
+    insertIndex,
+    cardType,
+    args.front,
+    args.back,
+    args.direction ?? 'both',
+    remType
+  );
+
+  return {
+    createdRemId: rem._id,
+    parentId: parent._id,
+    cardType,
+    direction: args.direction ?? 'both',
+    ...(childIds.length ? { createdChildRemIds: childIds } : {}),
+    status: 'created_flashcard',
+  };
+}
+
+export async function createClozeCard(
+  plugin: RNPlugin,
+  args: CreateClozeCardArgs
+): Promise<CreateFlashcardResult> {
+  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
+  const plainText = args.text;
+  let start = args.clozeText ? plainText.indexOf(args.clozeText) : -1;
+  let end = start >= 0 && args.clozeText ? start + args.clozeText.length : -1;
+
+  if (start < 0) {
+    const match = /\{\{(.+?)\}\}/.exec(plainText);
+    if (match?.index !== undefined) {
+      start = match.index;
+      end = match.index + match[0].length;
+    } else {
+      start = 0;
+      end = plainText.length;
+    }
+  }
+
+  const baseRichText = await buildRichTextFromSpans(plugin, [{ text: plainText }]);
+  const clozeRichText = await runSdkOperation('richText.applyTextFormatToRange', () =>
+    plugin.richText.applyTextFormatToRange(baseRichText, start, end, 'cloze')
+  );
+  const rem = await createRemWithRichText(plugin, clozeRichText, parent, insertIndex);
+  await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
+  await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(args.direction ?? 'both'));
+
+  return {
+    createdRemId: rem._id,
+    parentId: parent._id,
+    cardType: 'cloze',
+    direction: args.direction ?? 'both',
+    status: 'created_flashcard',
+  };
+}
+
+export async function createMultipleChoiceCard(
+  plugin: RNPlugin,
+  args: CreateMultipleChoiceCardArgs
+): Promise<CreateFlashcardResult> {
+  const back = [`Answer: ${args.correctChoice}`, ...args.choices.map((choice) => `Choice: ${choice}`)].join('\n');
+  return createBasicFlashcard(
+    plugin,
+    {
+      parentId: args.parentId,
+      front: args.question,
+      back,
+      direction: args.direction ?? 'forward',
+    },
+    'multiple_choice'
+  );
+}
+
+export async function createListAnswerCard(
+  plugin: RNPlugin,
+  args: CreateListAnswerCardArgs
+): Promise<CreateFlashcardResult> {
+  return createBasicFlashcard(
+    plugin,
+    {
+      parentId: args.parentId,
+      front: args.prompt,
+      back: args.items.join('\n'),
+      direction: args.direction ?? 'forward',
+    },
+    'list_answer'
+  );
+}
+
+export async function createStyledRemTree(
+  plugin: RNPlugin,
+  args: CreateStyledRemTreeArgs
+): Promise<CreateStyledRemTreeResult> {
+  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const validationState: TreeValidationState = { nodeCount: 0 };
+  const tree = normalizeStyledNode(args.tree, 1, validationState);
+  const createdRemIds: string[] = [];
+  const createdNodes: CreateStyledRemTreeResult['createdNodes'] = [];
+
+  async function createNode(
+    node: StyledRemTreeNode,
+    nodeParent: Rem,
+    index: number,
+    depth: number
+  ): Promise<Rem> {
+    const type: StyledRemTreeNodeType = node.type ?? 'rem';
+    let created: Rem;
+    let childIds: string[] = [];
+
+    if (type === 'basicFlashcard' || type === 'conceptCard' || type === 'descriptorCard') {
+      const remType = type === 'conceptCard' ? 'concept' : type === 'descriptorCard' ? 'descriptor' : undefined;
+      const card = await createFlashcardRem(
+        plugin,
+        nodeParent,
+        index,
+        type === 'conceptCard' ? 'concept' : type === 'descriptorCard' ? 'descriptor' : 'basic',
+        node.front ?? node.title ?? node.text ?? '',
+        node.back ?? node.answer ?? '',
+        node.direction ?? 'both',
+        remType
+      );
+      created = card.rem;
+      childIds = card.childIds;
+    } else if (type === 'multipleChoiceCard') {
+      const choices = node.choices ?? [];
+      const back = [`Answer: ${node.correctChoice ?? node.answer ?? ''}`, ...choices.map((choice) => `Choice: ${choice}`)].join('\n');
+      const card = await createFlashcardRem(
+        plugin,
+        nodeParent,
+        index,
+        'multiple_choice',
+        node.front ?? node.title ?? node.text ?? '',
+        back,
+        node.direction ?? 'forward'
+      );
+      created = card.rem;
+      childIds = card.childIds;
+    } else if (type === 'listAnswerCard') {
+      const card = await createFlashcardRem(
+        plugin,
+        nodeParent,
+        index,
+        'list_answer',
+        node.front ?? node.title ?? node.text ?? '',
+        (node.items ?? []).join('\n'),
+        node.direction ?? 'forward'
+      );
+      created = card.rem;
+      childIds = card.childIds;
+    } else if (type === 'clozeCard') {
+      const text = node.text ?? node.title ?? '';
+      const richText = await buildRichTextFromSpans(plugin, [{ text }]);
+      created = await createRemWithRichText(plugin, richText, nodeParent, index);
+      const plain = await getRemPlainString(plugin, created);
+      const clozeText = node.clozeText ?? plain;
+      const start = plain.indexOf(clozeText);
+      if (start >= 0) {
+        const next = await runSdkOperation('richText.applyTextFormatToRange', () =>
+          plugin.richText.applyTextFormatToRange(created.text, start, start + clozeText.length, 'cloze')
+        );
+        await runSdkOperation('rem.setText', () => created.setText(next));
+      }
+      await runSdkOperation('rem.setEnablePractice', () => created.setEnablePractice(true));
+      await runSdkOperation('rem.setPracticeDirection', () => created.setPracticeDirection(node.direction ?? 'both'));
+    } else {
+      const richText =
+        node.richText && node.richText.length
+          ? await buildRichTextFromSpans(plugin, node.richText)
+          : type === 'mathBlock' || type === 'inlineMath'
+            ? await buildRichTextFromSpans(plugin, [
+                { type, latex: node.latex ?? node.text ?? node.title ?? '' },
+              ])
+            : await buildStyledText(plugin, node.text ?? node.title ?? '', node.style);
+      created = await createRemWithRichText(plugin, richText, nodeParent, index);
+    }
+
+    await applyRemStyle(plugin, created, node.style);
+    createdRemIds.push(created._id, ...childIds);
+    createdNodes.push({
+      remId: created._id,
+      parentId: nodeParent._id,
+      depth,
+      index,
+      type,
+    });
+
+    const children = node.children ?? [];
+    for (let childIndex = 0; childIndex < children.length; childIndex += 1) {
+      await createNode(children[childIndex], created, childIndex, depth + 1);
+    }
+
+    return created;
+  }
+
+  try {
+    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
+    const root = await createNode(tree, parent, rootInsertIndex, 0);
+
+    return {
+      rootCreatedRemId: root._id,
+      createdNodeCount: createdRemIds.length,
+      createdRemIds,
+      createdNodes,
+      rootInsertIndex,
+      rootInsertPosition: args.position ?? 'end',
+      status: 'created_styled_tree',
+    };
+  } catch (error: unknown) {
+    if (error instanceof RemnoteWriteError) {
+      throw new RemnoteWriteError(error.code, error.message, {
+        originalDetails: error.details,
+        createdNodeCount: createdRemIds.length,
+        createdRemIds,
+      });
+    }
+
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote styled tree creation failed.', {
       createdNodeCount: createdRemIds.length,
       createdRemIds,
       sdkMessage: getSdkErrorMessage(error),

@@ -1,31 +1,25 @@
 # AGENTS.md
 
-## Purpose of This File
+## Purpose
 
 This file gives AI coding agents strict instructions for working in this repository.
 
 This repository is the **RemNote ChatGPT Bridge**.
 
-It is no longer just a RemNote plugin prototype. The target is a production-grade bridge that lets ChatGPT/Vivy safely read, create, append, organize, update, move, and eventually delete RemNote content through a controlled MCP-compatible tool layer.
+The goal is **not** to build an AI chatbot inside RemNote.
 
-The final system must be safe enough to use outside ChatGPT Developer Mode and structured enough to become a normal secure MCP/App-style integration.
+The goal is to let ChatGPT / Vivy use RemNote through a safe, typed, permissioned, auditable bridge.
 
----
-
-# 1. Product Direction
-
-## 1.1 Target Product
-
-The target architecture is:
+The expected architecture is:
 
 ```text
 ChatGPT / Vivy
 ↓
-MCP-compatible tool layer / future ChatGPT App
+MCP-compatible tool layer
 ↓
-Local or hosted companion server
+Local companion server
 ↓
-Authenticated bridge channel
+WebSocket bridge
 ↓
 Running RemNote plugin
 ↓
@@ -34,400 +28,450 @@ RemNote SDK
 User's RemNote knowledge base
 ```
 
-The RemNote plugin is the RemNote SDK executor.
+The RemNote plugin is the RemNote SDK access layer.
 
-The MCP/server layer is the tool and security layer.
-
-ChatGPT/Vivy is the reasoning layer.
-
-The plugin must not become an AI chatbot inside RemNote.
-
-## 1.2 Core Product Goal
-
-The product should make this workflow reliable:
-
-```text
-User opens RemNote.
-User enables the RemNote Bridge plugin.
-User connects ChatGPT/Vivy to the bridge.
-User gives ChatGPT permission to work in a selected Rem, document, folder, or approved workspace scope.
-ChatGPT reads the RemNote structure.
-ChatGPT understands the order, hierarchy, and nesting of Rems.
-ChatGPT appends new notes after existing content by default.
-ChatGPT can create new Rems, documents, and folders when permitted.
-ChatGPT can update/rewrite only under the selected permission mode.
-ChatGPT can delete only with strict human supervision.
-Every write is structured, logged, bounded, and recoverable as much as possible.
-```
-
-## 1.3 Main Principle
-
-The bridge must be:
-
-```text
-ordered
-typed
-permissioned
-auditable
-secure
-non-laggy
-human-supervised for dangerous actions
-```
-
-Do not build loose command execution.
-
-Do not build unbounded AI freedom.
-
-Do not build silent destructive behavior.
+ChatGPT / Vivy is the reasoning layer.
 
 ---
 
-# 2. Current Repository State
+# 1. Current State and Main Diagnosis
 
-The current repository already contains a working local bridge foundation.
+The bridge has improved significantly.
 
-Important current files include:
+Basic connectivity works.
 
-```text
-README.md
-Agents.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-package.json
+The plugin can connect to the local companion server.
 
-src/bridge/protocol.ts
-src/bridge/client.ts
-src/bridge/handlers.ts
-src/bridge/status.ts
+The MCP endpoint can be reached by ChatGPT through a tunnel.
 
-src/remnote/read.ts
-src/remnote/write.ts
-src/remnote/serialize.ts
-src/remnote/permissions.ts
-
-src/widgets/bridge-status.tsx
-src/widgets/index.tsx
-
-server/package.json
-server/tsconfig.json
-server/src/app.ts
-server/src/bridge-hub.ts
-server/src/config.ts
-server/src/http.ts
-server/src/index.ts
-server/src/mcp-server.ts
-server/src/smoke.ts
-server/src/test-client.ts
-```
-
-The current package scripts include:
-
-```bash
-npm run check-types
-npm run validate
-npm run dev
-npm run build
-npm run server:install
-npm run server:dev
-npm run server:build
-npm run server:smoke
-npm run server:test-client
-```
-
-The current bridge already has these important pieces:
+The following tools are currently public and callable through the MCP layer:
 
 ```text
-- local companion server
-- WebSocket plugin bridge
-- bridge token support
-- typed protocol
-- read tools
-- create/append/update/move/create-tree tools
-- permission modes
-- approval UI
-- MCP-compatible server endpoint
+get_bridge_status
+get_bridge_diagnostics
+ping_remnote_plugin
+get_plugin_status
+get_focused_rem
+get_rem
+get_rem_tree
+get_rem_rich
+get_current_selection
+get_children
+get_rem_breadcrumbs
+search_rems
+get_document_or_folder_tree
+create_rem
+create_document
+create_folder
+append_to_rem
+update_rem
+replace_rem
+move_rem
+reorder_children
+delete_focused_rem
+delete_selected_rem
+create_rem_tree
 ```
 
-Do not throw this away.
+Observed bridge status after the 2026-05-10 rich-note closeout:
 
-The job now is to harden it into a full app-quality bridge.
+```text
+connected: true
+pendingRequests: 0
+toolRegistryVersion: 2026-05-10.1
+mcpDiscoveryVersion: mcp-discovery-2026-05-10.1
+publicToolCount: 40
+discoveryAuthMode: no_auth_required
+deleteToolExposed: false
+registryMismatch: []
+```
+
+The earlier 8-tool ChatGPT exposure bug had two layers: stale MCP-facing tool registration and token-gated discovery. The server now records registered MCP tools, compares them with the public registry at startup, allows no-auth `initialize`/`tools/list` for ChatGPT refresh, reports auth/discovery/callable fields through diagnostics, and smoke-tests `tools/list` parity.
 
 ---
 
-# 3. Non-Negotiable Rules for Coding Agents
+# 2. Product Rule
 
-## 3.1 Always Plan Before Coding
+The plugin should not think.
 
-Before changing code, produce a concrete implementation plan.
+The plugin should not call OpenAI.
 
-The plan must include:
+The plugin should not store OpenAI API keys.
 
-```text
-- phase being implemented
-- files to inspect
-- files to modify
-- files to create
-- files to avoid touching
-- current behavior
-- target behavior
-- safety risks
-- tests to run
-- manual RemNote test procedure
-```
+The plugin should not choose AI models.
 
-Do not code without a plan.
+The plugin should not contain a ChatGPT-like sidebar.
 
-Do not combine multiple phases unless explicitly asked.
-
-## 3.2 Work in Small Production Phases
-
-This repository must be improved in separate phases.
-
-Each phase must be independently reviewable.
-
-Each phase must leave the repo buildable.
-
-Do not rewrite the whole repo in one patch.
-
-## 3.3 Preserve the Bridge Architecture
-
-Do not reintroduce:
+The plugin should only:
 
 ```text
-- OpenAI API key inside RemNote settings
-- direct OpenAI calls from the RemNote plugin
-- AI chatbot UI inside RemNote
-- prompt-copy workflow as the main product
-- DOM scraping of RemNote or ChatGPT
-- arbitrary command strings
-- silent full-KB access
-```
-
-## 3.4 Use Typed Boundaries
-
-Every bridge/tool/server/plugin boundary must use TypeScript types.
-
-Use strict schemas for MCP tool input.
-
-Avoid `any`.
-
-If unknown SDK data must cross a boundary, normalize it first.
-
-## 3.5 Default to Safety
-
-The default product behavior must be:
-
-```text
-read allowed
-create/append requires permission mode logic
-rewrite/update requires stronger confirmation
-move requires confirmation when risky
-delete always requires strict human confirmation
-bulk operations are disabled unless explicitly implemented with previews and limits
+read RemNote context
+serialize RemNote data safely
+receive typed tool requests
+enforce permissions
+show approval UI when needed
+execute approved RemNote SDK actions
+return structured results
 ```
 
 ---
 
-# 4. Product Safety Model
+# 3. Absolute Non-Negotiable Rules
 
-## 4.1 Permission Modes
+Do not add direct OpenAI API calls.
 
-The current modes are:
+Do not add an AI chat UI inside RemNote.
 
-```ts
-export type PermissionMode =
-  | 'read_only'
-  | 'confirm_writes'
-  | 'trusted_writes'
-  | 'danger_zone';
+Do not reintroduce OpenAI API key settings.
+
+Do not scrape ChatGPT.
+
+Do not scrape RemNote DOM.
+
+Do not expose arbitrary unsafe delete by default.
+
+Do not silently rewrite user notes.
+
+Do not silently delete user notes.
+
+Do not fake SDK support.
+
+Do not report success if the RemNote SDK operation failed.
+
+Do not implement everything in one giant patch.
+
+Do not break the currently working 8 tools.
+
+Do not remove the approval model.
+
+Do not let failed write calls terminate the MCP session.
+
+---
+
+# 4. Current Major Issues to Fix
+
+## 4.1 Tool Registry Mismatch
+
+Former problem:
+
+```text
+Bridge reports 40 public tools.
+MCP tools/list exposes the same 40 public tools, including rich note, styled tree, and card tools.
 ```
 
-These modes should evolve into a clearer app-level model, but do not break existing settings without migration.
+This means the bridge has an internal registry that is not correctly wired to the ChatGPT-facing MCP tool registry.
 
-Target meaning:
+Status:
 
-| Mode | Meaning |
-|---|---|
-| `read_only` | ChatGPT can only read permitted RemNote context. |
-| `confirm_writes` | Safe writes require user approval. This is the default. |
-| `trusted_writes` | Safe create/append operations can happen without repeated approval inside the allowed scope. |
-| `danger_zone` | Extra tools may be available, but destructive actions still require explicit approval. |
+```text
+DONE 2026-05-09
+```
 
-Dangerous actions must always confirm.
+Required invariant:
 
-Even in `trusted_writes` or `danger_zone`, deletion must not run silently.
+```text
+The MCP tools/list response must expose the same public tools that get_bridge_status reports.
+```
 
-## 4.2 Future Scope Modes
+The tool registry must have one source of truth.
 
-Add these as explicit concepts during the permissions phase:
+Avoid this bad architecture:
+
+```text
+server has registry A
+MCP layer has registry B
+bridge status reports registry A
+ChatGPT sees registry B
+```
+
+Preferred architecture:
+
+```text
+shared tool registry
+↓
+get_bridge_status uses it
+↓
+MCP tools/list uses it
+↓
+tool router uses it
+↓
+diagnostics uses it
+```
+
+Acceptance test:
+
+```text
+tools/list shows all public tools.
+get_bridge_status publicTools matches tools/list.
+get_bridge_diagnostics is callable.
+get_rem_rich is callable.
+get_current_selection is callable.
+get_children is callable.
+get_rem_breadcrumbs is callable.
+search_rems is callable if implemented.
+get_document_or_folder_tree is callable if implemented.
+create_rem_tree is callable.
+update_rem is callable.
+move_rem is callable.
+reorder_children is callable.
+```
+
+Delete tools require extra safety and should not be casually exposed.
+
+---
+
+## 4.2 Hidden Tools Are Reported but Not Callable
+
+The bridge reports these tools, but ChatGPT cannot call them:
+
+```text
+get_bridge_diagnostics
+get_rem_rich
+get_current_selection
+get_children
+get_rem_breadcrumbs
+search_rems
+get_document_or_folder_tree
+create_document
+create_folder
+update_rem
+replace_rem
+move_rem
+reorder_children
+delete_focused_rem
+delete_selected_rem
+create_rem_tree
+```
+
+Required behavior:
+
+If a tool is reported as public, it must be callable.
+
+If a tool is not implemented, it must not be reported as public.
+
+If a tool is intentionally hidden, diagnostics must explain why.
+
+Add diagnostic fields:
+
+```text
+registeredTools
+publicTools
+exposedTools
+callableTools
+hiddenTools
+hiddenReasons
+mcpDiscoveryVersion
+lastDiscoveryRefreshAt
+serverToolRegistryVersion
+pluginProtocolVersion
+```
+
+---
+
+## 4.3 Permission Scope Is Too Restrictive
+
+Current plugin status can show:
+
+```text
+permissionMode: confirm_writes
+permissionScope: focused_rem_only
+```
+
+This is safe, but it creates workflow friction.
+
+Observed problem:
+
+```text
+ChatGPT creates a child under the focused Rem.
+The bridge returns the child Rem ID.
+ChatGPT tries to read that child back.
+The plugin returns OUT_OF_SCOPE.
+```
+
+Required improvement:
+
+Add or expose these permission scopes:
 
 ```text
 focused_rem_only
+focused_rem_and_descendants
 selected_rem_only
-descendants_of_selected_rem
+selected_rem_and_descendants
 approved_document_or_folder
 workspace_allowed
 ```
 
-The model should support both:
+Recommended default for serious editing:
 
 ```text
-restricted mode
-free-roam mode
+focused_rem_and_descendants
 ```
 
-but free-roam must still be bounded by the RemNote plugin permission scope and bridge settings.
+Keep `focused_rem_only` available for strict safety.
 
-## 4.3 Action Classes
-
-Classify tools into action classes:
+Required rule:
 
 ```text
-read
-safe_create
-safe_append
-safe_organize
-rewrite
-move
-destructive
-bulk
-admin
+A Rem created by the current request/session under the focused Rem should be readable for verification.
 ```
 
-Rules:
-
-```text
-read -> allowed by read permission
-safe_create -> may be allowed without approval in trusted mode
-safe_append -> may be allowed without approval in trusted mode
-safe_organize -> approval depends on scope and risk
-rewrite -> approval required unless specifically allowed
-move -> approval required when moving existing user content
-destructive -> approval always required
-bulk -> approval always required with preview
-admin -> never automatic
-```
+Do not allow arbitrary workspace writes by default.
 
 ---
 
-# 5. Current Safety Issue to Fix
+## 4.4 Approval Flow Must Never Hang
 
-The documentation currently says destructive internal bridge tools should not be exposed through MCP, but the current MCP server registers `delete_rem`.
+Approval has improved, but it must be made strict.
 
-This must be fixed before treating the app as safe.
-
-Until the delete phase is intentionally implemented, `delete_rem` must be one of:
+Every write request must resolve as one of:
 
 ```text
-- removed from public MCP registration
-- disabled behind a development-only flag
-- blocked unless a strict delete safety gate passes
+APPROVED
+APPROVAL_REJECTED
+APPROVAL_TIMEOUT
+SDK_ERROR
+INTERNAL_ERROR
 ```
 
-Do not leave public `delete_rem` casually exposed.
+No write request may hang indefinitely.
 
----
+Required timeout:
 
-# 6. RemNote Ordering Rules
+```ts
+const WRITE_APPROVAL_TIMEOUT_MS = 30000;
+```
 
-## 6.1 Default Insert Behavior
+This value should be configurable in one place.
 
-New notes must be added **after existing children** by default.
-
-The default insert mode must be:
+Required behavior:
 
 ```text
-append/end
+User approves
+→ tool returns success
+
+User rejects
+→ tool returns APPROVAL_REJECTED
+
+User does nothing
+→ tool returns APPROVAL_TIMEOUT
+
+SDK fails
+→ tool returns SDK_ERROR
+
+Plugin disconnects
+→ tool returns PLUGIN_NOT_CONNECTED
 ```
 
-Do not insert new notes above existing notes unless the user explicitly requests top/start insertion.
-
-## 6.2 Ordered Tree Creation
-
-When creating multiple Rems, preserve the exact order sent by ChatGPT.
-
-For a tree like:
-
-```json
-{
-  "title": "Main",
-  "children": [
-    { "title": "First" },
-    { "title": "Second" },
-    { "title": "Third" }
-  ]
-}
-```
-
-The resulting RemNote order must be:
-
-```text
-Main
-  First
-  Second
-  Third
-```
-
-not reversed.
-
-## 6.3 Fresh Parent State
-
-Do not trust stale parent child counts during creation.
-
-Before computing append index, refresh the parent from RemNote SDK if necessary.
-
-Preferred helper:
-
-```ts
-async function getFreshInsertIndex(plugin, parentId, position) {
-  const freshParent = await plugin.rem.findOne(parentId);
-  if (!freshParent) throw ...
-  return position === 'start' ? 0 : freshParent.children.length;
-}
-```
-
-After creating a child, confirm or refresh the parent when doing sequential ordered operations.
-
-## 6.4 Insert API Contract
-
-The protocol should evolve from:
-
-```ts
-position?: 'start' | 'end'
-```
-
-to a clearer insert contract:
-
-```ts
-type InsertMode =
-  | 'append'
-  | 'prepend'
-  | 'at_index';
-
-interface InsertPosition {
-  mode: InsertMode;
-  index?: number;
-}
-```
-
-Backward compatibility may keep `position?: 'start' | 'end'` temporarily, but the product should move toward explicit insert mode.
-
----
-
-# 7. Target MCP Tools
-
-The final bridge should expose tools in controlled groups.
-
-## 7.1 Status Tools
+After any failure, these tools must still work:
 
 ```text
 get_bridge_status
 ping_remnote_plugin
 get_plugin_status
+get_focused_rem
 ```
 
-## 7.2 Read Tools
+---
+
+## 4.5 Read Tools Need Richer RemNote Awareness
+
+Current read tools mostly return:
+
+```text
+frontText
+backText
+plainText
+breadcrumbs
+hasChildren
+children
+```
+
+Needed richer read tools:
+
+```text
+get_rem_rich
+get_current_selection
+get_children
+get_rem_breadcrumbs
+search_rems
+get_document_or_folder_tree
+```
+
+Required behavior:
+
+If the SDK does not support a field, return:
+
+```json
+{
+  "supported": false,
+  "reason": "SDK does not expose this field"
+}
+```
+
+Do not fake visual layout information.
+
+Do not claim to know cursor position, collapsed state, or scroll position if the SDK does not expose it.
+
+---
+
+## 4.6 Markdown Alone Is Not Enough
+
+Plain markdown can create readable notes, but it does not reliably create proper RemNote-native layout.
+
+Bad result:
+
+```text
+Mini Note
+  One giant text block containing:
+  ## Main decay law
+  ## Half-life relation
+  ## Interpretation
+```
+
+Better result:
+
+```text
+Mini Note — Exponential Decay and Half-Life
+  Core Idea
+    Exponential decay describes...
+  Main Decay Law
+    N(t)=N₀e^(-λt)
+  Half-Life Relation
+    T₁/₂ = ln(2)/λ
+  Interpretation
+    Larger λ means shorter half-life.
+```
+
+Required tool:
+
+```text
+create_rem_tree
+```
+
+Future tool:
+
+```text
+create_styled_rem_tree
+```
+
+Do not rely on one markdown string for complex nested RemNote outlines.
+
+---
+
+# 5. Required Tool Registry Target
+
+The strong RemNote bridge should eventually support this tool set.
+
+## 5.1 Status Tools
+
+```text
+get_bridge_status
+get_bridge_diagnostics
+ping_remnote_plugin
+get_plugin_status
+```
+
+## 5.2 Read Tools
 
 ```text
 get_focused_rem
@@ -435,25 +479,13 @@ get_current_selection
 get_rem
 get_rem_tree
 get_rem_rich
-search_rems
-get_rem_breadcrumbs
 get_children
+get_rem_breadcrumbs
+search_rems
 get_document_or_folder_tree
 ```
 
-## 7.3 Navigation Tools
-
-Only implement these if supported safely by the RemNote SDK:
-
-```text
-open_rem
-open_rem_as_page
-focus_rem
-```
-
-If the SDK does not support a navigation action, document the limitation instead of inventing a fragile workaround.
-
-## 7.4 Create Tools
+## 5.3 Create Tools
 
 ```text
 create_rem
@@ -463,521 +495,271 @@ create_document
 create_folder
 ```
 
-Before implementing `create_document` or `create_folder`, inspect the actual RemNote SDK types and confirm the supported method.
-
-Likely possibilities:
-
-```text
-setIsDocument(true)
-setType(...)
-```
-
-Do not guess. Verify in SDK typings or existing plugin SDK docs/types.
-
-## 7.5 Organize Tools
-
-```text
-move_rem
-reorder_children
-set_parent
-```
-
-These must preserve order and must not move large subtrees without clear approval.
-
-## 7.6 Rewrite Tools
+## 5.4 Update and Organization Tools
 
 ```text
 update_rem
+move_rem
+reorder_children
+```
+
+## 5.5 Dangerous Tools
+
+These require strict handling:
+
+```text
 replace_rem
-rewrite_rem_tree
-```
-
-Rewrite tools must require stronger approval than append tools.
-
-## 7.7 Delete Tools
-
-```text
-delete_selected_rem
 delete_focused_rem
+delete_selected_rem
 ```
 
-Avoid exposing this as the default public tool:
+Do not expose arbitrary delete by default.
 
-```text
-delete_any_rem_by_id
-```
+Do not expose arbitrary recursive delete by default.
 
-Delete by arbitrary ID is too dangerous for normal app behavior.
+Do not expose workspace-wide delete.
 
 ---
 
-# 8. Human Approval Requirements
+# 6. Tools to Expose First
 
-## 8.1 Approval Must Always Resolve
+Fix tool exposure in this order.
 
-Approval must never hang.
+## Phase A: Diagnostics and Read Tools
 
-Every approval request must resolve as exactly one of:
-
-```text
-APPROVED
-APPROVAL_REJECTED
-APPROVAL_TIMEOUT
-```
-
-When the user denies approval, the server must receive a clean structured response.
-
-When the approval window times out, the server must receive a clean structured response.
-
-When another request is already pending, the new request must be rejected or queued intentionally.
-
-Do not leave MCP calls stuck.
-
-## 8.2 Approval UI Must Show Enough Information
-
-For write requests, the RemNote plugin approval UI must show:
+Expose and verify:
 
 ```text
-- tool name
-- action class
-- permission mode
-- target Rem ID
-- target title
-- parent title if relevant
-- whether target has children
-- preview of content being written
-- insert location
-- deadline
-- warning for risky operations
-```
-
-For delete requests, the UI must additionally show:
-
-```text
-- descendant count
-- parent Rem title
-- exact delete mode
-- whether delete is recursive
-- confirmation text requirement
-```
-
-## 8.3 Destructive Approval
-
-Delete must require:
-
-```text
-- target must be focused or selected OR shown in a clear preview
-- plugin-side confirmation
-- literal confirm text DELETE
-- no silent recursive deletion
-- no bulk deletion without explicit bulk-delete phase
-```
-
----
-
-# 9. Bridge Reliability Requirements
-
-## 9.1 Request Lifecycle
-
-Every request must have:
-
-```text
-requestId
-tool name
-validated args
-startedAt
-timeoutMs
-status
-final response
-```
-
-Every request must end with:
-
-```text
-ok: true
-```
-
-or:
-
-```text
-ok: false
-```
-
-## 9.2 No Silent Failure
-
-Do not swallow bridge errors.
-
-Return structured errors:
-
-```text
-PLUGIN_NOT_CONNECTED
-INVALID_ARGS
-PERMISSION_DENIED
-APPROVAL_REJECTED
-APPROVAL_TIMEOUT
-TIMEOUT
-REM_NOT_FOUND
-PARENT_NOT_FOUND
-SDK_ERROR
-SDK_UNSUPPORTED
-UNKNOWN_TOOL
-INTERNAL_ERROR
-```
-
-## 9.3 Avoid Lag
-
-Large operations must not feel frozen.
-
-For large create-tree/import operations:
-
-```text
-- validate size first
-- cap node count
-- cap depth
-- cap markdown size
-- create sequentially in order
-- optionally send progress events in a later phase
-- return partial failure details if creation fails midway
-```
-
-Do not create giant unbounded trees.
-
-Current limits should remain or be tightened:
-
-```text
-MAX_MARKDOWN_CHARS
-CREATE_TREE_MAX_DEPTH
-CREATE_TREE_MAX_NODES
-CREATE_TREE_MAX_TITLE_LENGTH
-```
-
----
-
-# 10. Security Requirements
-
-## 10.1 Current Local Security
-
-The current local model must remain secure by default:
-
-```text
-- server binds to localhost by default
-- bridge token required by default
-- remote bind must require explicit configuration
-- CORS must not be open by default
-- unknown tools rejected
-- arguments validated
-```
-
-## 10.2 Future App Security
-
-For the future normal MCP/App version, add architecture without forcing it all into the current local prototype.
-
-Target remote-ready model:
-
-```text
-ChatGPT App / MCP client
-↓ OAuth
-Hosted MCP server
-↓ authenticated session
-paired RemNote plugin
-↓ RemNote SDK
-```
-
-Future production security must include:
-
-```text
-- OAuth or equivalent sign-in
-- one user account maps to one active plugin session
-- pairing code or device linking flow
-- short-lived session tokens
-- signed command envelopes or equivalent server-side validation
-- scoped permissions
-- audit log
-- revocation/disconnect
-- no open unauthenticated public channel
-```
-
-Do not expose a public MCP server that any client can use to write into RemNote.
-
-## 10.3 Data Minimization
-
-Do not send the whole knowledge base by default.
-
-Read tools must be bounded by:
-
-```text
-- depth
-- number of children
-- character count
-- selected/focused scope
-- explicit user-approved scope
-```
-
-Logs must not dump full note content unless debug mode is explicitly enabled.
-
-Good logs:
-
-```text
-requestId
-tool
-durationMs
-permission result
-approval result
-targetRemId
-createdRemId
-errorCode
-```
-
-Bad logs:
-
-```text
-full private note text
-full markdown payload
-full Rem tree
-```
-
----
-
-# 11. Implementation Phases
-
-Agents must complete this work in phases.
-
-Do not mix phases unless explicitly instructed.
-
-Each phase below can become one Codex task.
-
----
-
-## Phase 1 — Baseline Audit and Safety Freeze
-
-### Goal
-
-Confirm current behavior and prevent unsafe destructive exposure before deeper changes.
-
-### Files to Inspect
-
-```text
-README.md
-Agents.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-src/bridge/protocol.ts
-src/bridge/handlers.ts
-src/remnote/permissions.ts
-server/src/mcp-server.ts
-server/src/bridge-hub.ts
-```
-
-### Tasks
-
-```text
-1. Verify all currently exposed MCP tools.
-2. Confirm whether delete_rem is publicly registered.
-3. If delete_rem is public, disable it unless a strict dev-only flag is set.
-4. Add a clear comment explaining why delete is disabled until the delete safety phase.
-5. Confirm existing build and server scripts still work.
-6. Update SAFETY.md and NEXT_STEPS.md if they contradict the current code.
-```
-
-### Acceptance Criteria
-
-```text
-- Public MCP no longer exposes casual delete_rem.
-- Destructive tools are either disabled or explicitly dev-gated.
-- Existing read/create/append tools still work.
-- npm run check-types passes.
-- npm run server:build passes.
-- npm run server:smoke passes.
-```
-
-### Manual Test
-
-```text
-1. Start plugin dev server.
-2. Start companion server.
-3. Connect plugin.
-4. Run get_bridge_status.
-5. Run get_focused_rem.
-6. Confirm delete_rem is unavailable or blocked safely.
-```
-
----
-
-## Phase 2 — Correct Rem Ordering and Deterministic Insert Behavior
-
-### Goal
-
-Fix the ordering problem completely.
-
-New Rems must append after existing content by default.
-
-Tree creation must preserve exact order.
-
-### Files to Modify
-
-```text
-src/bridge/protocol.ts
-src/bridge/handlers.ts
-src/remnote/write.ts
-server/src/mcp-server.ts
-server/src/test-client.ts
-server/src/smoke.ts
-```
-
-### Tasks
-
-```text
-1. Audit appendMarkdownToRem and createRemTree ordering.
-2. Replace ambiguous start/end behavior with an explicit insert model if practical.
-3. Keep backward compatibility for existing position: start/end if needed.
-4. Ensure default is append/end.
-5. Refresh parent before computing insert index.
-6. For createRemTree, create children in exact array order.
-7. Add read-back verification helper for test mode if practical.
-8. Add tests/smoke checks for order.
-```
-
-### Required Behavior
-
-Default append:
-
-```text
-Existing parent children:
-  A
-  B
-
-append_to_rem(parent, C)
-
-Expected:
-  A
-  B
-  C
-```
-
-Tree creation:
-
-```text
-create_rem_tree(parent, {
-  title: "Main",
-  children: [
-    { title: "First" },
-    { title: "Second" },
-    { title: "Third" }
-  ]
-})
-
-Expected:
-  Main
-    First
-    Second
-    Third
-```
-
-### Acceptance Criteria
-
-```text
-- append_to_rem adds after existing children by default.
-- create_rem adds after existing children when parentId exists.
-- create_rem_tree root is appended after existing parent children.
-- create_rem_tree children preserve order.
-- No write inserts at top unless explicitly requested.
-- npm run check-types passes.
-- npm run server:build passes.
-```
-
-### Manual Test
-
-Create a RemNote sandbox Rem:
-
-```text
-Plugin Test
-  Existing 1
-  Existing 2
-```
-
-Run append.
-
-Expected:
-
-```text
-Plugin Test
-  Existing 1
-  Existing 2
-  New appended child
-```
-
----
-
-## Phase 3 — RemNote Structure Awareness and Navigation
-
-### Goal
-
-Make ChatGPT understand RemNote hierarchy, order, documents, folders, selected Rems, and focused Rems.
-
-### Files to Modify
-
-```text
-src/bridge/protocol.ts
-src/remnote/read.ts
-src/remnote/serialize.ts
-src/bridge/handlers.ts
-server/src/mcp-server.ts
-src/widgets/bridge-status.tsx
-```
-
-### Tools to Add or Improve
-
-```text
+get_bridge_diagnostics
+get_rem_rich
 get_current_selection
 get_children
 get_rem_breadcrumbs
+```
+
+These are safe read-oriented tools and should be exposed first.
+
+## Phase B: Search and Tree Navigation
+
+Expose and verify:
+
+```text
 search_rems
 get_document_or_folder_tree
 ```
 
-Optional only if SDK supports safely:
+These can expose broader data, so enforce limits.
+
+Required limits:
 
 ```text
-open_rem
-open_rem_as_page
-focus_rem
+max results
+max depth
+max characters
+scope filter
+truncated flag
 ```
 
-### Tasks
+## Phase C: Safe Create and Tree Tools
+
+Expose and verify:
 
 ```text
-1. Inspect RemNote SDK capabilities before implementing navigation.
-2. Add a structured way to read direct children in order.
-3. Add breadcrumbs with parent chain.
-4. Add document/folder metadata if available from SDK.
-5. Add bounded search over Rems if SDK supports it.
-6. Add max result limits.
-7. Add truncation flags.
-8. Update MCP tool descriptions so ChatGPT knows when to use each tool.
+create_rem_tree
+create_document
+create_folder
 ```
 
-### Required Output Shape
+These require approval in `confirm_writes`.
 
-For children:
+## Phase D: Update and Move Tools
+
+Expose and verify:
+
+```text
+update_rem
+move_rem
+reorder_children
+```
+
+These require approval in `confirm_writes`.
+
+Moving Rems with children must always be treated as higher risk.
+
+## Phase E: Dangerous Tools
+
+Only after the above works, consider:
+
+```text
+replace_rem
+delete_focused_rem
+delete_selected_rem
+```
+
+These must always require explicit approval.
+
+Delete must require typed confirmation:
+
+```text
+DELETE
+```
+
+---
+
+# 7. Tool Schemas
+
+## 7.1 get_bridge_diagnostics
+
+Input:
+
+```json
+{}
+```
+
+Expected output:
 
 ```json
 {
-  "parentRemId": "string",
-  "children": [
+  "serverVersion": "string",
+  "pluginVersion": "string",
+  "toolRegistryVersion": "string",
+  "registeredTools": ["string"],
+  "publicTools": ["string"],
+  "exposedTools": ["string"],
+  "callableTools": ["string"],
+  "hiddenTools": [
     {
-      "remId": "string",
-      "title": "string",
-      "index": 0,
-      "hasChildren": true,
-      "type": "rem | document | folder | unknown"
+      "name": "string",
+      "reason": "string"
     }
   ],
-  "truncated": false
+  "mcpDiscoveryVersion": "string",
+  "lastDiscoveryRefreshAt": "string",
+  "pendingRequests": 0,
+  "recentErrors": [],
+  "recentRequestLifecycle": []
 }
 ```
 
-For breadcrumbs:
+---
+
+## 7.2 get_rem_rich
+
+Input:
+
+```json
+{
+  "remId": "string"
+}
+```
+
+Expected output:
+
+```json
+{
+  "remId": "string",
+  "frontText": "string",
+  "backText": "string",
+  "plainText": "string",
+  "richSupported": true,
+  "rich": {
+    "front": [],
+    "back": []
+  },
+  "detectedContentTypes": [
+    "plain_text",
+    "inline_math",
+    "math_block",
+    "descriptor",
+    "concept"
+  ]
+}
+```
+
+If unsupported:
+
+```json
+{
+  "remId": "string",
+  "richSupported": false,
+  "reason": "SDK does not expose normalized rich text"
+}
+```
+
+---
+
+## 7.3 get_current_selection
+
+Input:
+
+```json
+{}
+```
+
+Expected output:
+
+```json
+{
+  "focusedRemId": "string or null",
+  "selectedRemIds": ["string"],
+  "selectionSupported": true
+}
+```
+
+If unsupported:
+
+```json
+{
+  "focusedRemId": "string or null",
+  "selectedRemIds": [],
+  "selectionSupported": false,
+  "reason": "SDK does not expose current selection"
+}
+```
+
+---
+
+## 7.4 get_children
+
+Input:
+
+```json
+{
+  "remId": "string"
+}
+```
+
+Expected output:
+
+```json
+{
+  "remId": "string",
+  "children": [
+    {
+      "remId": "string",
+      "frontText": "string",
+      "plainText": "string",
+      "index": 0,
+      "hasChildren": true
+    }
+  ],
+  "childCount": 1
+}
+```
+
+---
+
+## 7.5 get_rem_breadcrumbs
+
+Input:
+
+```json
+{
+  "remId": "string"
+}
+```
+
+Expected output:
 
 ```json
 {
@@ -985,738 +767,1312 @@ For breadcrumbs:
   "breadcrumbs": [
     {
       "remId": "string",
-      "title": "string"
+      "text": "string"
     }
   ]
 }
 ```
 
-### Acceptance Criteria
+---
 
-```text
-- ChatGPT can inspect a parent Rem and know exact child order.
-- ChatGPT can distinguish focused Rem from selected Rems where SDK allows.
-- Tree reads are bounded.
-- Search is bounded and privacy-conscious.
-- No full-KB dump is exposed by default.
+## 7.6 search_rems
+
+Input:
+
+```json
+{
+  "query": "string",
+  "limit": 10,
+  "scope": "focused_rem_and_descendants"
+}
 ```
 
-### Completion Status — DONE 2026-05-08
+Rules:
 
 ```text
-Phase 1 — DONE
-- Public MCP tool list does not expose delete_rem by default.
-- delete_rem requires REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 before it is registered.
-- server smoke verifies replace_rem/delete_rem are absent from default MCP descriptors.
-- SAFETY.md, ARCHITECTURE.md, NEXT_STEPS.md, and README.md match the gated destructive-tool behavior.
+limit must be capped
+scope must be enforced
+do not return full workspace by default
+return truncated flag if results are limited
+```
 
-Phase 2 — DONE
-- create_rem and append_to_rem compute append/end indexes from a freshly read parent.
-- create_rem_tree appends the root after existing parent children and creates children in array order.
-- write results expose insert indexes for smoke/readback verification.
-- server smoke verifies append defaults to end and tree root reports the expected append index.
+Expected output:
 
-Phase 3 — DONE
-- get_current_selection is implemented.
-- get_children returns direct children in ordered index form.
-- get_rem_breadcrumbs returns parent chain IDs and titles.
-- search_rems uses RemNote SDK search with result caps.
-- get_document_or_folder_tree returns a bounded current/requested tree.
-- bridge-status widget shows selected Rem count/IDs when SDK selection is available.
+```json
+{
+  "query": "string",
+  "results": [
+    {
+      "remId": "string",
+      "frontText": "string",
+      "breadcrumbs": ["string"]
+    }
+  ],
+  "truncated": false
+}
 ```
 
 ---
 
-## Phase 4 — Create Rems, Documents, Folders, and Full Trees Safely
+## 7.7 create_rem_tree
 
-### Goal
+Input:
 
-Allow ChatGPT to create new RemNote content safely, including standalone new content outside an existing Rem when allowed.
-
-### Files to Modify
-
-```text
-src/bridge/protocol.ts
-src/remnote/write.ts
-src/remnote/permissions.ts
-src/bridge/handlers.ts
-server/src/mcp-server.ts
-src/widgets/bridge-status.tsx
+```json
+{
+  "parentId": "string",
+  "position": "end",
+  "tree": {
+    "title": "Clean Organized Notes",
+    "children": [
+      {
+        "title": "1. Purpose",
+        "children": [
+          {
+            "title": "This note organizes the Plugin Test content."
+          }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-### Tools to Improve/Add
+Limits:
 
-```text
-create_rem
-append_to_rem
-create_rem_tree
-create_document
-create_folder
+```ts
+const CREATE_TREE_MAX_DEPTH = 5;
+const CREATE_TREE_MAX_NODES = 100;
+const CREATE_TREE_MAX_TITLE_LENGTH = 1000;
 ```
 
-### Important Rule
+Expected output:
 
-Do not guess folder/document SDK methods.
-
-Before implementing:
-
-```text
-1. Inspect @remnote/plugin-sdk typings.
-2. Confirm how to create a document.
-3. Confirm whether folder creation is supported through SDK.
-4. If folder creation is unsupported, return SDK_UNSUPPORTED with a clear message.
+```json
+{
+  "rootCreatedRemId": "string",
+  "createdNodeCount": 12,
+  "createdRemIds": ["string"],
+  "status": "created_tree"
+}
 ```
 
-### Create Rules
+Rules:
 
 ```text
-- Creating under a known parent should append by default.
-- Creating without parent should be allowed only if the current permission mode/scope permits workspace-level create.
-- create_document should set document behavior if SDK supports it.
-- create_folder should set folder behavior if SDK supports it.
-- Tree creation must preserve order.
-```
-
-### Acceptance Criteria
-
-```text
-- create_rem under parent works.
-- create_rem without parent is blocked unless permission scope allows it.
-- create_document works or returns SDK_UNSUPPORTED honestly.
-- create_folder works or returns SDK_UNSUPPORTED honestly.
-- create_rem_tree preserves hierarchy and order.
-- All create operations are size-limited.
+one approval request for the whole tree
+preserve order
+return created IDs
+do not silently exceed limits
+return structured error on partial failure
+do not terminate MCP session
 ```
 
 ---
 
-## Phase 5 — Permission Scopes and Free-Roam vs Restricted Mode
+## 7.8 update_rem
 
-### Goal
+Input:
 
-Let the user choose whether ChatGPT is restricted or allowed broader RemNote access.
-
-### Files to Modify
-
-```text
-src/bridge/protocol.ts
-src/remnote/permissions.ts
-src/bridge/handlers.ts
-src/widgets/bridge-status.tsx
-server/src/mcp-server.ts
-server/src/config.ts
-SAFETY.md
-ARCHITECTURE.md
+```json
+{
+  "remId": "string",
+  "markdown": "string"
+}
 ```
 
-### Required Modes
+Expected output:
 
-Add app-level scope settings without breaking existing permission modes:
+```json
+{
+  "updatedRemId": "string",
+  "status": "updated"
+}
+```
+
+Rules:
+
+```text
+require approval in confirm_writes
+preserve children unless explicitly replacing tree
+do not delete descendants
+return REM_NOT_FOUND if missing
+return OUT_OF_SCOPE if not allowed
+```
+
+---
+
+## 7.9 move_rem
+
+Input:
+
+```json
+{
+  "remId": "string",
+  "newParentId": "string",
+  "index": 0
+}
+```
+
+Expected output:
+
+```json
+{
+  "movedRemId": "string",
+  "newParentId": "string",
+  "index": 0,
+  "status": "moved"
+}
+```
+
+Rules:
+
+```text
+validate source Rem
+validate target parent
+validate index
+prevent moving a Rem into itself
+prevent moving a Rem into its descendant
+require approval
+higher risk if Rem has children
+```
+
+---
+
+## 7.10 reorder_children
+
+Input:
+
+```json
+{
+  "parentId": "string",
+  "orderedChildIds": ["string"]
+}
+```
+
+Expected output:
+
+```json
+{
+  "parentId": "string",
+  "orderedChildIds": ["string"],
+  "status": "reordered"
+}
+```
+
+Rules:
+
+```text
+all child IDs must belong to parent
+do not drop children silently
+require approval
+return INVALID_ARGS if list is inconsistent
+```
+
+---
+
+## 7.11 delete_focused_rem
+
+Input:
+
+```json
+{
+  "confirmText": "DELETE",
+  "recursive": false
+}
+```
+
+Expected output:
+
+```json
+{
+  "deletedRemId": "string",
+  "recursive": false,
+  "status": "deleted"
+}
+```
+
+Rules:
+
+```text
+must always require approval
+must require confirmText DELETE
+must show target title
+must show child count
+must warn about descendants
+must not delete silently
+must not run in trusted_writes without approval
+```
+
+---
+
+## 7.12 delete_selected_rem
+
+Input:
+
+```json
+{
+  "confirmText": "DELETE",
+  "recursive": false
+}
+```
+
+Rules:
+
+```text
+same as delete_focused_rem
+only delete currently selected Rem
+do not allow arbitrary ID delete by default
+```
+
+---
+
+# 8. Rich and Styled RemNote Support
+
+The current bridge is too markdown-heavy.
+
+Add rich/styled tools later, after tool exposure mismatch is fixed.
+
+Do not implement these until the normal tool registry is correct.
+
+## 8.1 Future Styled Tree Tool
+
+Future tool:
+
+```text
+create_styled_rem_tree
+```
+
+Input shape:
+
+```json
+{
+  "parentId": "string",
+  "position": "end",
+  "tree": {
+    "text": "Mini Note — Exponential Decay and Half-Life",
+    "style": {
+      "headingLevel": "H1",
+      "textColor": "blue",
+      "highlightColor": "none",
+      "hideBullet": true,
+      "bold": true
+    },
+    "children": [
+      {
+        "text": "Main Decay Law",
+        "style": {
+          "headingLevel": "H2",
+          "textColor": "yellow"
+        },
+        "children": [
+          {
+            "text": "If a quantity starts at N₀..."
+          },
+          {
+            "type": "mathBlock",
+            "latex": "N(t)=N_0e^{-\\lambda t}"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+If RemNote SDK does not support styling, return:
+
+```text
+SDK_UNSUPPORTED
+```
+
+Do not fake styling with emojis.
+
+---
+
+## 8.2 Future Formatting Tools
+
+Potential future tools:
+
+```text
+set_rem_heading_level
+set_rem_text_color
+set_rem_highlight_color
+set_rem_type
+set_hide_bullet
+clear_rem_formatting
+```
+
+These require SDK investigation first.
+
+---
+
+## 8.3 Future Flashcard Tools
+
+Potential future tools:
+
+```text
+create_basic_flashcard
+create_concept_card
+create_descriptor_card
+create_cloze_card
+create_multiple_choice_card
+create_list_answer_card
+```
+
+Do not add these until normal tree creation and update tools are stable.
+
+---
+
+# 9. Error Handling Requirements
+
+All errors must be structured.
+
+Use error codes:
+
+```text
+INVALID_ARGS
+REM_NOT_FOUND
+PARENT_NOT_FOUND
+OUT_OF_SCOPE
+PERMISSION_DENIED
+APPROVAL_REJECTED
+APPROVAL_TIMEOUT
+PLUGIN_NOT_CONNECTED
+SDK_UNSUPPORTED
+SDK_ERROR
+UNKNOWN_TOOL
+TIMEOUT
+INTERNAL_ERROR
+```
+
+Example response:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "OUT_OF_SCOPE",
+    "message": "Request target is outside the focused Rem scope.",
+    "details": {
+      "focusedRemId": "string",
+      "targetRemIds": ["string"]
+    }
+  }
+}
+```
+
+A failed request must not:
+
+```text
+terminate the MCP session
+close the WebSocket
+clear unrelated plugin state
+leave approval request stuck
+report success incorrectly
+```
+
+---
+
+# 10. Approval UI Requirements
+
+The approval UI must show:
+
+```text
+tool name
+risk level
+target Rem title
+target Rem ID
+parent title
+insert position
+preview content
+deadline
+Approve button
+Reject button
+```
+
+For delete:
+
+```text
+typed DELETE confirmation
+child count
+descendant count if available
+recursive warning
+```
+
+The approval UI must always resolve the request.
+
+Approve must send success or SDK error.
+
+Reject must send:
+
+```text
+APPROVAL_REJECTED
+```
+
+Timeout must send:
+
+```text
+APPROVAL_TIMEOUT
+```
+
+---
+
+# 11. Scope and Permission Requirements
+
+Keep permission modes:
+
+```text
+read_only
+confirm_writes
+trusted_writes
+danger_zone
+```
+
+Add or expose permission scopes:
 
 ```text
 focused_rem_only
+focused_rem_and_descendants
 selected_rem_only
-descendants_of_selected_rem
+selected_rem_and_descendants
 approved_document_or_folder
 workspace_allowed
 ```
 
-### Required Policy
+Default safe scope:
 
 ```text
-read_only + focused_rem_only:
-  read focused Rem only
-
-confirm_writes + descendants_of_selected_rem:
-  read and write only inside selected Rem subtree, with approval for writes
-
-trusted_writes + approved_document_or_folder:
-  safe create/append allowed in approved scope without repeated approval
-
-workspace_allowed:
-  broader read/create allowed, but still bounded and logged
-
-danger_zone:
-  does not remove delete confirmation
+focused_rem_only
 ```
 
-### Tasks
+Recommended practical scope:
 
 ```text
-1. Add scope config to plugin settings.
-2. Add UI showing current scope.
-3. Enforce scope in plugin handlers, not only server.
-4. Reject out-of-scope target Rem IDs.
-5. Add clear errors: PERMISSION_DENIED or OUT_OF_SCOPE if adding new error code.
-6. Keep server-side validation too.
+focused_rem_and_descendants
 ```
 
-### Acceptance Criteria
+Rules:
 
 ```text
-- User can choose restricted or broader mode.
-- Plugin enforces scope locally.
-- Server cannot bypass plugin-side scope.
-- Writes outside approved scope are blocked.
-- Delete is still not automatic.
+read_only allows only read tools
+confirm_writes requires approval for writes
+trusted_writes can allow safe create/update/move only inside scope
+delete always requires approval
+replace always requires approval
+workspace_allowed should not be default
 ```
 
 ---
 
-## Phase 6 — Rewrite, Update, Move, and Reorder Tools
+# 12. Logging Requirements
 
-### Goal
+Logs should include:
 
-Allow controlled editing and organization of existing Rems.
+```text
+request ID
+tool name
+approval state
+permission mode
+permission scope
+target Rem IDs
+created Rem IDs
+error code
+duration
+```
 
-### Files to Modify
+Logs should not include full private note content by default.
+
+Avoid logging:
+
+```text
+full markdown body
+full Rem tree
+full workspace search result
+full rich text object
+```
+
+unless debug mode is explicitly enabled.
+
+---
+
+# 13. Files to Inspect
+
+Before coding, inspect:
 
 ```text
 src/bridge/protocol.ts
-src/remnote/write.ts
-src/remnote/permissions.ts
 src/bridge/handlers.ts
-server/src/mcp-server.ts
+src/bridge/client.ts
+src/bridge/status.ts
+src/remnote/read.ts
+src/remnote/write.ts
+src/remnote/serialize.ts
+src/remnote/permissions.ts
 src/widgets/bridge-status.tsx
+server/src/index.ts
+server/src/websocket.ts
+server/src/tool-router.ts
+server/src/tools.ts
+server/src/mcp-server.ts
+server/src/auth.ts
+server/src/logs.ts
 ```
 
-### Tools
+Also inspect:
+
+```text
+node_modules/@remnote/plugin-sdk
+```
+
+Find real SDK support for:
+
+```text
+creating Rems
+setting text
+setting backText
+setting parent
+moving Rems
+ordering children
+deleting Rems
+reading children
+reading breadcrumbs
+reading rich text
+searching Rems
+selection state
+document/folder tree
+heading/style formatting
+math objects
+flashcard syntax or card APIs
+```
+
+Do not assume SDK method names.
+
+Do not call unsupported SDK endpoints.
+
+---
+
+# 14. Required Implementation Order
+
+Do not implement everything in one patch.
+
+## Milestone 1: Tool Registry Unification
+
+Goal:
+
+```text
+MCP tools/list and get_bridge_status report the same public callable tools.
+```
+
+Tasks:
+
+```text
+find all tool registries
+remove duplicate stale registry
+create one source of truth
+make tools/list use same registry as get_bridge_status
+add get_bridge_diagnostics
+add hiddenTools and hiddenReasons
+```
+
+Acceptance:
+
+```text
+tools/list exposes all public tools
+get_bridge_status publicTools matches tools/list
+calling get_bridge_diagnostics works
+calling unknown tool returns UNKNOWN_TOOL, not Resource not found
+```
+
+---
+
+## Milestone 2: Expose Safe Read Tools
+
+Expose and verify:
+
+```text
+get_rem_rich
+get_current_selection
+get_children
+get_rem_breadcrumbs
+```
+
+Acceptance:
+
+```text
+all appear in tools/list
+all are callable
+unsupported rich/selection fields return supported=false
+read tools respect scope
+```
+
+---
+
+## Milestone 3: Scope Improvements
+
+Add or expose:
+
+```text
+focused_rem_and_descendants
+```
+
+Acceptance:
+
+```text
+created child under focused Rem can be read back
+descendants of focused Rem are in scope
+outside Rems still return OUT_OF_SCOPE
+```
+
+---
+
+## Milestone 4: Tree Creation
+
+Expose and verify:
+
+```text
+create_rem_tree
+```
+
+Acceptance:
+
+```text
+one approval request creates a nested tree
+order is preserved
+response returns createdNodeCount and createdRemIds
+limits are enforced
+failed creation does not terminate session
+```
+
+---
+
+## Milestone 5: Update and Move
+
+Expose and verify:
 
 ```text
 update_rem
-replace_rem
 move_rem
 reorder_children
 ```
 
-### Rules
+Acceptance:
 
 ```text
-update_rem:
-  replaces only the target Rem text, not children
-
-replace_rem:
-  dangerous alias or stronger version of update_rem
-  must require approval
-
-move_rem:
-  must prevent moving a Rem into itself or descendant
-  must show warning if moving a Rem with children
-  must preserve order by explicit index
-
-reorder_children:
-  must operate only on one parent at a time
-  must require a full ordered child ID list
-  must reject missing/extra child IDs unless explicitly designed otherwise
-```
-
-### Acceptance Criteria
-
-```text
-- update_rem requires approval unless explicitly trusted by policy.
-- replace_rem always requires approval.
-- move_rem prevents cycles.
-- moving a Rem with children requires approval.
-- reorder_children is deterministic.
-- No hidden recursive rewriting.
+update_rem changes text and preserves children
+move_rem moves a Rem to a new parent/index
+reorder_children changes child order
+all require approval in confirm_writes
+errors do not terminate session
 ```
 
 ---
 
-## Phase 7 — Secure Delete Workflow
+## Milestone 6: Delete Tools
 
-### Goal
-
-Make delete possible but tightly supervised.
-
-### Files to Modify
-
-```text
-src/bridge/protocol.ts
-src/remnote/write.ts
-src/remnote/read.ts
-src/remnote/permissions.ts
-src/bridge/handlers.ts
-src/widgets/bridge-status.tsx
-server/src/mcp-server.ts
-SAFETY.md
-```
-
-### Preferred Public Tools
+Expose only safe delete tools:
 
 ```text
 delete_focused_rem
 delete_selected_rem
 ```
 
-Avoid public default:
+Do not expose arbitrary delete by ID yet unless explicitly approved by the user.
+
+Acceptance:
 
 ```text
-delete_any_rem_by_id
+delete requires approval
+delete requires confirmText DELETE
+delete shows target title and child count
+reject deletes nothing
+timeout deletes nothing
+success returns deletedRemId
 ```
 
-### Delete Requirements
+---
 
-Delete must require:
+## Milestone 7: Rich and Styled Tools
+
+Only after previous milestones work, investigate:
 
 ```text
-- plugin-side confirmation
-- target must be focused or selected OR explicitly approved in preview
-- visible target title
-- visible target Rem ID
-- visible parent title if available
-- visible child count
-- visible descendant count if recursive
-- literal confirm text DELETE
-- recursive flag shown clearly
-- no delete in read_only mode
-- no silent delete in trusted_writes mode
+create_styled_rem_tree
+set_rem_heading_level
+set_rem_text_color
+set_rem_highlight_color
+set_hide_bullet
+create_math_block
+create_inline_math
 ```
 
-### Required Delete Preview Shape
+Do not fake rich styling with emojis.
+
+If SDK does not support styling, return:
+
+```text
+SDK_UNSUPPORTED
+```
+
+---
+
+# 15. Validation Commands
+
+Run these after changes:
+
+```bash
+npm run check-types
+```
+
+```bash
+npm run validate
+```
+
+```bash
+npm run build
+```
+
+```bash
+npm run server:build
+```
+
+```bash
+npm run server:smoke
+```
+
+All must pass before stopping.
+
+---
+
+# 16. Manual Test Setup
+
+Start RemNote plugin dev server:
+
+```bash
+npm run dev
+```
+
+Start companion server in local no-token mode:
+
+```bash
+export REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1
+unset REMNOTE_BRIDGE_TOKEN
+npm run server:dev
+```
+
+If using ChatGPT through ngrok:
+
+```bash
+ngrok http --host-header=localhost:47392 47392
+```
+
+Use MCP URL:
+
+```text
+https://YOUR-NGROK-URL/mcp
+```
+
+---
+
+# 17. Manual Test Plan
+
+Use only sandbox notes.
+
+Example sandbox Rem:
+
+```text
+Plugin Test → notes
+Rem ID: jCxriMiSyUVAJoKfh
+```
+
+## Test 1: Tool Registry
+
+Call:
+
+```text
+tools/list
+```
+
+Expected:
+
+```text
+all public tools are listed
+get_bridge_diagnostics is listed
+get_rem_rich is listed
+create_rem_tree is listed
+update_rem is listed
+move_rem is listed
+```
+
+Then call:
+
+```text
+get_bridge_status
+```
+
+Expected:
+
+```text
+publicTools matches tools/list
+publicToolCount matches callable tool count
+```
+
+Then call:
+
+```text
+get_bridge_diagnostics
+```
+
+Expected:
+
+```text
+diagnostics returns registeredTools, exposedTools, callableTools, hiddenTools
+```
+
+---
+
+## Test 2: Read Descendant Scope
+
+Set permission scope:
+
+```text
+focused_rem_and_descendants
+```
+
+Create a child under focused Rem.
+
+Then call:
+
+```text
+get_rem
+```
+
+on the created child ID.
+
+Expected:
+
+```text
+child is readable
+no OUT_OF_SCOPE error
+```
+
+---
+
+## Test 3: Create Rem Tree
+
+Call:
 
 ```json
 {
-  "targetRemId": "string",
-  "targetTitle": "string",
-  "parentRemId": "string",
-  "parentTitle": "string",
-  "childCount": 0,
-  "descendantCount": 0,
-  "recursive": false,
-  "requiresConfirmText": "DELETE"
+  "tool": "create_rem_tree",
+  "args": {
+    "parentId": "jCxriMiSyUVAJoKfh",
+    "position": "end",
+    "tree": {
+      "title": "Mini Note — Exponential Decay and Half-Life",
+      "children": [
+        {
+          "title": "Core Idea",
+          "children": [
+            {
+              "title": "Exponential decay describes a quantity that decreases by a constant fraction per unit time."
+            }
+          ]
+        },
+        {
+          "title": "Main Decay Law",
+          "children": [
+            {
+              "title": "N(t)=N₀e^(-λt)"
+            }
+          ]
+        },
+        {
+          "title": "Half-Life Relation",
+          "children": [
+            {
+              "title": "T₁/₂ = ln(2)/λ"
+            }
+          ]
+        }
+      ]
+    }
+  }
 }
 ```
 
-### Acceptance Criteria
+Expected:
 
 ```text
-- delete_rem is not casually public.
-- delete selected/focused Rem works only after strict confirmation.
-- Rejecting approval does not delete.
-- Timeout does not delete.
-- Missing DELETE text does not delete.
-- Recursive delete requires explicit recursive=true and warning.
-```
-
-### Manual Test
-
-Only test inside:
-
-```text
-Plugin Test
-```
-
-or another sandbox Rem.
-
-Never test delete on real notes.
-
-### Completion Status — DONE 2026-05-08
-
-```text
-Phase 4 — DONE
-- create_rem remains bounded and parentless create is blocked unless workspace_allowed scope is selected.
-- create_document uses RemNote SDK setIsDocument(true) after creating the Rem.
-- create_folder returns SDK_UNSUPPORTED because installed @remnote/plugin-sdk typings expose no folder creation method.
-- create_rem_tree keeps bounded depth/node/title limits and preserves array order.
-
-Phase 5 — DONE
-- Bridge Permission Scope setting added with focused, selected, selected-descendant, approved-root, and workspace modes.
-- Approved Root Rem ID setting added for approved_document_or_folder scope.
-- Scope enforcement runs inside src/bridge/handlers.ts before approval or SDK mutation.
-- OUT_OF_SCOPE errors reject targets outside local plugin policy.
-- workspace_allowed is required for parentless workspace create.
-
-Phase 6 — DONE
-- replace_rem is exposed as destructive-hinted MCP tool and always requires approval.
-- move_rem still blocks self/descendant moves and forces approval when moving a Rem with children.
-- reorder_children requires one parent plus the full exact direct-child ID list, rejecting missing/extra/duplicate IDs.
-- update/replace only change target Rem text and do not rewrite children.
-
-Phase 7 — DONE
-- Public delete tools are delete_focused_rem and delete_selected_rem.
-- Arbitrary-ID delete_rem remains hidden unless REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 is set for local development.
-- Delete approval preview includes target title, target Rem ID, parent title/ID, child count, descendant count, recursive flag, and required DELETE text.
-- RemNote widget requires typing DELETE before approving destructive delete.
-- read_only blocks delete; trusted_writes still cannot bypass delete approval.
+one approval appears
+approval creates nested Rem tree
+order is preserved
+response includes createdNodeCount and createdRemIds
 ```
 
 ---
 
-## Phase 8 — Bridge Reliability, Queueing, Progress, and No-Hang Behavior
+## Test 4: Update Rem
 
-### Goal
-
-Fix lag and stuck behavior, especially when approval is denied or append/write requests are slow.
-
-### Files to Modify
-
-```text
-src/bridge/client.ts
-src/bridge/handlers.ts
-src/widgets/bridge-status.tsx
-server/src/bridge-hub.ts
-server/src/mcp-server.ts
-server/src/test-client.ts
-```
-
-### Tasks
-
-```text
-1. Audit request lifecycle end-to-end.
-2. Ensure every request resolves exactly once.
-3. Add queue or reject-new-request behavior for multiple pending approvals.
-4. Add clear error when approval is already pending.
-5. Add request timeout tests.
-6. Add clean handling for plugin disconnect during pending request.
-7. Add optional progress messages for create_rem_tree later if practical.
-8. Add server-side logs that do not expose private note content.
-```
-
-### Required Behavior
-
-```text
-approve -> tool returns ok true
-reject -> tool returns APPROVAL_REJECTED
-timeout -> tool returns APPROVAL_TIMEOUT
-plugin disconnected -> tool returns PLUGIN_NOT_CONNECTED
-server timeout -> tool returns TIMEOUT
-invalid input -> tool returns INVALID_ARGS
-```
-
-### Acceptance Criteria
-
-```text
-- Append approval denial never hangs.
-- Approval timeout never hangs.
-- Plugin disconnect never leaves pending server requests forever.
-- Multiple write requests are handled intentionally.
-- Large tree creation is bounded and returns useful errors.
-```
-
----
-
-## Phase 9 — Secure MCP/App Readiness
-
-### Goal
-
-Prepare the codebase for normal MCP/App usage beyond local developer mode.
-
-### Files to Create or Modify
-
-```text
-server/src/auth/
-server/src/sessions/
-server/src/config.ts
-server/src/http.ts
-server/src/mcp-server.ts
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-README.md
-```
-
-### Do Not Implement Blindly
-
-Do not add fake security.
-
-Do not add incomplete OAuth and pretend it is production-ready.
-
-Create architecture and interfaces first, then implement step-by-step.
-
-### Target Concepts
-
-```text
-OAuth sign-in
-user account
-paired RemNote plugin session
-device/session ID
-short-lived session token
-scope grants
-revocation
-audit log
-protected MCP endpoint
-public server deployment checklist
-```
-
-### Local vs Hosted Modes
-
-Keep two modes clear:
-
-```text
-local mode:
-  localhost companion server
-  bridge token
-  developer usage
-
-hosted mode:
-  OAuth
-  pairing flow
-  session-based plugin connection
-  production MCP/App endpoint
-```
-
-### Acceptance Criteria
-
-```text
-- Current local mode still works.
-- Hosted mode design is documented.
-- Security interfaces are added without weakening local mode.
-- No unauthenticated public write endpoint exists.
-```
-
----
-
-## Phase 10 — Documentation, Test Matrix, and Release Readiness
-
-### Goal
-
-Make the repository understandable and ready for iterative development.
-
-### Files to Update
-
-```text
-README.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-Agents.md
-```
-
-### Required Documentation
-
-README must explain:
-
-```text
-- what this project is
-- local setup
-- plugin setup
-- server setup
-- MCP endpoint
-- current tools
-- permission modes
-- what is safe now
-- what is not ready yet
-```
-
-ARCHITECTURE must explain:
-
-```text
-- plugin responsibilities
-- server responsibilities
-- bridge protocol
-- MCP tool layer
-- permission enforcement
-- future hosted app architecture
-```
-
-SAFETY must explain:
-
-```text
-- read limits
-- write approvals
-- scope modes
-- delete policy
-- logging policy
-- sandbox testing policy
-```
-
-NEXT_STEPS must contain:
-
-```text
-- current phase
-- next phase
-- blocked items
-- manual test checklist
-```
-
-### Required Test Matrix
-
-Maintain a test matrix like:
-
-| Area | Test | Expected |
-|---|---|---|
-| Connection | plugin connects to server | connected status |
-| Read | get focused Rem | returns selected content |
-| Order | append child | appears after existing children |
-| Tree | create ordered tree | order preserved |
-| Approval | reject write | no write, error returned |
-| Timeout | ignore approval | timeout error returned |
-| Scope | write outside scope | denied |
-| Delete | missing DELETE | blocked |
-| Disconnect | plugin disconnect during request | structured error |
-
-### Acceptance Criteria
-
-```text
-- Documentation matches actual code.
-- Test matrix exists.
-- All validation scripts pass.
-- Manual sandbox test steps are clear.
-```
-
----
-
-### Completion Status — DONE 2026-05-09
-
-Repo/build/smoke verification status:
-
-Phase 8 — DONE
-- Bridge lifecycle audited through hub, plugin client, widget approval path, and smoke coverage.
-- Server-side pending requests resolve through success, timeout, disconnect, or send failure paths.
-- Widget rejects duplicate approval requests with `APPROVAL_PENDING` instead of hiding a queue.
-- Approval timeout uses the request deadline and returns `APPROVAL_TIMEOUT`.
-- Smoke coverage includes server timeout and plugin disconnect paths.
-- Large read payloads are additionally bounded by total serialized nodes, summary-title truncation, and WebSocket message size.
-
-Phase 9 — DONE
-- Active local mode still uses loopback bind plus bridge token by default.
-- `/mcp` remains protected by local bearer/token auth; remote/CORS modes require a token.
-- Auth/session/audit interfaces now exist under `server/src/auth` and `server/src/sessions`.
-- Hosted mode is documented and intentionally blocked by config until real OAuth/pairing/session storage is implemented.
-- Audit logs record metadata only and avoid note bodies, markdown payloads, tokens, and secrets.
-
-Phase 10 — DONE
-- README explains project purpose, local setup, plugin setup, server setup, MCP endpoint, tools, modes/scopes, safe-now status, and not-ready status.
-- Architecture doc explains plugin/server responsibilities, bridge protocol, MCP layer, permission enforcement, and future hosted architecture.
-- Safety doc explains read limits, write approvals, scope modes, delete policy, logging policy, sandbox policy, and no-hang behavior.
-- NEXT_STEPS contains completed milestones, current phase, next phase, blocked items, manual QA, and test matrix.
-- Security scan artifact written under `/tmp/codex-security-scans/remnote-plugin-template-react/4eacf1c_20260509T065352Z/report.md`.
-
-### Live MCP Follow-up Status — DONE 2026-05-09
-
-Stage 1 — DONE
-- Canonical MCP registry stamp added with 24 default public tools and gated `delete_rem` metadata.
-- `/health`, `/diagnostics`, `get_bridge_status`, and `get_bridge_diagnostics` expose live registry evidence.
-
-Stage 2 — DONE
-- BridgeHub now records pending and recent request outcomes without note bodies or markdown.
-- MCP client disconnect aborts pending server work with `CLIENT_DISCONNECTED`.
-- Server sends `cancel_request` to the plugin so pending RemNote approvals do not execute after the caller is gone.
-
-Stage 3 — DONE
-- Plugin sidebar is task-focused: Ready/Action Needed/Bridge Offline, tool count, registry stamp, scope, refresh warning, approval card, and copy diagnostics.
-- UI uses 44px controls, visible focus states, wrapping text, and reduced-motion-safe transitions.
-
-Stage 4 — DONE
-- Submission JSON includes `get_bridge_diagnostics` and diagnostics test coverage.
-- README and NEXT_STEPS explain 24-tool registry, connector refresh, diagnostics endpoint, and client-disconnect behavior.
-
-Stage 5 — DONE
-- `npm run check-types`, `npm run server:build`, and `npm run server:smoke` pass after the follow-up fix.
-- Smoke coverage now checks 24-tool diagnostics, server timeout, plugin disconnect, and client-disconnect cancellation.
-
----
-
-# 12. Tool Design Rules
-
-## 12.1 MCP Tool Descriptions
-
-Tool descriptions must teach ChatGPT when to use each tool.
-
-Bad:
-
-```text
-Create Rem.
-```
-
-Good:
-
-```text
-Use this when the user explicitly asks to create a new RemNote Rem under a known parent. By default the new Rem is appended after existing children.
-```
-
-## 12.2 Tool Inputs
-
-Every tool input must be validated with schema.
-
-Use zod on the server side.
-
-Use TypeScript normalization on the plugin side.
-
-Never trust server input just because it came from MCP.
-
-## 12.3 Tool Outputs
-
-Every tool output must include structured content.
-
-Write tools should return:
+Call:
 
 ```json
 {
-  "status": "appended",
-  "targetRemId": "string",
-  "createdRemId": "string",
-  "insertedAt": 3
+  "tool": "update_rem",
+  "args": {
+    "remId": "TARGET_REM_ID",
+    "markdown": "Updated text"
+  }
 }
 ```
 
-Add `insertedAt` where practical during the ordering phase.
+Expected:
+
+```text
+approval appears
+approve updates Rem
+children remain intact
+response includes updatedRemId
+```
 
 ---
 
-# 13. RemNote SDK Rules
+## Test 5: Move Rem
 
-## 13.1 Keep SDK Calls Isolated
+Call:
 
-RemNote SDK calls should stay in:
-
-```text
-src/remnote/read.ts
-src/remnote/write.ts
-src/remnote/serialize.ts
-src/remnote/permissions.ts
+```json
+{
+  "tool": "move_rem",
+  "args": {
+    "remId": "CHILD_REM_ID",
+    "newParentId": "jCxriMiSyUVAJoKfh",
+    "index": 0
+  }
+}
 ```
 
-Do not put SDK-heavy logic inside React widgets.
-
-Widgets should display state and request approval only.
-
-## 13.2 Do Not Send Raw SDK Objects
-
-Never send raw RemNote SDK objects over the bridge.
-
-Always serialize.
-
-## 13.3 Rich Text and Math
-
-Math notation must be preserved as much as the RemNote SDK allows.
-
-For math/rich text work:
+Expected:
 
 ```text
-- inspect rich text shape
-- preserve inline math
-- preserve math blocks
-- test with real RemNote rendering
-- do not flatten math into broken plain text when writing
+approval appears
+approve moves Rem
+response includes movedRemId
+order changes correctly
 ```
-
-Use `get_rem_rich` for diagnostics when checking math behavior.
 
 ---
 
-# 14. Testing Rules
+## Test 6: Reorder Children
 
-## 14.1 Always Test in Sandbox First
+Call:
 
-All write and delete tests must happen inside a sandbox Rem such as:
-
-```text
-Plugin Test
+```json
+{
+  "tool": "reorder_children",
+  "args": {
+    "parentId": "jCxriMiSyUVAJoKfh",
+    "orderedChildIds": ["CHILD_ID_1", "CHILD_ID_2"]
+  }
+}
 ```
 
-or:
+Expected:
 
 ```text
-ChatGPT Bridge Sandbox
+approval appears
+approve reorders children
+no children are dropped silently
 ```
 
-Never test destructive actions on real notes.
+---
 
-## 14.2 Required Commands
+## Test 7: Delete Focused Rem
 
-Run these after meaningful changes:
+Only test on a temporary Rem.
+
+Call:
+
+```json
+{
+  "tool": "delete_focused_rem",
+  "args": {
+    "confirmText": "DELETE",
+    "recursive": false
+  }
+}
+```
+
+Expected:
+
+```text
+approval appears
+delete warning is clear
+reject deletes nothing
+approve deletes only the intended focused Rem
+response includes deletedRemId
+```
+
+---
+
+## Test 8: Failure Does Not Kill Session
+
+Call a tool with a bad ID:
+
+```json
+{
+  "tool": "move_rem",
+  "args": {
+    "remId": "bad-id",
+    "newParentId": "jCxriMiSyUVAJoKfh",
+    "index": 0
+  }
+}
+```
+
+Expected:
+
+```text
+returns REM_NOT_FOUND
+session remains alive
+get_bridge_status still works
+ping_remnote_plugin still works
+```
+
+---
+
+# 18. Acceptance Criteria
+
+This update is complete only when:
+
+```text
+MCP tools/list exposes the same public tools reported by get_bridge_status
+get_bridge_diagnostics is callable
+hidden tools have hidden reasons
+safe read tools are callable
+focused_rem_and_descendants scope works
+newly created descendants can be read back
+create_rem_tree works
+update_rem works
+move_rem works
+reorder_children works
+delete_focused_rem and delete_selected_rem are strictly approval-gated
+approval requests always resolve
+failed tools do not terminate MCP session
+existing base tools still work
+all validation commands pass
+```
+
+---
+
+# 19. Required Output Before Coding
+
+Before coding, produce a short plan covering:
+
+```text
+current tool registry locations
+why get_bridge_status and MCP tools/list must report the same public registry
+which files will change
+which tools are truly implemented already
+which tools are registry-only stubs
+which tools are unsupported by the RemNote SDK
+how tools/list will be unified with publicTools
+how delete tools will be safely gated
+how permission scopes will be updated
+test plan
+```
+
+Then implement in small milestones.
+
+Do not begin with rich styling.
+
+Do not begin with flashcards.
+
+Do not begin with arbitrary delete.
+
+Fix the registry mismatch first.
+
+---
+
+# 20. Completion Audit - 2026-05-09
+
+Final status:
+
+```text
+DONE
+```
+
+Nine requested tasks:
+
+```text
+1. Milestone 1 - DONE
+2. Milestone 2 - DONE
+3. Milestone 3 - DONE
+4. Milestone 4 - DONE
+5. Milestone 5 - DONE
+6. Milestone 6 - DONE
+7. Milestone 7 - DONE
+8. Agents.md fulfillment check - DONE
+9. Final audit and validation - DONE
+```
+
+## 20.1 Milestone 1 - Tool Registry Unification
+
+Status:
+
+```text
+DONE
+```
+
+Evidence:
+
+```text
+server/src/tool-registry.ts is the shared public/hidden registry source.
+server/src/mcp-server.ts records registered MCP tools and asserts parity at startup.
+get_bridge_status and get_bridge_diagnostics return the same public tool list that tools/list exposes.
+delete_rem remains hidden by default with an explicit hidden reason.
+Unknown MCP tool calls return structured UNKNOWN_TOOL.
+```
+
+## 20.2 Milestone 2 - Safe Read Tools
+
+Status:
+
+```text
+DONE
+```
+
+Exposed and smoke-called:
+
+```text
+get_rem_rich
+get_current_selection
+get_children
+get_rem_breadcrumbs
+```
+
+The read response shapes include support metadata where SDK capability can vary.
+
+## 20.3 Milestone 3 - Scope Improvements
+
+Status:
+
+```text
+DONE
+```
+
+Implemented scopes:
+
+```text
+focused_rem_and_descendants
+selected_rem_and_descendants
+```
+
+The old persisted `descendants_of_selected_rem` value is normalized to `selected_rem_and_descendants` for compatibility.
+
+## 20.4 Milestone 4 - Tree Creation
+
+Status:
+
+```text
+DONE
+```
+
+Evidence:
+
+```text
+create_rem_tree is public.
+position is accepted.
+rootInsertPosition is returned.
+createdNodeCount and createdRemIds remain part of the result.
+server:smoke verifies ordered tree creation.
+```
+
+## 20.5 Milestone 5 - Update and Move
+
+Status:
+
+```text
+DONE
+```
+
+Smoke-called tools:
+
+```text
+update_rem
+move_rem
+reorder_children
+```
+
+`reorder_children` accepts manual-test aliases `parentId` and `orderedChildIds` while preserving canonical bridge fields.
+
+## 20.6 Milestone 6 - Delete Tools
+
+Status:
+
+```text
+DONE
+```
+
+Public delete tools:
+
+```text
+delete_focused_rem
+delete_selected_rem
+```
+
+Safety status:
+
+```text
+delete_rem remains hidden unless REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 is set.
+Delete tools require confirmText DELETE.
+Delete tools keep destructive MCP annotations.
+Delete tools use plugin-side approval.
+```
+
+## 20.7 Milestone 7 - Rich and Styled Tools
+
+Status:
+
+```text
+DONE AS SDK-BACKED PUBLIC TOOL EXPOSURE
+```
+
+SDK findings:
+
+```text
+Installed SDK typings expose text, back text, parent/order, remove, children, descendants, search, selection, document marking, font size, highlight color, rich text formatting, and LaTeX helpers.
+Installed SDK typings do not expose a complete folder creation API.
+Installed SDK typings expose list-item toggling; `set_hide_bullet` uses that SDK path and reports the explicit state change.
+```
+
+Decision:
+
+```text
+Expose create_styled_rem_tree, set_hide_bullet, math/styling write tools, and card helpers only through typed public contracts and smoke tests.
+Do not use slash-command text as styling.
+create_folder continues to return SDK_UNSUPPORTED.
+```
+
+## 20.8 Agents.md Fulfillment Check
+
+Status:
+
+```text
+DONE
+```
+
+All acceptance items in section 18 are covered by code, smoke tests, docs, or explicit SDK-unsupported handling.
+
+## 20.9 Final Audit and Validation
+
+Status:
+
+```text
+DONE
+```
+
+Commands run:
 
 ```bash
 npm run check-types
@@ -1724,118 +2080,23 @@ npm run validate
 npm run build
 npm run server:build
 npm run server:smoke
+npm audit
+npm audit --omit=dev
+git diff --check
 ```
 
-When server behavior changes:
-
-```bash
-npm run server:test-client
-```
-
-## 14.3 Manual RemNote Test
-
-Use this checklist:
+Results:
 
 ```text
-1. Start npm run dev.
-2. Start npm run server:dev.
-3. Load plugin in RemNote from http://localhost:8080.
-4. Confirm bridge token matches.
-5. Confirm bridge status connected.
-6. Focus Plugin Test Rem.
-7. Run get_focused_rem.
-8. Run get_rem_tree.
-9. Run append_to_rem.
-10. Approve request.
-11. Confirm child appears after existing children.
-12. Run append_to_rem again.
-13. Reject request.
-14. Confirm no child was created.
+All commands passed.
+npm audit reported 0 vulnerabilities.
+npm run build compiled successfully and wrote PluginZip.zip.
+npm run server:smoke confirmed 40-tool registry parity, no-auth discovery, rich/styled/card tool calls, hidden delete_rem, UNKNOWN_TOOL handling, and failure paths keep the session alive.
 ```
 
----
-
-# 15. Anti-Patterns to Avoid
-
-Do not implement:
+Manual follow-up that still requires a real RemNote and ChatGPT session:
 
 ```text
-DOM scraping
-browser automation against RemNote UI
-browser automation against ChatGPT UI
-direct OpenAI API calls inside RemNote
-RemNote plugin as chatbot
-silent note rewriting
-silent delete
-bulk delete
-unbounded full-KB read
-untyped command bus
-public unauthenticated bridge server
-open CORS write endpoint
-giant all-in-one refactor
+Refresh the ChatGPT Developer Mode app/connector if ChatGPT still displays stale tool metadata.
+Run the sandbox manual QA in NEXT_STEPS.md against a real RemNote knowledge base before public submission.
 ```
-
----
-
-# 16. Coding Style
-
-Use clear, boring code.
-
-Prefer:
-
-```text
-small functions
-typed interfaces
-explicit schemas
-explicit errors
-bounded recursion
-request IDs
-clear logs
-manual test notes
-```
-
-Avoid:
-
-```text
-clever abstractions
-large React components
-hidden global mutable state
-silent catches
-console logs with private note content
-unbounded loops through Rem trees
-```
-
----
-
-# 17. Definition of Done
-
-A phase is done only when:
-
-```text
-- implementation matches the phase goal
-- safety behavior is correct
-- types pass
-- build passes
-- server build passes
-- smoke test passes
-- manual test steps are documented
-- no unrelated phase was mixed in
-```
-
-The full product is successful when this works reliably:
-
-```text
-User opens RemNote.
-User focuses or selects a Rem.
-User asks ChatGPT/Vivy to organize or add notes.
-ChatGPT reads the current Rem structure.
-ChatGPT understands order and nesting.
-ChatGPT appends new content after existing children.
-The plugin shows approval when needed.
-The user approves or rejects.
-The bridge returns a structured result.
-RemNote updates exactly as expected.
-Dangerous actions remain tightly supervised.
-```
-
-Keep every implementation decision aligned with that product experience.

@@ -14,12 +14,16 @@ import type {
   GetRemRichResult,
   GetRemTreeArgs,
   RemChildSummary,
+  RemColorName,
+  RemHeadingLevel,
+  RemTypeName,
+  RichTextSpanInput,
   RemStructureType,
   SearchRemsArgs,
   SearchRemsResult,
   SerializedRem,
 } from '../bridge/protocol';
-import { getRemPlainText, serializeRem } from './serialize';
+import { buildRemBreadcrumbs, getRemPlainText, serializeRem } from './serialize';
 
 const MAX_RICH_ARRAY_ITEMS = 200;
 const MAX_RICH_STRING_CHARS = 2000;
@@ -31,6 +35,15 @@ const MAX_CHILD_LIMIT = 100;
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 25;
 const MAX_SUMMARY_TITLE_CHARS = 500;
+
+const REM_COLOR_BY_NUMBER: Record<number, RemColorName> = {
+  1: 'red',
+  2: 'orange',
+  3: 'yellow',
+  4: 'green',
+  5: 'purple',
+  6: 'blue',
+};
 
 export interface FocusedRemStatus {
   found: boolean;
@@ -118,9 +131,19 @@ async function summarizeRem(
   rem: Rem,
   index: number
 ): Promise<RemChildSummary> {
+  const { frontText, plainText } = await getRemPlainText(plugin, rem);
+  const title = frontText || plainText || rem._id;
+  const trimmedTitle =
+    title.length <= MAX_SUMMARY_TITLE_CHARS
+      ? title
+      : `${title.slice(0, MAX_SUMMARY_TITLE_CHARS).trimEnd()}...`;
+
   return {
     remId: rem._id,
-    title: await getRemTitle(plugin, rem),
+    title: trimmedTitle,
+    frontText,
+    plainText,
+    breadcrumbs: await buildRemBreadcrumbs(plugin, rem),
     index,
     hasChildren: rem.children.length > 0,
     type: await getRemStructureType(rem),
@@ -148,7 +171,9 @@ export async function readChildren(
 
   return {
     parentRemId: parent._id,
+    remId: parent._id,
     children: summaries,
+    childCount: children.length,
     truncated: children.length > limitedChildren.length,
   };
 }
@@ -172,6 +197,7 @@ export async function readRemBreadcrumbs(
     breadcrumbs.unshift({
       remId: current._id,
       title: await getRemTitle(plugin, current),
+      text: await getRemTitle(plugin, current),
     });
 
     if (!current.parent) {
@@ -306,6 +332,75 @@ function normalizeRichArray(value: unknown): unknown[] {
   return normalizeRichValue(value) as unknown[];
 }
 
+function remTypeName(rem: Rem): RemTypeName | 'unknown' {
+  const remType = Number(rem.type);
+  if (remType === REM_TYPE_CONCEPT) {
+    return 'concept';
+  }
+  if (remType === REM_TYPE_DESCRIPTOR) {
+    return 'descriptor';
+  }
+  if (remType === 0 || Number.isNaN(remType)) {
+    return 'normal';
+  }
+  return 'unknown';
+}
+
+function normalizeRichSpans(value: unknown): RichTextSpanInput[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const spans: RichTextSpanInput[] = [];
+  for (const item of value) {
+    if (typeof item === 'string') {
+      spans.push({ type: 'text', text: item, styles: {} });
+      continue;
+    }
+
+    if (typeof item !== 'object' || item === null) {
+      continue;
+    }
+
+    const record = item as Record<string, unknown>;
+    if (record.i === 'x') {
+      spans.push({
+        type: record.block ? 'mathBlock' : 'inlineMath',
+        latex: typeof record.text === 'string' ? record.text : '',
+        styles: {},
+      });
+      continue;
+    }
+
+    if (record.i === 'm' || typeof record.text === 'string') {
+      const color = typeof record.h === 'number' ? REM_COLOR_BY_NUMBER[record.h] : undefined;
+      spans.push({
+        type: 'text',
+        text: typeof record.text === 'string' ? record.text : '',
+        styles: {
+          ...(color ? { color } : {}),
+          ...(record.b ? { bold: true } : {}),
+          ...(record.l ? { italic: true } : {}),
+          ...(record.u ? { underline: true } : {}),
+          ...(record.q ? { quote: true } : {}),
+          ...(record.cId ? { cloze: true } : {}),
+        },
+      });
+      continue;
+    }
+
+    if (record.i === 'q' && typeof record._id === 'string') {
+      spans.push({
+        type: 'text',
+        text: `[[${record._id}]]`,
+        styles: {},
+      });
+    }
+  }
+
+  return spans;
+}
+
 function detectRichTypes(value: unknown, types: Set<DetectedContentType>) {
   if (Array.isArray(value)) {
     for (const item of value) {
@@ -355,12 +450,35 @@ export async function readRemRich(
 
   detectRichTypes(rem.text, detected);
   detectRichTypes(rem.backText, detected);
+  const headingLevel = (await rem.getFontSize().catch(() => undefined)) ?? 'normal';
+  const isListItem = await rem.isListItem().catch(() => true);
+  const highlightColor = await rem.getHighlightColor().catch(() => undefined);
+  const children = await readChildren(plugin, { parentRemId: rem._id, maxChildren: DEFAULT_CHILD_LIMIT }).catch(
+    () => undefined
+  );
+  const cards = await rem.getCards().catch(() => []);
 
   return {
     remId: rem._id,
     frontText,
     backText,
     plainText,
+    remStyle: {
+      headingLevel: headingLevel as RemHeadingLevel,
+      hideBullet: !isListItem,
+      ...(highlightColor ? { highlightColor: String(highlightColor).toLowerCase() as RemColorName } : {}),
+      remType: remTypeName(rem),
+    },
+    richText: normalizeRichSpans(rem.text),
+    backRichText: normalizeRichSpans(rem.backText),
+    children: children?.children ?? [],
+    card: {
+      hasCards: cards.length > 0,
+      cards: cards.map((card) => ({
+        id: (card as { _id?: string })._id,
+        type: (card as { type?: unknown }).type,
+      })),
+    },
     rich: {
       front: normalizeRichArray(rem.text),
       back: normalizeRichArray(rem.backText),
@@ -420,6 +538,7 @@ export async function getCurrentSelection(
       focusedRemId,
       selectedRemIds: [],
       selectionSupported: false,
+      reason: 'SDK does not expose current selection',
     };
   }
 }

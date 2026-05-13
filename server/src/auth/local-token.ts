@@ -14,6 +14,17 @@ export function authorizeLocalMcpRequest(
   req: IncomingMessage,
   config: CompanionServerConfig
 ): AuthResult {
+  if (config.allowNoToken) {
+    return {
+      ok: true,
+      principal: {
+        subject: 'local-remnote-bridge-no-token',
+        authMode: 'local_no_token',
+        scopeGrants: LOCAL_BRIDGE_SCOPE_GRANTS,
+      },
+    };
+  }
+
   if (!hasValidBearerToken(req, config.bridgeToken)) {
     return {
       ok: false,

@@ -20,8 +20,9 @@ The plugin also enforces a local scope before it touches RemNote SDK data:
 | Scope | Behavior |
 | --- | --- |
 | `focused_rem_only` | Allows requests anchored to the focused Rem. Workspace create is blocked. |
+| `focused_rem_and_descendants` | Allows requests inside the focused Rem subtree, including children created during the current workflow. |
 | `selected_rem_only` | Allows requests anchored to currently selected Rem IDs only. |
-| `descendants_of_selected_rem` | Allows requests inside the selected Rem subtree. |
+| `selected_rem_and_descendants` | Allows requests inside the selected Rem subtree. |
 | `approved_document_or_folder` | Allows requests inside the configured `Approved Root Rem ID`. |
 | `workspace_allowed` | Allows broader bounded reads and workspace-level create. |
 

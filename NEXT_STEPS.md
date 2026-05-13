@@ -16,13 +16,15 @@
 12. Phase 2 ordering complete: create, append, and tree root creation append at the end by default, with explicit insert indexes returned for verification.
 13. Phase 3 structure awareness complete: MCP exposes bounded selection, children, breadcrumbs, search, rich Rem, and document/folder tree tools.
 14. Phase 4 safe create complete: create Rem/document/tree paths are bounded and folder creation returns `SDK_UNSUPPORTED` because the installed RemNote SDK typings do not expose folders.
-15. Phase 5 scope control complete: plugin settings now enforce focused, selected, selected-descendant, approved-root, or workspace scopes inside the plugin handler.
+15. Phase 5 scope control complete: plugin settings now enforce focused, focused-descendant, selected, selected-descendant, approved-root, or workspace scopes inside the plugin handler.
 16. Phase 6 edit/reorder complete: `replace_rem` and `reorder_children` are exposed with approval and deterministic full-list validation.
 17. Phase 7 secure delete complete: public delete is limited to focused/selected Rems with preview, typed `DELETE`, and approval; arbitrary-ID `delete_rem` remains gated by env flag.
 18. Phase 8 reliability complete: request timeout, plugin disconnect, approval timeout, rejection, and duplicate approval paths return structured errors instead of hanging.
 19. Phase 9 secure readiness complete: local auth/session/audit interfaces exist, local token auth still protects `/mcp`, and hosted mode is documented but hard-blocked until real OAuth/pairing is implemented.
 20. Phase 10 release-readiness docs complete: README, architecture, safety, manual QA, and test matrix now match implemented code.
 21. Follow-up reliability complete: live diagnostics, tool registry stamp, 24-tool default registry, client-disconnect cancellation, request outcome ledger, and task-focused plugin UI are implemented and smoke-tested.
+22. 2026-05-09 closeout complete: MCP `tools/list` is asserted against the shared public registry, unknown MCP tool calls return structured `UNKNOWN_TOOL`, alias inputs match manual-test prompts, focused-descendant scope is wired, and the styled-tool SDK surface was audited without exposing fake tools.
+23. 2026-05-10 rich-note closeout complete: MCP discovery now exposes 40 public tools, no-auth `initialize`/`tools/list` works for ChatGPT refresh, Simple/Advanced plugin UI landed, and SDK-backed rich text, heading, color, styled tree, math, and flashcard tools are public and smoke-tested.
 
 ## Current Phase
 
@@ -41,6 +43,7 @@ Public hosted launch work:
 ## Blocked Items
 
 - `create_folder` remains blocked by installed `@remnote/plugin-sdk` folder API support.
+- `create_styled_rem_tree` is now public and smoke-tested. It uses SDK rich text, font size, highlight, LaTeX, Rem type, card, and child creation helpers. Folder creation remains blocked by installed SDK support.
 - Hosted mode remains blocked by real OAuth, persistent sessions, and revocation UI.
 - Public submission remains blocked by privacy policy URL, support contact, screenshots, hosted HTTPS MCP URL, and live RemNote sandbox QA.
 
@@ -71,13 +74,15 @@ Manual checks:
 - enter the same token in the plugin setting;
 - confirm the bridge-status widget shows connected;
 - confirm the widget shows the live tool count and registry stamp;
-- if ChatGPT shows only 8 tools, restart the companion server and refresh the ChatGPT app/connector;
+- if ChatGPT shows stale tools, restart the companion server and refresh the ChatGPT app/connector;
+- call MCP `tools/list` and verify it matches `get_bridge_status.publicTools`;
 - focus a test Rem and call `get_focused_rem`;
-- call `get_bridge_diagnostics` and verify it reports 24 public tools, zero pending requests, and the recent request ledger;
+- call `get_bridge_diagnostics` and verify it reports 40 public tools, zero pending requests, no-auth discovery mode, and the recent request ledger;
 - call `get_children` and verify direct child order;
 - call `get_rem_breadcrumbs` and verify parent chain IDs/titles;
 - call `search_rems` with a narrow query and verify bounded results;
 - set `Bridge Permission Scope` to `focused_rem_only` and verify out-of-scope Rem IDs are rejected;
+- set `Bridge Permission Scope` to `focused_rem_and_descendants` and verify a child created under the focused Rem can be read back while outside Rem IDs remain rejected;
 - set `Approved Document or Folder` scope with a sandbox root Rem ID and verify writes outside that root are rejected;
 - call `append_to_rem`, approve in RemNote, and verify child creation;
 - call `append_to_rem`, reject in RemNote, and verify no child is created.
@@ -107,7 +112,7 @@ Manual checks:
 | Disconnect | plugin disconnect during request | `PLUGIN_NOT_CONNECTED` |
 | Client disconnect | MCP caller disconnects during approval | `CLIENT_DISCONNECTED` recorded and plugin approval cancelled |
 | Server timeout | plugin does not respond | `TIMEOUT` |
-| Diagnostics | call `get_bridge_diagnostics` | reports registry version, 24 tools, pending count, recent outcomes |
+| Diagnostics | call `get_bridge_diagnostics` | reports registry version, 40 tools, pending count, recent outcomes |
 | Invalid input | malformed bridge request | `INVALID_ARGS` |
 | Auth | missing MCP bearer token | `401` |
 | Hosted mode | `REMNOTE_BRIDGE_HOSTED_MODE=1` | startup fails intentionally |

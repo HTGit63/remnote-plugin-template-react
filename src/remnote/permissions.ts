@@ -33,6 +33,22 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'move_rem',
   'reorder_children',
   'create_rem_tree',
+  'update_rem_rich',
+  'set_rem_heading_level',
+  'set_rem_text_color',
+  'set_rem_highlight_color',
+  'set_text_span_color',
+  'set_text_span_highlight',
+  'set_rem_type',
+  'set_hide_bullet',
+  'clear_rem_formatting',
+  'create_styled_rem_tree',
+  'create_basic_flashcard',
+  'create_concept_card',
+  'create_descriptor_card',
+  'create_cloze_card',
+  'create_multiple_choice_card',
+  'create_list_answer_card',
 ]);
 const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'replace_rem',
@@ -56,11 +72,14 @@ export function normalizePermissionMode(value: string | undefined): PermissionMo
 export function normalizePermissionScope(value: string | undefined): PermissionScope {
   switch (value) {
     case 'focused_rem_only':
+    case 'focused_rem_and_descendants':
     case 'selected_rem_only':
-    case 'descendants_of_selected_rem':
+    case 'selected_rem_and_descendants':
     case 'approved_document_or_folder':
     case 'workspace_allowed':
       return value;
+    case 'descendants_of_selected_rem':
+      return 'selected_rem_and_descendants';
     default:
       return DEFAULT_PERMISSION_SCOPE;
   }
@@ -82,10 +101,12 @@ export function getPermissionModeLabel(mode: PermissionMode): string {
 
 export function getPermissionScopeLabel(scope: PermissionScope): string {
   switch (scope) {
+    case 'focused_rem_and_descendants':
+      return 'Focused Rem + Descendants';
     case 'selected_rem_only':
       return 'Selected Rem Only';
-    case 'descendants_of_selected_rem':
-      return 'Selected Descendants';
+    case 'selected_rem_and_descendants':
+      return 'Selected Rem + Descendants';
     case 'approved_document_or_folder':
       return 'Approved Document/Folder';
     case 'workspace_allowed':

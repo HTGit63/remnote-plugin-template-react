@@ -323,6 +323,14 @@
       "expected_output_url": null
     },
     {
+      "description": "Inspect plugin permission status before a write.",
+      "user_prompt": "Check my RemNote bridge permission mode and scope before you edit anything.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_plugin_status",
+      "expected_output": "Reports the plugin permission mode, active permission scope, approved root if configured, and focused Rem availability.",
+      "expected_output_url": null
+    },
+    {
       "description": "Read the Rem currently focused in RemNote.",
       "user_prompt": "Read the Rem I am focused on in RemNote and summarize what it says.",
       "file_attachment_urls": null,
@@ -344,6 +352,22 @@
       "file_attachment_urls": null,
       "tools_triggered": "get_rem_tree",
       "expected_output": "Returns a bounded serialized Rem tree with truncated markers if limits are reached.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read rich Rem metadata when available.",
+      "user_prompt": "Inspect Rem rem_12345 and tell me whether rich text metadata is available.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_rem_rich",
+      "expected_output": "Returns the Rem content plus rich-support metadata, or a supported=false style result when the installed SDK cannot expose rich fields.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read current RemNote selection metadata.",
+      "user_prompt": "Tell me which Rem is focused and which Rems are selected in RemNote.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_current_selection",
+      "expected_output": "Returns focused and selected Rem IDs when the SDK exposes selection data, or a supported=false result with a clear reason.",
       "expected_output_url": null
     },
     {
@@ -400,6 +424,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "update_rem",
       "expected_output": "Updates only the target Rem text after the plugin permission flow allows it.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Move one Rem after approval.",
+      "user_prompt": "Move Rem rem_child_1 under rem_parent_2 at index 0.",
+      "file_attachment_urls": null,
+      "tools_triggered": "move_rem",
+      "expected_output": "Moves only the target Rem to the requested parent and index after local scope and approval checks allow it.",
       "expected_output_url": null
     },
     {

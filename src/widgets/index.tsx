@@ -44,8 +44,17 @@ async function onActivate(plugin: ReactRNPlugin) {
     defaultValue: 'focused_rem_only',
     options: [
       { key: 'focused_rem_only', label: 'Focused Rem Only', value: 'focused_rem_only' },
+      {
+        key: 'focused_rem_and_descendants',
+        label: 'Focused Rem + Descendants',
+        value: 'focused_rem_and_descendants',
+      },
       { key: 'selected_rem_only', label: 'Selected Rem Only', value: 'selected_rem_only' },
-      { key: 'descendants_of_selected_rem', label: 'Selected Rem Descendants', value: 'descendants_of_selected_rem' },
+      {
+        key: 'selected_rem_and_descendants',
+        label: 'Selected Rem + Descendants',
+        value: 'selected_rem_and_descendants',
+      },
       { key: 'approved_document_or_folder', label: 'Approved Document or Folder', value: 'approved_document_or_folder' },
       { key: 'workspace_allowed', label: 'Workspace Allowed', value: 'workspace_allowed' },
     ],

@@ -19,14 +19,14 @@
 }
 
 .bridge-shell {
-  min-height: 100vh;
+  height: 100vh;
   width: 100%;
   box-sizing: border-box;
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   background: var(--bridge-bg);
   color: var(--bridge-text);
-  padding: 14px 12px 18px;
+  padding: 0;
   font-family: var(
     --font-primary,
     Inter,
@@ -35,6 +35,31 @@
     "Segoe UI",
     sans-serif
   );
+}
+
+.plugin-root {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.plugin-header {
+  flex: 0 0 auto;
+  margin: 12px 12px 0;
+}
+
+.plugin-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 12px;
+}
+
+.approval-footer {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--bridge-soft-border);
+  background: rgba(15, 23, 42, 0.98);
+  padding: 10px 12px 12px;
 }
 
 .bridge-shell *,
@@ -383,10 +408,6 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  padding-top: 2px;
 }
 
 .bridge-button {
@@ -448,6 +469,57 @@
   background: #26364f;
 }
 
+.bridge-button-full {
+  width: 100%;
+}
+
+.bridge-access-editor,
+.bridge-advanced,
+.bridge-inline-actions {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.bridge-field {
+  display: grid;
+  gap: 6px;
+  color: var(--bridge-muted);
+  font-size: 11px;
+  font-weight: 760;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.bridge-field select {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--bridge-border);
+  border-radius: 8px;
+  background: #020617;
+  color: var(--bridge-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.3;
+  padding: 9px 10px;
+  text-transform: none;
+}
+
+.bridge-field select:focus-visible {
+  outline: 2px solid #7dd3fc;
+  outline-offset: 2px;
+}
+
+.bridge-field-help {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .bridge-empty {
   border: 1px dashed rgba(148, 163, 184, 0.34);
   background: rgba(15, 23, 42, 0.72);
@@ -467,8 +539,16 @@
 }
 
 @media (max-width: 460px) {
-  .bridge-shell {
-    padding: 12px 10px 16px;
+  .plugin-header {
+    margin: 10px 10px 0;
+  }
+
+  .plugin-body {
+    padding: 10px;
+  }
+
+  .approval-footer {
+    padding: 10px;
   }
 
   .bridge-hero,

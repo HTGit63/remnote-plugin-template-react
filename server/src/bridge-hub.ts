@@ -250,17 +250,24 @@ export class BridgeHub {
         return;
       }
 
-      if (this.config.bridgeToken && hello.token !== this.config.bridgeToken) {
+      if (this.config.bridgeToken && !this.config.allowNoToken && hello.token !== this.config.bridgeToken) {
         socket.close(1008, 'Invalid bridge token.');
         return;
       }
 
+      const toolCallAuthMode =
+        this.config.bridgeToken && !this.config.allowNoToken
+          ? 'local_bearer_required'
+          : 'no_auth_allowed';
       this.replacePluginSocket(socket);
       const serverHello: BridgeServerHello = {
         type: 'server_hello',
         protocolVersion: 1,
         serverName: 'remnote-companion',
-        ...getToolRegistrySummary(this.config.enableDeleteTool),
+        ...getToolRegistrySummary(this.config.enableDeleteTool, undefined, {
+          discoveryAuthMode: 'no_auth_required',
+          toolCallAuthMode,
+        }),
         serverStartedAt: this.startedAt,
       };
       socket.send(JSON.stringify(serverHello));

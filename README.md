@@ -93,7 +93,7 @@ The plugin dev server and the companion server are separate processes. The manif
 
 ## MCP Tools
 
-The companion server exposes 24 public MCP tools by default:
+The companion server exposes 40 public MCP tools by default:
 
 - `get_bridge_status`
 - `get_bridge_diagnostics`
@@ -119,10 +119,26 @@ The companion server exposes 24 public MCP tools by default:
 - `create_rem_tree`
 - `delete_focused_rem`
 - `delete_selected_rem`
+- `update_rem_rich`
+- `set_rem_heading_level`
+- `set_rem_text_color`
+- `set_rem_highlight_color`
+- `set_text_span_color`
+- `set_text_span_highlight`
+- `set_rem_type`
+- `set_hide_bullet`
+- `clear_rem_formatting`
+- `create_styled_rem_tree`
+- `create_basic_flashcard`
+- `create_concept_card`
+- `create_descriptor_card`
+- `create_cloze_card`
+- `create_multiple_choice_card`
+- `create_list_answer_card`
 
 `create_folder` returns `SDK_UNSUPPORTED` with the installed RemNote SDK because folder creation is not exposed in the SDK typings. Arbitrary-ID `delete_rem` remains hidden by default and requires `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` for local development.
 
-If ChatGPT shows fewer tools than this list, restart the companion server and refresh the ChatGPT app/connector so it reloads MCP tool metadata.
+MCP `initialize` and `tools/list` allow unauthenticated discovery so ChatGPT can refresh the full tool list. Tool calls still require the configured local token unless `REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1` is set for isolated local development. If ChatGPT shows fewer tools than this list, restart the companion server and refresh the ChatGPT app/connector so it reloads MCP tool metadata.
 
 ## Settings
 
@@ -146,8 +162,9 @@ Modes:
 Scopes:
 
 - `focused_rem_only`
+- `focused_rem_and_descendants`
 - `selected_rem_only`
-- `descendants_of_selected_rem`
+- `selected_rem_and_descendants`
 - `approved_document_or_folder`
 - `workspace_allowed`
 

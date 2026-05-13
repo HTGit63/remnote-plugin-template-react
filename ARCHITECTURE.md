@@ -98,8 +98,9 @@ Reads are allowed in all modes. Safe writes require approval in `confirm_writes`
 The plugin also enforces app-level scopes:
 
 - `focused_rem_only`
+- `focused_rem_and_descendants`
 - `selected_rem_only`
-- `descendants_of_selected_rem`
+- `selected_rem_and_descendants`
 - `approved_document_or_folder`
 - `workspace_allowed`
 

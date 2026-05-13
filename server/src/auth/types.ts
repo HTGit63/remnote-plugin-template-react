@@ -1,4 +1,4 @@
-export type AuthMode = 'local_bridge_token' | 'hosted_oauth';
+export type AuthMode = 'local_bridge_token' | 'local_no_token' | 'mcp_discovery_noauth' | 'hosted_oauth';
 
 export type ScopeGrant =
   | 'bridge:read'
