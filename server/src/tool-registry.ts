@@ -131,6 +131,10 @@ export function getToolRegistrySummary(
     publicToolCount: publicTools.length,
     publicTools,
     exposedTools: [...publicTools],
+    registryDeclaredTools: [...publicTools],
+    mcpRegisteredTools: [...registeredTools],
+    mcpListedTools: [...publicTools],
+    callabilitySource: 'registry_only_not_live_execution' as const,
     callableTools: [...publicTools],
     discoverableTools: [...publicTools],
     unauthDiscoverableTools:

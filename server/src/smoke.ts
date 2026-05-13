@@ -104,38 +104,45 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     case 'get_children':
+    {
+      const allChildren = [
+        {
+          remId: 'rem-existing-1',
+          title: 'Existing 1',
+          frontText: 'Existing 1',
+          plainText: 'Existing 1',
+          breadcrumbs: [fakeRem.frontText, 'Existing 1'],
+          index: 0,
+          hasChildren: false,
+          type: 'rem',
+        },
+        {
+          remId: 'rem-existing-2',
+          title: 'Existing 2',
+          frontText: 'Existing 2',
+          plainText: 'Existing 2',
+          breadcrumbs: [fakeRem.frontText, 'Existing 2'],
+          index: 1,
+          hasChildren: false,
+          type: 'rem',
+        },
+      ];
+      const maxChildren =
+        typeof request.args.maxChildren === 'number' ? request.args.maxChildren : allChildren.length;
+      const children = allChildren.slice(0, maxChildren);
       return {
         id: request.id,
         ok: true,
         result: {
           parentRemId: request.args.parentRemId,
           remId: request.args.parentRemId,
-          children: [
-            {
-              remId: 'rem-existing-1',
-              title: 'Existing 1',
-              frontText: 'Existing 1',
-              plainText: 'Existing 1',
-              breadcrumbs: [fakeRem.frontText, 'Existing 1'],
-              index: 0,
-              hasChildren: false,
-              type: 'rem',
-            },
-            {
-              remId: 'rem-existing-2',
-              title: 'Existing 2',
-              frontText: 'Existing 2',
-              plainText: 'Existing 2',
-              breadcrumbs: [fakeRem.frontText, 'Existing 2'],
-              index: 1,
-              hasChildren: false,
-              type: 'rem',
-            },
-          ],
-          childCount: 2,
-          truncated: false,
+          children,
+          childCount: allChildren.length,
+          maxChildren,
+          truncated: allChildren.length > children.length,
         },
       };
+    }
     case 'get_rem_breadcrumbs':
       return {
         id: request.id,
@@ -149,28 +156,45 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     case 'search_rems':
+    {
+      const allResults = [
+        {
+          remId: fakeRem.remId,
+          title: fakeRem.frontText,
+          frontText: fakeRem.frontText,
+          plainText: fakeRem.plainText,
+          breadcrumbs: [fakeRem.frontText],
+          index: 0,
+          hasChildren: fakeRem.hasChildren,
+          type: 'rem',
+        },
+        {
+          remId: 'rem-search-2',
+          title: 'Second result',
+          frontText: 'Second result',
+          plainText: 'Second result',
+          breadcrumbs: ['Second result'],
+          index: 1,
+          hasChildren: false,
+          type: 'rem',
+        },
+      ];
+      const maxResults =
+        typeof request.args.maxResults === 'number' ? request.args.maxResults : allResults.length;
+      const results = allResults.slice(0, maxResults);
       return {
         id: request.id,
         ok: true,
         result: {
           query: request.args.query,
           contextRemId: request.args.contextRemId ?? null,
-          results: [
-            {
-              remId: fakeRem.remId,
-              title: fakeRem.frontText,
-              frontText: fakeRem.frontText,
-              plainText: fakeRem.plainText,
-              breadcrumbs: [fakeRem.frontText],
-              index: 0,
-              hasChildren: fakeRem.hasChildren,
-              type: 'rem',
-            },
-          ],
-          truncated: false,
+          results,
+          maxResults,
+          truncated: allResults.length > results.length,
           searchSupported: true,
         },
       };
+    }
     case 'get_document_or_folder_tree':
       return {
         id: request.id,
@@ -707,18 +731,29 @@ try {
   const diagnosticsResponse = await callMcpTool(mcp, 'get_bridge_diagnostics', {});
   const diagnostics = JSON.stringify(diagnosticsResponse);
   const diagnosticsResult = getStructuredContent(diagnosticsResponse).result as
-    | { hiddenTools?: Array<{ name: string }>; callableTools?: string[]; registryMismatch?: { missing?: string[]; unexpected?: string[] } }
+    | {
+        hiddenTools?: Array<{ name: string }>;
+        callableTools?: string[];
+        registryMismatch?: { missing?: string[]; unexpected?: string[] };
+        callabilitySource?: string;
+        realPluginVerifiedTools?: string[];
+        runtimeUnverifiedTools?: string[];
+      }
     | undefined;
   if (
     !diagnostics.includes(`"publicToolCount":${expectedToolNames.length}`) ||
     !diagnostics.includes('toolRegistryVersion') ||
-    !diagnostics.includes('"discoveryAuthMode":"no_auth_required"')
+    !diagnostics.includes('"discoveryAuthMode":"no_auth_required"') ||
+    !diagnostics.includes('"callabilitySource":"registry_only_not_live_execution"')
   ) {
-    throw new Error('get_bridge_diagnostics did not report the live registry and discovery auth mode.');
+    throw new Error('get_bridge_diagnostics did not report the live registry, discovery auth mode, and callability source.');
   }
   if (
     !diagnosticsResult ||
     JSON.stringify(diagnosticsResult.callableTools) !== JSON.stringify(toolNames) ||
+    diagnosticsResult.callabilitySource !== 'registry_only_not_live_execution' ||
+    !diagnosticsResult.realPluginVerifiedTools?.includes('ping_remnote_plugin') ||
+    !diagnosticsResult.runtimeUnverifiedTools?.includes('create_rem') ||
     !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_rem') ||
     diagnosticsResult.registryMismatch?.missing?.length ||
     diagnosticsResult.registryMismatch?.unexpected?.length
@@ -947,14 +982,16 @@ try {
     throw new Error('get_current_selection did not return selection support metadata.');
   }
 
-  const children = JSON.stringify(await callMcpTool(mcp, 'get_children', { remId: fakeRem.remId, limit: 10 }));
+  const children = JSON.stringify(await callMcpTool(mcp, 'get_children', { remId: fakeRem.remId, limit: 1 }));
   if (
     !children.includes('"index":0') ||
     !children.includes('"childCount":2') ||
+    !children.includes('"maxChildren":1') ||
+    !children.includes('"truncated":true') ||
     !children.includes('Existing 1') ||
-    !children.includes('Existing 2')
+    children.includes('Existing 2')
   ) {
-    throw new Error('get_children did not return ordered direct children with alias fields.');
+    throw new Error('get_children did not honor limit alias while returning ordered direct children.');
   }
 
   const breadcrumbs = JSON.stringify(await callMcpTool(mcp, 'get_rem_breadcrumbs', { remId: fakeRem.remId }));
@@ -965,12 +1002,18 @@ try {
   const search = JSON.stringify(
     await callMcpTool(mcp, 'search_rems', {
       query: 'Smoke',
-      limit: 5,
+      limit: 1,
       scope: 'focused_rem_and_descendants',
     })
   );
-  if (!search.includes('searchSupported') || !search.includes(fakeRem.remId)) {
-    throw new Error('search_rems did not return bounded search results.');
+  if (
+    !search.includes('searchSupported') ||
+    !search.includes(fakeRem.remId) ||
+    !search.includes('"maxResults":1') ||
+    !search.includes('"truncated":true') ||
+    search.includes('Second result')
+  ) {
+    throw new Error('search_rems did not honor limit alias while returning bounded search results.');
   }
 
   const documentTree = JSON.stringify(await callMcpTool(mcp, 'get_document_or_folder_tree', { depth: 1 }));

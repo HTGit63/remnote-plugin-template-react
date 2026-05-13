@@ -780,6 +780,10 @@ export interface BridgeServerHello {
   publicTools?: string[];
   publicToolCount?: number;
   exposedTools?: string[];
+  registryDeclaredTools?: string[];
+  mcpRegisteredTools?: string[];
+  mcpListedTools?: string[];
+  callabilitySource?: 'registry_only_not_live_execution';
   callableTools?: string[];
   hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;

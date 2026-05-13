@@ -18,8 +18,8 @@ import {
 const REM_ID_SCHEMA = z.string().trim().min(1).max(256);
 const MARKDOWN_SCHEMA = z.string().trim().min(1).max(20000);
 const POSITION_SCHEMA = z.enum(['start', 'end']).default('end');
-const MAX_CHILDREN_SCHEMA = z.number().int().min(1).max(100).default(25);
-const MAX_SEARCH_RESULTS_SCHEMA = z.number().int().min(1).max(25).default(10);
+const MAX_CHILDREN_SCHEMA = z.number().int().min(1).max(100);
+const MAX_SEARCH_RESULTS_SCHEMA = z.number().int().min(1).max(25);
 const TREE_DEPTH_SCHEMA = z.number().int().min(0).max(3).default(1);
 const ORDERED_CHILD_IDS_SCHEMA = z.array(REM_ID_SCHEMA).max(500);
 const DELETE_CONFIRM_SCHEMA = z.literal('DELETE');
@@ -267,6 +267,17 @@ function successToToolResult(response: BridgeResponse, message: string): McpTool
   };
 }
 
+function publicMcpToolNameForBridgeTool(tool: BridgeToolName): string {
+  switch (tool) {
+    case 'ping':
+      return 'ping_remnote_plugin';
+    case 'get_status':
+      return 'get_plugin_status';
+    default:
+      return tool;
+  }
+}
+
 async function bridgeToolResult(
   call: () => Promise<BridgeResponse>,
   successMessage: string
@@ -345,6 +356,25 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     async () => {
       const diagnostics = hub.getDiagnostics();
       const registry = currentRegistry();
+      const successfulPluginTools = Array.from(
+        new Set(
+          diagnostics.recentRequests
+            .filter((request) => request.ok)
+            .map((request) => publicMcpToolNameForBridgeTool(request.tool))
+        )
+      );
+      const lastSuccessfulToolCalls = diagnostics.recentRequests
+        .filter((request) => request.ok)
+        .map((request) => ({
+          ...request,
+          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+        }));
+      const lastFailedToolCalls = diagnostics.recentRequests
+        .filter((request) => !request.ok)
+        .map((request) => ({
+          ...request,
+          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+        }));
       return {
         content: [
           {
@@ -360,6 +390,12 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
             pendingRequests: diagnostics.status.pendingRequests,
             recentErrors: diagnostics.recentRequests.filter((request) => !request.ok),
             recentRequestLifecycle: diagnostics.recentRequests,
+            lastSuccessfulToolCalls,
+            lastFailedToolCalls,
+            realPluginVerifiedTools: successfulPluginTools,
+            runtimeUnverifiedTools: registry.publicTools.filter(
+              (tool) => !successfulPluginTools.includes(tool)
+            ),
           },
         },
       };
@@ -532,7 +568,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       inputSchema: z.object({
         rootRemId: REM_ID_SCHEMA.nullable().optional().describe('Optional document, folder, portal, or Rem root ID.'),
         depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 3.'),
-        maxChildren: MAX_CHILDREN_SCHEMA.describe('Maximum children per node, capped at 100.'),
+        maxChildren: MAX_CHILDREN_SCHEMA.optional().describe('Maximum children per node, capped at 100.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('get_document_or_folder_tree'),
