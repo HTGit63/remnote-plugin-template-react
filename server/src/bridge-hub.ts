@@ -4,6 +4,8 @@ import { WebSocket, WebSocketServer } from 'ws';
 import {
   type BridgeClientMessage,
   type BridgeCancelRequest,
+  type BridgeLifecycleEvent,
+  type BridgeLifecyclePhase,
   type BridgePluginHello,
   type BridgeRequest,
   type BridgeResponse,
@@ -13,6 +15,7 @@ import {
   createBridgeFailure,
 } from '../../src/bridge/protocol.js';
 import type { CompanionServerConfig } from './config.js';
+import type { BridgeHealthCheckResult } from './health-check-types.js';
 import { getToolRegistrySummary } from './tool-registry.js';
 
 interface PendingRequest {
@@ -21,6 +24,7 @@ interface PendingRequest {
   tool: BridgeToolName;
   startedAt: number;
   timeoutMs: number;
+  lifecycle: BridgeLifecycleEvent[];
   cleanupAbortListener?: () => void;
 }
 
@@ -45,8 +49,14 @@ export interface BridgeHubRequestOutcome {
   startedAt: string;
   finishedAt: string;
   durationMs: number;
+  timeoutMs: number;
   ok: boolean;
   errorCode?: string;
+  lifecycle: BridgeLifecycleEvent[];
+  pluginLifecycle?: BridgeLifecycleEvent[];
+  partialExecution?: unknown;
+  createdRemIds?: string[];
+  sdkUnsupported?: boolean;
 }
 
 export interface BridgeHubDiagnostics {
@@ -54,6 +64,29 @@ export interface BridgeHubDiagnostics {
   status: BridgeHubStatus;
   pending: BridgeHubRequestSnapshot[];
   recentRequests: BridgeHubRequestOutcome[];
+  lastHealthCheck: BridgeHealthCheckResult | null;
+}
+
+function createLifecycleEvent(phase: BridgeLifecyclePhase, message?: string): BridgeLifecycleEvent {
+  return {
+    phase,
+    at: new Date().toISOString(),
+    ...(message ? { message } : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringArrayFrom(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
+    : [];
+}
+
+function getUniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values));
 }
 
 export class BridgeHub {
@@ -66,6 +99,7 @@ export class BridgeHub {
   private lastDisconnectedAt: string | undefined;
   private readonly startedAt = new Date().toISOString();
   private readonly recentRequests: BridgeHubRequestOutcome[] = [];
+  private lastHealthCheck: BridgeHealthCheckResult | null = null;
 
   constructor(private readonly config: CompanionServerConfig) {}
 
@@ -100,6 +134,9 @@ export class BridgeHub {
   async stop(): Promise<void> {
     for (const id of Array.from(this.pending.keys())) {
       this.sendCancel(id, 'server_shutdown', 'Bridge server stopped before request completed.');
+      this.pending.get(id)?.lifecycle.push(
+        createLifecycleEvent('cancelled', 'Bridge server stopped before request completed.')
+      );
       this.resolvePending(
         id,
         createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Bridge server stopped.')
@@ -147,7 +184,12 @@ export class BridgeHub {
         timeoutMs: request.timeoutMs,
       })),
       recentRequests: [...this.recentRequests],
+      lastHealthCheck: this.lastHealthCheck,
     };
+  }
+
+  recordHealthCheck(result: BridgeHealthCheckResult) {
+    this.lastHealthCheck = result;
   }
 
   get bridgePort(): number {
@@ -162,13 +204,35 @@ export class BridgeHub {
     signal?: AbortSignal
   ): Promise<BridgeResponse> {
     const id = randomUUID();
+    const startedAt = Date.now();
+    const lifecycle: BridgeLifecycleEvent[] = [
+      createLifecycleEvent('received', 'Companion server received MCP bridge request.'),
+    ];
 
     if (signal?.aborted) {
-      return createBridgeFailure(id, 'CLIENT_DISCONNECTED', 'MCP caller disconnected before request started.');
+      lifecycle.push(createLifecycleEvent('cancelled', 'MCP caller disconnected before request started.'));
+      const response = createBridgeFailure(
+        id,
+        'CLIENT_DISCONNECTED',
+        'MCP caller disconnected before request started.',
+        undefined,
+        lifecycle
+      );
+      this.recordImmediateOutcome(id, tool, startedAt, timeoutMs, response, lifecycle);
+      return response;
     }
 
     if (!this.pluginReady || !this.pluginSocket || this.pluginSocket.readyState !== WebSocket.OPEN) {
-      return createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'RemNote plugin is not connected.');
+      lifecycle.push(createLifecycleEvent('failed', 'RemNote plugin is not connected.'));
+      const response = createBridgeFailure(
+        id,
+        'PLUGIN_NOT_CONNECTED',
+        'RemNote plugin is not connected.',
+        undefined,
+        lifecycle
+      );
+      this.recordImmediateOutcome(id, tool, startedAt, timeoutMs, response, lifecycle);
+      return response;
     }
 
     const request: BridgeRequest<TTool> = {
@@ -181,11 +245,17 @@ export class BridgeHub {
     return new Promise<BridgeResponse>((resolve) => {
       const timeout = setTimeout(() => {
         this.sendCancel(id, 'server_timeout', `Timed out waiting for ${tool}.`);
+        this.pending.get(id)?.lifecycle.push(
+          createLifecycleEvent('failed', `Timed out waiting for ${tool}.`)
+        );
         this.resolvePending(id, createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
       }, timeoutMs);
 
       const abortHandler = () => {
         this.sendCancel(id, 'client_disconnected', 'MCP caller disconnected before request completed.');
+        this.pending.get(id)?.lifecycle.push(
+          createLifecycleEvent('cancelled', 'MCP caller disconnected before request completed.')
+        );
         this.resolvePending(
           id,
           createBridgeFailure(id, 'CLIENT_DISCONNECTED', 'MCP caller disconnected before request completed.')
@@ -200,8 +270,9 @@ export class BridgeHub {
         resolve,
         timeout,
         tool,
-        startedAt: Date.now(),
+        startedAt,
         timeoutMs,
+        lifecycle,
         cleanupAbortListener: signal ? () => signal.removeEventListener('abort', abortHandler) : undefined,
       });
 
@@ -218,11 +289,15 @@ export class BridgeHub {
       });
 
       try {
+        lifecycle.push(createLifecycleEvent('executing', 'Request forwarded to RemNote plugin WebSocket.'));
         this.pluginSocket?.send(JSON.stringify(request), (error) => {
           if (!error) {
             return;
           }
 
+          this.pending.get(id)?.lifecycle.push(
+            createLifecycleEvent('failed', 'Failed to send request to RemNote plugin.')
+          );
           this.resolvePending(
             id,
             createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Failed to send request to RemNote plugin.', {
@@ -232,6 +307,9 @@ export class BridgeHub {
         });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
+        this.pending.get(id)?.lifecycle.push(
+          createLifecycleEvent('failed', 'Failed to send request to RemNote plugin.')
+        );
         this.resolvePending(
           id,
           createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Failed to send request to RemNote plugin.', {
@@ -295,6 +373,9 @@ export class BridgeHub {
     this.lastDisconnectedAt = new Date().toISOString();
 
     for (const id of Array.from(this.pending.keys())) {
+      this.pending.get(id)?.lifecycle.push(
+        createLifecycleEvent('failed', 'RemNote plugin disconnected before request completed.')
+      );
       this.resolvePending(
         id,
         createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'RemNote plugin disconnected.')
@@ -324,14 +405,21 @@ export class BridgeHub {
     clearTimeout(pending.timeout);
     pending.cleanupAbortListener?.();
     this.pending.delete(id);
-    this.recordRequestOutcome(id, pending, response);
+    const pluginLifecycle = response.lifecycle;
+    this.ensureTerminalLifecycle(pending.lifecycle, response, pluginLifecycle);
+    const lifecycle = this.mergeLifecycle(pending.lifecycle, pluginLifecycle);
+    const responseWithLifecycle = {
+      ...response,
+      lifecycle,
+    } as BridgeResponse;
+    this.recordRequestOutcome(id, pending, responseWithLifecycle, lifecycle, pluginLifecycle);
     console.info('Bridge hub request completed', {
       requestId: id,
       tool: pending.tool,
       errorCode: response.ok ? undefined : response.error.code,
       durationMs: Date.now() - pending.startedAt,
     });
-    pending.resolve(response);
+    pending.resolve(responseWithLifecycle);
   }
 
   private sendCancel(id: string, reason: BridgeCancelRequest['reason'], message: string) {
@@ -353,20 +441,166 @@ export class BridgeHub {
     }
   }
 
-  private recordRequestOutcome(id: string, pending: PendingRequest, response: BridgeResponse) {
+  private recordRequestOutcome(
+    id: string,
+    pending: PendingRequest,
+    response: BridgeResponse,
+    lifecycle: BridgeLifecycleEvent[],
+    pluginLifecycle?: BridgeLifecycleEvent[]
+  ) {
     this.recentRequests.unshift({
       id,
       tool: pending.tool,
       startedAt: new Date(pending.startedAt).toISOString(),
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - pending.startedAt,
+      timeoutMs: pending.timeoutMs,
       ok: response.ok,
       errorCode: response.ok ? undefined : response.error.code,
+      lifecycle,
+      ...(pluginLifecycle ? { pluginLifecycle } : {}),
+      ...this.getExecutionEvidence(response),
     });
 
     if (this.recentRequests.length > 25) {
       this.recentRequests.length = 25;
     }
+  }
+
+  private recordImmediateOutcome(
+    id: string,
+    tool: BridgeToolName,
+    startedAt: number,
+    timeoutMs: number,
+    response: BridgeResponse,
+    lifecycle: BridgeLifecycleEvent[]
+  ) {
+    this.recentRequests.unshift({
+      id,
+      tool,
+      startedAt: new Date(startedAt).toISOString(),
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startedAt,
+      timeoutMs,
+      ok: response.ok,
+      errorCode: response.ok ? undefined : response.error.code,
+      lifecycle,
+      ...this.getExecutionEvidence(response),
+    });
+
+    if (this.recentRequests.length > 25) {
+      this.recentRequests.length = 25;
+    }
+  }
+
+  private mergeLifecycle(
+    serverLifecycle: BridgeLifecycleEvent[],
+    pluginLifecycle?: BridgeLifecycleEvent[]
+  ): BridgeLifecycleEvent[] {
+    const merged = [...serverLifecycle, ...(pluginLifecycle ?? [])];
+    return merged.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+  }
+
+  private ensureTerminalLifecycle(
+    serverLifecycle: BridgeLifecycleEvent[],
+    response: BridgeResponse,
+    pluginLifecycle?: BridgeLifecycleEvent[]
+  ) {
+    const terminalPhases: BridgeLifecyclePhase[] = ['completed', 'failed', 'cancelled'];
+    if ([...serverLifecycle, ...(pluginLifecycle ?? [])].some((event) => terminalPhases.includes(event.phase))) {
+      return;
+    }
+
+    if (response.ok) {
+      serverLifecycle.push(createLifecycleEvent('completed', 'Plugin returned a successful response.'));
+      return;
+    }
+
+    if (response.error.code === 'CLIENT_DISCONNECTED') {
+      serverLifecycle.push(createLifecycleEvent('cancelled', response.error.message));
+      return;
+    }
+
+    serverLifecycle.push(createLifecycleEvent('failed', response.error.message));
+  }
+
+  private getExecutionEvidence(response: BridgeResponse) {
+    const createdRemIds = this.extractCreatedRemIds(response);
+    const partialExecution = this.extractPartialExecution(response, createdRemIds);
+    return {
+      ...(createdRemIds.length ? { createdRemIds } : {}),
+      ...(partialExecution ? { partialExecution } : {}),
+      ...(!response.ok && response.error.code === 'SDK_UNSUPPORTED' ? { sdkUnsupported: true } : {}),
+    };
+  }
+
+  private extractCreatedRemIds(response: BridgeResponse): string[] {
+    const ids: string[] = [];
+    const payload = response.ok ? response.result : response.error.details;
+
+    if (isRecord(payload)) {
+      if (typeof payload.createdRemId === 'string') {
+        ids.push(payload.createdRemId);
+      }
+      if (typeof payload.rootCreatedRemId === 'string') {
+        ids.push(payload.rootCreatedRemId);
+      }
+      ids.push(...stringArrayFrom(payload.createdRemIds));
+      ids.push(...stringArrayFrom(payload.createdChildRemIds));
+
+      const partialExecution = isRecord(payload.partialExecution)
+        ? payload.partialExecution
+        : undefined;
+      if (partialExecution) {
+        if (typeof partialExecution.createdRemId === 'string') {
+          ids.push(partialExecution.createdRemId);
+        }
+        if (typeof partialExecution.rootCreatedRemId === 'string') {
+          ids.push(partialExecution.rootCreatedRemId);
+        }
+        ids.push(...stringArrayFrom(partialExecution.createdRemIds));
+        ids.push(...stringArrayFrom(partialExecution.createdChildRemIds));
+      }
+
+      const originalDetails = isRecord(payload.originalDetails)
+        ? payload.originalDetails
+        : undefined;
+      const nestedPartial = originalDetails && isRecord(originalDetails.partialExecution)
+        ? originalDetails.partialExecution
+        : undefined;
+      if (nestedPartial) {
+        ids.push(...stringArrayFrom(nestedPartial.createdRemIds));
+      }
+    }
+
+    return getUniqueStrings(ids);
+  }
+
+  private extractPartialExecution(
+    response: BridgeResponse,
+    createdRemIds: string[]
+  ): unknown | undefined {
+    if (response.ok) {
+      return undefined;
+    }
+
+    const details = isRecord(response.error.details) ? response.error.details : undefined;
+    if (!details) {
+      return createdRemIds.length ? { createdRemIds } : undefined;
+    }
+
+    if (isRecord(details.partialExecution)) {
+      return details.partialExecution;
+    }
+
+    if (createdRemIds.length) {
+      return {
+        createdRemIds,
+        rollbackStatus: 'not_attempted',
+      };
+    }
+
+    return undefined;
   }
 
   private isPluginHello(message: BridgeClientMessage | undefined): message is BridgePluginHello {

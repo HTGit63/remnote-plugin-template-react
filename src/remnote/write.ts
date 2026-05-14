@@ -1,6 +1,8 @@
-import { SetRemType } from '@remnote/plugin-sdk';
+import { RemType, SetRemType } from '@remnote/plugin-sdk';
 import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
+  ApplyStructuredNoteBatchArgs,
+  ApplyStructuredNoteBatchResult,
   AppendToRemArgs,
   AppendToRemResult,
   BridgeErrorCode,
@@ -57,6 +59,7 @@ const MAX_MARKDOWN_CHARS = 20000;
 export const CREATE_TREE_MAX_DEPTH = 5;
 export const CREATE_TREE_MAX_NODES = 100;
 export const CREATE_TREE_MAX_TITLE_LENGTH = 1000;
+const STRUCTURED_BATCH_CACHE_LIMIT = 50;
 
 type ParentLookupCode = Extract<BridgeErrorCode, 'REM_NOT_FOUND' | 'PARENT_NOT_FOUND'>;
 
@@ -82,6 +85,7 @@ const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
 };
 
 const COLOR_FORMAT_NAMES: RichTextFormatName[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
+const STRUCTURED_BATCH_RESULT_CACHE = new Map<string, ApplyStructuredNoteBatchResult>();
 
 export class RemnoteWriteError extends Error {
   constructor(
@@ -124,6 +128,37 @@ async function runSdkOperation<T>(
       sdkMessage: getSdkErrorMessage(error),
     });
   }
+}
+
+function getPartialExecutionDetails(details: unknown): Record<string, unknown> {
+  if (typeof details !== 'object' || details === null || Array.isArray(details)) {
+    return {};
+  }
+
+  const partialExecution = (details as Record<string, unknown>).partialExecution;
+  return typeof partialExecution === 'object' && partialExecution !== null && !Array.isArray(partialExecution)
+    ? (partialExecution as Record<string, unknown>)
+    : {};
+}
+
+function wrapPartialCreateError(
+  error: RemnoteWriteError,
+  createdRem: Rem | null,
+  failedStage: string
+): RemnoteWriteError {
+  if (!createdRem) {
+    return error;
+  }
+
+  return new RemnoteWriteError(error.code, error.message, {
+    originalDetails: error.details,
+    partialExecution: {
+      ...getPartialExecutionDetails(error.details),
+      createdRemIds: [createdRem._id],
+      failedStage,
+      rollbackStatus: 'not_attempted',
+    },
+  });
 }
 
 async function parseMarkdownToRichText(plugin: RNPlugin, markdown: string): Promise<RichTextInterface> {
@@ -194,6 +229,115 @@ function getTextFormats(styles: RichTextSpanInput['styles']): Exclude<RichTextFo
   return formats;
 }
 
+function isEscaped(text: string, index: number): boolean {
+  let slashCount = 0;
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+    slashCount += 1;
+  }
+
+  return slashCount % 2 === 1;
+}
+
+function findUnescapedDelimiter(text: string, delimiter: string, fromIndex: number): number {
+  let index = text.indexOf(delimiter, fromIndex);
+  while (index >= 0) {
+    if (!isEscaped(text, index)) {
+      return index;
+    }
+
+    index = text.indexOf(delimiter, index + delimiter.length);
+  }
+
+  return -1;
+}
+
+function findClosingDollar(text: string, fromIndex: number): number {
+  let index = text.indexOf('$', fromIndex);
+  while (index >= 0) {
+    if (!isEscaped(text, index) && text[index + 1] !== '$') {
+      return index;
+    }
+
+    index = text.indexOf('$', index + 1);
+  }
+
+  return -1;
+}
+
+function parseLatexSpansFromText(text: string, styles?: RichTextSpanInput['styles']): RichTextSpanInput[] {
+  const spans: RichTextSpanInput[] = [];
+  let cursor = 0;
+  let textStart = 0;
+
+  function pushText(end: number) {
+    if (end > textStart) {
+      spans.push({ text: text.slice(textStart, end), styles });
+    }
+  }
+
+  function pushMath(
+    tokenStart: number,
+    contentStart: number,
+    contentEnd: number,
+    closeLength: number,
+    type: 'inlineMath' | 'mathBlock'
+  ) {
+    const latex = text.slice(contentStart, contentEnd).trim();
+    if (!latex) {
+      return false;
+    }
+
+    pushText(tokenStart);
+    spans.push({ type, latex });
+    cursor = contentEnd + closeLength;
+    textStart = cursor;
+    return true;
+  }
+
+  while (cursor < text.length) {
+    if (!isEscaped(text, cursor) && text.startsWith('$$', cursor)) {
+      const close = findUnescapedDelimiter(text, '$$', cursor + 2);
+      if (close >= 0) {
+        if (pushMath(cursor, cursor + 2, close, 2, 'mathBlock')) {
+          continue;
+        }
+      }
+    }
+
+    if (!isEscaped(text, cursor) && text.startsWith('\\[', cursor)) {
+      const close = findUnescapedDelimiter(text, '\\]', cursor + 2);
+      if (close >= 0) {
+        if (pushMath(cursor, cursor + 2, close, 2, 'mathBlock')) {
+          continue;
+        }
+      }
+    }
+
+    if (!isEscaped(text, cursor) && text.startsWith('\\(', cursor)) {
+      const close = findUnescapedDelimiter(text, '\\)', cursor + 2);
+      if (close >= 0) {
+        if (pushMath(cursor, cursor + 2, close, 2, 'inlineMath')) {
+          continue;
+        }
+      }
+    }
+
+    if (text[cursor] === '$' && text[cursor + 1] !== '$' && !isEscaped(text, cursor)) {
+      const close = findClosingDollar(text, cursor + 1);
+      if (close >= 0) {
+        if (pushMath(cursor, cursor + 1, close, 1, 'inlineMath')) {
+          continue;
+        }
+      }
+    }
+
+    cursor += 1;
+  }
+
+  pushText(text.length);
+  return spans.length ? spans : [{ text, styles }];
+}
+
 async function buildRichTextFromSpans(
   plugin: RNPlugin,
   spans: RichTextSpanInput[]
@@ -225,10 +369,20 @@ async function buildRichTextFromSpans(
       continue;
     }
 
-    builder = builder
-      ? builder.text(text, getTextFormats(span.styles))
-      : plugin.richText.text(text, getTextFormats(span.styles));
-    appended = true;
+    for (const parsedSpan of parseLatexSpansFromText(text, span.styles)) {
+      const parsedType = parsedSpan.type ?? 'text';
+      if (parsedType === 'mathBlock' || parsedType === 'inlineMath') {
+        const latex = parsedSpan.latex ?? parsedSpan.text ?? '';
+        builder = builder
+          ? builder.latex(latex, parsedType === 'mathBlock')
+          : plugin.richText.latex(latex, parsedType === 'mathBlock');
+      } else {
+        builder = builder
+          ? builder.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles))
+          : plugin.richText.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles));
+      }
+      appended = true;
+    }
   }
 
   if (!builder || !appended) {
@@ -278,12 +432,33 @@ async function clearColorFormatsInRange(
   plugin: RNPlugin,
   richText: RichTextInterface,
   start: number,
-  end: number
+  end: number,
+  required = false
 ): Promise<RichTextInterface> {
   let next = richText;
+  let removedAtLeastOne = false;
+  let lastFailure: unknown;
+
   for (const format of COLOR_FORMAT_NAMES) {
-    next = await runSdkOperation('richText.removeTextFormatFromRange', () =>
-      plugin.richText.removeTextFormatFromRange(next, start, end, format)
+    try {
+      next = await runSdkOperation('richText.removeTextFormatFromRange', () =>
+        plugin.richText.removeTextFormatFromRange(next, start, end, format)
+      );
+      removedAtLeastOne = true;
+    } catch (error: unknown) {
+      lastFailure = error;
+    }
+  }
+
+  if (required && !removedAtLeastOne && lastFailure) {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'The installed RemNote SDK rejected rich text color clearing for this range.',
+      {
+        start,
+        end,
+        sdkMessage: getSdkErrorMessage(lastFailure),
+      }
     );
   }
 
@@ -300,8 +475,8 @@ async function setColorInRange(
   const plain = await getRemPlainString(plugin, rem);
   validateTextRange(range, plain.length);
 
-  let richText = await clearColorFormatsInRange(plugin, rem.text, range.start, range.end);
   const format = getColorFormat(color);
+  let richText = await clearColorFormatsInRange(plugin, rem.text, range.start, range.end, !format);
   if (format) {
     richText = await runSdkOperation('richText.applyTextFormatToRange', () =>
       plugin.richText.applyTextFormatToRange(richText, range.start, range.end, format)
@@ -326,7 +501,7 @@ async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleInput | 
     await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!style.hideBullet));
   }
 
-  if (style.remType) {
+  if (style.remType && style.remType !== 'normal') {
     const remType = style.remType;
     await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(remType)));
   }
@@ -376,23 +551,38 @@ async function createRemWithRichText(
   parent: Rem | null,
   positionAmongstSiblings?: number
 ): Promise<Rem> {
-  const createdRem = await runSdkOperation('rem.createRem', () => plugin.rem.createRem());
+  let createdRem: Rem | null = null;
+  let failedStage = 'rem.createRem';
 
-  if (!createdRem) {
-    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return a created Rem.', {
-      operation: 'rem.createRem',
-    });
+  try {
+    const maybeCreatedRem = await runSdkOperation('rem.createRem', () => plugin.rem.createRem());
+
+    if (!maybeCreatedRem) {
+      throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return a created Rem.', {
+        operation: 'rem.createRem',
+      });
+    }
+
+    createdRem = maybeCreatedRem;
+    const rem = createdRem;
+    failedStage = 'rem.setText';
+    await runSdkOperation('rem.setText', () => rem.setText(richText));
+
+    if (parent) {
+      failedStage = 'rem.setParent';
+      await runSdkOperation('rem.setParent', () =>
+        rem.setParent(parent, positionAmongstSiblings)
+      );
+    }
+
+    return rem;
+  } catch (error: unknown) {
+    if (error instanceof RemnoteWriteError) {
+      throw wrapPartialCreateError(error, createdRem, failedStage);
+    }
+
+    throw error;
   }
-
-  await runSdkOperation('rem.setText', () => createdRem.setText(richText));
-
-  if (parent) {
-    await runSdkOperation('rem.setParent', () =>
-      createdRem.setParent(parent, positionAmongstSiblings)
-    );
-  }
-
-  return createdRem;
 }
 
 function getInsertIndex(parent: Rem, position: 'start' | 'end' | undefined): number {
@@ -451,6 +641,14 @@ function validateTreeNode(
   return {
     title,
     children: rawChildren.map((child) => validateTreeNode(child, depth + 1, state)),
+  };
+}
+
+function simpleTreeToStyledNode(node: ValidatedTreeNode): StyledRemTreeNode {
+  return {
+    type: 'rem',
+    text: node.title,
+    children: node.children.map((child) => simpleTreeToStyledNode(child)),
   };
 }
 
@@ -664,9 +862,15 @@ export async function setRemHighlightColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const format = getColorFormat(args.color);
+  if (!format) {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'The installed RemNote SDK does not expose clearing whole-Rem highlight color.'
+    );
+  }
 
   await runSdkOperation('rem.setHighlightColor', () =>
-    rem.setHighlightColor((format ?? undefined) as never)
+    rem.setHighlightColor(format as never)
   );
 
   return { remId: rem._id, status: 'highlight_set' };
@@ -677,6 +881,13 @@ export async function setRemType(
   args: SetRemTypeArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  if (args.type === 'normal') {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'The installed RemNote SDK does not expose a reliable reset to normal Rem type.'
+    );
+  }
+
   await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(args.type)));
   return { remId: rem._id, status: 'rem_type_set' };
 }
@@ -698,9 +909,15 @@ export async function clearRemFormatting(
   const plain = await getRemPlainString(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, [{ text: plain || ' ' }]);
 
+  if (rem.type === RemType.CONCEPT || rem.type === RemType.DESCRIPTOR) {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'The installed RemNote SDK does not expose a reliable concept/descriptor reset to normal type.'
+    );
+  }
+
   await runSdkOperation('rem.setText', () => rem.setText(richText));
   await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
-  await runSdkOperation('rem.setType', () => rem.setType(SetRemType.DEFAULT_TYPE));
 
   return { remId: rem._id, status: 'formatting_cleared' };
 }
@@ -784,46 +1001,50 @@ export async function createRemTree(
   plugin: RNPlugin,
   args: CreateRemTreeArgs
 ): Promise<CreateRemTreeResult> {
-  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const validationState: TreeValidationState = { nodeCount: 0 };
   const tree = validateTreeNode(args.tree, 1, validationState);
-  const createdRemIds: string[] = [];
-
-  async function createNode(node: ValidatedTreeNode, nodeParent: Rem, index: number): Promise<Rem> {
-    const richText = await parseMarkdownToRichText(plugin, node.title);
-    const created = await createRemWithRichText(plugin, richText, nodeParent, index);
-    createdRemIds.push(created._id);
-
-    for (let childIndex = 0; childIndex < node.children.length; childIndex += 1) {
-      await createNode(node.children[childIndex], created, childIndex);
-    }
-
-    return created;
-  }
 
   try {
-    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
-    const root = await createNode(tree, parent, rootInsertIndex);
+    const created = await createStyledRemTree(plugin, {
+      parentId: args.parentId,
+      position: args.position ?? 'end',
+      tree: simpleTreeToStyledNode(tree),
+    });
     return {
-      rootCreatedRemId: root._id,
-      createdNodeCount: createdRemIds.length,
-      createdRemIds,
-      rootInsertIndex,
+      rootCreatedRemId: created.rootCreatedRemId,
+      createdNodeCount: created.createdNodeCount,
+      createdRemIds: created.createdRemIds,
+      rootInsertIndex: created.rootInsertIndex,
       rootInsertPosition: args.position ?? 'end',
       status: 'created_tree',
     };
   } catch (error: unknown) {
     if (error instanceof RemnoteWriteError) {
+      const createdRemIds = readCreatedRemIdsFromError(error);
       throw new RemnoteWriteError(error.code, error.message, {
         originalDetails: error.details,
         createdNodeCount: createdRemIds.length,
         createdRemIds,
+        partialExecution: {
+          ...getPartialExecutionDetails(error.details),
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          failedStage: 'create_rem_tree',
+          rollbackStatus: 'not_attempted',
+        },
       });
     }
 
+    const createdRemIds: string[] = [];
     throw new RemnoteWriteError('SDK_ERROR', 'RemNote tree creation failed.', {
       createdNodeCount: createdRemIds.length,
       createdRemIds,
+      partialExecution: {
+        createdNodeCount: createdRemIds.length,
+        createdRemIds,
+        failedStage: 'create_rem_tree',
+        rollbackStatus: 'not_attempted',
+      },
       sdkMessage: getSdkErrorMessage(error),
     });
   }
@@ -1121,13 +1342,204 @@ export async function createStyledRemTree(
         originalDetails: error.details,
         createdNodeCount: createdRemIds.length,
         createdRemIds,
+        partialExecution: {
+          ...getPartialExecutionDetails(error.details),
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          failedStage: 'create_styled_rem_tree',
+          rollbackStatus: 'not_attempted',
+        },
       });
     }
 
     throw new RemnoteWriteError('SDK_ERROR', 'RemNote styled tree creation failed.', {
       createdNodeCount: createdRemIds.length,
       createdRemIds,
+      partialExecution: {
+        createdNodeCount: createdRemIds.length,
+        createdRemIds,
+        failedStage: 'create_styled_rem_tree',
+        rollbackStatus: 'not_attempted',
+      },
       sdkMessage: getSdkErrorMessage(error),
+    });
+  }
+}
+
+function rememberStructuredBatchResult(idempotencyKey: string, result: ApplyStructuredNoteBatchResult) {
+  STRUCTURED_BATCH_RESULT_CACHE.delete(idempotencyKey);
+  STRUCTURED_BATCH_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (STRUCTURED_BATCH_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = STRUCTURED_BATCH_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    STRUCTURED_BATCH_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+function readCreatedRemIdsFromError(error: RemnoteWriteError): string[] {
+  const details = typeof error.details === 'object' && error.details !== null
+    ? (error.details as Record<string, unknown>)
+    : {};
+  const direct = Array.isArray(details.createdRemIds) ? details.createdRemIds : [];
+  const partial = getPartialExecutionDetails(error.details);
+  const partialIds = Array.isArray(partial.createdRemIds) ? partial.createdRemIds : [];
+  return Array.from(
+    new Set(
+      [...direct, ...partialIds].filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+}
+
+async function rollbackCreatedRems(plugin: RNPlugin, createdRemIds: string[]) {
+  const removedRemIds: string[] = [];
+  const failedRemIds: string[] = [];
+
+  for (const remId of [...createdRemIds].reverse()) {
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) {
+      continue;
+    }
+
+    try {
+      await runSdkOperation('rem.remove', () => rem.remove());
+      removedRemIds.push(remId);
+    } catch {
+      failedRemIds.push(remId);
+    }
+  }
+
+  return {
+    status: failedRemIds.length ? 'failed' as const : 'completed' as const,
+    removedRemIds,
+    failedRemIds,
+  };
+}
+
+async function verifyCreatedRems(
+  plugin: RNPlugin,
+  createdRemIds: string[],
+  rootCreatedRemId?: string
+): Promise<ApplyStructuredNoteBatchResult['verification']> {
+  const checkedRemIds: string[] = [];
+  const missingRemIds: string[] = [];
+  let rootPlainText: string | undefined;
+
+  for (const remId of createdRemIds) {
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) {
+      missingRemIds.push(remId);
+      continue;
+    }
+
+    checkedRemIds.push(remId);
+    if (rootCreatedRemId && remId === rootCreatedRemId) {
+      rootPlainText = await getRemPlainString(plugin, rem);
+    }
+  }
+
+  return {
+    ok: missingRemIds.length === 0,
+    checkedRemIds,
+    missingRemIds,
+    ...(rootPlainText !== undefined ? { rootPlainText } : {}),
+  };
+}
+
+export async function applyStructuredNoteBatch(
+  plugin: RNPlugin,
+  args: ApplyStructuredNoteBatchArgs
+): Promise<ApplyStructuredNoteBatchResult> {
+  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const validationState: TreeValidationState = { nodeCount: 0 };
+  const root = normalizeStyledNode(args.root, 1, validationState);
+  const idempotencyKey = args.idempotencyKey?.trim();
+  const rollbackOnFailure = args.rollbackOnFailure ?? true;
+  const verifyAfterWrite = args.verifyAfterWrite ?? false;
+
+  if (idempotencyKey && !args.dryRun) {
+    const cached = STRUCTURED_BATCH_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+        dryRun: false,
+      };
+    }
+  }
+
+  if (args.dryRun) {
+    return {
+      status: 'dry_run',
+      parentId: parent._id,
+      plannedNodeCount: validationState.nodeCount,
+      createdNodeCount: 0,
+      createdRemIds: [],
+      dryRun: true,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      rollbackOnFailure,
+      verifyAfterWrite,
+    };
+  }
+
+  try {
+    const created = await createStyledRemTree(plugin, {
+      parentId: parent._id,
+      position: args.position ?? 'end',
+      tree: root,
+    });
+    const verification = verifyAfterWrite
+      ? await verifyCreatedRems(plugin, created.createdRemIds, created.rootCreatedRemId)
+      : undefined;
+    const result: ApplyStructuredNoteBatchResult = {
+      status: 'applied',
+      parentId: parent._id,
+      plannedNodeCount: validationState.nodeCount,
+      createdNodeCount: created.createdNodeCount,
+      createdRemIds: created.createdRemIds,
+      rootCreatedRemId: created.rootCreatedRemId,
+      rootInsertIndex: created.rootInsertIndex,
+      rootInsertPosition: created.rootInsertPosition,
+      dryRun: false,
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+      rollbackOnFailure,
+      verifyAfterWrite,
+      ...(verification ? { verification } : {}),
+    };
+
+    if (idempotencyKey) {
+      rememberStructuredBatchResult(idempotencyKey, result);
+    }
+
+    return result;
+  } catch (error: unknown) {
+    if (error instanceof RemnoteWriteError) {
+      const createdRemIds = readCreatedRemIdsFromError(error);
+      const rollback = rollbackOnFailure && createdRemIds.length
+        ? await rollbackCreatedRems(plugin, createdRemIds)
+        : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
+      throw new RemnoteWriteError(error.code, error.message, {
+        originalDetails: error.details,
+        partialExecution: {
+          ...getPartialExecutionDetails(error.details),
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          failedStage: 'apply_structured_note_batch',
+          rollbackStatus: rollback.status,
+          rollbackRemovedRemIds: rollback.removedRemIds,
+          rollbackFailedRemIds: rollback.failedRemIds,
+        },
+      });
+    }
+
+    throw new RemnoteWriteError('SDK_ERROR', 'Structured note batch failed.', {
+      sdkMessage: getSdkErrorMessage(error),
+      partialExecution: {
+        failedStage: 'apply_structured_note_batch',
+        rollbackStatus: 'not_attempted',
+      },
     });
   }
 }

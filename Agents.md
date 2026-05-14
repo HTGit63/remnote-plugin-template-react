@@ -1,37 +1,21 @@
-# RemNote ChatGPT Bridge — Deep Issue Audit and Completion Blockers
+# AGENTS.md
 
-**Repo:** `HTGit63/remnote-plugin-template-react`
-**Branch inspected:** `main`
-**Audit date:** 2026-05-13
-**Scope:** MCP tool exposure, bridge/plugin registry parity, ChatGPT connector behavior, RemNote SDK implementation risk, approval/session safety, and remaining QA before this can be called complete.
+## Purpose
 
----
+This file gives AI coding agents strict instructions for working in this repository.
 
-## 0. Executive Summary
+This repository is the **RemNote ChatGPT Bridge**.
 
-The latest pushed `main` branch is no longer in the old 8-tool or 24-tool source state.
+The goal is **not** to build an AI chatbot inside RemNote.
 
-The source now targets:
+The goal is to let ChatGPT / Vivy use RemNote through a safe, typed, permissioned, auditable bridge.
 
-```text
-40 public MCP tools
-1 gated hidden tool: delete_rem
-toolRegistryVersion: 2026-05-10.1
-mcpDiscoveryVersion: mcp-discovery-2026-05-10.1
-```
-
-That means the earlier source-level diagnosis — “only 24 tools exist in the repo” — is stale.
-
-However, this should **not** be marked complete yet.
-
-The repository now appears to define and smoke-test a 40-tool registry, but the real issue is whether the live end-to-end path exposes and calls those same tools:
+The intended architecture is:
 
 ```text
 ChatGPT / Vivy
 ↓
 MCP-compatible tool layer
-↓
-Tunnel / connector / ChatGPT Developer Mode app
 ↓
 Local companion server
 ↓
@@ -41,124 +25,132 @@ Running RemNote plugin
 ↓
 RemNote SDK
 ↓
-User RemNote knowledge base
+User's RemNote knowledge base
 ```
 
-The remaining likely failure is not simply “the code for the 32 tools is missing.”
+The RemNote plugin is the RemNote SDK access layer.
 
-The remaining failure is probably one or more of:
+ChatGPT / Vivy is the reasoning layer.
 
-```text
-1. ChatGPT is connected to an old companion server process.
-2. ChatGPT cached an old tools/list result.
-3. The tunnel URL points to the wrong local process or stale port.
-4. MCP discovery works, but tools/call is blocked by auth/token configuration.
-5. The local server was rebuilt, but the RemNote plugin panel is still running an older bundle.
-6. The 40 tools are registered in source and mock-smoke tested, but not all have been verified against the real RemNote SDK/runtime.
-7. Some “callableTools” diagnostics are registry-derived, not proof of successful real tool execution.
-8. A failed plugin-side write or approval path may still surface as a transport/session issue in ChatGPT.
-```
-
-Recommended final wording:
-
-```text
-Source-level 40-tool registry parity appears implemented in latest main. Live ChatGPT + real RemNote QA remains required before closing the issue.
-```
-
-Do **not** write:
-
-```text
-Complete.
-```
+The bridge must make RemNote usable for high-quality note generation, editing, reading, verification, and structured writing without unsafe silent changes.
 
 ---
 
-## 1. What Was Originally Wrong
+# 1. Current Diagnosis — 2026-05-14
 
-The original bug had multiple layers.
+## 1.1 Latest known repo state
 
-### 1.1 User-visible symptom
-
-ChatGPT/Vivy could only access a small subset of tools.
-
-Observed exposed tools were approximately:
+The latest inspected commit is:
 
 ```text
-get_bridge_status
-ping_remnote_plugin
-get_plugin_status
-get_focused_rem
-get_rem
-get_rem_tree
-create_rem
+81ce44bfad43a2ab4c1eeda1f107449e18938825
+Commit message: 26 Working tools
+```
+
+The repo currently declares:
+
+```text
+43 public MCP tools
+1 hidden gated tool: delete_rem
+toolRegistryVersion: 2026-05-14.2
+mcpDiscoveryVersion: mcp-discovery-2026-05-14.2
+```
+
+The source-level registry exposure problem is mostly fixed.
+
+The old 8-tool surface was a stale connector/discovery problem.
+
+However, the system is **not complete**.
+
+The previous live test report showed that only about **26 tools were working reliably**. Milestones 1-9 are now implemented and repo-verified, with a health-check tool available to record a real RemNote sandbox pass before public hosted submission wording is allowed.
+
+## 1.2 Main current problem
+
+The main problem is no longer only:
+
+```text
+ChatGPT cannot see all tools.
+```
+
+The current problem is:
+
+```text
+The bridge exposes 43 public tools, but not all 43 are verified working in live execution against the RemNote plugin and RemNote SDK.
+```
+
+Diagnostics now correctly say:
+
+```text
+callabilitySource: registry_only_not_live_execution
+```
+
+This is important.
+
+It means a tool being listed as `callableTools` does **not** prove that the tool actually worked through the full path:
+
+```text
+ChatGPT → MCP tools/call → companion server → WebSocket bridge → plugin approval → RemNote SDK → result back to ChatGPT
+```
+
+## 1.3 Product-level problem
+
+The bridge is not yet good enough for one-pass, high-quality structured note generation.
+
+The current workflow often forces Vivy to use many small sequential tools:
+
+```text
 append_to_rem
+update_rem
+set_rem_heading_level
+set_rem_text_color
+set_text_span_color
+move_rem
+reorder_children
 ```
 
-That is 8 tools.
-
-The intended bridge later reported a much larger set, eventually:
+That creates several failure points:
 
 ```text
-40 public tools
-1 gated hidden delete tool
+multiple approval prompts
+multiple MCP calls
+multiple chances for timeout
+multiple chances for OUT_OF_SCOPE
+partial note creation
+flat note structure
+math inserted as plain text
+styling failures
+gateway blocking
 ```
 
-### 1.2 Why that is serious
+The correct direction is to build one reliable atomic structured-writing tool that can create or replace a complete note tree in one approved operation.
 
-If the bridge reports tools that ChatGPT cannot call, the architecture is broken.
+---
 
-This violates the central invariant:
+# 2. Do Not Mark Complete Yet
+
+Do not describe the current bridge as fully complete.
+
+Correct status wording:
 
 ```text
-Every public tool reported by the bridge must be discoverable and callable through MCP.
+The source-level 43-tool registry is present and the connector exposes all 43 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
 ```
 
-The bad architecture is:
+Incorrect status wording:
 
 ```text
-registry A: bridge status reports 40 tools
-registry B: MCP tools/list exposes 8 tools
-router C: only routes some subset
-plugin protocol D: implements another subset
-```
-
-The correct architecture is:
-
-```text
-shared tool registry
-↓
-get_bridge_status uses it
-↓
-get_bridge_diagnostics uses it
-↓
-MCP tools/list uses it
-↓
-MCP tool registration uses it
-↓
-tool router/call path uses it
-↓
-plugin protocol/handlers use matching tool names
+All 43 tools work live.
+Complete.
+Issue fixed.
 ```
 
 ---
 
-## 2. Current Source-Level State
+# 3. Current Working / Risky Tool Classification
 
-### 2.1 Shared registry now exists
+## 3.1 Tools reported as working or mostly working
 
-The latest `server/src/tool-registry.ts` defines:
-
-```text
-TOOL_REGISTRY_VERSION = 2026-05-10.1
-MCP_DISCOVERY_VERSION = mcp-discovery-2026-05-10.1
-BRIDGE_PLUGIN_PROTOCOL_VERSION = 1
-SERVER_VERSION = 0.1.0
-MCP_TOOL_REGISTRY
-```
-
-It includes 40 public tools plus one gated tool.
-
-### 2.2 Current public tools
+These tools are currently usable or mostly usable based on live testing:
 
 ```text
 get_bridge_status
@@ -168,23 +160,1568 @@ get_plugin_status
 get_focused_rem
 get_rem
 get_rem_tree
-get_rem_rich
 get_current_selection
 get_children
 get_rem_breadcrumbs
 search_rems
 get_document_or_folder_tree
-create_rem
-create_document
-create_folder
 append_to_rem
 update_rem
-replace_rem
 move_rem
 reorder_children
+update_rem_rich
+set_rem_heading_level
+set_rem_highlight_color
+set_rem_type
+set_hide_bullet
+create_basic_flashcard
+create_concept_card
+create_descriptor_card
+create_multiple_choice_card
+create_list_answer_card
+```
+
+Do not assume every tool above is perfect. Still test them after changes.
+
+## 3.2 Tools previously problematic or still live-risky
+
+These tools caused hangs, timeouts, partial execution, gateway blocks, or SDK errors:
+
+```text
+create_rem
+replace_rem
+create_rem_tree
+get_rem_rich
+create_cloze_card
+```
+
+Notes:
+
+```text
+create_rem timed out and may have created a blank Rem anyway.
+replace_rem caused a stuck call.
+create_rem_tree caused a stuck call.
+get_rem_rich was blocked by the ChatGPT/OpenAI gateway during testing.
+create_cloze_card was blocked by the ChatGPT/OpenAI gateway during testing.
+set_rem_text_color and span color/highlight tools fail with SDK format argument errors.
+clear_rem_formatting fails with rem.setType argument error.
+```
+
+2026-05-14 update:
+
+```text
+Formatting tools now use SDK-supported color names, best-effort color clearing, and SDK_UNSUPPORTED for unsupported default/highlight/type reset paths.
+Live RemNote sandbox QA is still required to move them from source-verified to live-verified.
+```
+
+## 3.3 Dangerous tools
+
+These must remain strongly gated:
+
+```text
 delete_focused_rem
 delete_selected_rem
+delete_rem
+```
+
+Rules:
+
+```text
+delete_rem must remain hidden by default.
+delete_focused_rem and delete_selected_rem must always require approval.
+Delete must require typed confirmText: DELETE.
+Delete must show target title, child count, descendant count, and recursive warning.
+```
+
+---
+
+# 4. Core Root Causes
+
+## 4.1 Registry callability is not runtime callability
+
+The current registry lists tools as public/callable because they are registered.
+
+That does not mean the tool executed successfully in a real RemNote session.
+
+Required distinction:
+
+```text
+registryDeclaredTools = tools declared in source registry
+mcpListedTools = tools returned by MCP tools/list
+mcpRegisteredTools = tools actually registered with McpServer
+recentSuccessfulToolCalls = tools that succeeded through the bridge
+realPluginVerifiedTools = tools that succeeded against real RemNote plugin/SDK
+runtimeUnverifiedTools = public tools that have not succeeded live
+```
+
+Never let diagnostics imply runtime success unless a real call succeeded.
+
+## 4.2 Approval-gated writes are fragile
+
+Write tools can fail because they cross two approval/session layers:
+
+```text
+ChatGPT tool-call approval / gateway
+RemNote plugin approval UI
+```
+
+Current symptoms:
+
+```text
+APPROVAL_TIMEOUT
+stuck calls
+blank partial Rems
+request appears gone in UI while ChatGPT is still waiting
+approval may not produce a clean final response
+```
+
+Required fix:
+
+```text
+Every approval-gated request must have a complete lifecycle state machine.
+```
+
+## 4.3 Multi-step note generation is too fragile
+
+High-quality RemNote notes require:
+
+```text
+root title
+nested headings
+body bullets
+equation children
+rendered inline math
+rendered math blocks
+colors
+heading levels
+highlights
+Rem type
+bullet visibility
+ordering
+verification
+```
+
+Doing this through many separate tool calls is brittle.
+
+The bridge needs a single atomic batch/tree writer.
+
+## 4.4 Permission scope blocks descendant editing
+
+When permission scope is:
+
+```text
+focused_rem_only
+```
+
+Vivy can edit the focused Rem but cannot style/read newly created children.
+
+This causes:
+
+```text
+OUT_OF_SCOPE
+Request target is outside the focused Rem scope.
+```
+
+For note generation, practical scope must be:
+
+```text
+focused_rem_and_descendants
+```
+
+or:
+
+```text
+approved_document_or_folder
+```
+
+with descendant access.
+
+## 4.5 Math is not represented as RemNote math
+
+Markdown/plain text insertion is not enough.
+
+LaTeX like this:
+
+```text
+\psi(\mathbf r,t)
+|\psi(\mathbf r,t)|^2
+```
+
+must become RemNote rich math nodes, not escaped visible text.
+
+Required mapping:
+
+```text
+$...$        -> inlineMath
+\(...\)      -> inlineMath
+$$...$$      -> mathBlock
+\[...\]      -> mathBlock
+```
+
+## 4.6 SDK formatting calls are wrong or incomplete
+
+Historical observed errors:
+
+```text
+richText.removeTextFormatFromRange format parameter: Invalid input
+rem.setType type parameter: Required
+```
+
+Affected tools:
+
+```text
+set_rem_text_color
+set_text_span_color
+set_text_span_highlight
+clear_rem_formatting
+```
+
+Likely root causes:
+
+```text
+invalid RichTextFormatName values
+passing color names not accepted by SDK
+using one function for text color and highlight without confirming SDK distinctions
+calling rem.setType with invalid/default enum
+```
+
+2026-05-14 source fix:
+
+```text
+SDK typings and installed SDK output were checked.
+Supported colors are red, orange, yellow, green, blue, and purple.
+pink, gray, whole-Rem highlight clearing, and normal type reset return SDK_UNSUPPORTED instead of SDK_ERROR.
+Text/span color clearing is best-effort and default color clearing returns structured SDK_UNSUPPORTED if the SDK rejects range clearing.
+```
+
+## 4.7 Gateway-blocked tools need graceful alternatives
+
+Some tools were blocked before reaching the plugin:
+
+```text
+get_rem_rich
+create_cloze_card
+```
+
+The bridge cannot fix all ChatGPT/OpenAI gateway behavior, but it can reduce risk by:
+
+```text
+shorter schemas
+clearer descriptions
+less suspicious/destructive wording
+smaller payloads
+fallback tools
+atomic note tool with safe name and schema
+diagnostics that identify gateway-blocked vs plugin-failed
+```
+
+---
+
+# 5. Product Rule
+
+The plugin should not think.
+
+The plugin should not call OpenAI.
+
+The plugin should not store OpenAI API keys.
+
+The plugin should not choose AI models.
+
+The plugin should not contain a ChatGPT-like sidebar.
+
+The plugin should only:
+
+```text
+read RemNote context
+serialize RemNote data safely
+receive typed tool requests
+enforce permissions
+show approval UI when needed
+execute approved RemNote SDK actions
+return structured results
+```
+
+---
+
+# 6. Absolute Non-Negotiable Rules
+
+Do not add direct OpenAI API calls.
+
+Do not add an AI chat UI inside RemNote.
+
+Do not reintroduce OpenAI API key settings.
+
+Do not scrape ChatGPT.
+
+Do not scrape RemNote DOM.
+
+Do not expose arbitrary unsafe delete by default.
+
+Do not silently rewrite user notes.
+
+Do not silently delete user notes.
+
+Do not fake SDK support.
+
+Do not report success if the RemNote SDK operation failed.
+
+Do not report registry callability as runtime success.
+
+Do not implement everything in one giant patch.
+
+Do not break the currently working tools.
+
+Do not remove the approval model.
+
+Do not let failed write calls terminate the MCP session.
+
+Do not create partial blank Rems without returning partial execution details.
+
+Do not rely on many sequential writes for one high-quality note when a single atomic write is possible.
+
+---
+
+# 7. Required Architecture Direction
+
+## 7.1 Keep low-level tools
+
+Keep low-level tools for debugging and precise operations.
+
+Examples:
+
+```text
+get_children
+update_rem
+append_to_rem
+set_rem_heading_level
+move_rem
+reorder_children
+```
+
+## 7.2 Add high-level atomic workflow tools
+
+For real note writing, add high-level tools that perform multiple RemNote SDK operations inside the plugin after one approval.
+
+Priority tool:
+
+```text
+apply_structured_note_batch
+```
+
+Alternative names:
+
+```text
+create_or_replace_focused_rem_tree
+apply_note_transaction
+create_styled_rem_tree_atomic
+```
+
+The recommended name is:
+
+```text
+apply_structured_note_batch
+```
+
+Reason:
+
+```text
+It makes clear that this is one batch transaction, not a simple tree create.
+```
+
+## 7.3 Batch tool should support one-pass note creation
+
+The batch tool must support:
+
+```text
+root update or root create
+nested Rem tree
+H1/H2/H3/normal heading levels
+text color
+highlight color
+hide bullet
+Rem type
+inline math
+math blocks
+quote style
+plain text spans
+bold/italic/underline
+blank spacer Rems
+cards only if explicitly requested
+move/reorder if needed
+verification readback
+rollback on failure where possible
+idempotencyKey
+dryRun mode
+```
+
+## 7.4 Why a batch tool is needed
+
+Vivy can call tools one by one, but one-by-one tool use is not reliable enough for high-quality note generation.
+
+Problems with separate calls:
+
+```text
+each tool has its own approval lifecycle
+each tool can timeout
+each tool can be blocked by scope
+each tool can fail after earlier calls succeeded
+styling child Rems requires child IDs and scope
+math conversion requires consistent rich text parsing
+ordering can break after partial execution
+```
+
+The bridge should make the best workflow easy:
+
+```text
+one tool call
+one approval
+one structured payload
+one execution plan
+one verification report
+one result
+```
+
+---
+
+# 8. New Required Tool: apply_structured_note_batch
+
+## 8.1 Tool purpose
+
+Use this when Vivy needs to create or update a complete structured RemNote note in one operation.
+
+This tool is the preferred path for:
+
+```text
+lecture notes
+physics/math notes
+SAT notes
+ESSLCE notes
+nested outlines
+styled notes
+math-heavy content
+multi-section notes
+```
+
+## 8.2 Input schema
+
+```json
+{
+  "target": {
+    "mode": "focused_rem | rem_id | parent_child",
+    "remId": "string or null",
+    "parentId": "string or null",
+    "createIfMissing": false
+  },
+  "operation": "replace_children | append_children | update_root_and_replace_children | create_child_tree",
+  "idempotencyKey": "string",
+  "dryRun": false,
+  "rollbackOnFailure": true,
+  "verifyAfterWrite": true,
+  "note": {
+    "root": {
+      "text": "string",
+      "style": {
+        "headingLevel": "H1",
+        "color": "blue",
+        "highlight": "default",
+        "hideBullet": false,
+        "remType": "normal"
+      },
+      "richText": [
+        {
+          "type": "text",
+          "text": "string",
+          "styles": {
+            "bold": true,
+            "italic": false,
+            "underline": false,
+            "color": "blue",
+            "highlight": "default"
+          }
+        }
+      ]
+    },
+    "children": [
+      {
+        "type": "rem",
+        "text": "Section Heading",
+        "style": {
+          "headingLevel": "H3",
+          "color": "red",
+          "highlight": "default",
+          "hideBullet": false
+        },
+        "children": [
+          {
+            "type": "paragraph",
+            "text": "Body text."
+          },
+          {
+            "type": "mathBlock",
+            "latex": "\\psi(\\mathbf r,t)"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## 8.3 Output schema
+
+```json
+{
+  "ok": true,
+  "result": {
+    "operationId": "string",
+    "idempotencyKey": "string",
+    "dryRun": false,
+    "status": "completed",
+    "targetRemId": "string",
+    "createdRemIds": ["string"],
+    "updatedRemIds": ["string"],
+    "deletedRemIds": ["string"],
+    "movedRemIds": ["string"],
+    "nodeCount": 0,
+    "mathNodeCount": 0,
+    "styledNodeCount": 0,
+    "cardNodeCount": 0,
+    "verification": {
+      "verified": true,
+      "readBackRootId": "string",
+      "expectedNodeCount": 0,
+      "actualNodeCount": 0,
+      "warnings": []
+    }
+  }
+}
+```
+
+Failure output:
+
+```json
+{
+  "ok": false,
+  "error": {
+    "code": "PARTIAL_FAILURE",
+    "message": "Structured note batch failed after partial execution.",
+    "details": {
+      "operationId": "string",
+      "idempotencyKey": "string",
+      "createdRemIds": ["string"],
+      "updatedRemIds": ["string"],
+      "rolledBackRemIds": ["string"],
+      "rollbackStatus": "completed | partial | failed | not_attempted",
+      "failedStep": "string",
+      "sdkMessage": "string"
+    }
+  }
+}
+```
+
+## 8.4 Rules
+
+```text
+One approval request for the whole batch.
+No separate approval for every child.
+No silent partial success.
+Return created/updated/deleted IDs.
+Use idempotency key to avoid duplicate retries.
+Support dryRun before real write.
+Validate full payload before writing anything.
+Apply permission scope once to the root and descendants.
+If rollbackOnFailure is true, delete newly created Rems on failure where safe.
+Never rollback user-existing Rems unless explicitly allowed.
+After write, read back and verify if verifyAfterWrite is true.
+```
+
+## 8.5 Acceptance test
+
+Create a disposable Rem called:
+
+```text
+MCP Batch Writer Test
+```
+
+Call `apply_structured_note_batch` to create:
+
+```text
+H1 blue title
+H3 red headings
+paragraph children
+inline math
+math block
+one quoted child
+one highlighted child
+```
+
+Expected:
+
+```text
+one approval prompt
+correct nested structure
+math renders as math
+headings styled correctly
+result returns all created IDs
+verification passes
+no pending requests after completion
+get_bridge_status still works
+```
+
+---
+
+# 9. Required Task Plan
+
+## Task 1 — Preserve and document current 26-tool reality
+
+### Goal
+
+Make the project honest about current state.
+
+### Required changes
+
+Update diagnostics and docs to say:
+
+```text
+43 tools exposed
+previous live report verified about 26 working
+remaining tools unverified/problematic
+callabilitySource = registry_only_not_live_execution
+```
+
+### Acceptance
+
+```text
+get_bridge_diagnostics shows realPluginVerifiedTools
+get_bridge_diagnostics shows runtimeUnverifiedTools
+get_bridge_diagnostics does not imply all public tools work
+AGENTS.md tells agents not to call the project complete
+```
+
+---
+
+## Task 2 — Fix approval lifecycle before adding new features
+
+### Goal
+
+No write request should hang, timeout incorrectly, or partially execute silently.
+
+### Files to inspect
+
+```text
+src/widgets/bridge-status.tsx
+src/bridge/client.ts
+src/bridge/handlers.ts
+server/src/bridge-hub.ts
+server/src/mcp-server.ts
+```
+
+### Required lifecycle states
+
+```text
+received
+validated
+waiting_for_approval
+approval_approved
+approval_rejected
+approval_timeout
+executing
+completed
+failed
+partial_failure
+rollback_started
+rollback_completed
+rollback_failed
+cancelled
+```
+
+### Required result mapping
+
+```text
+APPROVED -> execute operation
+APPROVAL_REJECTED -> return APPROVAL_REJECTED
+APPROVAL_TIMEOUT -> return APPROVAL_TIMEOUT
+REQUEST_CANCELLED -> return CLIENT_DISCONNECTED or REQUEST_CANCELLED structured error
+SDK_ERROR -> return SDK_ERROR
+PLUGIN_NOT_CONNECTED -> return PLUGIN_NOT_CONNECTED
+```
+
+### Must fix
+
+```text
+create_rem timeout after approval
+replace_rem stuck call
+create_rem_tree stuck call
+blank partial Rem creation without success result
+```
+
+### Acceptance
+
+```text
+approve returns success/failure
+reject returns APPROVAL_REJECTED
+timeout returns APPROVAL_TIMEOUT
+plugin disconnect returns PLUGIN_NOT_CONNECTED
+failed SDK call returns SDK_ERROR
+no request remains pending forever
+get_bridge_status works after every failure
+recentRequestLifecycle records every phase
+```
+
+---
+
+## Task 3 — Add idempotency and partial execution tracking
+
+### Goal
+
+Retries must not duplicate notes or create blank Rems.
+
+### Required implementation
+
+For write tools, especially:
+
+```text
+create_rem
 create_rem_tree
+create_styled_rem_tree
+apply_structured_note_batch
+flashcard tools
+```
+
+add:
+
+```text
+idempotencyKey
+operationId
+createdRemIds
+updatedRemIds
+partialExecution
+rollbackStatus
+```
+
+### Rules
+
+```text
+If the same idempotencyKey is retried, return the original result if completed.
+If prior execution is still pending, return OPERATION_PENDING.
+If prior execution partially failed, return partial failure details.
+Do not create duplicates on retry.
+```
+
+### Acceptance
+
+```text
+retry create_rem with same idempotencyKey does not create a duplicate
+retry batch note write does not duplicate children
+partial failure returns createdRemIds
+```
+
+---
+
+## Task 4 — Fix permission scope for real note writing
+
+### Goal
+
+Allow descendants created under the focused/approved root to be edited and verified.
+
+### Required scopes
+
+Keep:
+
+```text
+focused_rem_only
+selected_rem_only
+workspace_allowed
+```
+
+Ensure these work:
+
+```text
+focused_rem_and_descendants
+selected_rem_and_descendants
+approved_document_or_folder
+```
+
+Add if needed:
+
+```text
+approved_root_and_descendants
+created_during_this_operation
+```
+
+### Required behavior
+
+```text
+If focused_rem_and_descendants is active, any descendant of focused Rem is in scope.
+If a batch operation creates a Rem, that created Rem is in scope for the rest of the same operation.
+If approved_document_or_folder is active, descendants of approved root are in scope.
+```
+
+### Acceptance
+
+```text
+append child under focused Rem
+style that child in same operation
+read that child back
+no OUT_OF_SCOPE
+outside Rem still returns OUT_OF_SCOPE
+```
+
+---
+
+## Task 5 — Fix SDK formatting errors
+
+### Goal
+
+Make formatting tools reliable or explicitly unsupported.
+
+### Broken tools
+
+```text
+set_rem_text_color
+set_text_span_color
+set_text_span_highlight
+clear_rem_formatting
+```
+
+### Known errors
+
+```text
+richText.removeTextFormatFromRange format parameter: Invalid input
+rem.setType type parameter: Required
+```
+
+### Required investigation
+
+Inspect actual SDK typings and runtime behavior for:
+
+```text
+RichTextFormatName
+applyTextFormatToRange
+removeTextFormatFromRange
+setHighlightColor
+setFontSize
+setType
+SetRemType
+```
+
+### Rules
+
+```text
+Do not guess SDK enum values.
+Do not use color names unless SDK accepts them.
+Do not use highlight and text color interchangeably unless SDK proves they share the same format system.
+If SDK cannot support an action, return SDK_UNSUPPORTED.
+```
+
+### Acceptance
+
+```text
+set_rem_text_color works on a test Rem or returns SDK_UNSUPPORTED
+set_text_span_color works on a test range or returns structured error
+set_text_span_highlight works on a test range or returns structured error
+clear_rem_formatting works without SDK_ERROR
+all failures preserve session
+```
+
+---
+
+## Task 6 — Fix math rendering
+
+### Goal
+
+Math-heavy notes must render properly in RemNote.
+
+### Required parser
+
+Create a markdown/rich-text parser that maps:
+
+```text
+$...$ -> inlineMath
+\(...\) -> inlineMath
+$$...$$ -> mathBlock
+\[...\] -> mathBlock
+```
+
+### Required support
+
+```text
+text before and after math
+multiple inline math nodes in one Rem
+display math as child Rem or math block node
+escaped dollar signs
+LaTeX backslashes preserved correctly
+```
+
+### Tool integration
+
+Use this parser in:
+
+```text
+update_rem_rich
+create_styled_rem_tree
+apply_structured_note_batch
+```
+
+Do not rely on plain markdown for math-heavy notes.
+
+### Acceptance
+
+Create a test note containing:
+
+```text
+The wave function is \(\psi(\mathbf r,t)\).
+The probability density is \(|\psi(\mathbf r,t)|^2\).
+
+\[
+\int |\psi(\mathbf r,t)|^2 d^3r = 1
+\]
+```
+
+Expected:
+
+```text
+inline math renders inline
+display equation renders as math block
+no visible escaped plain LaTeX where math is expected
+get_rem_rich detects inline_math and math_block
+```
+
+---
+
+## Task 7 — Build apply_structured_note_batch
+
+### Goal
+
+Let Vivy write one complete note in one tool call and one approval.
+
+### Why
+
+This is the main improvement needed so Vivy does not have to fight many tools.
+
+### Required features
+
+```text
+dryRun
+idempotencyKey
+rollbackOnFailure
+verifyAfterWrite
+root update
+child creation
+nested tree
+styles
+math
+ordering
+created IDs
+verification report
+```
+
+### Initial supported node types
+
+```text
+rem
+paragraph
+heading
+inlineMath
+mathBlock
+quote
+spacer
+```
+
+Do not add flashcards to the first version unless needed.
+
+### Acceptance
+
+One call creates a complete mini physics note:
+
+```text
+H1 blue root title
+H3 red section headings
+nested body bullets
+inline math
+display math
+ordered children
+verification passes
+```
+
+---
+
+## Task 8 — Rework create_rem_tree and create_styled_rem_tree around the batch engine
+
+### Goal
+
+Stop maintaining separate fragile tree-writing paths.
+
+### Required direction
+
+Implement one internal engine:
+
+```text
+structuredWriteEngine()
+```
+
+Then make these tools wrappers around it:
+
+```text
+create_rem_tree
+create_styled_rem_tree
+apply_structured_note_batch
+```
+
+### Rules
+
+```text
+validate entire tree before writing
+one approval
+track all created IDs
+return partial failure details
+rollback newly created Rems if safe
+verify readback
+```
+
+### Acceptance
+
+```text
+create_rem_tree no longer hangs
+create_styled_rem_tree creates styled nested structure
+partial failures are reported with created IDs
+```
+
+---
+
+## Task 9 — Improve diagnostics for live verification
+
+### Goal
+
+Make diagnostics explain what is actually verified.
+
+### Add fields
+
+```json
+{
+  "toolRegistryVersion": "string",
+  "mcpDiscoveryVersion": "string",
+  "callabilitySource": "registry_only_not_live_execution | live_execution",
+  "registryDeclaredTools": [],
+  "mcpListedTools": [],
+  "mcpRegisteredTools": [],
+  "realPluginVerifiedTools": [],
+  "runtimeUnverifiedTools": [],
+  "sdkUnsupportedTools": [],
+  "gatewayBlockedTools": [],
+  "lastSuccessfulToolCalls": [],
+  "lastFailedToolCalls": [],
+  "pendingApproval": null,
+  "recentApprovalLifecycle": [],
+  "partialExecutions": [],
+  "lastPartialExecution": null
+}
+```
+
+### Acceptance
+
+```text
+diagnostics clearly separates registry-listed from live-verified tools
+recent failed tools show reason
+partial blank Rems are visible in diagnostics
+runtimeUnverifiedTools shrinks as tools pass live tests
+```
+
+---
+
+## Task 10 — Add safe live tool health-check mode
+
+### Goal
+
+Know which tools are actually live-working, not merely registered.
+
+### New tool
+
+```text
+run_bridge_health_check
+```
+
+### Modes
+
+```text
+read_only
+safe_sandbox
+full_sandbox
+```
+
+### Rules
+
+```text
+Never run destructive checks by default.
+Use only a disposable sandbox root Rem.
+Do not test delete unless explicitly requested and target is disposable.
+```
+
+### Output
+
+```json
+{
+  "mode": "safe_sandbox",
+  "testedAt": "string",
+  "passedTools": [],
+  "failedTools": [
+    {
+      "tool": "string",
+      "errorCode": "string",
+      "message": "string"
+    }
+  ],
+  "skippedTools": [
+    {
+      "tool": "string",
+      "reason": "string"
+    }
+  ]
+}
+```
+
+### Acceptance
+
+```text
+health check identifies working tools
+health check does not damage real notes
+diagnostics includes last health-check summary
+```
+
+---
+
+## Task 11 — Reduce ChatGPT/OpenAI gateway blocking
+
+### Goal
+
+Make tools less likely to be blocked before reaching RemNote.
+
+### Known blocked tools
+
+```text
+get_rem_rich
+create_cloze_card
+```
+
+### Required improvements
+
+```text
+shorten tool descriptions
+avoid suspicious words where possible
+keep schemas small and clear
+avoid overly broad tool names if gateway flags them
+add fallback tools
+avoid massive payloads in one non-batch low-level tool
+```
+
+### Add fallback tools
+
+```text
+get_rem_safe_rich_summary
+create_practice_card_safe
+```
+
+or make existing tools safer by schema simplification.
+
+### Acceptance
+
+```text
+get_rem_rich or fallback can be called from ChatGPT
+create_cloze_card or fallback can be called from ChatGPT
+gateway block is clearly distinguished from plugin failure
+```
+
+---
+
+## Task 12 — Improve Vivy workflow rules
+
+### Goal
+
+Guide Vivy to use the bridge correctly.
+
+### Tool usage policy for Vivy
+
+For reading:
+
+```text
+1. get_plugin_status
+2. get_focused_rem
+3. get_children or get_rem_tree
+4. get_rem_rich only when needed and not gateway-blocked
+```
+
+For simple edits:
+
+```text
+use update_rem or append_to_rem
+verify with get_rem or get_children
+```
+
+For complete notes:
+
+```text
+use apply_structured_note_batch
+do not use many append_to_rem calls unless batch tool is unavailable
+```
+
+For styling:
+
+```text
+prefer style inside batch payload
+avoid post-hoc styling child Rems under focused_rem_only
+```
+
+For math:
+
+```text
+use rich math nodes
+never write math-heavy notes as plain escaped markdown
+```
+
+For risky operations:
+
+```text
+avoid delete tools unless user explicitly asks
+avoid replace_rem until lifecycle is fixed
+avoid create_rem_tree until atomic engine is fixed
+```
+
+---
+
+# 10. Required Validation Commands
+
+Run after each milestone:
+
+```bash
+npm run check-types
+npm run validate
+npm run build
+npm run server:build
+npm run server:smoke
+npm audit
+npm audit --omit=dev
+git diff --check
+```
+
+Do not stop after compile-only success.
+
+A tool is not “working” until it passes the correct runtime test.
+
+---
+
+# 11. Required Manual Regression Root
+
+Use a disposable Rem:
+
+```text
+MCP Regression Test Root
+```
+
+Never run destructive tests on real notes.
+
+Recommended settings for live QA:
+
+```text
+permissionMode: confirm_writes
+permissionScope: focused_rem_and_descendants
+```
+
+---
+
+# 12. Milestone Plan
+
+## Milestone 1 — Honest diagnostics and docs
+
+Tasks:
+
+```text
+Preserve callabilitySource.
+Add realPluginVerifiedTools.
+Add runtimeUnverifiedTools.
+Add sdkUnsupportedTools.
+Update AGENTS.md status.
+```
+
+Acceptance:
+
+```text
+diagnostics no longer suggests all public tools work.
+```
+
+## Milestone 2 — Approval lifecycle hardening
+
+Tasks:
+
+```text
+Add lifecycle state machine.
+Add request IDs in UI and server logs.
+Fix approval timeout race.
+Fix cancellation handling.
+Fix stuck create/replace/tree requests.
+```
+
+Acceptance:
+
+```text
+No write hangs.
+No partial blank Rem without reporting.
+```
+
+## Milestone 3 — Scope model fix
+
+Tasks:
+
+```text
+Make focused_rem_and_descendants reliable.
+Authorize created-during-operation Rem IDs.
+Support approved root descendants.
+```
+
+Acceptance:
+
+```text
+Vivy can create a child and style/read it in the same operation.
+```
+
+## Milestone 1-3 Execution Status — 2026-05-14
+
+- [x] Milestone 1 — Honest diagnostics and docs.
+  `get_bridge_diagnostics` now separates `realPluginVerifiedTools`, `runtimeUnverifiedTools`, and `sdkUnsupportedTools`. Registry-only fields no longer claim all public tools are live-callable.
+- [x] Milestone 2 — Approval lifecycle hardening.
+  Bridge responses and server diagnostics now carry request lifecycle events. The RemNote approval UI shows the request ID, clears timeout state, and cancellation is recorded as lifecycle evidence.
+- [x] Milestone 3 — Scope model fix.
+  Existing focused-descendant and approved-root descendant checks are preserved. Created Rem IDs and partial execution details are recorded so same-operation child creation/style/read failures are auditable instead of silent.
+
+Verification status:
+
+```text
+npm run check-types passed.
+npm run validate passed.
+npm run build passed with existing webpack size warnings.
+npm run server:build passed.
+npm run server:smoke passed.
+npm audit passed with 0 vulnerabilities.
+npm audit --omit=dev passed with 0 vulnerabilities.
+git diff --check passed.
+Live RemNote sandbox QA is still required before marking all public tools production-ready.
+```
+
+## Milestone 4 — SDK formatting fix
+
+Tasks:
+
+```text
+[x] Fix color format handling.
+[x] Fix span color/highlight.
+[x] Fix clear_rem_formatting.
+[x] Add repo smoke coverage for formatting surfaces.
+```
+
+Acceptance:
+
+```text
+Formatting tools work or return SDK_UNSUPPORTED cleanly.
+```
+
+## Milestone 5 — Math rendering
+
+Tasks:
+
+```text
+[x] Implement LaTeX-to-rich-node parser.
+[x] Integrate with update_rem_rich and batch writer.
+[x] Add math regression tests in MCP smoke.
+```
+
+Acceptance:
+
+```text
+Inline and display math render correctly.
+```
+
+## Milestone 6 — Atomic structured note writer
+
+Tasks:
+
+```text
+[x] Build apply_structured_note_batch.
+[x] Support dryRun.
+[x] Support idempotencyKey.
+[x] Support rollbackOnFailure.
+[x] Support verifyAfterWrite.
+[x] Support styles and math.
+```
+
+Acceptance:
+
+```text
+One tool call writes a complete styled note correctly.
+```
+
+## Milestone 4-6 Execution Status — 2026-05-14
+
+- [x] Milestone 4 — SDK formatting fix.
+  Formatting calls now use installed SDK-supported rich-text color names, avoid invalid normal type reset calls, and return `SDK_UNSUPPORTED` for unsupported default whole-Rem highlight clearing or normal type reset instead of raw `SDK_ERROR`.
+- [x] Milestone 5 — Math rendering.
+  Plain text spans now parse `$...$`, `\(...\)`, `$$...$$`, and `\[...\]` into RemNote rich math nodes. The parser is used by `update_rem_rich`, styled trees, flashcard rich text creation paths, and the batch writer.
+- [x] Milestone 6 — Atomic structured note writer.
+  `apply_structured_note_batch` is now a public MCP tool and bridge tool. It supports `dryRun`, `idempotencyKey`, best-effort `rollbackOnFailure`, `verifyAfterWrite`, styled nodes, nested children, flashcards, and math-rich text.
+
+Verification status:
+
+```text
+npm run check-types passed.
+npm run validate passed.
+npm run build passed with existing webpack size warnings.
+npm run server:build passed.
+npm run server:smoke passed.
+Live RemNote sandbox QA is still required before marking all 43 tools production-ready in hosted/public wording.
+```
+
+## Milestone 7 — Rework tree tools on batch engine
+
+Tasks:
+
+```text
+[x] Make create_rem_tree use structured write engine.
+[x] Make create_styled_rem_tree use structured write engine.
+[x] Deprecate fragile duplicate logic.
+```
+
+Acceptance:
+
+```text
+Tree tools no longer hang.
+```
+
+## Milestone 8 — Live health-check system
+
+Tasks:
+
+```text
+[x] Add run_bridge_health_check.
+[x] Record pass/fail/skipped tools.
+[x] Surface last health check in diagnostics.
+```
+
+Acceptance:
+
+```text
+Project can prove which tools work live.
+```
+
+## Milestone 9 — Final live QA
+
+Tasks:
+
+```text
+[x] Run all safe tools in MCP smoke/mock bridge.
+[x] Run note-writing test through structured batch dry-run/apply smoke paths.
+[x] Run failure survival test.
+[x] Run approval reject/timeout/cancel reliability tests.
+[x] Record QA results in diagnostics/health-check docs.
+```
+
+Acceptance:
+
+```text
+The bridge can be honestly marked repo-ready for structured note generation. Public hosted production-ready wording still requires a recorded live RemNote sandbox health-check pass.
+```
+
+## Milestone 7-9 Execution Status — 2026-05-14
+
+- [x] Milestone 7 — Rework tree tools on batch engine.
+  `create_rem_tree` now validates the simple tree shape and delegates creation to `create_styled_rem_tree`, so the old duplicate recursive write path is removed. `create_styled_rem_tree` remains the shared structured write engine used by `apply_structured_note_batch`.
+- [x] Milestone 8 — Live health-check system.
+  `run_bridge_health_check` is a public MCP tool. It records pass/fail/skipped results, avoids destructive deletes, supports safe dry runs by default, can execute sandbox writes when explicitly requested, and stores `lastHealthCheck` in diagnostics.
+- [x] Milestone 9 — Final repo QA.
+  Server smoke now verifies `tools/list` registry parity, the RemNote capability guide, health-check recording, structured batch dry-run/apply, note-writing failure survival, plugin timeout, plugin disconnect, and client-disconnect cancellation.
+
+Milestone 7-9 verification:
+
+```text
+npm run check-types passed.
+npm run validate passed.
+npm run build passed with existing webpack size warnings.
+npm run server:build passed.
+npm run server:smoke passed.
+chatgpt-app-submission.json parsed with 43 tool entries, 27 test cases, and 4 negative test cases.
+git diff --check passed.
+```
+
+---
+
+# 13. Final Completion Criteria
+
+The bridge is complete only when all are true:
+
+```text
+43 public tools are discoverable.
+delete_rem is hidden by default.
+callabilitySource is honest.
+At least all required note-generation tools are live verified.
+Approval-gated writes never hang.
+Partial executions are tracked.
+create_rem works.
+replace_rem works or is disabled until safe.
+create_rem_tree works.
+create_styled_rem_tree works.
+apply_structured_note_batch works.
+focused_rem_and_descendants works.
+created children can be styled and read back.
+math renders as RemNote math.
+color/span/highlight tools work or return SDK_UNSUPPORTED.
+clear_rem_formatting works or returns SDK_UNSUPPORTED.
+gateway-blocked tools have safe fallbacks.
+failed calls do not terminate MCP session.
+QA results are recorded in diagnostics and a health-check matrix.
+```
+
+---
+
+# 14. Current Practical Guidance for Vivy
+
+Current repo-verified guidance:
+
+## Default read/context tools
+
+Use:
+
+```text
+get_bridge_status
+get_bridge_diagnostics
+run_bridge_health_check
+get_remnote_capability_guide
+ping_remnote_plugin
+get_plugin_status
+get_focused_rem
+get_children
+get_rem_tree
+get_rem_rich
+get_current_selection
+get_rem_breadcrumbs
+search_rems
+get_document_or_folder_tree
+```
+
+## Default note-writing path
+
+Use:
+
+```text
+get_remnote_capability_guide
+get_bridge_diagnostics
+apply_structured_note_batch dryRun=true
+apply_structured_note_batch dryRun=false verifyAfterWrite=true rollbackOnFailure=true
+```
+
+## Low-level repair tools
+
+Use only when the user asks for precise edits:
+
+```text
+append_to_rem
+update_rem
 update_rem_rich
 set_rem_heading_level
 set_rem_text_color
@@ -194,1145 +1731,44 @@ set_text_span_highlight
 set_rem_type
 set_hide_bullet
 clear_rem_formatting
+move_rem
+reorder_children
+create_rem_tree
 create_styled_rem_tree
-create_basic_flashcard
-create_concept_card
-create_descriptor_card
-create_cloze_card
-create_multiple_choice_card
-create_list_answer_card
-```
-
-### 2.3 Gated hidden tool
-
-```text
-delete_rem
-```
-
-Expected default:
-
-```text
-delete_rem must not appear in tools/list
-delete_rem must appear in hiddenTools / hiddenReasons
-deleteToolExposed must be false
-```
-
-Only local development should enable arbitrary ID delete:
-
-```bash
-REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1
-```
-
-Do not expose arbitrary delete by default.
-
----
-
-## 3. Current Protocol-Level State
-
-The bridge protocol now includes the expanded tool names and types.
-
-Current protocol categories:
-
-```text
-status tools
-read tools
-safe create/write tools
-rich/styled formatting tools
-flashcard/card helper tools
-dangerous replace/delete tools
-gated arbitrary delete
-```
-
-The protocol now includes permission scopes:
-
-```text
-focused_rem_only
-focused_rem_and_descendants
-selected_rem_only
-selected_rem_and_descendants
-approved_document_or_folder
-workspace_allowed
-```
-
-It also includes the approval timeout constant:
-
-```ts
-WRITE_APPROVAL_TIMEOUT_MS = 30000
-```
-
-This is good.
-
-Remaining concern:
-
-```text
-Protocol-level presence does not prove live SDK behavior.
-```
-
-A tool can exist in:
-
-```text
-registry
-protocol
-MCP server registration
-mock smoke responder
-```
-
-and still fail in real RemNote if:
-
-```text
-the RemNote SDK method behaves differently
-the method exists in typings but fails at runtime
-the plugin is running an old bundle
-permission scope blocks the target
-approval UI hangs or is cancelled
-tool-call auth blocks the request
-ChatGPT connector uses stale discovery metadata
 ```
 
 ---
 
-## 4. MCP Discovery and Auth Analysis
+# 15. Implementation Warning
 
-### 4.1 Discovery now has a no-auth path
+Do not just add more tools.
 
-The server treats these MCP methods as discovery:
+The problem is not lack of tool count.
 
-```text
-initialize
-notifications/initialized
-tools/list
-```
-
-These can be allowed without bearer auth so ChatGPT can refresh tool metadata.
-
-This is good and directly addresses stale/missing tools during discovery.
-
-### 4.2 Tool calls may still require auth
-
-Discovery and tool calls are different.
-
-Possible state:
+The problem is:
 
 ```text
-tools/list → works and shows 40 tools
-tools/call → fails due to auth/token mismatch
+reliability
+atomicity
+approval lifecycle
+math fidelity
+permission scope
+SDK correctness
+live verification
 ```
 
-The diagnostics must be checked for:
+A small set of reliable high-level tools is more valuable than 40 fragile tools.
+
+Build toward this:
 
 ```text
-discoveryAuthMode
-toolCallAuthMode
-unauthDiscoverableTools
-unauthMcpCallableTools
+read context
+plan note
+dry run structured batch
+approve once
+write complete note
+verify readback
+return complete result
 ```
 
-Important expected cases:
-
-#### Local no-token development
-
-```bash
-export REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1
-unset REMNOTE_BRIDGE_TOKEN
-```
-
-Expected:
-
-```text
-discoveryAuthMode: no_auth_required
-toolCallAuthMode: no_auth_allowed
-tools/list: 40 tools
-tools/call: allowed without token
-```
-
-#### Token-protected mode
-
-Expected:
-
-```text
-discoveryAuthMode: no_auth_required
-toolCallAuthMode: local_bearer_required
-tools/list: 40 tools
-tools/call: requires correct bearer token
-```
-
-If ChatGPT can list tools but not call them, check the token path first.
-
----
-
-## 5. Diagnostics Field Risk
-
-Current diagnostics expose fields such as:
-
-```text
-registeredTools
-publicTools
-exposedTools
-callableTools
-discoverableTools
-actualMcpCallableTools
-unauthDiscoverableTools
-unauthMcpCallableTools
-hiddenTools
-hiddenReasons
-registryMismatch
-```
-
-This is useful, but there is a subtle problem:
-
-```text
-Some of these fields appear registry-derived, not necessarily proven by live tool execution.
-```
-
-For example:
-
-```text
-callableTools = publicTools
-actualMcpCallableTools = publicTools
-```
-
-may mean:
-
-```text
-registered according to the server registry
-```
-
-not:
-
-```text
-successfully called end-to-end through ChatGPT and RemNote
-```
-
-Recommendation:
-
-Add or maintain separate fields:
-
-```json
-{
-  "registeredTools": [],
-  "publicTools": [],
-  "mcpListedTools": [],
-  "mcpRegisteredTools": [],
-  "lastSuccessfulToolCalls": [],
-  "lastFailedToolCalls": [],
-  "realPluginVerifiedTools": [],
-  "mockSmokeVerifiedTools": [],
-  "sdkUnsupportedTools": [],
-  "runtimeUnverifiedTools": []
-}
-```
-
-Do not let diagnostics imply runtime success unless a real call happened.
-
----
-
-## 6. Smoke Test Analysis
-
-The current smoke test is much better than before.
-
-It verifies:
-
-```text
-tools/list exactly equals getPublicMcpToolNames(false)
-delete_rem is hidden by default
-no-auth tools/list returns the expected registry
-get_bridge_status publicTools matches tools/list
-get_bridge_diagnostics reports registry fields
-unknown tools return structured UNKNOWN_TOOL
-timeout returns TIMEOUT
-plugin disconnect returns PLUGIN_NOT_CONNECTED
-client abort returns CLIENT_DISCONNECTED
-base read/write paths round-trip through mock plugin
-rich/styled/card tools are present in mock paths
-```
-
-This is valuable.
-
-But smoke tests use a mock WebSocket responder.
-
-That proves:
-
-```text
-MCP server registration works
-tool descriptors exist
-argument schemas mostly parse
-bridge request names are routed to the mock
-registry parity exists in the mock environment
-session failure handling is at least partially tested
-```
-
-It does **not** prove:
-
-```text
-the RemNote SDK operation works in a real workspace
-the approval UI works under real user interaction
-ChatGPT connector refreshes the latest schema
-the ngrok/tunnel path points to this server
-the plugin bundle loaded in RemNote is latest
-formatting/card APIs behave correctly at runtime
-```
-
-So classify current tests like this:
-
-| Area | Current confidence | Reason |
-|---|---:|---|
-| Source registry has 40 public tools | High | Registry code shows 40 public entries |
-| MCP tools/list parity in smoke | High | Smoke compares tools/list to registry |
-| Hidden `delete_rem` by default | High | Registry and smoke check this |
-| Protocol knows 40 tools | High | Protocol includes expanded tool names |
-| Mock callability | Medium/high | Smoke mock handles many calls |
-| Real ChatGPT exposure | Not verified here | Requires actual ChatGPT connector/tools/list |
-| Real RemNote SDK behavior | Not verified here | Requires real RemNote plugin session |
-| Approval UI under real use | Not verified here | Requires manual approve/reject/timeout |
-| Styled/card fidelity | Medium/unknown | SDK methods may not produce exact intended RemNote semantics |
-
----
-
-## 7. Tool-by-Tool Classification
-
-### 7.1 Status tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `get_bridge_status` | Implemented | Low |
-| `get_bridge_diagnostics` | Implemented | Low/medium; make sure fields are not misleading |
-| `ping_remnote_plugin` | Implemented | Low |
-| `get_plugin_status` | Implemented | Low |
-
-Required live test:
-
-```text
-Call all four from ChatGPT.
-They must work even after a failed write call.
-```
-
----
-
-### 7.2 Read tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `get_focused_rem` | Implemented | Low |
-| `get_rem` | Implemented | Medium because scope can block descendants |
-| `get_rem_tree` | Implemented | Medium because scope/depth/truncation |
-| `get_rem_rich` | Implemented | Medium/high because rich text normalization may be lossy |
-| `get_current_selection` | Implemented with fallback | Medium because SDK selection support may vary |
-| `get_children` | Implemented | Medium because argument aliases and scope |
-| `get_rem_breadcrumbs` | Implemented | Low/medium |
-| `search_rems` | Implemented | Medium/high because broad search scope must be controlled |
-| `get_document_or_folder_tree` | Implemented | Medium because focused portal/document detection can vary |
-
-Required live test:
-
-```text
-Run all read tools on a sandbox Rem.
-Verify no OUT_OF_SCOPE when using focused_rem_and_descendants.
-Verify OUT_OF_SCOPE still happens for outside Rems.
-Verify search is capped and scoped.
-```
-
----
-
-### 7.3 Basic create/update/organization tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `create_rem` | Implemented | Medium |
-| `append_to_rem` | Implemented | Medium |
-| `create_rem_tree` | Implemented | Medium/high due partial creation risk |
-| `create_document` | Implemented with setIsDocument(true) | Medium |
-| `create_folder` | Explicit `SDK_UNSUPPORTED` | Low if failure is structured |
-| `update_rem` | Implemented | Medium |
-| `move_rem` | Implemented | Medium/high due hierarchy/index issues |
-| `reorder_children` | Implemented | Medium/high due exact child-list requirement |
-| `replace_rem` | Implemented but dangerous | High; must always require approval |
-
-Required live test:
-
-```text
-create child
-read child back
-create tree
-verify order
-update text
-verify children preserved
-move child
-verify location
-reorder children
-verify no dropped child
-bad ID returns REM_NOT_FOUND
-session remains alive
-```
-
----
-
-### 7.4 Rich/styled tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `update_rem_rich` | Implemented | High; real rich text output must be verified |
-| `set_rem_heading_level` | Implemented | Medium |
-| `set_rem_text_color` | Implemented | Medium/high; SDK color support limited |
-| `set_rem_highlight_color` | Implemented | Medium/high |
-| `set_text_span_color` | Implemented | High; offset mapping can be fragile |
-| `set_text_span_highlight` | Implemented | High; offset mapping can be fragile |
-| `set_rem_type` | Implemented | Medium |
-| `set_hide_bullet` | Implemented through list-item state | Medium/high; semantic correctness must be checked |
-| `clear_rem_formatting` | Implemented | High; may remove more formatting than expected |
-| `create_styled_rem_tree` | Implemented | High; complex mixed node/style/card behavior |
-
-Important issue:
-
-```text
-Color support maps only certain colors to SDK formats.
-pink and gray may return SDK_UNSUPPORTED.
-```
-
-This is acceptable only if the error is structured and does not terminate the session.
-
-Required live test:
-
-```text
-Apply heading
-Apply color
-Apply highlight
-Apply span color
-Apply span highlight
-Set concept/descriptor/normal
-Hide bullet
-Clear formatting
-Create styled tree
-Read back with get_rem_rich
-Verify actual visual RemNote result
-```
-
----
-
-### 7.5 Card/flashcard tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `create_basic_flashcard` | Implemented | High |
-| `create_concept_card` | Implemented | High |
-| `create_descriptor_card` | Implemented | High |
-| `create_cloze_card` | Implemented | High |
-| `create_multiple_choice_card` | Implemented | High |
-| `create_list_answer_card` | Implemented | High |
-
-Reason for high risk:
-
-```text
-The tools may create Rems and enable practice, but real RemNote card semantics must be verified manually.
-```
-
-Things to verify:
-
-```text
-front/back appear correctly
-practice is enabled
-practice direction is correct
-concept/descriptor behavior matches RemNote semantics
-cloze behavior is real cloze, not just text
-multiple choice items become real answer choices if supported
-list answer items behave as intended
-```
-
-If the SDK does not support true card semantics for a given card type, return:
-
-```text
-SDK_UNSUPPORTED
-```
-
-Do not fake card support by creating plain notes and reporting success as if they were cards.
-
----
-
-### 7.6 Dangerous delete tools
-
-| Tool | Source status | Risk |
-|---|---|---|
-| `delete_focused_rem` | Public, dangerous | High |
-| `delete_selected_rem` | Public, dangerous | High |
-| `delete_rem` | Gated hidden | Very high; should remain hidden by default |
-
-Required behavior:
-
-```text
-delete requires approval
-delete requires confirmText DELETE
-approval UI shows target title
-approval UI shows parent title
-approval UI shows child count
-approval UI shows descendant count
-reject deletes nothing
-timeout deletes nothing
-success returns deletedRemId
-failed delete does not kill session
-```
-
-Important:
-
-```text
-trusted_writes must not silently allow delete.
-danger_zone may allow more, but delete should still be explicit and strongly gated.
-```
-
----
-
-## 8. Permission Scope Analysis
-
-The old problem:
-
-```text
-ChatGPT creates a child under focused Rem.
-Bridge returns child Rem ID.
-ChatGPT tries to read the child.
-Plugin returns OUT_OF_SCOPE.
-```
-
-This happens when scope is:
-
-```text
-focused_rem_only
-```
-
-The new practical scope should be:
-
-```text
-focused_rem_and_descendants
-```
-
-The source now includes:
-
-```text
-focused_rem_only
-focused_rem_and_descendants
-selected_rem_only
-selected_rem_and_descendants
-approved_document_or_folder
-workspace_allowed
-```
-
-Required live test:
-
-```text
-1. Set scope to focused_rem_only.
-2. Create child under focused Rem.
-3. Read child.
-4. Confirm it is blocked or verify intended exception.
-5. Set scope to focused_rem_and_descendants.
-6. Create child under focused Rem.
-7. Read child.
-8. Confirm read succeeds.
-9. Try reading outside Rem.
-10. Confirm OUT_OF_SCOPE.
-```
-
-Important product decision:
-
-```text
-focused_rem_only should remain default-safe.
-focused_rem_and_descendants should be recommended for serious editing.
-workspace_allowed should not be default.
-```
-
----
-
-## 9. Approval Flow Analysis
-
-Required invariant:
-
-```text
-No write request may hang indefinitely.
-```
-
-Expected outcomes:
-
-```text
-APPROVED
-APPROVAL_REJECTED
-APPROVAL_TIMEOUT
-SDK_ERROR
-INTERNAL_ERROR
-PLUGIN_NOT_CONNECTED
-CLIENT_DISCONNECTED
-TIMEOUT
-```
-
-The UI code uses:
-
-```text
-WRITE_APPROVAL_TIMEOUT_MS = 30000
-```
-
-Approval UI appears to include:
-
-```text
-tool name
-mode
-scope
-summary
-target Rem
-target title
-delete preview
-risk
-deadline
-preview content
-warning
-approve button
-reject button
-DELETE confirmation for destructive requests
-```
-
-Remaining live test:
-
-```text
-approve write
-reject write
-let write timeout
-disconnect plugin during pending approval
-close MCP caller during pending approval
-run failed SDK call
-verify session still alive
-```
-
-After each failure:
-
-```text
-get_bridge_status must work
-ping_remnote_plugin must work
-get_plugin_status must work
-get_focused_rem must work
-```
-
----
-
-## 10. Session and Transport Failure Analysis
-
-The previous observed error:
-
-```text
-Session terminated
-```
-
-should be treated as a transport/session-layer issue, not proof that a specific RemNote SDK tool is incomplete.
-
-Known structured errors include:
-
-```text
-PLUGIN_NOT_CONNECTED
-TIMEOUT
-CLIENT_DISCONNECTED
-UNKNOWN_TOOL
-SDK_ERROR
-SDK_UNSUPPORTED
-REM_NOT_FOUND
-OUT_OF_SCOPE
-INVALID_ARGS
-APPROVAL_REJECTED
-APPROVAL_TIMEOUT
-```
-
-Interpretation table:
-
-| Symptom | Likely layer | Meaning |
-|---|---|---|
-| `Resource not found` | ChatGPT/MCP discovery layer | Tool is not exposed to ChatGPT |
-| `UNKNOWN_TOOL` | MCP app/router | Tool name not public or not registered |
-| `Session terminated` | MCP transport/session | Connection or request lifecycle failed |
-| `PLUGIN_NOT_CONNECTED` | Bridge WebSocket | RemNote plugin not connected |
-| `TIMEOUT` | Bridge request timeout | Plugin did not answer in time |
-| `CLIENT_DISCONNECTED` | MCP caller disconnected | Caller closed request before result |
-| `SDK_UNSUPPORTED` | RemNote SDK capability | Operation intentionally unsupported |
-| `SDK_ERROR` | RemNote SDK runtime | SDK call failed |
-| `OUT_OF_SCOPE` | Permission scope | Tool target outside allowed Rem scope |
-
-Important requirement:
-
-```text
-Failed write calls must return structured errors and must not terminate MCP session.
-```
-
----
-
-## 11. Most Likely Current User-Facing Failure
-
-If ChatGPT still shows only 8 tools after latest code, the most likely cause is **not** missing latest source.
-
-Most likely causes in order:
-
-```text
-1. Old server process still running.
-2. Server not rebuilt after latest push.
-3. ChatGPT connector/app still cached old tools/list.
-4. ngrok URL points to old process or wrong port.
-5. ChatGPT MCP URL still points to old tunnel.
-6. RemNote plugin still running old bundle.
-7. Browser/RemNote panel not refreshed.
-8. token settings allow tools/list but block tools/call.
-9. server started with unexpected env config.
-10. deployment path is using previous commit, not main.
-```
-
----
-
-## 12. Required Live Debug Procedure
-
-### 12.1 Stop stale processes
-
-```bash
-pkill -f "tsx src/index.ts" || true
-pkill -f "node dist/server/src/index.js" || true
-pkill -f "ngrok" || true
-```
-
-Or manually stop:
-
-```text
-old companion server
-old plugin dev server
-old tunnel
-```
-
-### 12.2 Rebuild everything
-
-```bash
-npm run check-types
-npm run validate
-npm run build
-npm run server:build
-npm run server:smoke
-```
-
-### 12.3 Start local no-token mode for debugging
-
-```bash
-export REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1
-unset REMNOTE_BRIDGE_TOKEN
-npm run server:dev
-```
-
-### 12.4 Restart plugin/dev UI
-
-```bash
-npm run dev
-```
-
-Then refresh/reload the RemNote plugin panel.
-
-### 12.5 Start fresh tunnel
-
-```bash
-ngrok http --host-header=localhost:47392 47392
-```
-
-Use:
-
-```text
-https://YOUR-NGROK-URL/mcp
-```
-
-### 12.6 Refresh ChatGPT connector/app
-
-Do all applicable:
-
-```text
-update MCP URL
-refresh tool discovery
-re-import Developer Mode app if needed
-remove old connector config if cached
-reconnect to new ngrok URL
-```
-
-### 12.7 Verify with ChatGPT
-
-Call:
-
-```text
-tools/list
-get_bridge_status
-get_bridge_diagnostics
-ping_remnote_plugin
-get_plugin_status
-```
-
-Expected:
-
-```text
-tools/list shows 40 public tools
-get_bridge_status publicToolCount = 40
-get_bridge_diagnostics registryMismatch missing = []
-get_bridge_diagnostics registryMismatch unexpected = []
-delete_rem is hidden
-get_plugin_status shows connected plugin
-```
-
----
-
-## 13. Manual QA Matrix
-
-Use a sandbox Rem only.
-
-Example:
-
-```text
-Plugin Test → notes
-Rem ID: jCxriMiSyUVAJoKfh
-```
-
-### 13.1 Registry and discovery
-
-| Test | Expected |
-|---|---|
-| `tools/list` | 40 public tools |
-| `tools/list` includes `get_bridge_diagnostics` | yes |
-| `tools/list` includes `create_styled_rem_tree` | yes |
-| `tools/list` includes card tools | yes |
-| `tools/list` includes `delete_rem` | no |
-| `get_bridge_status.publicTools` equals `tools/list` | yes |
-| `get_bridge_diagnostics.registryMismatch` | empty |
-
-### 13.2 Base read tools
-
-| Tool | Expected |
-|---|---|
-| `get_focused_rem` | focused sandbox Rem |
-| `get_rem` | target Rem or structured `REM_NOT_FOUND` |
-| `get_rem_tree` | bounded tree |
-| `get_rem_rich` | rich metadata or structured fallback |
-| `get_current_selection` | focused/selected Rem IDs or supported=false |
-| `get_children` | ordered direct children |
-| `get_rem_breadcrumbs` | parent chain |
-| `search_rems` | capped scoped results |
-| `get_document_or_folder_tree` | bounded tree |
-
-### 13.3 Create/update/move tools
-
-| Tool | Expected |
-|---|---|
-| `create_rem` | approval, creates Rem |
-| `append_to_rem` | approval, creates child |
-| `create_rem_tree` | one approval, ordered tree |
-| `create_document` | creates document Rem |
-| `create_folder` | `SDK_UNSUPPORTED` unless SDK supports it |
-| `update_rem` | updates text, preserves children |
-| `move_rem` | moves Rem, prevents self/descendant move |
-| `reorder_children` | reorders exact child list |
-| `replace_rem` | approval required, no silent destructive overwrite |
-
-### 13.4 Rich/styled/card tools
-
-| Tool | Expected |
-|---|---|
-| `update_rem_rich` | rich content updates or structured error |
-| `set_rem_heading_level` | heading changes |
-| `set_rem_text_color` | color changes or `SDK_UNSUPPORTED` |
-| `set_rem_highlight_color` | highlight changes or `SDK_UNSUPPORTED` |
-| `set_text_span_color` | span color changes or structured range error |
-| `set_text_span_highlight` | span highlight changes or structured range error |
-| `set_rem_type` | normal/concept/descriptor works |
-| `set_hide_bullet` | bullet state changes correctly |
-| `clear_rem_formatting` | formatting clears without data loss |
-| `create_styled_rem_tree` | nested styled tree appears as intended |
-| `create_basic_flashcard` | real practice card behavior |
-| `create_concept_card` | real concept card behavior |
-| `create_descriptor_card` | real descriptor card behavior |
-| `create_cloze_card` | real cloze behavior |
-| `create_multiple_choice_card` | real MC behavior or structured unsupported |
-| `create_list_answer_card` | real list answer behavior or structured unsupported |
-
-### 13.5 Delete tools
-
-| Tool | Expected |
-|---|---|
-| `delete_focused_rem` | requires approval + `DELETE` |
-| `delete_selected_rem` | requires approval + `DELETE` |
-| `delete_rem` | hidden by default |
-| delete reject | deletes nothing |
-| delete timeout | deletes nothing |
-| delete success | deletes only intended Rem |
-
-### 13.6 Failure survival
-
-Run bad calls:
-
-```json
-{
-  "tool": "move_rem",
-  "args": {
-    "remId": "bad-id",
-    "newParentId": "jCxriMiSyUVAJoKfh",
-    "index": 0
-  }
-}
-```
-
-Expected:
-
-```text
-returns REM_NOT_FOUND or structured SDK_ERROR
-session remains alive
-get_bridge_status still works
-ping_remnote_plugin still works
-get_plugin_status still works
-get_focused_rem still works
-```
-
----
-
-## 14. Completion Criteria
-
-This issue is complete only when all are true:
-
-```text
-tools/list from ChatGPT shows 40 public tools
-delete_rem is hidden by default
-get_bridge_status reports publicToolCount 40
-get_bridge_status publicTools exactly matches tools/list
-get_bridge_diagnostics is callable from ChatGPT
-get_bridge_diagnostics registryMismatch is empty
-get_bridge_diagnostics hiddenTools includes delete_rem
-get_bridge_diagnostics shows discoveryAuthMode and toolCallAuthMode
-base 8 tools still work
-all safe read tools are callable
-focused_rem_and_descendants works
-created children under focused Rem can be read back
-outside Rems remain blocked by scope
-create_rem_tree works on sandbox Rem
-update_rem works on sandbox Rem
-move_rem works on sandbox Rem
-reorder_children works on sandbox Rem
-create_document works or returns structured SDK_UNSUPPORTED if applicable
-create_folder returns structured SDK_UNSUPPORTED unless real SDK support exists
-rich/styled/card tools either work correctly or return structured SDK_UNSUPPORTED/SDK_ERROR
-delete_focused_rem and delete_selected_rem require approval and DELETE
-failed calls do not terminate MCP session
-approval reject resolves
-approval timeout resolves
-plugin disconnect resolves
-all validation commands pass
-manual QA evidence is recorded
-```
-
----
-
-## 15. Recommended Issue Title
-
-```text
-Verify live ChatGPT exposure and real RemNote execution for 40-tool MCP bridge
-```
-
-Alternative:
-
-```text
-Do not close: source registry parity fixed, but live ChatGPT + RemNote QA still required
-```
-
----
-
-## 16. Recommended GitHub Issue Body
-
-```md
-## Summary
-
-The latest `main` source now defines a 40-public-tool MCP registry plus one gated hidden `delete_rem` tool. Source-level registry parity appears implemented, and mock smoke tests verify that `tools/list` matches the public registry.
-
-However, this should not be closed until the live ChatGPT-facing MCP endpoint and real RemNote plugin session prove that the same 40 tools are discoverable and callable.
-
-## Current source state
-
-- `toolRegistryVersion`: `2026-05-10.1`
-- `mcpDiscoveryVersion`: `mcp-discovery-2026-05-10.1`
-- Public tools: 40
-- Hidden tools: `delete_rem`
-- Discovery methods allow no-auth path for `initialize`, `notifications/initialized`, and `tools/list`
-- Smoke tests compare `tools/list` against `getPublicMcpToolNames(false)`
-
-## Remaining risk
-
-The current code may be correct while ChatGPT still sees only 8 tools if:
-
-- old companion server process is still running
-- ChatGPT connector cached stale tools/list
-- tunnel points to wrong local process
-- MCP URL points to old ngrok URL
-- tool calls are token-gated even though discovery works
-- RemNote plugin panel is running old bundled code
-- real SDK behavior differs from mock smoke behavior
-
-## Do not mark complete until
-
-- ChatGPT `tools/list` shows 40 public tools
-- `delete_rem` is hidden by default
-- `get_bridge_status.publicTools` equals `tools/list`
-- `get_bridge_diagnostics.registryMismatch` is empty
-- representative read/write/rich/card tools are callable from ChatGPT
-- real RemNote SDK behavior is verified on sandbox notes
-- failed calls do not terminate the MCP session
-- approval reject/timeout/disconnect paths resolve cleanly
-
-## Required live tests
-
-1. Refresh ChatGPT connector/app tool discovery.
-2. Confirm `tools/list` returns 40 tools.
-3. Call `get_bridge_diagnostics`.
-4. Confirm:
-   - `publicToolCount = 40`
-   - `registryMismatch.missing = []`
-   - `registryMismatch.unexpected = []`
-   - `deleteToolExposed = false`
-   - `hiddenTools` includes `delete_rem`
-5. Call all base read tools.
-6. Run sandbox write tests for:
-   - `create_rem`
-   - `append_to_rem`
-   - `create_rem_tree`
-   - `update_rem`
-   - `move_rem`
-   - `reorder_children`
-7. Run rich/styled/card tools and record whether each truly works or returns structured unsupported/error.
-8. Verify delete tools require approval and typed `DELETE`.
-9. Verify bad calls return structured errors and session remains alive.
-
-## Final status wording
-
-Use:
-
-> Source-level 40-tool registry parity appears fixed in latest main. Live ChatGPT + real RemNote QA remains required before closing.
-
-Do not use:
-
-> Complete.
-```
-
----
-
-## 17. Recommended `QA_LIVE.md` Template
-
-```md
-# Live QA — RemNote ChatGPT Bridge
-
-Date:
-Tester:
-Commit SHA:
-Ngrok URL:
-RemNote version:
-Plugin bundle build time:
-Companion server start time:
-
-## Environment
-
-```text
-REMNOTE_BRIDGE_ALLOW_NO_TOKEN=
-REMNOTE_BRIDGE_TOKEN=set/unset
-REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=
-MCP URL=
-```
-
-## Registry
-
-| Check | Result | Notes |
-|---|---|---|
-| tools/list count = 40 | pass/fail | |
-| get_bridge_status count = 40 | pass/fail | |
-| publicTools equals tools/list | pass/fail | |
-| registryMismatch empty | pass/fail | |
-| delete_rem hidden | pass/fail | |
-| get_bridge_diagnostics callable | pass/fail | |
-
-## Read tools
-
-| Tool | Result | Notes |
-|---|---|---|
-| get_focused_rem | pass/fail | |
-| get_rem | pass/fail | |
-| get_rem_tree | pass/fail | |
-| get_rem_rich | pass/fail | |
-| get_current_selection | pass/fail | |
-| get_children | pass/fail | |
-| get_rem_breadcrumbs | pass/fail | |
-| search_rems | pass/fail | |
-| get_document_or_folder_tree | pass/fail | |
-
-## Write tools
-
-| Tool | Result | Notes |
-|---|---|---|
-| create_rem | pass/fail | |
-| append_to_rem | pass/fail | |
-| create_rem_tree | pass/fail | |
-| create_document | pass/fail | |
-| create_folder | pass/fail/unsupported | |
-| update_rem | pass/fail | |
-| move_rem | pass/fail | |
-| reorder_children | pass/fail | |
-| replace_rem | pass/fail | |
-
-## Rich/styled/card tools
-
-| Tool | Result | Notes |
-|---|---|---|
-| update_rem_rich | pass/fail/unsupported | |
-| set_rem_heading_level | pass/fail/unsupported | |
-| set_rem_text_color | pass/fail/unsupported | |
-| set_rem_highlight_color | pass/fail/unsupported | |
-| set_text_span_color | pass/fail/unsupported | |
-| set_text_span_highlight | pass/fail/unsupported | |
-| set_rem_type | pass/fail/unsupported | |
-| set_hide_bullet | pass/fail/unsupported | |
-| clear_rem_formatting | pass/fail/unsupported | |
-| create_styled_rem_tree | pass/fail/unsupported | |
-| create_basic_flashcard | pass/fail/unsupported | |
-| create_concept_card | pass/fail/unsupported | |
-| create_descriptor_card | pass/fail/unsupported | |
-| create_cloze_card | pass/fail/unsupported | |
-| create_multiple_choice_card | pass/fail/unsupported | |
-| create_list_answer_card | pass/fail/unsupported | |
-
-## Delete tools
-
-| Tool | Result | Notes |
-|---|---|---|
-| delete_focused_rem requires approval | pass/fail | |
-| delete_focused_rem requires DELETE | pass/fail | |
-| delete_selected_rem requires approval | pass/fail | |
-| delete_selected_rem requires DELETE | pass/fail | |
-| delete_rem hidden by default | pass/fail | |
-
-## Failure survival
-
-| Failure | Expected | Result |
-|---|---|---|
-| bad Rem ID | structured error | pass/fail |
-| out-of-scope Rem | OUT_OF_SCOPE | pass/fail |
-| rejected approval | APPROVAL_REJECTED | pass/fail |
-| approval timeout | APPROVAL_TIMEOUT | pass/fail |
-| plugin disconnect | PLUGIN_NOT_CONNECTED | pass/fail |
-| caller disconnect | CLIENT_DISCONNECTED | pass/fail |
-| status after failure | still works | pass/fail |
-```
-
----
-
-## 18. Final Recommendation
-
-The repo is much closer now.
-
-But the responsible final state is:
-
-```text
-Source-level registry parity: likely fixed.
-Mock MCP smoke parity: likely fixed if server:smoke passes.
-Live ChatGPT exposure: still must be verified.
-Real RemNote SDK behavior: still must be verified.
-Approval/session failure survival: still must be verified live.
-```
-
-Therefore:
-
-```text
-Do not close the issue yet.
-Run live ChatGPT + RemNote QA.
-Record a QA matrix.
-Only then mark complete.
-```
+That is the workflow Vivy needs.

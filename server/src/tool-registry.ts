@@ -1,7 +1,14 @@
-export const TOOL_REGISTRY_VERSION = '2026-05-10.1';
+export const TOOL_REGISTRY_VERSION = '2026-05-14.2';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
+export const STATIC_SDK_UNSUPPORTED_TOOLS = ['create_folder'] as const;
+export const SERVER_LOCAL_MCP_TOOLS = [
+  'get_bridge_status',
+  'get_bridge_diagnostics',
+  'run_bridge_health_check',
+  'get_remnote_capability_guide',
+] as const;
 
 export type McpToolExposure = 'public' | 'gated';
 
@@ -14,6 +21,8 @@ export interface McpToolRegistryEntry {
 export const MCP_TOOL_REGISTRY = [
   { name: 'get_bridge_status', exposure: 'public' },
   { name: 'get_bridge_diagnostics', exposure: 'public' },
+  { name: 'run_bridge_health_check', exposure: 'public' },
+  { name: 'get_remnote_capability_guide', exposure: 'public' },
   { name: 'ping_remnote_plugin', exposure: 'public' },
   { name: 'get_plugin_status', exposure: 'public' },
   { name: 'get_focused_rem', exposure: 'public' },
@@ -46,6 +55,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'set_hide_bullet', exposure: 'public' },
   { name: 'clear_rem_formatting', exposure: 'public' },
   { name: 'create_styled_rem_tree', exposure: 'public' },
+  { name: 'apply_structured_note_batch', exposure: 'public' },
   { name: 'create_basic_flashcard', exposure: 'public' },
   { name: 'create_concept_card', exposure: 'public' },
   { name: 'create_descriptor_card', exposure: 'public' },
@@ -118,6 +128,15 @@ export function getToolRegistrySummary(
   const hiddenTools = getHiddenMcpTools(exposeDeleteTool);
   const hiddenReasons = Object.fromEntries(hiddenTools.map((tool) => [tool.name, tool.reason]));
   const mismatch = getRegistryMismatch(exposeDeleteTool, registeredTools);
+  const sdkUnsupportedTools = publicTools.filter((tool) =>
+    (STATIC_SDK_UNSUPPORTED_TOOLS as readonly string[]).includes(tool)
+  );
+  const serverLocalVerifiedTools = publicTools.filter((tool) =>
+    (SERVER_LOCAL_MCP_TOOLS as readonly string[]).includes(tool)
+  );
+  const runtimeUnverifiedTools = publicTools.filter(
+    (tool) => !sdkUnsupportedTools.includes(tool) && !serverLocalVerifiedTools.includes(tool)
+  );
 
   return {
     serverVersion: SERVER_VERSION,
@@ -135,13 +154,22 @@ export function getToolRegistrySummary(
     mcpRegisteredTools: [...registeredTools],
     mcpListedTools: [...publicTools],
     callabilitySource: 'registry_only_not_live_execution' as const,
-    callableTools: [...publicTools],
+    serverLocalVerifiedTools,
+    serverLocalVerifiedToolCount: serverLocalVerifiedTools.length,
+    callableTools: [...serverLocalVerifiedTools],
     discoverableTools: [...publicTools],
     unauthDiscoverableTools:
       auth?.discoveryAuthMode === 'local_bearer_required' ? [] : [...publicTools],
-    actualMcpCallableTools: [...publicTools],
+    actualMcpCallableTools: [...serverLocalVerifiedTools],
     unauthMcpCallableTools:
+      auth?.toolCallAuthMode === 'local_bearer_required' ? [] : [...serverLocalVerifiedTools],
+    unauthToolCallAllowedTools:
       auth?.toolCallAuthMode === 'local_bearer_required' ? [] : [...publicTools],
+    realPluginVerifiedTools: [],
+    verifiedToolCount: serverLocalVerifiedTools.length,
+    runtimeUnverifiedTools,
+    runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
+    sdkUnsupportedTools,
     hiddenTools,
     hiddenReasons,
     registryMismatch: mismatch,

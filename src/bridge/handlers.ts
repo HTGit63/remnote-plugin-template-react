@@ -1,7 +1,10 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
+  type ApplyStructuredNoteBatchArgs,
   type ApprovalResolution,
   type AppendToRemArgs,
+  type BridgeLifecycleEvent,
+  type BridgeLifecyclePhase,
   type BridgeRequest,
   type BridgeResponse,
   type BridgeToolArgs,
@@ -63,6 +66,7 @@ import {
   searchRems,
 } from '../remnote/read';
 import {
+  applyStructuredNoteBatch,
   appendMarkdownToRem,
   buildDeletePreview,
   clearRemFormatting,
@@ -372,6 +376,44 @@ function requiredStyledTree(args: unknown): StyledRemTreeNode {
   return args.tree as StyledRemTreeNode;
 }
 
+function requiredStructuredBatchRoot(args: unknown): StyledRemTreeNode {
+  if (!isPlainObject(args) || !isPlainObject(args.root)) {
+    throw new Error('Missing root.');
+  }
+
+  return args.root as StyledRemTreeNode;
+}
+
+function optionalBoolean(args: unknown, field: string, fallback = false): boolean {
+  if (!isPlainObject(args)) {
+    return fallback;
+  }
+
+  const value = args[field];
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  if (typeof value !== 'boolean') {
+    throw new Error(`${field} must be a boolean.`);
+  }
+
+  return value;
+}
+
+function optionalIdempotencyKey(args: unknown): string | undefined {
+  const key = getStringField(args, 'idempotencyKey')?.trim();
+  if (!key) {
+    return undefined;
+  }
+
+  if (key.length > MAX_REQUEST_ID_CHARS) {
+    throw new Error('idempotencyKey is too long.');
+  }
+
+  return key;
+}
+
 function requiredRichText(args: unknown): RichTextSpanInput[] {
   if (!isPlainObject(args) || !Array.isArray(args.richText)) {
     throw new Error('Missing richText.');
@@ -643,6 +685,16 @@ function normalizeArgs<TTool extends BridgeToolName>(
         position: optionalAppendPosition(args),
         tree: requiredStyledTree(args),
       } as BridgeToolArgs[TTool];
+    case 'apply_structured_note_batch':
+      return {
+        parentId: requiredParentId(args),
+        position: optionalAppendPosition(args),
+        root: requiredStructuredBatchRoot(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        rollbackOnFailure: optionalBoolean(args, 'rollbackOnFailure', true),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+      } as BridgeToolArgs[TTool];
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -737,6 +789,7 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       CreateRemArgs &
       CreateRemTreeArgs &
       CreateStyledRemTreeArgs &
+      ApplyStructuredNoteBatchArgs &
       UpdateRemRichArgs &
       SetRemHeadingLevelArgs &
       SetRemTextColorArgs &
@@ -776,6 +829,7 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
       ReplaceRemArgs &
       UpdateRemRichArgs &
       CreateStyledRemTreeArgs &
+      ApplyStructuredNoteBatchArgs &
       CreateFlashcardArgs &
       CreateClozeCardArgs &
       CreateMultipleChoiceCardArgs &
@@ -799,6 +853,9 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
   if (args.richText || args.tree) {
     return JSON.stringify(args.richText ?? args.tree, null, 2).slice(0, 3000);
   }
+  if (args.root) {
+    return JSON.stringify(args.root, null, 2).slice(0, 3000);
+  }
   return undefined;
 }
 
@@ -818,6 +875,56 @@ function mapSdkError(id: string, error: unknown): BridgeResponse {
   }
 
   return createBridgeFailure(id, 'SDK_ERROR', 'RemNote SDK operation failed.');
+}
+
+function recordLifecycle(
+  lifecycle: BridgeLifecycleEvent[],
+  phase: BridgeLifecyclePhase,
+  message?: string
+) {
+  lifecycle.push({
+    phase,
+    at: new Date().toISOString(),
+    ...(message ? { message } : {}),
+  });
+}
+
+function hasLifecyclePhase(
+  lifecycle: BridgeLifecycleEvent[],
+  phases: readonly BridgeLifecyclePhase[]
+): boolean {
+  return lifecycle.some((event) => phases.includes(event.phase));
+}
+
+function getRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function hasPartialExecution(response: BridgeResponse): boolean {
+  if (response.ok) {
+    return false;
+  }
+
+  const details = getRecord(response.error.details);
+  if (!details) {
+    return false;
+  }
+
+  const partialExecution = getRecord(details.partialExecution);
+  const createdRemIds = Array.isArray(details.createdRemIds) ? details.createdRemIds : undefined;
+  return Boolean(partialExecution || createdRemIds?.length);
+}
+
+function attachLifecycle<TResponse extends BridgeResponse>(
+  response: TResponse,
+  lifecycle: BridgeLifecycleEvent[]
+): TResponse {
+  return {
+    ...response,
+    lifecycle: [...lifecycle],
+  };
 }
 
 function uniqueRemIds(ids: Array<string | null | undefined>): string[] {
@@ -924,6 +1031,8 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
     case 'create_styled_rem_tree':
       return uniqueRemIds([(request.args as CreateStyledRemTreeArgs).parentId]);
+    case 'apply_structured_note_batch':
+      return uniqueRemIds([(request.args as ApplyStructuredNoteBatchArgs).parentId]);
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -1250,6 +1359,8 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Clear visible text formatting.';
     case 'create_styled_rem_tree':
       return 'Create styled nested Rem tree.';
+    case 'apply_structured_note_batch':
+      return 'Apply one structured note batch with optional dry-run, rollback, and verification.';
     case 'create_basic_flashcard':
       return 'Create a basic flashcard.';
     case 'create_concept_card':
@@ -1300,6 +1411,7 @@ async function buildApprovalRequest(
       ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
       : targetRemId &&
           (request.tool === 'create_styled_rem_tree' ||
+            request.tool === 'apply_structured_note_batch' ||
             request.tool === 'create_basic_flashcard' ||
             request.tool === 'create_concept_card' ||
             request.tool === 'create_descriptor_card' ||
@@ -1347,13 +1459,39 @@ async function buildApprovalRequest(
   };
 }
 
-async function shouldForceApproval(plugin: RNPlugin, request: BridgeRequest): Promise<boolean> {
-  if (request.tool !== 'move_rem') {
-    return false;
+async function shouldForceApproval(_plugin: RNPlugin, request: BridgeRequest): Promise<boolean> {
+  switch (request.tool) {
+    case 'create_rem':
+    case 'create_document':
+    case 'create_folder':
+      return Boolean((request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId);
+    case 'apply_structured_note_batch':
+      return !(request.args as ApplyStructuredNoteBatchArgs).dryRun;
+    case 'append_to_rem':
+    case 'update_rem':
+    case 'move_rem':
+    case 'reorder_children':
+    case 'create_rem_tree':
+    case 'update_rem_rich':
+    case 'set_rem_heading_level':
+    case 'set_rem_text_color':
+    case 'set_rem_highlight_color':
+    case 'set_text_span_color':
+    case 'set_text_span_highlight':
+    case 'set_rem_type':
+    case 'set_hide_bullet':
+    case 'clear_rem_formatting':
+    case 'create_styled_rem_tree':
+    case 'create_basic_flashcard':
+    case 'create_concept_card':
+    case 'create_descriptor_card':
+    case 'create_cloze_card':
+    case 'create_multiple_choice_card':
+    case 'create_list_answer_card':
+      return true;
+    default:
+      return false;
   }
-
-  const context = await getRemApprovalContext(plugin, request.args.remId);
-  return context.hasChildren;
 }
 
 export async function handleBridgeRequest(
@@ -1362,23 +1500,47 @@ export async function handleBridgeRequest(
   context: BridgeHandlerContext
 ): Promise<BridgeResponse> {
   const startedAt = Date.now();
+  const lifecycle: BridgeLifecycleEvent[] = [];
   let approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'denied' | 'failed' =
     'not_required';
+  const finish = (
+    response: BridgeResponse,
+    status: typeof approvalStatus
+  ): BridgeResponse => {
+    if (hasPartialExecution(response) && !hasLifecyclePhase(lifecycle, ['partial_failure'])) {
+      recordLifecycle(lifecycle, 'partial_failure', 'SDK failure occurred after partial execution.');
+    }
+
+    if (!hasLifecyclePhase(lifecycle, ['completed', 'failed', 'cancelled'])) {
+      if (response.ok) {
+        recordLifecycle(lifecycle, 'completed', 'Bridge request completed.');
+      } else if (response.error.code === 'CLIENT_DISCONNECTED') {
+        recordLifecycle(lifecycle, 'cancelled', response.error.message);
+      } else {
+        recordLifecycle(lifecycle, 'failed', response.error.message);
+      }
+    }
+
+    const responseWithLifecycle = attachLifecycle(response, lifecycle);
+    logBridgeResponse(request, context.permissionMode, status, responseWithLifecycle, startedAt);
+    return responseWithLifecycle;
+  };
+
+  recordLifecycle(lifecycle, 'received', 'Plugin handler received the bridge request.');
   const decision = getPermissionDecision(context.permissionMode, request.tool);
 
   if (!decision.allowed) {
     approvalStatus = 'denied';
     const response = createBridgeFailure(request.id, 'PERMISSION_DENIED', decision.reason);
-    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-    return response;
+    return finish(response, approvalStatus);
   }
 
   try {
     await enforceScope(plugin, request, context);
+    recordLifecycle(lifecycle, 'validated', 'Request permissions and scope validated.');
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
-    logBridgeResponse(request, context.permissionMode, 'denied', response, startedAt);
-    return response;
+    return finish(response, 'denied');
   }
 
   let approvalRequired = decision.approvalRequired;
@@ -1386,8 +1548,7 @@ export async function handleBridgeRequest(
     approvalRequired = approvalRequired || (await shouldForceApproval(plugin, request));
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
-    logBridgeResponse(request, context.permissionMode, 'failed', response, startedAt);
-    return response;
+    return finish(response, 'failed');
   }
 
   if (approvalRequired) {
@@ -1396,6 +1557,7 @@ export async function handleBridgeRequest(
       const timeoutMs = request.timeoutMs
         ? Math.min(request.timeoutMs, WRITE_APPROVAL_TIMEOUT_MS)
         : WRITE_APPROVAL_TIMEOUT_MS;
+      recordLifecycle(lifecycle, 'waiting_for_approval', 'Request is waiting for RemNote approval.');
       approval = await withApprovalTimeout(
         await buildApprovalRequest(plugin, request, context, timeoutMs, decision.destructive),
         context.requestApproval,
@@ -1404,63 +1566,63 @@ export async function handleBridgeRequest(
     } catch (error: unknown) {
       if (error instanceof RemnoteWriteError) {
         const response = mapSdkError(request.id, error);
-        logBridgeResponse(request, context.permissionMode, 'failed', response, startedAt);
-        return response;
+        return finish(response, 'failed');
       }
 
       const message = error instanceof Error ? error.message : String(error);
       const response = createBridgeFailure(request.id, 'INTERNAL_ERROR', 'Approval handling failed.', {
         message,
       });
-      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-      return response;
+      return finish(response, approvalStatus);
     }
 
     if (approval === 'APPROVAL_TIMEOUT') {
       approvalStatus = 'timeout';
+      recordLifecycle(lifecycle, 'approval_timeout', 'Approval deadline expired.');
       const response = createBridgeFailure(request.id, 'APPROVAL_TIMEOUT', 'User did not approve the request before timeout.');
-      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-      return response;
+      return finish(response, approvalStatus);
     }
 
     if (approval === 'APPROVAL_PENDING') {
       approvalStatus = 'rejected';
+      recordLifecycle(lifecycle, 'approval_rejected', 'Another approval request is already pending.');
       const response = createBridgeFailure(
         request.id,
         'APPROVAL_PENDING',
         'Another approval request is already pending in RemNote.'
       );
-      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-      return response;
+      return finish(response, approvalStatus);
     }
 
     if (approval === 'REQUEST_CANCELLED') {
       approvalStatus = 'cancelled';
+      recordLifecycle(lifecycle, 'cancelled', 'Caller disconnected before approval completed.');
       const response = createBridgeFailure(
         request.id,
         'CLIENT_DISCONNECTED',
         'MCP caller disconnected before approval completed.'
       );
-      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-      return response;
+      return finish(response, approvalStatus);
     }
 
     if (approval !== 'APPROVED') {
       approvalStatus = 'rejected';
+      recordLifecycle(lifecycle, 'approval_rejected', 'User rejected the request.');
       const response = createBridgeFailure(
         request.id,
         'APPROVAL_REJECTED',
         'User rejected the request.'
       );
-      logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-      return response;
+      return finish(response, approvalStatus);
     }
 
     approvalStatus = 'approved';
+    recordLifecycle(lifecycle, 'approval_approved', 'User approved the request.');
   }
 
   try {
     let response: BridgeResponse;
+    recordLifecycle(lifecycle, 'executing', 'Executing RemNote bridge operation.');
     switch (request.tool) {
       case 'ping':
         response = createBridgeSuccess(request, {
@@ -1617,6 +1779,9 @@ export async function handleBridgeRequest(
       case 'create_styled_rem_tree':
         response = createBridgeSuccess(request, await createStyledRemTree(plugin, request.args));
         break;
+      case 'apply_structured_note_batch':
+        response = createBridgeSuccess(request, await applyStructuredNoteBatch(plugin, request.args));
+        break;
       case 'create_basic_flashcard':
         response = createBridgeSuccess(request, await createBasicFlashcard(plugin, request.args));
         break;
@@ -1657,11 +1822,9 @@ export async function handleBridgeRequest(
         response = createBridgeFailure('unknown', 'UNKNOWN_TOOL', 'Unknown bridge tool.');
         break;
     }
-    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-    return response;
+    return finish(response, approvalStatus);
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
-    logBridgeResponse(request, context.permissionMode, approvalStatus, response, startedAt);
-    return response;
+    return finish(response, approvalStatus);
   }
 }

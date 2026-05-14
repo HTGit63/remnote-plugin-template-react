@@ -43,6 +43,7 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'set_hide_bullet',
   'clear_rem_formatting',
   'create_styled_rem_tree',
+  'apply_structured_note_batch',
   'create_basic_flashcard',
   'create_concept_card',
   'create_descriptor_card',
@@ -95,7 +96,7 @@ export function getPermissionModeLabel(mode: PermissionMode): string {
       return 'Danger Zone';
     case 'confirm_writes':
     default:
-      return 'Confirm Writes';
+      return 'Confirm Existing Writes';
   }
 }
 
@@ -151,12 +152,10 @@ export function getPermissionDecision(
   if (SAFE_WRITE_TOOLS.has(tool)) {
     return {
       allowed: true,
-      approvalRequired: mode === 'confirm_writes',
+      approvalRequired: false,
       destructive: false,
       reason:
-        mode === 'confirm_writes'
-          ? 'Write request requires approval in confirm mode.'
-          : 'Permission mode allows safe writes.',
+        'Safe write is allowed by mode. The bridge still asks approval when the request creates inside, updates, moves, reorders, or deletes existing Rems.',
     };
   }
 

@@ -448,6 +448,36 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           status: 'created_styled_tree',
         },
       };
+    case 'apply_structured_note_batch': {
+      const dryRun = request.args.dryRun ?? false;
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: dryRun ? 'dry_run' : 'applied',
+          parentId: request.args.parentId,
+          plannedNodeCount: 2,
+          createdNodeCount: dryRun ? 0 : 2,
+          createdRemIds: dryRun ? [] : ['rem-batch-root-1', 'rem-batch-child-1'],
+          rootCreatedRemId: dryRun ? undefined : 'rem-batch-root-1',
+          rootInsertIndex: dryRun ? undefined : 2,
+          rootInsertPosition: request.args.position ?? 'end',
+          dryRun,
+          idempotencyKey: request.args.idempotencyKey,
+          rollbackOnFailure: request.args.rollbackOnFailure ?? true,
+          verifyAfterWrite: request.args.verifyAfterWrite ?? false,
+          verification:
+            dryRun || !request.args.verifyAfterWrite
+              ? undefined
+              : {
+                  ok: true,
+                  checkedRemIds: ['rem-batch-root-1', 'rem-batch-child-1'],
+                  missingRemIds: [],
+                  rootPlainText: 'Batch root',
+                },
+        },
+      };
+    }
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -659,6 +689,9 @@ async function runCancellationSmoke() {
     if (diagnostics.recentRequests[0]?.errorCode !== 'CLIENT_DISCONNECTED') {
       throw new Error('Bridge diagnostics did not record CLIENT_DISCONNECTED outcome.');
     }
+    if (!diagnostics.recentRequests[0]?.lifecycle.some((event) => event.phase === 'cancelled')) {
+      throw new Error('Bridge diagnostics did not record cancellation lifecycle.');
+    }
   } finally {
     cancelWs.close();
     await cancelApp.stop();
@@ -723,6 +756,15 @@ try {
     throw new Error('Unknown MCP tool did not return structured UNKNOWN_TOOL.');
   }
 
+  const capabilityGuide = JSON.stringify(
+    await callMcpTool(mcp, 'get_remnote_capability_guide', {
+      section: 'all',
+    })
+  );
+  if (!capabilityGuide.includes('Rems and hierarchy') || !capabilityGuide.includes('apply_structured_note_batch')) {
+    throw new Error('get_remnote_capability_guide did not return the RemNote knowledge pool.');
+  }
+
   const ping = JSON.stringify(await callMcpTool(mcp, 'ping_remnote_plugin', { message: 'smoke' }));
   if (!ping.includes('pong')) {
     throw new Error('ping_remnote_plugin did not round-trip through the mock plugin.');
@@ -732,12 +774,16 @@ try {
   const diagnostics = JSON.stringify(diagnosticsResponse);
   const diagnosticsResult = getStructuredContent(diagnosticsResponse).result as
     | {
-        hiddenTools?: Array<{ name: string }>;
-        callableTools?: string[];
-        registryMismatch?: { missing?: string[]; unexpected?: string[] };
-        callabilitySource?: string;
-        realPluginVerifiedTools?: string[];
-        runtimeUnverifiedTools?: string[];
+      hiddenTools?: Array<{ name: string }>;
+      callableTools?: string[];
+      actualMcpCallableTools?: string[];
+      serverLocalVerifiedTools?: string[];
+      registryMismatch?: { missing?: string[]; unexpected?: string[] };
+      callabilitySource?: string;
+      realPluginVerifiedTools?: string[];
+      runtimeUnverifiedTools?: string[];
+      sdkUnsupportedTools?: string[];
+        recentRequestLifecycle?: Array<{ lifecycle?: Array<{ phase?: string }> }>;
       }
     | undefined;
   if (
@@ -750,10 +796,17 @@ try {
   }
   if (
     !diagnosticsResult ||
-    JSON.stringify(diagnosticsResult.callableTools) !== JSON.stringify(toolNames) ||
+    !diagnosticsResult.serverLocalVerifiedTools?.includes('get_remnote_capability_guide') ||
+    !diagnosticsResult.callableTools?.includes('ping_remnote_plugin') ||
+    !diagnosticsResult.callableTools?.includes('run_bridge_health_check') ||
+    !diagnosticsResult.actualMcpCallableTools?.includes('get_bridge_status') ||
     diagnosticsResult.callabilitySource !== 'registry_only_not_live_execution' ||
     !diagnosticsResult.realPluginVerifiedTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.runtimeUnverifiedTools?.includes('create_rem') ||
+    !diagnosticsResult.sdkUnsupportedTools?.includes('create_folder') ||
+    !diagnosticsResult.recentRequestLifecycle?.some((request) =>
+      request.lifecycle?.some((event) => event.phase === 'completed')
+    ) ||
     !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_rem') ||
     diagnosticsResult.registryMismatch?.missing?.length ||
     diagnosticsResult.registryMismatch?.unexpected?.length
@@ -764,6 +817,24 @@ try {
   const pluginStatus = JSON.stringify(await callMcpTool(mcp, 'get_plugin_status', {}));
   if (!pluginStatus.includes('confirm_writes')) {
     throw new Error('get_plugin_status did not return the mock permission mode.');
+  }
+
+  const health = JSON.stringify(
+    await callMcpTool(mcp, 'run_bridge_health_check', {
+      parentId: fakeRem.remId,
+      targetRemId: fakeRem.remId,
+      includeWrites: false,
+      includeExistingRemMutations: false,
+      timeoutMs: 2000,
+    })
+  );
+  if (!health.includes('"status":"passed"') || !health.includes('apply_structured_note_batch')) {
+    throw new Error('run_bridge_health_check did not pass safe/read health checks.');
+  }
+
+  const diagnosticsAfterHealth = JSON.stringify(await callMcpTool(mcp, 'get_bridge_diagnostics', {}));
+  if (!diagnosticsAfterHealth.includes('lastHealthCheck') || !diagnosticsAfterHealth.includes('"skippedCount"')) {
+    throw new Error('get_bridge_diagnostics did not surface the last health check.');
   }
 
   const focused = JSON.stringify(await callMcpTool(mcp, 'get_focused_rem', {}));
@@ -898,6 +969,8 @@ try {
       richText: [
         { text: 'Quadratic Functions Clean Paste-Style ' },
         { text: 'Note', styles: { color: 'green' } },
+        { text: ' uses $f(x)=ax^2+bx+c$ and ' },
+        { type: 'mathBlock', latex: 'x=\\frac{-b\\pm\\sqrt{b^2-4ac}}{2a}' },
       ],
     })
   );
@@ -947,6 +1020,46 @@ try {
   );
   if (!styledTree.includes('created_styled_tree') || !styledTree.includes('rem-styled-root-1')) {
     throw new Error('create_styled_rem_tree did not return styled tree status.');
+  }
+
+  const batchDryRun = JSON.stringify(
+    await callMcpTool(mcp, 'apply_structured_note_batch', {
+      parentId: fakeRem.remId,
+      position: 'end',
+      dryRun: true,
+      idempotencyKey: 'smoke-batch-1',
+      rollbackOnFailure: true,
+      verifyAfterWrite: true,
+      root: {
+        richText: [
+          { text: 'Batch root with \\(a^2+b^2=c^2\\)' },
+          { text: ' styled', styles: { color: 'blue', underline: true } },
+        ],
+        style: { headingLevel: 'H2' },
+        children: [{ type: 'mathBlock', latex: '\\int_0^1 x^2 dx' }],
+      },
+    })
+  );
+  if (!batchDryRun.includes('dry_run') || !batchDryRun.includes('"plannedNodeCount":2')) {
+    throw new Error('apply_structured_note_batch dry run did not return planned status.');
+  }
+
+  const batchApply = JSON.stringify(
+    await callMcpTool(mcp, 'apply_structured_note_batch', {
+      parentId: fakeRem.remId,
+      position: 'end',
+      dryRun: false,
+      idempotencyKey: 'smoke-batch-2',
+      rollbackOnFailure: true,
+      verifyAfterWrite: true,
+      root: {
+        text: 'Batch root with $E=mc^2$',
+        children: [{ text: 'Child with $$x^2+y^2=z^2$$' }],
+      },
+    })
+  );
+  if (!batchApply.includes('applied') || !batchApply.includes('rem-batch-root-1') || !batchApply.includes('verification')) {
+    throw new Error('apply_structured_note_batch did not return applied verification status.');
   }
 
   const basicCard = JSON.stringify(

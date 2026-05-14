@@ -49,9 +49,16 @@ Implemented now:
 - app-level permission scopes for focused Rem, selected Rem, selected descendants, approved root, or workspace access;
 - focused/selected delete tools with plugin-side preview, typed `DELETE`, and approval;
 - arbitrary-ID MCP `delete_rem` exposure disabled by default unless `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` is set for local development;
-- bridge diagnostics, tool-registry stamp, recent request outcomes, timeout, disconnect, client-cancel, and duplicate approval handling;
+- SDK-backed formatting tools that return `SDK_UNSUPPORTED` for unsupported color/type reset cases instead of raw SDK errors;
+- LaTeX parsing for `$...$`, `\(...\)`, `$$...$$`, and `\[...\]` in rich text paths;
+- `apply_structured_note_batch` for dry-run, idempotent, rollback-aware, verified structured note creation;
+- `run_bridge_health_check` for pass/fail/skipped tool health results;
+- `get_remnote_capability_guide` for RemNote concepts, hierarchy, formatting, flashcards, and safe bridge workflow guidance;
+- bridge diagnostics, tool-registry stamp, recent request lifecycle, timeout, disconnect, client-cancel, partial execution reporting, and duplicate approval handling;
 - local auth/session/audit interfaces for future hosted mode without fake OAuth;
 - MCP/ChatGPT-compatible tool layer at `http://127.0.0.1:47392/mcp`.
+
+Current truth: the server lists 43 public MCP tools, but a listed tool is not automatically proven live against the real RemNote plugin and SDK. `get_bridge_diagnostics` is the source for `callabilitySource`, `realPluginVerifiedTools`, `runtimeUnverifiedTools`, `sdkUnsupportedTools`, and the last health-check result.
 
 ## Local Setup
 
@@ -93,10 +100,12 @@ The plugin dev server and the companion server are separate processes. The manif
 
 ## MCP Tools
 
-The companion server exposes 40 public MCP tools by default:
+The companion server exposes 43 public MCP tools by default:
 
 - `get_bridge_status`
 - `get_bridge_diagnostics`
+- `run_bridge_health_check`
+- `get_remnote_capability_guide`
 - `ping_remnote_plugin`
 - `get_plugin_status`
 - `get_focused_rem`
@@ -129,6 +138,7 @@ The companion server exposes 40 public MCP tools by default:
 - `set_hide_bullet`
 - `clear_rem_formatting`
 - `create_styled_rem_tree`
+- `apply_structured_note_batch`
 - `create_basic_flashcard`
 - `create_concept_card`
 - `create_descriptor_card`
@@ -139,6 +149,8 @@ The companion server exposes 40 public MCP tools by default:
 `create_folder` returns `SDK_UNSUPPORTED` with the installed RemNote SDK because folder creation is not exposed in the SDK typings. Arbitrary-ID `delete_rem` remains hidden by default and requires `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` for local development.
 
 MCP `initialize` and `tools/list` allow unauthenticated discovery so ChatGPT can refresh the full tool list. Tool calls still require the configured local token unless `REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1` is set for isolated local development. If ChatGPT shows fewer tools than this list, restart the companion server and refresh the ChatGPT app/connector so it reloads MCP tool metadata.
+
+`tools/list` means discoverable. It does not mean every tool already succeeded in a real RemNote session. Use `get_bridge_diagnostics` to inspect recently verified tools, unsupported SDK tools, and runtime-unverified tools.
 
 ## Settings
 
@@ -155,9 +167,9 @@ No OpenAI API key setting is required.
 Modes:
 
 - `read_only`: reads only, no writes.
-- `confirm_writes`: all writes require RemNote approval.
-- `trusted_writes`: safe writes can run, destructive tools still require approval.
-- `danger_zone`: safe writes can run, destructive tools still require approval.
+- `confirm_writes`: safe top-level create and dry-run checks can run; creating inside an existing Rem, updating existing Rems, moving/reordering existing Rems, replacing, or deleting requires RemNote approval.
+- `trusted_writes`: same existing-Rem approval rule as confirm mode; safe workspace creates can run when scope allows.
+- `danger_zone`: same existing-Rem approval rule; destructive tools still require approval.
 
 Scopes:
 
@@ -178,10 +190,12 @@ Scope checks run inside the RemNote plugin before approval or SDK mutation. The 
 - Writes gated by permission mode and scope.
 - Delete limited to focused/selected Rem by default.
 - Approval rejection, approval timeout, plugin disconnect, server timeout, and MCP client disconnect return structured outcomes or cancel the plugin-side approval instead of hanging.
-- `get_bridge_diagnostics` and `/diagnostics` report the live registry, pending requests, and recent outcomes without note bodies or markdown.
+- `get_bridge_diagnostics` and `/diagnostics` report the live registry, pending requests, lifecycle events, partial execution evidence, and recent outcomes without note bodies or markdown.
 
 ## Not Ready Yet
 
+- All 43 public tools are discoverable and smoke-verified against the mock bridge; full real RemNote sandbox verification must be recorded through `run_bridge_health_check`.
+- Formatting, math, and structured batch writing are repo-verified and covered by smoke tests, but still need a live RemNote sandbox run before public hosted submission.
 - Public hosted mode.
 - OAuth sign-in and account management.
 - Pairing UI for multiple devices.

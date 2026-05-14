@@ -80,6 +80,7 @@ server/
 - typed result payloads;
 - structured error codes;
 - pending approval request shape;
+- lifecycle event shape for request state evidence;
 - tool impact annotations for later MCP descriptor generation.
 
 Unknown tools must return `UNKNOWN_TOOL`. Arbitrary command strings are not a valid bridge input.
@@ -116,6 +117,8 @@ Only one approval can be pending in the widget at a time. A second approval requ
 
 If the MCP caller disconnects while a write approval is pending, the companion server sends a typed `cancel_request` message to the plugin. The plugin resolves the approval UI as cancelled, suppresses any late response for that request, and the server records the outcome as `CLIENT_DISCONNECTED`. This keeps ChatGPT from losing a write result while the plugin still silently applies the approved change.
 
+Every handled request returns lifecycle evidence such as `received`, `validated`, `waiting_for_approval`, `executing`, `completed`, `failed`, `partial_failure`, or `cancelled`. Write failures that occur after a Rem is created include partial execution details and created Rem IDs when the plugin can know them.
+
 Serialized tree reads are bounded by depth, children per node, total node count, title/text truncation, and WebSocket message size.
 
 ## Local Companion Server
@@ -129,7 +132,7 @@ It provides:
 - one active plugin connection at a time;
 - request/response ID tracking with timeouts;
 - caller-disconnect cancellation for pending bridge requests;
-- a recent request outcome ledger that stores status/error metadata without note content;
+- a recent request outcome ledger that stores lifecycle, status/error metadata, created Rem IDs, and partial execution evidence without note content;
 - token checks by default through `REMNOTE_BRIDGE_TOKEN`;
 - loopback host validation and optional CORS allowlisting.
 - local audit logging for request/auth metadata without note content.
@@ -140,12 +143,16 @@ It provides:
 
 `server/src/mcp-server.ts` registers the MCP tools. Read tools route through the WebSocket bridge and return structured RemNote payloads. Safe write tools route through the same bridge and depend on the plugin permission mode.
 
-The public tool registry is centralized in `server/src/tool-registry.ts`. `get_bridge_status`, `get_bridge_diagnostics`, `/health`, and authenticated `/diagnostics` all expose the same registry version/count so stale ChatGPT connector sessions can be identified quickly.
+The public tool registry is centralized in `server/src/tool-registry.ts`. `get_bridge_status`, `get_bridge_diagnostics`, `run_bridge_health_check`, `/health`, and authenticated `/diagnostics` all expose or record the same registry version/count so stale ChatGPT connector sessions can be identified quickly.
+
+Registry/listing fields are kept separate from runtime proof. `publicTools` and `mcpListedTools` show discovery. `realPluginVerifiedTools` shows recent successful bridge execution. `runtimeUnverifiedTools` shows listed tools with no recent success. `sdkUnsupportedTools` shows tools that are known unsupported by the installed RemNote SDK.
 
 The MCP layer exposes bounded read/navigation tools:
 
 - `get_bridge_status`
 - `get_bridge_diagnostics`
+- `run_bridge_health_check`
+- `get_remnote_capability_guide`
 - `ping_remnote_plugin`
 - `get_plugin_status`
 - `get_focused_rem`
@@ -169,10 +176,33 @@ The MCP layer exposes safe writes:
 - `move_rem`
 - `reorder_children`
 - `create_rem_tree`
+- `update_rem_rich`
+- `set_rem_heading_level`
+- `set_rem_text_color`
+- `set_rem_highlight_color`
+- `set_text_span_color`
+- `set_text_span_highlight`
+- `set_rem_type`
+- `set_hide_bullet`
+- `clear_rem_formatting`
+- `create_styled_rem_tree`
+- `apply_structured_note_batch`
+- `create_basic_flashcard`
+- `create_concept_card`
+- `create_descriptor_card`
+- `create_cloze_card`
+- `create_multiple_choice_card`
+- `create_list_answer_card`
 - `delete_focused_rem`
 - `delete_selected_rem`
 
 `create_document` uses the RemNote SDK `setIsDocument(true)` behavior. `create_folder` returns `SDK_UNSUPPORTED` because the installed SDK typings do not expose a folder creation method.
+
+`get_remnote_capability_guide` is a server-local knowledge pool built from RemNote help/forum sources. It gives ChatGPT/Vivy the working model for Rems, documents, folders, top-level Rems, formatting, flashcards, references, tags, portals, and the preferred bridge workflow.
+
+`run_bridge_health_check` records pass/fail/skipped results for public tools. It is safe by default, can run a structured batch dry run when a parent Rem ID is supplied, and can execute safe writes only when `includeWrites` and a sandbox parent ID are provided. Destructive delete is never executed by the health check.
+
+`apply_structured_note_batch` is the high-level note writer. It validates a styled tree root, supports dry runs and idempotency keys, creates the tree after one approval, can verify created Rem IDs after write, and returns partial execution plus rollback evidence when an SDK operation fails after creating Rems.
 
 `replace_rem`, `delete_focused_rem`, and `delete_selected_rem` are destructive-hinted MCP tools and always require plugin-side approval. Arbitrary-ID `delete_rem` can be registered only with `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` for local development.
 

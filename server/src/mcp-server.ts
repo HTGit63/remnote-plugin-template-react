@@ -9,7 +9,15 @@ import {
   BRIDGE_TOOL_ANNOTATIONS,
 } from '../../src/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
+import { runBridgeHealthCheck } from './health-check.js';
+import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
 import {
+  getRemnoteCapabilityGuide,
+  type RemnoteCapabilityGuideSection,
+} from './remnote-capability-guide.js';
+import {
+  SERVER_LOCAL_MCP_TOOLS,
+  STATIC_SDK_UNSUPPORTED_TOOLS,
   assertRegisteredToolsMatchRegistry,
   getToolRegistrySummary,
   type RegisteredMcpToolName,
@@ -47,6 +55,17 @@ const BRIDGE_TOOL_OUTPUT_SCHEMA = z.object({
   result: z.unknown().optional(),
   error: z.unknown().optional(),
 });
+const REMNOTE_GUIDE_SECTION_SCHEMA = z
+  .enum([
+    'all',
+    'core_model',
+    'documents_folders',
+    'references_tags_portals',
+    'formatting_design',
+    'flashcards',
+    'bridge_workflow',
+  ])
+  .default('all');
 
 const GET_CHILDREN_INPUT_SCHEMA = z
   .object({
@@ -267,17 +286,6 @@ function successToToolResult(response: BridgeResponse, message: string): McpTool
   };
 }
 
-function publicMcpToolNameForBridgeTool(tool: BridgeToolName): string {
-  switch (tool) {
-    case 'ping':
-      return 'ping_remnote_plugin';
-    case 'get_status':
-      return 'get_plugin_status';
-    default:
-      return tool;
-  }
-}
-
 async function bridgeToolResult(
   call: () => Promise<BridgeResponse>,
   successMessage: string
@@ -356,12 +364,25 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     async () => {
       const diagnostics = hub.getDiagnostics();
       const registry = currentRegistry();
+      const serverLocalTools = SERVER_LOCAL_MCP_TOOLS.filter((tool) => registry.publicTools.includes(tool));
       const successfulPluginTools = Array.from(
         new Set(
           diagnostics.recentRequests
             .filter((request) => request.ok)
             .map((request) => publicMcpToolNameForBridgeTool(request.tool))
         )
+      );
+      const sdkUnsupportedTools = Array.from(
+        new Set([
+          ...STATIC_SDK_UNSUPPORTED_TOOLS,
+          ...diagnostics.recentRequests
+            .filter((request) => request.errorCode === 'SDK_UNSUPPORTED' || request.sdkUnsupported)
+            .map((request) => publicMcpToolNameForBridgeTool(request.tool)),
+        ])
+      ).filter((tool) => registry.publicTools.includes(tool));
+      const callableTools = Array.from(new Set([...serverLocalTools, ...successfulPluginTools]));
+      const runtimeUnverifiedTools = registry.publicTools.filter(
+        (tool) => !callableTools.includes(tool) && !sdkUnsupportedTools.includes(tool)
       );
       const lastSuccessfulToolCalls = diagnostics.recentRequests
         .filter((request) => request.ok)
@@ -375,11 +396,17 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
           ...request,
           mcpTool: publicMcpToolNameForBridgeTool(request.tool),
         }));
+      const partialExecutions = diagnostics.recentRequests
+        .filter((request) => request.partialExecution)
+        .map((request) => ({
+          ...request,
+          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+        }));
       return {
         content: [
           {
             type: 'text',
-            text: `Bridge diagnostics: ${registry.publicToolCount} tools, ${diagnostics.status.pendingRequests} pending requests.`,
+            text: `Bridge diagnostics: ${registry.publicToolCount} listed tools, ${successfulPluginTools.length} recently verified, ${diagnostics.status.pendingRequests} pending requests.`,
           },
         ],
         structuredContent: {
@@ -392,11 +419,102 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
             recentRequestLifecycle: diagnostics.recentRequests,
             lastSuccessfulToolCalls,
             lastFailedToolCalls,
+            partialExecutions,
+            lastPartialExecution: partialExecutions[0] ?? null,
+            serverLocalVerifiedTools: serverLocalTools,
+            serverLocalVerifiedToolCount: serverLocalTools.length,
             realPluginVerifiedTools: successfulPluginTools,
-            runtimeUnverifiedTools: registry.publicTools.filter(
-              (tool) => !successfulPluginTools.includes(tool)
-            ),
+            verifiedToolCount: successfulPluginTools.length,
+            runtimeUnverifiedTools,
+            runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
+            sdkUnsupportedTools,
+            callableTools,
+            actualMcpCallableTools: callableTools,
+            unauthMcpCallableTools:
+              registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
           },
+        },
+      };
+    }
+  );
+
+  registerTool(
+    'run_bridge_health_check',
+    {
+      title: 'Run bridge health check',
+      description:
+        'Use this to test registered RemNote bridge tools and record pass/fail/skipped results in diagnostics. Safe by default; write execution requires includeWrites and a parentId.',
+      inputSchema: z.object({
+        includeWrites: z.boolean().default(false).describe('False runs read-only checks plus a structured batch dry run when parentId is provided. True executes safe create/write checks under parentId.'),
+        includeExistingRemMutations: z.boolean().default(false).describe('True also tests updates/formatting against targetRemId, which requires RemNote approval. Destructive deletes are never executed.'),
+        parentId: REM_ID_SCHEMA.optional().describe('Existing parent Rem ID for dry-run/batch/create checks.'),
+        targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for read and explicit existing-Rem mutation checks. Defaults to parentId when omitted.'),
+        timeoutMs: z.number().int().min(1000).max(30000).default(5000).describe('Per-tool bridge timeout.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: false,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+      },
+    },
+    async ({ includeWrites, includeExistingRemMutations, parentId, targetRemId, timeoutMs }) => {
+      const result = await runBridgeHealthCheck(hub, {
+        exposeDeleteTool: options.exposeDeleteTool,
+        includeWrites,
+        includeExistingRemMutations,
+        parentId,
+        targetRemId,
+        timeoutMs,
+        signal: options.requestSignal,
+      });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Bridge health check ${result.status}: ${result.passedCount} passed, ${result.failedCount} failed, ${result.skippedCount} skipped.`,
+          },
+        ],
+        structuredContent: {
+          ok: result.status !== 'failed',
+          result,
+        },
+      };
+    }
+  );
+
+  registerTool(
+    'get_remnote_capability_guide',
+    {
+      title: 'Get RemNote capability guide',
+      description:
+        'Use this before planning RemNote notes. Returns a compact knowledge pool for Rems, documents, folders, hierarchy, formatting, flashcards, references, tags, portals, and the safest bridge workflow.',
+      inputSchema: z.object({
+        section: REMNOTE_GUIDE_SECTION_SCHEMA.describe('Guide section to return. Use all for the complete knowledge pool.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: {
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      },
+    },
+    async ({ section }) => {
+      const guide = getRemnoteCapabilityGuide(section as RemnoteCapabilityGuideSection);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: guide.blocks
+              .map((block) => `${block.title}\n${block.facts.join('\n')}\nBridge use:\n${block.bridgeUse.join('\n')}`)
+              .join('\n\n'),
+          },
+        ],
+        structuredContent: {
+          ok: true,
+          result: guide,
         },
       };
     }
@@ -984,6 +1102,40 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       bridgeToolResult(
         () => callPlugin('create_styled_rem_tree', { parentId, position, tree }),
         'Create styled Rem tree request processed.'
+      )
+  );
+
+  registerTool(
+    'apply_structured_note_batch',
+    {
+      title: 'Apply structured note batch',
+      description:
+        'Use this when one approved call should create a complete styled RemNote note tree with math, dry-run, idempotency, rollback, and optional verification.',
+      inputSchema: z.object({
+        parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the batch root.'),
+        position: POSITION_SCHEMA.describe('Where to place the batch root under the parent Rem.'),
+        root: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled note root and descendants.'),
+        dryRun: z.boolean().default(false).describe('Validate and preview the batch without writing Rems.'),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate writes for repeated calls in this server session.'),
+        rollbackOnFailure: z.boolean().default(true).describe('Best-effort remove Rems created before a failed batch.'),
+        verifyAfterWrite: z.boolean().default(false).describe('Read created Rem IDs after write and report missing IDs.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('apply_structured_note_batch'),
+    },
+    async ({ parentId, position, root, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite }) =>
+      bridgeToolResult(
+        () =>
+          callPlugin('apply_structured_note_batch', {
+            parentId,
+            position,
+            root,
+            dryRun,
+            idempotencyKey,
+            rollbackOnFailure,
+            verifyAfterWrite,
+          }),
+        'Structured note batch request processed.'
       )
   );
 

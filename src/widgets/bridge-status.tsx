@@ -62,7 +62,7 @@ const permissionScopeOptions: Array<{ value: PermissionScope; description: strin
 
 const permissionModeOptions: Array<{ value: PermissionMode; label: string }> = [
   { value: 'read_only', label: 'Read only' },
-  { value: 'confirm_writes', label: 'Ask before changing notes' },
+  { value: 'confirm_writes', label: 'Ask for existing notes' },
   { value: 'trusted_writes', label: 'Trusted writes' },
   { value: 'danger_zone', label: 'Danger zone' },
 ];
@@ -267,6 +267,7 @@ export function BridgeStatusWidget() {
       approvalResolverRef.current = resolve;
       approvalTimeoutRef.current = setTimeout(() => {
         approvalResolverRef.current = undefined;
+        approvalTimeoutRef.current = undefined;
         setPendingRequest(null);
         setLastApprovalEvent(`Approval timed out for ${request.tool} request ${request.id}.`);
         resolve('APPROVAL_TIMEOUT');
@@ -444,8 +445,12 @@ export function BridgeStatusWidget() {
       {pendingRequest ? (
         <div className="bridge-pending">
           <div className="bridge-two-col">
+            <DetailRow label="Request ID" value={pendingRequest.id} mono />
             <DetailRow label="Tool" value={formatToolName(pendingRequest.tool)} />
+          </div>
+          <div className="bridge-two-col">
             <DetailRow label="Mode" value={getPermissionModeLabel(pendingRequest.permissionMode)} />
+            <DetailRow label="Risk" value={pendingRequest.riskLevel.replace(/_/g, ' ')} />
           </div>
           <DetailRow label="Scope" value={getPermissionScopeLabel(pendingRequest.permissionScope)} />
           <DetailRow label="Summary" value={pendingRequest.summary} />
@@ -472,10 +477,7 @@ export function BridgeStatusWidget() {
               </div>
             </>
           )}
-          <div className="bridge-two-col">
-            <DetailRow label="Risk" value={pendingRequest.riskLevel.replace(/_/g, ' ')} />
-            <DetailRow label="Deadline" value={new Date(pendingRequest.timeoutDeadline).toLocaleTimeString()} />
-          </div>
+          <DetailRow label="Deadline" value={new Date(pendingRequest.timeoutDeadline).toLocaleTimeString()} />
           {pendingRequest.hasChildren !== undefined && (
             <DetailRow label="Has Children" value={pendingRequest.hasChildren ? 'Yes' : 'No'} />
           )}
@@ -606,8 +608,13 @@ export function BridgeStatusWidget() {
               <section className="bridge-metrics" aria-label="Bridge summary">
                 <StatusMetric
                   label="Tools"
-                  value={bridgeStatus.publicToolCount ? `${bridgeStatus.publicToolCount} live` : 'Unknown'}
+                  value={bridgeStatus.publicToolCount ? `${bridgeStatus.publicToolCount} listed` : 'Unknown'}
                   tone={bridgeStatus.publicToolCount && bridgeStatus.publicToolCount < 20 ? 'warning' : 'success'}
+                />
+                <StatusMetric
+                  label="Verified"
+                  value={`${bridgeStatus.realPluginVerifiedTools?.length ?? 0} live`}
+                  tone={bridgeStatus.realPluginVerifiedTools?.length ? 'success' : 'warning'}
                 />
                 <StatusMetric
                   label="Registry"
@@ -626,6 +633,14 @@ export function BridgeStatusWidget() {
                   <DetailRow label="Server Started" value={new Date(bridgeStatus.serverStartedAt).toLocaleTimeString()} />
                 )}
                 <DetailRow label="Last Event" value={bridgeStatus.lastEvent} />
+                <DetailRow
+                  label="Callability"
+                  value={bridgeStatus.callabilitySource ?? 'registry only'}
+                />
+                <DetailRow
+                  label="SDK Unsupported"
+                  value={bridgeStatus.sdkUnsupportedTools?.join(', ') || 'None reported'}
+                />
                 {focusedRemStatus?.remId && <DetailRow label="Focused Rem ID" value={focusedRemStatus.remId} mono />}
                 {currentSelection?.selectedRemIds.length ? (
                   <DetailRow label="Selected IDs" value={currentSelection.selectedRemIds.join(', ')} mono />

@@ -4,12 +4,12 @@ This plugin requests broad RemNote read/write access so it can become a controll
 
 ## Permission Modes
 
-| Mode | Reads | Create/append | Replace/delete |
-| --- | --- | --- | --- |
-| `read_only` | allowed | blocked | blocked |
-| `confirm_writes` | allowed | approval required | approval required |
-| `trusted_writes` | allowed | allowed | approval required |
-| `danger_zone` | allowed | allowed | approval required |
+| Mode | Reads | Safe create/dry-run | Existing-Rem changes | Replace/delete |
+| --- | --- | --- | --- | --- |
+| `read_only` | allowed | blocked | blocked | blocked |
+| `confirm_writes` | allowed | allowed when scope allows | approval required | approval required |
+| `trusted_writes` | allowed | allowed when scope allows | approval required | approval required |
+| `danger_zone` | allowed | allowed when scope allows | approval required | approval required |
 
 Default mode is `confirm_writes`.
 
@@ -55,8 +55,32 @@ Safe write tools are:
 - `move_rem`
 - `reorder_children`
 - `create_rem_tree`
+- `update_rem_rich`
+- `set_rem_heading_level`
+- `set_rem_text_color`
+- `set_rem_highlight_color`
+- `set_text_span_color`
+- `set_text_span_highlight`
+- `set_rem_type`
+- `set_hide_bullet`
+- `clear_rem_formatting`
+- `create_styled_rem_tree`
+- `apply_structured_note_batch`
+- `create_basic_flashcard`
+- `create_concept_card`
+- `create_descriptor_card`
+- `create_cloze_card`
+- `create_multiple_choice_card`
+- `create_list_answer_card`
 
-In `confirm_writes`, these requests must appear in the bridge-status widget before execution. The user must approve or reject them inside RemNote.
+Approval policy:
+
+- read-only tools do not require approval;
+- `apply_structured_note_batch` dry runs do not require approval;
+- workspace-level `create_rem`, `create_document`, and `create_folder` can run without approval only when scope allows workspace creation;
+- creating inside an existing parent Rem requires approval because it changes that existing parent;
+- updating, formatting, moving, or reordering existing Rems requires approval;
+- deleting and replacing always require approval.
 
 `create_folder` currently returns `SDK_UNSUPPORTED` because the installed RemNote SDK typings expose document creation through `setIsDocument(true)` but do not expose folder creation.
 
@@ -88,8 +112,10 @@ Every bridge request must resolve once:
 - server bridge timeout returns `TIMEOUT`;
 - invalid bridge input returns `INVALID_ARGS`.
 
-The widget shows one approval at a time. Hidden approval queues are not allowed because the user cannot review them.
+The widget shows one approval at a time and displays the request ID. Hidden approval queues are not allowed because the user cannot review them.
 If the MCP caller disconnects while an approval is pending, the companion server sends `cancel_request` to the plugin so the user cannot approve a write whose caller will never receive the final response.
+
+Diagnostics must preserve lifecycle evidence for approval-gated writes. If a create/tree write fails after creating a Rem, the response and server ledger must include partial execution details and created Rem IDs when known. Silent blank or partial Rem creation is not acceptable.
 
 ## Companion Server Controls
 
@@ -104,7 +130,7 @@ The local server is constrained by default:
 - enforces MCP request body size limits;
 - enforces WebSocket message size limits;
 - times out plugin bridge requests;
-- records recent request outcomes without note bodies or markdown;
+- records recent request outcomes and health-check results without note bodies or markdown;
 - keeps only one active plugin WebSocket connection.
 - fails startup if hosted mode is enabled before real OAuth/pairing support exists.
 
@@ -119,6 +145,7 @@ The bridge should minimize note data:
 - cap child count and text length;
 - avoid logging full note bodies;
 - log request ID, tool name, status, duration, permission result, auth mode, endpoint, and error code instead.
+- log lifecycle phase names and partial execution IDs when needed to debug failed writes.
 
 The current server audit log records auth/request metadata without dumping Rem body text, markdown payloads, tokens, or secrets.
 

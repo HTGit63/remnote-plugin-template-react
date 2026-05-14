@@ -38,7 +38,14 @@ export class BrowserBridgeClient {
   private cancelledRequestIds = new Set<string>();
   private serverInfo: Pick<
     BridgeStatusSnapshot,
-    'toolRegistryVersion' | 'publicToolCount' | 'publicTools' | 'serverStartedAt'
+    | 'toolRegistryVersion'
+    | 'publicToolCount'
+    | 'publicTools'
+    | 'callabilitySource'
+    | 'realPluginVerifiedTools'
+    | 'runtimeUnverifiedTools'
+    | 'sdkUnsupportedTools'
+    | 'serverStartedAt'
   > = {};
 
   constructor(private readonly options: BrowserBridgeClientOptions) {}
@@ -66,7 +73,14 @@ export class BrowserBridgeClient {
     lastError?: string,
     serverInfo: Pick<
       BridgeStatusSnapshot,
-      'toolRegistryVersion' | 'publicToolCount' | 'publicTools' | 'serverStartedAt'
+      | 'toolRegistryVersion'
+      | 'publicToolCount'
+      | 'publicTools'
+      | 'callabilitySource'
+      | 'realPluginVerifiedTools'
+      | 'runtimeUnverifiedTools'
+      | 'sdkUnsupportedTools'
+      | 'serverStartedAt'
     > = this.serverInfo
   ) {
     this.options.onStatus({
@@ -164,6 +178,10 @@ export class BrowserBridgeClient {
         toolRegistryVersion: parsed.toolRegistryVersion,
         publicToolCount: parsed.publicToolCount,
         publicTools: parsed.publicTools,
+        callabilitySource: parsed.callabilitySource,
+        realPluginVerifiedTools: parsed.realPluginVerifiedTools,
+        runtimeUnverifiedTools: parsed.runtimeUnverifiedTools,
+        sdkUnsupportedTools: parsed.sdkUnsupportedTools,
         serverStartedAt: parsed.serverStartedAt,
       };
       this.updateStatus('connected', 'Server handshake complete.');

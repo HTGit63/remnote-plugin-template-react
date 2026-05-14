@@ -39,6 +39,7 @@ export type BridgeToolName =
   | 'set_hide_bullet'
   | 'clear_rem_formatting'
   | 'create_styled_rem_tree'
+  | 'apply_structured_note_batch'
   | 'create_basic_flashcard'
   | 'create_concept_card'
   | 'create_descriptor_card'
@@ -79,6 +80,7 @@ export type SafeWriteBridgeToolName =
   | 'set_hide_bullet'
   | 'clear_rem_formatting'
   | 'create_styled_rem_tree'
+  | 'apply_structured_note_batch'
   | 'create_basic_flashcard'
   | 'create_concept_card'
   | 'create_descriptor_card'
@@ -116,6 +118,27 @@ export type ApprovalResolution =
   | 'APPROVAL_PENDING'
   | 'REQUEST_CANCELLED';
 export type ApprovalRiskLevel = 'safe_write' | 'destructive';
+export type BridgeLifecyclePhase =
+  | 'received'
+  | 'validated'
+  | 'waiting_for_approval'
+  | 'approval_approved'
+  | 'approval_rejected'
+  | 'approval_timeout'
+  | 'executing'
+  | 'completed'
+  | 'failed'
+  | 'partial_failure'
+  | 'rollback_started'
+  | 'rollback_completed'
+  | 'rollback_failed'
+  | 'cancelled';
+
+export interface BridgeLifecycleEvent {
+  phase: BridgeLifecyclePhase;
+  at: string;
+  message?: string;
+}
 
 export interface SerializedRem {
   remId: string;
@@ -404,6 +427,16 @@ export interface CreateStyledRemTreeArgs {
   tree: StyledRemTreeNode;
 }
 
+export interface ApplyStructuredNoteBatchArgs {
+  parentId: string;
+  position?: 'start' | 'end';
+  root: StyledRemTreeNode;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  rollbackOnFailure?: boolean;
+  verifyAfterWrite?: boolean;
+}
+
 export interface CreateFlashcardArgs {
   parentId: string;
   front: string;
@@ -524,6 +557,29 @@ export interface CreateStyledRemTreeResult {
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
   status: 'created_styled_tree';
+}
+
+export interface StructuredNoteBatchVerification {
+  ok: boolean;
+  checkedRemIds: string[];
+  missingRemIds: string[];
+  rootPlainText?: string;
+}
+
+export interface ApplyStructuredNoteBatchResult {
+  status: 'dry_run' | 'applied' | 'already_applied';
+  parentId: string;
+  plannedNodeCount: number;
+  createdNodeCount: number;
+  createdRemIds: string[];
+  rootCreatedRemId?: string;
+  rootInsertIndex?: number;
+  rootInsertPosition?: 'start' | 'end';
+  dryRun: boolean;
+  idempotencyKey?: string;
+  rollbackOnFailure: boolean;
+  verifyAfterWrite: boolean;
+  verification?: StructuredNoteBatchVerification;
 }
 
 export interface CreateFlashcardResult {
@@ -660,6 +716,7 @@ export interface BridgeToolArgs {
   set_hide_bullet: SetHideBulletArgs;
   clear_rem_formatting: ClearRemFormattingArgs;
   create_styled_rem_tree: CreateStyledRemTreeArgs;
+  apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
   create_basic_flashcard: CreateFlashcardArgs;
   create_concept_card: CreateFlashcardArgs;
   create_descriptor_card: CreateFlashcardArgs;
@@ -702,6 +759,7 @@ export interface BridgeToolResults {
   set_hide_bullet: FormatRemResult;
   clear_rem_formatting: FormatRemResult;
   create_styled_rem_tree: CreateStyledRemTreeResult;
+  apply_structured_note_batch: ApplyStructuredNoteBatchResult;
   create_basic_flashcard: CreateFlashcardResult;
   create_concept_card: CreateFlashcardResult;
   create_descriptor_card: CreateFlashcardResult;
@@ -728,6 +786,7 @@ export interface BridgeSuccess<TResult = unknown> {
   id: string;
   ok: true;
   result: TResult;
+  lifecycle?: BridgeLifecycleEvent[];
 }
 
 export interface BridgeFailure {
@@ -738,6 +797,7 @@ export interface BridgeFailure {
     message: string;
     details?: unknown;
   };
+  lifecycle?: BridgeLifecycleEvent[];
 }
 
 export type BridgeResponse<TResult = unknown> = BridgeSuccess<TResult> | BridgeFailure;
@@ -785,6 +845,11 @@ export interface BridgeServerHello {
   mcpListedTools?: string[];
   callabilitySource?: 'registry_only_not_live_execution';
   callableTools?: string[];
+  actualMcpCallableTools?: string[];
+  unauthMcpCallableTools?: string[];
+  realPluginVerifiedTools?: string[];
+  runtimeUnverifiedTools?: string[];
+  sdkUnsupportedTools?: string[];
   hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }
@@ -836,6 +901,7 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'set_hide_bullet',
   'clear_rem_formatting',
   'create_styled_rem_tree',
+  'apply_structured_note_batch',
   'create_basic_flashcard',
   'create_concept_card',
   'create_descriptor_card',
@@ -1005,6 +1071,11 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     openWorldHint: false,
     destructiveHint: false,
   },
+  apply_structured_note_batch: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
   create_basic_flashcard: {
     readOnlyHint: false,
     openWorldHint: false,
@@ -1063,12 +1134,14 @@ export function isBridgeToolName(value: unknown): value is BridgeToolName {
 
 export function createBridgeSuccess<TTool extends BridgeToolName>(
   request: Pick<BridgeRequest<TTool>, 'id'>,
-  result: BridgeToolResults[TTool]
+  result: BridgeToolResults[TTool],
+  lifecycle?: BridgeLifecycleEvent[]
 ): BridgeSuccess<BridgeToolResults[TTool]> {
   return {
     id: request.id,
     ok: true,
     result,
+    ...(lifecycle ? { lifecycle } : {}),
   };
 }
 
@@ -1076,7 +1149,8 @@ export function createBridgeFailure(
   id: string,
   code: BridgeErrorCode,
   message: string,
-  details?: unknown
+  details?: unknown,
+  lifecycle?: BridgeLifecycleEvent[]
 ): BridgeFailure {
   return {
     id,
@@ -1086,5 +1160,6 @@ export function createBridgeFailure(
       message,
       ...(details === undefined ? {} : { details }),
     },
+    ...(lifecycle ? { lifecycle } : {}),
   };
 }

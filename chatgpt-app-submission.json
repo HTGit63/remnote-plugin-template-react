@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, create trees, or delete focused/selected Rems after local scope and approval checks allow it.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics and health checks, explain RemNote structure through a built-in capability guide, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, create styled trees, apply structured note batches, or delete focused/selected Rems after local scope and approval checks allow it.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -30,6 +30,30 @@
         "read_only_justification": "Only reports local tool registry, pending request count, and recent request outcomes without modifying RemNote.",
         "open_world_justification": "Reads local bridge diagnostics and does not write to public internet state or external systems.",
         "destructive_justification": "Does not delete, overwrite, revoke access, or perform irreversible actions."
+      }
+    },
+    "run_bridge_health_check": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Runs local bridge checks and records pass/fail/skipped results; write execution only occurs when explicitly requested with a sandbox parent Rem.",
+        "open_world_justification": "Operates only through the user's private local RemNote bridge and does not publish externally.",
+        "destructive_justification": "Never executes destructive delete tools; safe writes require explicit options and plugin-side approval when they affect existing Rems."
+      }
+    },
+    "get_remnote_capability_guide": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only returns a static RemNote capability guide and source URLs.",
+        "open_world_justification": "Does not write to external systems or publish user data.",
+        "destructive_justification": "Does not modify, overwrite, move, or delete RemNote content."
       }
     },
     "ping_remnote_plugin": {
@@ -272,6 +296,210 @@
         "destructive_justification": "Adds new Rems without deleting or overwriting existing RemNote content."
       }
     },
+    "update_rem_rich": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Replaces one existing Rem's rich text after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote content and does not publish externally.",
+        "destructive_justification": "Does not delete Rems, but updates existing Rem text and therefore requires plugin approval."
+      }
+    },
+    "set_rem_heading_level": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes one existing Rem's heading level after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text."
+      }
+    },
+    "set_rem_text_color": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes one existing Rem's text color after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text; unsupported colors return SDK_UNSUPPORTED."
+      }
+    },
+    "set_rem_highlight_color": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes one existing Rem's highlight color after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text; unsupported clearing paths return SDK_UNSUPPORTED."
+      }
+    },
+    "set_text_span_color": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes a bounded text range in one existing Rem after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text."
+      }
+    },
+    "set_text_span_highlight": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Highlights a bounded text range in one existing Rem after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text."
+      }
+    },
+    "set_rem_type": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes one existing Rem's type after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote metadata.",
+        "destructive_justification": "Does not delete Rems; unsupported normal resets return SDK_UNSUPPORTED."
+      }
+    },
+    "set_hide_bullet": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Changes one existing Rem's bullet visibility after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete or overwrite note text."
+      }
+    },
+    "clear_rem_formatting": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Clears formatting on one existing Rem after local scope and approval checks allow it.",
+        "open_world_justification": "Changes only private RemNote formatting.",
+        "destructive_justification": "Does not delete Rems; unsupported type-reset cases return SDK_UNSUPPORTED."
+      }
+    },
+    "create_styled_rem_tree": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a bounded styled Rem tree under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds new Rems without deleting or overwriting existing RemNote content."
+      }
+    },
+    "apply_structured_note_batch": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates a bounded structured note tree only after local scope and approval checks allow it; dryRun validates without mutation.",
+        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Adds new Rems without deleting or overwriting existing RemNote content; rollback only removes Rems created by the same failed batch."
+      }
+    },
+    "create_basic_flashcard": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one flashcard Rem under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds a new Rem/card without deleting or overwriting existing Rems."
+      }
+    },
+    "create_concept_card": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one concept flashcard Rem under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds a new Rem/card without deleting or overwriting existing Rems."
+      }
+    },
+    "create_descriptor_card": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one descriptor flashcard Rem under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds a new Rem/card without deleting or overwriting existing Rems."
+      }
+    },
+    "create_cloze_card": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one cloze flashcard Rem under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds a new Rem/card without deleting or overwriting existing Rems."
+      }
+    },
+    "create_multiple_choice_card": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one multiple-choice card structure under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds new Rem/card content without deleting or overwriting existing Rems."
+      }
+    },
+    "create_list_answer_card": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one list-answer card structure under an existing parent after local scope and approval checks allow it.",
+        "open_world_justification": "Creates content only in the user's private RemNote workspace.",
+        "destructive_justification": "Adds new Rem/card content without deleting or overwriting existing Rems."
+      }
+    },
     "delete_focused_rem": {
       "annotations": {
         "readOnlyHint": false,
@@ -312,6 +540,22 @@
       "file_attachment_urls": null,
       "tools_triggered": "get_bridge_diagnostics",
       "expected_output": "Reports the live tool registry version, tool count, connection status, pending requests, and recent request outcomes.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Run a safe bridge health check.",
+      "user_prompt": "Run the RemNote bridge health check without writes and tell me which tools passed, failed, or were skipped.",
+      "file_attachment_urls": null,
+      "tools_triggered": "run_bridge_health_check",
+      "expected_output": "Records a health-check result with pass/fail/skipped tool rows and avoids destructive delete tools.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Read the RemNote capability guide before writing notes.",
+      "user_prompt": "Before creating notes, explain Rems, documents, folders, hierarchy, and the best bridge workflow.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_remnote_capability_guide",
+      "expected_output": "Returns the RemNote knowledge pool and recommends structured batch writing for complete notes.",
       "expected_output_url": null
     },
     {
@@ -440,6 +684,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "create_rem_tree",
       "expected_output": "Creates a bounded tree after permission flow allows it and preserves the provided child order.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Apply a structured styled note batch.",
+      "user_prompt": "Under rem_parent_1, create one styled study note with a heading, one child bullet, and the inline equation $E=mc^2$.",
+      "file_attachment_urls": null,
+      "tools_triggered": "apply_structured_note_batch",
+      "expected_output": "Validates the structured batch, waits for approval when required, writes the complete styled note tree, and returns created Rem IDs plus verification details when requested.",
       "expected_output_url": null
     },
     {
