@@ -8,10 +8,10 @@ This plugin requests broad RemNote read/write access so it can become a controll
 | --- | --- | --- | --- | --- |
 | `read_only` | allowed | blocked | blocked | blocked |
 | `confirm_writes` | allowed | allowed when scope allows | approval required | approval required |
-| `trusted_writes` | allowed | allowed when scope allows | approval required | approval required |
-| `danger_zone` | allowed | allowed when scope allows | approval required | approval required |
+| `trusted_writes` | allowed | allowed when scope allows | allowed when scope allows | approval required |
+| `danger_zone` | allowed | allowed when scope allows | allowed when scope allows | approval required |
 
-Default mode is `confirm_writes`.
+Default mode is `confirm_writes`. Recommended note-writing mode is `trusted_writes` with `focused_rem_and_descendants`; dangerous replace/delete tools still require approval.
 
 ## Permission Scopes
 

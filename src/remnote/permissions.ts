@@ -43,6 +43,7 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'set_hide_bullet',
   'clear_rem_formatting',
   'create_styled_rem_tree',
+  'apply_remnote_command',
   'apply_structured_note_batch',
   'create_basic_flashcard',
   'create_concept_card',

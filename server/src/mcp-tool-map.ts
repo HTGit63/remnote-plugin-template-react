@@ -44,6 +44,7 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'set_hide_bullet':
     case 'clear_rem_formatting':
     case 'create_styled_rem_tree':
+    case 'apply_remnote_command':
     case 'apply_structured_note_batch':
     case 'create_basic_flashcard':
     case 'create_concept_card':

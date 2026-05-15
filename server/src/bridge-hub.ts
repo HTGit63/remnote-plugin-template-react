@@ -56,6 +56,8 @@ export interface BridgeHubRequestOutcome {
   pluginLifecycle?: BridgeLifecycleEvent[];
   partialExecution?: unknown;
   createdRemIds?: string[];
+  updatedRemIds?: string[];
+  deletedRemIds?: string[];
   sdkUnsupported?: boolean;
 }
 
@@ -246,7 +248,7 @@ export class BridgeHub {
       const timeout = setTimeout(() => {
         this.sendCancel(id, 'server_timeout', `Timed out waiting for ${tool}.`);
         this.pending.get(id)?.lifecycle.push(
-          createLifecycleEvent('failed', `Timed out waiting for ${tool}.`)
+          createLifecycleEvent('timeout', `Timed out waiting for ${tool}.`)
         );
         this.resolvePending(id, createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
       }, timeoutMs);
@@ -529,8 +531,30 @@ export class BridgeHub {
     const partialExecution = this.extractPartialExecution(response, createdRemIds);
     return {
       ...(createdRemIds.length ? { createdRemIds } : {}),
+      ...this.getUpdatedDeletedEvidence(response),
       ...(partialExecution ? { partialExecution } : {}),
       ...(!response.ok && response.error.code === 'SDK_UNSUPPORTED' ? { sdkUnsupported: true } : {}),
+    };
+  }
+
+  private getUpdatedDeletedEvidence(response: BridgeResponse) {
+    const payload = response.ok ? response.result : response.error.details;
+    if (!isRecord(payload)) {
+      return {};
+    }
+
+    const updatedRemIds = getUniqueStrings([
+      ...stringArrayFrom(payload.updatedRemIds),
+      ...(typeof payload.updatedRemId === 'string' ? [payload.updatedRemId] : []),
+      ...(typeof payload.remId === 'string' ? [payload.remId] : []),
+    ]);
+    const deletedRemIds = getUniqueStrings([
+      ...stringArrayFrom(payload.deletedRemIds),
+      ...(typeof payload.deletedRemId === 'string' ? [payload.deletedRemId] : []),
+    ]);
+    return {
+      ...(updatedRemIds.length ? { updatedRemIds } : {}),
+      ...(deletedRemIds.length ? { deletedRemIds } : {}),
     };
   }
 

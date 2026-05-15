@@ -45,6 +45,7 @@ export class BrowserBridgeClient {
     | 'realPluginVerifiedTools'
     | 'runtimeUnverifiedTools'
     | 'sdkUnsupportedTools'
+    | 'hiddenTools'
     | 'serverStartedAt'
   > = {};
 
@@ -80,6 +81,7 @@ export class BrowserBridgeClient {
       | 'realPluginVerifiedTools'
       | 'runtimeUnverifiedTools'
       | 'sdkUnsupportedTools'
+      | 'hiddenTools'
       | 'serverStartedAt'
     > = this.serverInfo
   ) {
@@ -182,6 +184,7 @@ export class BrowserBridgeClient {
         realPluginVerifiedTools: parsed.realPluginVerifiedTools,
         runtimeUnverifiedTools: parsed.runtimeUnverifiedTools,
         sdkUnsupportedTools: parsed.sdkUnsupportedTools,
+        hiddenTools: parsed.hiddenTools,
         serverStartedAt: parsed.serverStartedAt,
       };
       this.updateStatus('connected', 'Server handshake complete.');

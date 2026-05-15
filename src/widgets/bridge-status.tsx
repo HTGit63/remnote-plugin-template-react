@@ -9,6 +9,7 @@ import {
   type PermissionMode,
   type PermissionScope,
   BRIDGE_TOOL_ANNOTATIONS,
+  BRIDGE_TOOL_NAMES,
   WRITE_APPROVAL_TIMEOUT_MS,
 } from '../bridge/protocol';
 import {
@@ -85,6 +86,58 @@ function getToolImpactLabel(tool: BridgeToolName): string {
   return 'Safe write';
 }
 
+function bridgeToolNameForMcpName(tool: string): BridgeToolName | null {
+  if (tool === 'ping_remnote_plugin') {
+    return 'ping';
+  }
+  if (tool === 'get_plugin_status') {
+    return 'get_status';
+  }
+  return (BRIDGE_TOOL_NAMES as readonly string[]).includes(tool) ? (tool as BridgeToolName) : null;
+}
+
+function summarizeToolAvailability(publicTools: string[] | undefined, mode: PermissionMode) {
+  const tools = publicTools ?? [];
+  let free = 0;
+  let gated = 0;
+  let blocked = 0;
+
+  for (const tool of tools) {
+    const bridgeTool = bridgeToolNameForMcpName(tool);
+    if (!bridgeTool) {
+      free += 1;
+      continue;
+    }
+
+    const annotations = BRIDGE_TOOL_ANNOTATIONS[bridgeTool];
+    if (annotations.readOnlyHint) {
+      free += 1;
+    } else if (annotations.destructiveHint) {
+      gated += 1;
+    } else if (mode === 'read_only') {
+      blocked += 1;
+    } else if (mode === 'confirm_writes') {
+      gated += 1;
+    } else {
+      free += 1;
+    }
+  }
+
+  return { free, gated, blocked };
+}
+
+function companionHttpUrl(serverUrl: string, pathname: '/health' | '/diagnostics'): string {
+  const url = new URL(serverUrl);
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
+  if (url.port === '47391') {
+    url.port = '47392';
+  }
+  url.pathname = pathname;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
 function DetailRow({
   label,
   value,
@@ -132,6 +185,9 @@ export function BridgeStatusWidget() {
   const [runtimePermissionMode, setRuntimePermissionMode] = useState<PermissionMode | null>(null);
   const [runtimePermissionScope, setRuntimePermissionScope] = useState<PermissionScope | null>(null);
   const [runtimeApprovedRootRemId, setRuntimeApprovedRootRemId] = useState<string | null>(null);
+  const [lastHealthCheck, setLastHealthCheck] = useState<Record<string, unknown> | null>(null);
+  const [lastServerDiagnostics, setLastServerDiagnostics] = useState<Record<string, unknown> | null>(null);
+  const [debugCopyStatus, setDebugCopyStatus] = useState('No debug copy yet.');
   const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
@@ -203,6 +259,16 @@ export function BridgeStatusWidget() {
   const pendingDecision = pendingRequest
     ? getPermissionDecision(permissionMode, pendingRequest.tool)
     : undefined;
+  const toolAvailability = summarizeToolAvailability(bridgeStatus.publicTools, permissionMode);
+  const hiddenToolCount = bridgeStatus.hiddenTools?.length ?? 1;
+  const lastRequests =
+    typeof lastServerDiagnostics?.bridge === 'object' &&
+    lastServerDiagnostics.bridge !== null &&
+    Array.isArray((lastServerDiagnostics.bridge as { recentRequests?: unknown }).recentRequests)
+      ? ((lastServerDiagnostics.bridge as { recentRequests: Array<Record<string, unknown>> }).recentRequests)
+      : [];
+  const lastSuccessfulRequest = lastRequests.find((request) => request.ok === true);
+  const lastFailedRequest = lastRequests.find((request) => request.ok === false);
 
   useEffect(() => {
     permissionModeRef.current = permissionMode;
@@ -365,6 +431,38 @@ export function BridgeStatusWidget() {
     await plugin.app.toast('Approved root set to focused Rem.');
   };
 
+  const handleUseRecommendedNoteMode = async () => {
+    setRuntimePermissionScope('focused_rem_and_descendants');
+    setRuntimePermissionMode('trusted_writes');
+    await plugin.app.toast('Recommended note mode enabled.');
+  };
+
+  const handleHealthCheck = async () => {
+    try {
+      const healthResponse = await fetch(companionHttpUrl(serverUrl, '/health'), {
+        headers: { accept: 'application/json' },
+      });
+      const health = await healthResponse.json();
+      setLastHealthCheck(health);
+
+      const headers: Record<string, string> = { accept: 'application/json' };
+      if (bridgeToken) {
+        headers.authorization = `Bearer ${bridgeToken}`;
+      }
+      const diagnosticsResponse = await fetch(companionHttpUrl(serverUrl, '/diagnostics'), { headers });
+      if (diagnosticsResponse.ok) {
+        setLastServerDiagnostics(await diagnosticsResponse.json());
+      }
+      await plugin.app.toast(healthResponse.ok ? 'Bridge health checked.' : 'Bridge health failed.');
+    } catch (error: unknown) {
+      setLastHealthCheck({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await plugin.app.toast('Bridge health check failed.');
+    }
+  };
+
   const handleDisconnect = () => {
     setBridgeEnabled(false);
     clientRef.current?.disconnect();
@@ -390,13 +488,39 @@ export function BridgeStatusWidget() {
           }
         : null,
       lastApprovalEvent,
+      lastHealthCheck,
+      lastServerDiagnostics,
     };
 
     try {
       await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      setDebugCopyStatus('Diagnostics JSON copied.');
       await plugin.app.toast('Bridge diagnostics copied.');
     } catch {
+      setDebugCopyStatus('Diagnostics copy failed.');
       await plugin.app.toast('Could not copy diagnostics from this RemNote surface.');
+    }
+  };
+
+  const handleCopyRecentRequestLogs = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(lastRequests.slice(0, 10), null, 2));
+      setDebugCopyStatus('Recent request logs copied.');
+      await plugin.app.toast('Recent request logs copied.');
+    } catch {
+      setDebugCopyStatus('Recent request log copy failed.');
+      await plugin.app.toast('Could not copy request logs.');
+    }
+  };
+
+  const handleCopyFailedRequest = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(lastFailedRequest ?? null, null, 2));
+      setDebugCopyStatus('Failed request report copied.');
+      await plugin.app.toast('Failed request report copied.');
+    } catch {
+      setDebugCopyStatus('Failed request copy failed.');
+      await plugin.app.toast('Could not copy failed request report.');
     }
   };
 
@@ -454,6 +578,7 @@ export function BridgeStatusWidget() {
           </div>
           <DetailRow label="Scope" value={getPermissionScopeLabel(pendingRequest.permissionScope)} />
           <DetailRow label="Summary" value={pendingRequest.summary} />
+          <DetailRow label="Lifecycle" value="waiting_for_remnote_approval" />
           {pendingRequest.targetRemId && <DetailRow label="Target Rem" value={pendingRequest.targetRemId} mono />}
           {pendingRequest.targetTitle && <DetailRow label="Target Title" value={pendingRequest.targetTitle} />}
           {pendingRequest.deletePreview && (
@@ -534,12 +659,51 @@ export function BridgeStatusWidget() {
           </button>
         </section>
 
+        <section className="bridge-panel bridge-recommendation-panel">
+          <div className="bridge-section-head">
+            <div className="bridge-heading-copy">
+              <h3>Recommended Mode</h3>
+              <p>Best for normal note writing: focused Rem and descendants with trusted writes.</p>
+            </div>
+            <span className="bridge-pill bridge-pill-success">Recommended</span>
+          </div>
+          <div className="bridge-mode-grid">
+            <div className="bridge-mode-card bridge-mode-card--success">
+              <span className="bridge-pill bridge-pill-success">Green</span>
+              <strong>Focused Rem + Descendants</strong>
+              <p>Vivy can work inside current note and children it creates under it.</p>
+            </div>
+            <div className="bridge-mode-card bridge-mode-card--success">
+              <span className="bridge-pill bridge-pill-success">Green</span>
+              <strong>Trusted Writes</strong>
+              <p>Safe write tools run without repeated RemNote approval prompts.</p>
+            </div>
+            <div className="bridge-mode-card bridge-mode-card--warning">
+              <span className="bridge-pill bridge-pill-warning">Caution</span>
+              <strong>Workspace Allowed</strong>
+              <p>Broad testing/search mode. Does not fix unsupported tools.</p>
+            </div>
+            <div className="bridge-mode-card bridge-mode-card--danger">
+              <span className="bridge-pill bridge-pill-danger">Danger</span>
+              <strong>Danger Zone</strong>
+              <p>High-risk mode. Delete and replace still require approval.</p>
+            </div>
+          </div>
+          <button type="button" className="bridge-button bridge-button-approve bridge-button-full" onClick={handleUseRecommendedNoteMode}>
+            Use Recommended Note Mode
+          </button>
+        </section>
+
         <section className="bridge-panel">
           <div className="bridge-section-head">
             <h3>Access</h3>
             <span className="bridge-pill bridge-pill-accent">{getPermissionModeLabel(permissionMode)}</span>
           </div>
           <dl className="bridge-detail-list">
+            <DetailRow
+              label="Effective Mode"
+              value={`${getPermissionScopeLabel(permissionScope)} + ${getPermissionModeLabel(permissionMode)}`}
+            />
             <DetailRow label="ChatGPT Can Access" value={getPermissionScopeLabel(permissionScope)} />
             <DetailRow label="Writes" value={getPermissionModeLabel(permissionMode)} />
             <DetailRow
@@ -555,6 +719,11 @@ export function BridgeStatusWidget() {
               }
             />
             <DetailRow label="Pending Request" value={pendingRequest ? formatToolName(pendingRequest.tool) : 'No request waiting'} />
+            <div className="bridge-three-col">
+              <DetailRow label="Free Tools" value={toolAvailability.free} />
+              <DetailRow label="Gated Tools" value={toolAvailability.gated} />
+              <DetailRow label="Hidden Tools" value={hiddenToolCount} />
+            </div>
           </dl>
           {accessOpen && (
             <div className="bridge-access-editor">
@@ -607,8 +776,8 @@ export function BridgeStatusWidget() {
             <div className="bridge-advanced">
               <section className="bridge-metrics" aria-label="Bridge summary">
                 <StatusMetric
-                  label="Tools"
-                  value={bridgeStatus.publicToolCount ? `${bridgeStatus.publicToolCount} listed` : 'Unknown'}
+                  label="Exposed"
+                  value={bridgeStatus.publicToolCount ? `${bridgeStatus.publicToolCount} tools` : 'Unknown'}
                   tone={bridgeStatus.publicToolCount && bridgeStatus.publicToolCount < 20 ? 'warning' : 'success'}
                 />
                 <StatusMetric
@@ -620,6 +789,21 @@ export function BridgeStatusWidget() {
                   label="Registry"
                   value={bridgeStatus.toolRegistryVersion ?? 'No stamp'}
                   tone={bridgeStatus.toolRegistryVersion ? 'success' : 'warning'}
+                />
+                <StatusMetric
+                  label="Unverified"
+                  value={bridgeStatus.runtimeUnverifiedTools?.length ?? 0}
+                  tone={bridgeStatus.runtimeUnverifiedTools?.length ? 'warning' : 'success'}
+                />
+                <StatusMetric
+                  label="Unsupported"
+                  value={bridgeStatus.sdkUnsupportedTools?.length ?? 0}
+                  tone={bridgeStatus.sdkUnsupportedTools?.length ? 'warning' : 'success'}
+                />
+                <StatusMetric
+                  label="Hidden"
+                  value={hiddenToolCount}
+                  tone={hiddenToolCount ? 'neutral' : 'warning'}
                 />
                 <StatusMetric
                   label="Scope"
@@ -641,6 +825,28 @@ export function BridgeStatusWidget() {
                   label="SDK Unsupported"
                   value={bridgeStatus.sdkUnsupportedTools?.join(', ') || 'None reported'}
                 />
+                <DetailRow
+                  label="Blocked In Current Mode"
+                  value={toolAvailability.blocked}
+                />
+                <DetailRow
+                  label="Last Health"
+                  value={
+                    lastHealthCheck
+                      ? JSON.stringify(lastHealthCheck).slice(0, 220)
+                      : 'Not checked from UI yet'
+                  }
+                />
+                <DetailRow
+                  label="Last Success"
+                  value={lastSuccessfulRequest ? `${lastSuccessfulRequest.tool ?? 'request'} ${lastSuccessfulRequest.id ?? ''}` : 'No diagnostics fetch yet'}
+                  mono={Boolean(lastSuccessfulRequest)}
+                />
+                <DetailRow
+                  label="Last Failure"
+                  value={lastFailedRequest ? `${lastFailedRequest.tool ?? 'request'} ${lastFailedRequest.errorCode ?? ''}` : 'No failed request in fetched diagnostics'}
+                  mono={Boolean(lastFailedRequest)}
+                />
                 {focusedRemStatus?.remId && <DetailRow label="Focused Rem ID" value={focusedRemStatus.remId} mono />}
                 {currentSelection?.selectedRemIds.length ? (
                   <DetailRow label="Selected IDs" value={currentSelection.selectedRemIds.join(', ')} mono />
@@ -649,9 +855,21 @@ export function BridgeStatusWidget() {
                   <DetailRow label="Error" value={<span className="bridge-error-text">{bridgeStatus.lastError}</span>} />
                 )}
               </dl>
+              <div className="bridge-inline-actions">
+                <button type="button" onClick={handleHealthCheck} className="bridge-button bridge-button-secondary">
+                  Health Check
+                </button>
+                <button type="button" onClick={handleCopyRecentRequestLogs} className="bridge-button bridge-button-secondary">
+                  Copy Logs
+                </button>
+              </div>
               <button type="button" onClick={handleCopyDiagnostics} className="bridge-button bridge-button-secondary bridge-button-full">
                 Copy Diagnostics
               </button>
+              <button type="button" onClick={handleCopyFailedRequest} className="bridge-button bridge-button-secondary bridge-button-full">
+                Copy Failed Request
+              </button>
+              <div className="bridge-footnote">{debugCopyStatus}</div>
             </div>
           )}
         </section>

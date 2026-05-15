@@ -35,6 +35,36 @@ const COLOR_SCHEMA = z.enum(['red', 'orange', 'yellow', 'green', 'blue', 'purple
 const HEADING_LEVEL_SCHEMA = z.enum(['H1', 'H2', 'H3', 'normal']);
 const REM_TYPE_SCHEMA = z.enum(['normal', 'concept', 'descriptor']);
 const PRACTICE_DIRECTION_SCHEMA = z.enum(['forward', 'backward', 'none', 'both']).default('both');
+const REMNOTE_COMMAND_SCHEMA = z.enum([
+  'heading_1',
+  'heading_2',
+  'heading_3',
+  'normal_text',
+  'highlight_yellow',
+  'highlight_blue',
+  'highlight_green',
+  'highlight_red',
+  'hide_bullet',
+  'show_bullet',
+  'make_concept',
+  'make_descriptor',
+  'make_normal',
+  'insert_inline_math',
+  'insert_math_block',
+]);
+const REMNOTE_COMMAND_TARGET_SCHEMA = z.object({
+  mode: z.enum(['focused_rem', 'selected_rem', 'rem_id']).describe('How to pick the target Rem.'),
+  remId: REM_ID_SCHEMA.nullable().optional().describe('Required when mode is rem_id.'),
+});
+const STRUCTURED_NOTE_TARGET_SCHEMA = z.object({
+  mode: z.enum(['focused_rem', 'rem_id', 'parent_child', 'approved_root']).describe('How to choose the batch root or parent.'),
+  remId: REM_ID_SCHEMA.nullable().optional().describe('Existing target Rem for updates/replacements.'),
+  parentId: REM_ID_SCHEMA.nullable().optional().describe('Parent Rem for create_child_tree.'),
+  createIfMissing: z.boolean().default(false).optional().describe('Reserved for future root creation by title.'),
+});
+const STRUCTURED_NOTE_OPERATION_SCHEMA = z
+  .enum(['replace_children', 'append_children', 'update_root_and_replace_children', 'create_child_tree'])
+  .default('create_child_tree');
 const TEXT_RANGE_SCHEMA = z.object({
   start: z.number().int().min(0).describe('Zero-based start character offset.'),
   end: z.number().int().min(1).describe('Exclusive end character offset.'),
@@ -217,6 +247,11 @@ const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.lazy(()
     children: z.array(STYLED_REM_TREE_NODE_SCHEMA).max(100).optional(),
   })
 );
+
+const STRUCTURED_NOTE_SCHEMA = z.object({
+  root: STYLED_REM_TREE_NODE_SCHEMA.optional().describe('Optional root payload. Required for create_child_tree and root update operations.'),
+  children: z.array(STYLED_REM_TREE_NODE_SCHEMA).max(100).optional().describe('Ordered child nodes to append or replace under the target root.'),
+});
 
 type McpToolResult = {
   content: Array<{ type: 'text'; text: string }>;
@@ -415,6 +450,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
             ...registry,
             ...diagnostics,
             pendingRequests: diagnostics.status.pendingRequests,
+            pendingApproval: diagnostics.pending[0] ?? null,
             recentErrors: diagnostics.recentRequests.filter((request) => !request.ok),
             recentRequestLifecycle: diagnostics.recentRequests,
             lastSuccessfulToolCalls,
@@ -1106,15 +1142,45 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   );
 
   registerTool(
+    'apply_remnote_command',
+    {
+      title: 'Apply RemNote command',
+      description:
+        'Use this when one safe shortcut-like RemNote command should apply to a focused, selected, or explicit Rem without keyboard simulation.',
+      inputSchema: z.object({
+        target: REMNOTE_COMMAND_TARGET_SCHEMA.describe('Focused Rem, selected Rem, or explicit Rem ID target.'),
+        command: REMNOTE_COMMAND_SCHEMA.describe('Safe RemNote command to apply.'),
+        args: z
+          .object({
+            latex: z.string().max(5000).optional().describe('LaTeX for insert_inline_math or insert_math_block.'),
+            text: z.string().max(5000).optional().describe('Optional prefix text for math insertion.'),
+          })
+          .optional(),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate command application for repeated calls in this plugin session.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('apply_remnote_command'),
+    },
+    async ({ target, command, args, idempotencyKey }) =>
+      bridgeToolResult(
+        () => callPlugin('apply_remnote_command', { target, command, args, idempotencyKey }),
+        'Applied RemNote command.'
+      )
+  );
+
+  registerTool(
     'apply_structured_note_batch',
     {
       title: 'Apply structured note batch',
       description:
         'Use this when one approved call should create a complete styled RemNote note tree with math, dry-run, idempotency, rollback, and optional verification.',
       inputSchema: z.object({
-        parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the batch root.'),
+        target: STRUCTURED_NOTE_TARGET_SCHEMA.optional().describe('Preferred target object. Use focused_rem + create_child_tree for normal note writing.'),
+        operation: STRUCTURED_NOTE_OPERATION_SCHEMA.describe('Batch operation. create_child_tree is safest for new notes.'),
+        parentId: REM_ID_SCHEMA.optional().describe('Legacy parent Rem ID for create_child_tree.'),
         position: POSITION_SCHEMA.describe('Where to place the batch root under the parent Rem.'),
-        root: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled note root and descendants.'),
+        root: STYLED_REM_TREE_NODE_SCHEMA.optional().describe('Legacy structured styled note root and descendants.'),
+        note: STRUCTURED_NOTE_SCHEMA.optional().describe('Production note payload with root plus ordered children.'),
         dryRun: z.boolean().default(false).describe('Validate and preview the batch without writing Rems.'),
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate writes for repeated calls in this server session.'),
         rollbackOnFailure: z.boolean().default(true).describe('Best-effort remove Rems created before a failed batch.'),
@@ -1123,13 +1189,16 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_structured_note_batch'),
     },
-    async ({ parentId, position, root, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite }) =>
+    async ({ target, operation, parentId, position, root, note, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite }) =>
       bridgeToolResult(
         () =>
           callPlugin('apply_structured_note_batch', {
+            target,
+            operation,
             parentId,
             position,
             root,
+            note,
             dryRun,
             idempotencyKey,
             rollbackOnFailure,

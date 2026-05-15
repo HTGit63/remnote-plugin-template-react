@@ -50,10 +50,10 @@ Commit message: 26 Working tools
 The repo currently declares:
 
 ```text
-43 public MCP tools
+44 public MCP tools
 1 hidden gated tool: delete_rem
-toolRegistryVersion: 2026-05-14.2
-mcpDiscoveryVersion: mcp-discovery-2026-05-14.2
+toolRegistryVersion: 2026-05-14.3
+mcpDiscoveryVersion: mcp-discovery-2026-05-14.3
 ```
 
 The source-level registry exposure problem is mostly fixed.
@@ -75,7 +75,7 @@ ChatGPT cannot see all tools.
 The current problem is:
 
 ```text
-The bridge exposes 43 public tools, but not all 43 are verified working in live execution against the RemNote plugin and RemNote SDK.
+The bridge exposes 44 public tools, but not all 44 are verified working in live execution against the RemNote plugin and RemNote SDK.
 ```
 
 Diagnostics now correctly say:
@@ -133,13 +133,13 @@ Do not describe the current bridge as fully complete.
 Correct status wording:
 
 ```text
-The source-level 43-tool registry is present and the connector exposes all 43 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
+The source-level 44-tool registry is present and the connector exposes all 44 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
 ```
 
 Incorrect status wording:
 
 ```text
-All 43 tools work live.
+All 44 tools work live.
 Complete.
 Issue fixed.
 ```
@@ -783,7 +783,7 @@ Make the project honest about current state.
 Update diagnostics and docs to say:
 
 ```text
-43 tools exposed
+44 tools exposed
 previous live report verified about 26 working
 remaining tools unverified/problematic
 callabilitySource = registry_only_not_live_execution
@@ -1575,7 +1575,7 @@ npm run validate passed.
 npm run build passed with existing webpack size warnings.
 npm run server:build passed.
 npm run server:smoke passed.
-Live RemNote sandbox QA is still required before marking all 43 tools production-ready in hosted/public wording.
+Live RemNote sandbox QA is still required before marking all 44 tools production-ready in hosted/public wording.
 ```
 
 ## Milestone 7 — Rework tree tools on batch engine
@@ -1645,9 +1645,19 @@ npm run validate passed.
 npm run build passed with existing webpack size warnings.
 npm run server:build passed.
 npm run server:smoke passed.
-chatgpt-app-submission.json parsed with 43 tool entries, 27 test cases, and 4 negative test cases.
+chatgpt-app-submission.json parsed with 44 tool entries, 28 test cases, and 4 negative test cases.
 git diff --check passed.
 ```
+
+## Final-test execution status — 2026-05-15
+
+- [x] Registry exposes 44 public tools and keeps 1 hidden gated `delete_rem`.
+- [x] `apply_remnote_command` is public, smoke-tested, and covered in `chatgpt-app-submission.json`.
+- [x] Trusted Writes no longer forces RemNote-side approvals for safe writes when scope allows; replace/delete remain approval-gated.
+- [x] Plugin UI includes Recommended Note Mode, effective permission summary, tool availability counts, lifecycle display, health check, diagnostics copy, recent logs copy, failed request copy, last success, and last failure.
+- [x] Validation commands passed: `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, `npm run server:smoke`, `npm audit`, `npm audit --omit=dev`, `git diff --check`.
+- [~] `npm run bridge:live-test` works as a real MCP regression runner. In this Codex run it reached the local MCP server and passed `tools/list`, `get_bridge_status`, and `get_bridge_diagnostics`, but live RemNote execution remained blocked by `PLUGIN_NOT_CONNECTED` because no RemNote plugin session was connected to the companion server.
+- [~] Full live sandbox write verification still requires local RemNote open, plugin connected, and a disposable `MCP Regression Test Root` or `REMNOTE_LIVE_TEST_PARENT_ID`.
 
 ---
 
@@ -1656,7 +1666,7 @@ git diff --check passed.
 The bridge is complete only when all are true:
 
 ```text
-43 public tools are discoverable.
+44 public tools are discoverable.
 delete_rem is hidden by default.
 callabilitySource is honest.
 At least all required note-generation tools are live verified.
@@ -1666,6 +1676,7 @@ create_rem works.
 replace_rem works or is disabled until safe.
 create_rem_tree works.
 create_styled_rem_tree works.
+apply_remnote_command works for supported heading, highlight, bullet, type, and math commands.
 apply_structured_note_batch works.
 focused_rem_and_descendants works.
 created children can be styled and read back.
@@ -1723,6 +1734,7 @@ Use only when the user asks for precise edits:
 append_to_rem
 update_rem
 update_rem_rich
+apply_remnote_command
 set_rem_heading_level
 set_rem_text_color
 set_rem_highlight_color

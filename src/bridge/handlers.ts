@@ -1,5 +1,6 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
+  type ApplyRemnoteCommandArgs,
   type ApplyStructuredNoteBatchArgs,
   type ApprovalResolution,
   type AppendToRemArgs,
@@ -67,6 +68,7 @@ import {
 } from '../remnote/read';
 import {
   applyStructuredNoteBatch,
+  applyRemnoteCommand,
   appendMarkdownToRem,
   buildDeletePreview,
   clearRemFormatting,
@@ -376,12 +378,126 @@ function requiredStyledTree(args: unknown): StyledRemTreeNode {
   return args.tree as StyledRemTreeNode;
 }
 
-function requiredStructuredBatchRoot(args: unknown): StyledRemTreeNode {
-  if (!isPlainObject(args) || !isPlainObject(args.root)) {
-    throw new Error('Missing root.');
+function optionalStructuredBatchRoot(args: unknown): StyledRemTreeNode | undefined {
+  if (!isPlainObject(args)) {
+    return undefined;
   }
 
-  return args.root as StyledRemTreeNode;
+  if (isPlainObject(args.root)) {
+    return args.root as StyledRemTreeNode;
+  }
+
+  const note = isPlainObject(args.note) ? args.note : undefined;
+  return note && isPlainObject(note.root) ? (note.root as StyledRemTreeNode) : undefined;
+}
+
+function optionalStructuredBatchTarget(args: unknown): ApplyStructuredNoteBatchArgs['target'] | undefined {
+  if (!isPlainObject(args) || !isPlainObject(args.target)) {
+    return undefined;
+  }
+
+  const target = args.target as Record<string, unknown>;
+  const mode = target.mode;
+  if (
+    mode !== 'focused_rem' &&
+    mode !== 'rem_id' &&
+    mode !== 'parent_child' &&
+    mode !== 'approved_root'
+  ) {
+    throw new Error('target.mode must be focused_rem, rem_id, parent_child, or approved_root.');
+  }
+
+  return {
+    mode,
+    remId: typeof target.remId === 'string' ? target.remId.trim() || null : null,
+    parentId: typeof target.parentId === 'string' ? target.parentId.trim() || null : null,
+    createIfMissing: typeof target.createIfMissing === 'boolean' ? target.createIfMissing : false,
+  };
+}
+
+function optionalStructuredBatchOperation(args: unknown): ApplyStructuredNoteBatchArgs['operation'] {
+  const value = getStringField(args, 'operation');
+  switch (value) {
+    case undefined:
+    case '':
+      return undefined;
+    case 'replace_children':
+    case 'append_children':
+    case 'update_root_and_replace_children':
+    case 'create_child_tree':
+      return value;
+    default:
+      throw new Error('operation must be replace_children, append_children, update_root_and_replace_children, or create_child_tree.');
+  }
+}
+
+function optionalStructuredBatchNote(args: unknown): ApplyStructuredNoteBatchArgs['note'] | undefined {
+  if (!isPlainObject(args) || !isPlainObject(args.note)) {
+    return undefined;
+  }
+
+  const note = args.note as Record<string, unknown>;
+  if (!isPlainObject(note.root) && !Array.isArray(note.children)) {
+    throw new Error('note requires root or children.');
+  }
+
+  return {
+    ...(isPlainObject(note.root) ? { root: note.root as StyledRemTreeNode } : {}),
+    ...(Array.isArray(note.children) ? { children: note.children as StyledRemTreeNode[] } : {}),
+  };
+}
+
+function requiredCommandTarget(args: unknown): ApplyRemnoteCommandArgs['target'] {
+  if (!isPlainObject(args) || !isPlainObject(args.target)) {
+    throw new Error('Missing target.');
+  }
+
+  const target = args.target as Record<string, unknown>;
+  const mode = target.mode;
+  if (mode !== 'focused_rem' && mode !== 'selected_rem' && mode !== 'rem_id') {
+    throw new Error('target.mode must be focused_rem, selected_rem, or rem_id.');
+  }
+
+  return {
+    mode,
+    remId: typeof target.remId === 'string' ? target.remId.trim() || null : null,
+  };
+}
+
+function requiredRemnoteCommand(args: unknown): ApplyRemnoteCommandArgs['command'] {
+  const command = getStringField(args, 'command');
+  switch (command) {
+    case 'heading_1':
+    case 'heading_2':
+    case 'heading_3':
+    case 'normal_text':
+    case 'highlight_yellow':
+    case 'highlight_blue':
+    case 'highlight_green':
+    case 'highlight_red':
+    case 'hide_bullet':
+    case 'show_bullet':
+    case 'make_concept':
+    case 'make_descriptor':
+    case 'make_normal':
+    case 'insert_inline_math':
+    case 'insert_math_block':
+      return command;
+    default:
+      throw new Error('command must be a supported RemNote command.');
+  }
+}
+
+function optionalCommandArgs(args: unknown): ApplyRemnoteCommandArgs['args'] | undefined {
+  if (!isPlainObject(args) || !isPlainObject(args.args)) {
+    return undefined;
+  }
+
+  const commandArgs = args.args as Record<string, unknown>;
+  return {
+    latex: typeof commandArgs.latex === 'string' ? commandArgs.latex : undefined,
+    text: typeof commandArgs.text === 'string' ? commandArgs.text : undefined,
+  };
 }
 
 function optionalBoolean(args: unknown, field: string, fallback = false): boolean {
@@ -685,16 +801,38 @@ function normalizeArgs<TTool extends BridgeToolName>(
         position: optionalAppendPosition(args),
         tree: requiredStyledTree(args),
       } as BridgeToolArgs[TTool];
-    case 'apply_structured_note_batch':
+    case 'apply_remnote_command':
       return {
-        parentId: requiredParentId(args),
+        target: requiredCommandTarget(args),
+        command: requiredRemnoteCommand(args),
+        args: optionalCommandArgs(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'apply_structured_note_batch':
+    {
+      const target = optionalStructuredBatchTarget(args);
+      const parentId = optionalParentId(args);
+      if (!target && !parentId) {
+        throw new Error('Provide target or parentId.');
+      }
+      const root = optionalStructuredBatchRoot(args);
+      const note = optionalStructuredBatchNote(args);
+      if (!root && !note?.root && !note?.children?.length) {
+        throw new Error('Provide root, note.root, or note.children.');
+      }
+      return {
+        ...(target ? { target } : {}),
+        ...(parentId ? { parentId } : {}),
         position: optionalAppendPosition(args),
-        root: requiredStructuredBatchRoot(args),
+        ...(root ? { root } : {}),
+        ...(note ? { note } : {}),
+        operation: optionalStructuredBatchOperation(args),
         dryRun: optionalBoolean(args, 'dryRun'),
         idempotencyKey: optionalIdempotencyKey(args),
         rollbackOnFailure: optionalBoolean(args, 'rollbackOnFailure', true),
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
       } as BridgeToolArgs[TTool];
+    }
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -790,6 +928,7 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       CreateRemTreeArgs &
       CreateStyledRemTreeArgs &
       ApplyStructuredNoteBatchArgs &
+      ApplyRemnoteCommandArgs &
       UpdateRemRichArgs &
       SetRemHeadingLevelArgs &
       SetRemTextColorArgs &
@@ -816,6 +955,12 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
   if (typeof args.rootRemId === 'string') {
     return args.rootRemId;
   }
+  if (typeof args.target === 'object' && args.target && 'remId' in args.target && typeof args.target.remId === 'string') {
+    return args.target.remId;
+  }
+  if (typeof args.target === 'object' && args.target && 'parentId' in args.target && typeof args.target.parentId === 'string') {
+    return args.target.parentId;
+  }
   return typeof args.parentId === 'string' ? args.parentId : undefined;
 }
 
@@ -830,6 +975,7 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
       UpdateRemRichArgs &
       CreateStyledRemTreeArgs &
       ApplyStructuredNoteBatchArgs &
+      ApplyRemnoteCommandArgs &
       CreateFlashcardArgs &
       CreateClozeCardArgs &
       CreateMultipleChoiceCardArgs &
@@ -855,6 +1001,12 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
   }
   if (args.root) {
     return JSON.stringify(args.root, null, 2).slice(0, 3000);
+  }
+  if (args.note) {
+    return JSON.stringify(args.note, null, 2).slice(0, 3000);
+  }
+  if ('command' in args && typeof args.command === 'string') {
+    return JSON.stringify({ command: args.command, args: args.args }, null, 2).slice(0, 3000);
   }
   return undefined;
 }
@@ -939,6 +1091,18 @@ function requestHasWorkspaceCreateTarget(request: BridgeRequest): boolean {
   return !(request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId;
 }
 
+function getStructuredBatchScopeTargetIds(args: ApplyStructuredNoteBatchArgs): string[] {
+  return uniqueRemIds([
+    args.parentId,
+    args.target?.parentId,
+    args.target?.remId,
+  ]);
+}
+
+function getCommandStaticScopeTargetIds(args: ApplyRemnoteCommandArgs): string[] {
+  return args.target.mode === 'rem_id' ? uniqueRemIds([args.target.remId]) : [];
+}
+
 function requestNeedsImplicitScopedRoot(request: BridgeRequest): boolean {
   if (request.tool === 'search_rems') {
     return !(request.args as SearchRemsArgs).contextRemId;
@@ -993,6 +1157,49 @@ async function resolveDeleteTargetRemId(plugin: RNPlugin, request: BridgeRequest
   return undefined;
 }
 
+async function resolveCommandTargetRemId(plugin: RNPlugin, request: BridgeRequest): Promise<string | undefined> {
+  if (request.tool !== 'apply_remnote_command') {
+    return undefined;
+  }
+
+  const args = request.args as ApplyRemnoteCommandArgs;
+  if (args.target.mode === 'rem_id') {
+    return args.target.remId ?? undefined;
+  }
+  if (args.target.mode === 'focused_rem') {
+    const focusedRemId = await getFocusedRemId(plugin);
+    if (!focusedRemId) {
+      throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+    }
+    return focusedRemId;
+  }
+
+  return getSingleSelectedRemId(plugin);
+}
+
+async function resolveStructuredBatchScopeRemId(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): Promise<string | undefined> {
+  if (request.tool !== 'apply_structured_note_batch') {
+    return undefined;
+  }
+
+  const args = request.args as ApplyStructuredNoteBatchArgs;
+  if (args.target?.mode === 'focused_rem') {
+    const focusedRemId = await getFocusedRemId(plugin);
+    if (!focusedRemId) {
+      throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+    }
+    return focusedRemId;
+  }
+  if (args.target?.mode === 'approved_root') {
+    return context.approvedRootRemId ?? undefined;
+  }
+  return undefined;
+}
+
 function getStaticScopeTargetIds(request: BridgeRequest): string[] {
   switch (request.tool) {
     case 'get_rem':
@@ -1031,8 +1238,10 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
     case 'create_styled_rem_tree':
       return uniqueRemIds([(request.args as CreateStyledRemTreeArgs).parentId]);
+    case 'apply_remnote_command':
+      return getCommandStaticScopeTargetIds(request.args as ApplyRemnoteCommandArgs);
     case 'apply_structured_note_batch':
-      return uniqueRemIds([(request.args as ApplyStructuredNoteBatchArgs).parentId]);
+      return getStructuredBatchScopeTargetIds(request.args as ApplyStructuredNoteBatchArgs);
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -1167,9 +1376,13 @@ async function enforceScope(
   }
 
   const deleteTargetRemId = await resolveDeleteTargetRemId(plugin, request);
+  const commandTargetRemId = await resolveCommandTargetRemId(plugin, request);
+  const structuredBatchTargetRemId = await resolveStructuredBatchScopeRemId(plugin, request, context);
   const targetRemIds = uniqueRemIds([
     ...getStaticScopeTargetIds(request),
     deleteTargetRemId,
+    commandTargetRemId,
+    structuredBatchTargetRemId,
     implicitScopedRoot,
   ]);
 
@@ -1267,6 +1480,42 @@ async function effectiveDocumentOrFolderTreeArgs(
   return args;
 }
 
+async function effectiveStructuredBatchArgs(
+  plugin: RNPlugin,
+  request: BridgeRequest,
+  context: BridgeHandlerContext
+): Promise<ApplyStructuredNoteBatchArgs> {
+  const args = request.args as ApplyStructuredNoteBatchArgs;
+  const target = args.target;
+  if (!target || (target.mode !== 'focused_rem' && target.mode !== 'approved_root')) {
+    return args;
+  }
+
+  const resolvedRemId =
+    target.mode === 'focused_rem'
+      ? await getFocusedRemId(plugin)
+      : context.approvedRootRemId;
+  if (!resolvedRemId) {
+    throw new RemnoteWriteError(
+      target.mode === 'focused_rem' ? 'NO_FOCUSED_REM' : 'OUT_OF_SCOPE',
+      target.mode === 'focused_rem'
+        ? 'No Rem is currently focused in RemNote.'
+        : 'Approved Document/Folder scope requires an approved root Rem ID.'
+    );
+  }
+
+  const operation = args.operation ?? 'create_child_tree';
+  return {
+    ...args,
+    target: {
+      ...target,
+      ...(operation === 'create_child_tree'
+        ? { parentId: resolvedRemId, remId: target.remId ?? null }
+        : { remId: resolvedRemId, parentId: target.parentId ?? null }),
+    },
+  };
+}
+
 function getCreatedRemId(response: BridgeResponse): string | undefined {
   if (!response.ok || typeof response.result !== 'object' || response.result === null) {
     return undefined;
@@ -1359,6 +1608,8 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Clear visible text formatting.';
     case 'create_styled_rem_tree':
       return 'Create styled nested Rem tree.';
+    case 'apply_remnote_command':
+      return `Apply RemNote command ${(request.args as ApplyRemnoteCommandArgs).command}.`;
     case 'apply_structured_note_batch':
       return 'Apply one structured note batch with optional dry-run, rollback, and verification.';
     case 'create_basic_flashcard':
@@ -1411,6 +1662,7 @@ async function buildApprovalRequest(
       ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
       : targetRemId &&
           (request.tool === 'create_styled_rem_tree' ||
+            request.tool === 'apply_remnote_command' ||
             request.tool === 'apply_structured_note_batch' ||
             request.tool === 'create_basic_flashcard' ||
             request.tool === 'create_concept_card' ||
@@ -1482,6 +1734,7 @@ async function shouldForceApproval(_plugin: RNPlugin, request: BridgeRequest): P
     case 'set_hide_bullet':
     case 'clear_rem_formatting':
     case 'create_styled_rem_tree':
+    case 'apply_remnote_command':
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -1545,7 +1798,9 @@ export async function handleBridgeRequest(
 
   let approvalRequired = decision.approvalRequired;
   try {
-    approvalRequired = approvalRequired || (await shouldForceApproval(plugin, request));
+    approvalRequired =
+      approvalRequired ||
+      (context.permissionMode === 'confirm_writes' && (await shouldForceApproval(plugin, request)));
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
     return finish(response, 'failed');
@@ -1557,6 +1812,8 @@ export async function handleBridgeRequest(
       const timeoutMs = request.timeoutMs
         ? Math.min(request.timeoutMs, WRITE_APPROVAL_TIMEOUT_MS)
         : WRITE_APPROVAL_TIMEOUT_MS;
+      recordLifecycle(lifecycle, 'waiting_for_chatgpt_permission', 'ChatGPT-side tool permission already completed before this local bridge request.');
+      recordLifecycle(lifecycle, 'waiting_for_remnote_approval', 'Request is waiting for RemNote approval.');
       recordLifecycle(lifecycle, 'waiting_for_approval', 'Request is waiting for RemNote approval.');
       approval = await withApprovalTimeout(
         await buildApprovalRequest(plugin, request, context, timeoutMs, decision.destructive),
@@ -1579,6 +1836,7 @@ export async function handleBridgeRequest(
     if (approval === 'APPROVAL_TIMEOUT') {
       approvalStatus = 'timeout';
       recordLifecycle(lifecycle, 'approval_timeout', 'Approval deadline expired.');
+      recordLifecycle(lifecycle, 'timeout', 'Approval deadline expired.');
       const response = createBridgeFailure(request.id, 'APPROVAL_TIMEOUT', 'User did not approve the request before timeout.');
       return finish(response, approvalStatus);
     }
@@ -1779,8 +2037,14 @@ export async function handleBridgeRequest(
       case 'create_styled_rem_tree':
         response = createBridgeSuccess(request, await createStyledRemTree(plugin, request.args));
         break;
+      case 'apply_remnote_command':
+        response = createBridgeSuccess(request, await applyRemnoteCommand(plugin, request.args));
+        break;
       case 'apply_structured_note_batch':
-        response = createBridgeSuccess(request, await applyStructuredNoteBatch(plugin, request.args));
+        response = createBridgeSuccess(
+          request,
+          await applyStructuredNoteBatch(plugin, await effectiveStructuredBatchArgs(plugin, request, context))
+        );
         break;
       case 'create_basic_flashcard':
         response = createBridgeSuccess(request, await createBasicFlashcard(plugin, request.args));

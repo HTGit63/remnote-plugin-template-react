@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics and health checks, explain RemNote structure through a built-in capability guide, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, create styled trees, apply structured note batches, or delete focused/selected Rems after local scope and approval checks allow it.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics and health checks, explain RemNote structure through a built-in capability guide, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, run safe RemNote-style commands, create styled trees, apply structured note batches, or delete focused/selected Rems after local scope and approval checks allow it.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -428,6 +428,18 @@
         "destructive_justification": "Adds new Rems without deleting or overwriting existing RemNote content; rollback only removes Rems created by the same failed batch."
       }
     },
+    "apply_remnote_command": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Applies a bounded safe formatting or math command to a scoped Rem after local checks allow it.",
+        "open_world_justification": "Changes only private RemNote content or formatting and does not publish externally.",
+        "destructive_justification": "Does not delete, replace, move, or overwrite RemNote content; unsupported commands return structured errors."
+      }
+    },
     "create_basic_flashcard": {
       "annotations": {
         "readOnlyHint": false,
@@ -692,6 +704,14 @@
       "file_attachment_urls": null,
       "tools_triggered": "apply_structured_note_batch",
       "expected_output": "Validates the structured batch, waits for approval when required, writes the complete styled note tree, and returns created Rem IDs plus verification details when requested.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Apply a safe RemNote-style command.",
+      "user_prompt": "Make my focused Rem a level-one heading and highlight it yellow.",
+      "file_attachment_urls": null,
+      "tools_triggered": "apply_remnote_command",
+      "expected_output": "Applies the supported command to the scoped Rem without keyboard simulation and returns a structured command result.",
       "expected_output_url": null
     },
     {

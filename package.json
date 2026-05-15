@@ -12,7 +12,9 @@
     "server:dev": "npm run dev --prefix server",
     "server:build": "npm run build --prefix server",
     "server:smoke": "npm run smoke --prefix server",
-    "server:test-client": "npm run test-client --prefix server"
+    "server:test-client": "npm run test-client --prefix server",
+    "bridge:live-test": "npm run live-test --prefix server",
+    "mcp:live-test": "npm run live-test --prefix server"
   },
   "dependencies": {
     "@remnote/plugin-sdk": "0.0.14",

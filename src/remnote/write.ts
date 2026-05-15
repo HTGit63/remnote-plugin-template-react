@@ -1,6 +1,8 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
 import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
+  ApplyRemnoteCommandArgs,
+  ApplyRemnoteCommandResult,
   ApplyStructuredNoteBatchArgs,
   ApplyStructuredNoteBatchResult,
   AppendToRemArgs,
@@ -37,6 +39,7 @@ import type {
   ReorderChildrenArgs,
   ReorderChildrenResult,
   RemColorName,
+  RemnoteCommandName,
   RemHeadingLevel,
   RemStyleInput,
   RemTypeName,
@@ -86,6 +89,7 @@ const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
 
 const COLOR_FORMAT_NAMES: RichTextFormatName[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
 const STRUCTURED_BATCH_RESULT_CACHE = new Map<string, ApplyStructuredNoteBatchResult>();
+const REMNOTE_COMMAND_RESULT_CACHE = new Map<string, ApplyRemnoteCommandResult>();
 
 export class RemnoteWriteError extends Error {
   constructor(
@@ -922,6 +926,167 @@ export async function clearRemFormatting(
   return { remId: rem._id, status: 'formatting_cleared' };
 }
 
+async function resolveCommandTarget(plugin: RNPlugin, args: ApplyRemnoteCommandArgs): Promise<Rem> {
+  if (args.target.mode === 'focused_rem') {
+    const focused = await plugin.focus.getFocusedRem();
+    if (!focused) {
+      throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
+    }
+    return focused;
+  }
+
+  if (args.target.mode === 'selected_rem') {
+    const selection = await plugin.editor.getSelection();
+    const selectedRemIds =
+      selection?.type === 'Rem'
+        ? selection.remIds
+        : selection?.type === 'Text'
+          ? [selection.remId]
+          : [];
+    if (selectedRemIds.length !== 1) {
+      throw new RemnoteWriteError(
+        'INVALID_ARGS',
+        'selected_rem command target requires exactly one selected Rem.',
+        { selectedRemCount: selectedRemIds.length }
+      );
+    }
+    return findRequiredRem(plugin, selectedRemIds[0], 'Target');
+  }
+
+  const remId = args.target.remId?.trim();
+  if (!remId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'rem_id command target requires remId.');
+  }
+  return findRequiredRem(plugin, remId, 'Target');
+}
+
+function rememberRemnoteCommandResult(idempotencyKey: string, result: ApplyRemnoteCommandResult) {
+  REMNOTE_COMMAND_RESULT_CACHE.delete(idempotencyKey);
+  REMNOTE_COMMAND_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (REMNOTE_COMMAND_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = REMNOTE_COMMAND_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    REMNOTE_COMMAND_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+function resultForCommand(
+  rem: Rem,
+  command: RemnoteCommandName,
+  idempotencyKey?: string,
+  status: ApplyRemnoteCommandResult['status'] = 'command_applied'
+): ApplyRemnoteCommandResult {
+  return {
+    remId: rem._id,
+    command,
+    status,
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+}
+
+async function appendMathToRem(
+  plugin: RNPlugin,
+  rem: Rem,
+  latex: string,
+  block: boolean,
+  prefixText?: string
+) {
+  const currentText = await getRemPlainString(plugin, rem);
+  const spans: RichTextSpanInput[] = [];
+  if (currentText) {
+    spans.push({ text: `${currentText} ` });
+  }
+  if (prefixText?.trim()) {
+    spans.push({ text: `${prefixText.trim()} ` });
+  }
+  spans.push({ type: block ? 'mathBlock' : 'inlineMath', latex });
+  const richText = await buildRichTextFromSpans(plugin, spans);
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
+}
+
+export async function applyRemnoteCommand(
+  plugin: RNPlugin,
+  args: ApplyRemnoteCommandArgs
+): Promise<ApplyRemnoteCommandResult> {
+  const idempotencyKey = args.idempotencyKey?.trim();
+  if (idempotencyKey) {
+    const cached = REMNOTE_COMMAND_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
+  const rem = await resolveCommandTarget(plugin, args);
+  const command = args.command;
+
+  switch (command) {
+    case 'heading_1':
+      await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H1'));
+      break;
+    case 'heading_2':
+      await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H2'));
+      break;
+    case 'heading_3':
+      await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H3'));
+      break;
+    case 'normal_text':
+      await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
+      break;
+    case 'highlight_yellow':
+    case 'highlight_blue':
+    case 'highlight_green':
+    case 'highlight_red': {
+      const colorName = command.replace('highlight_', '') as RemColorName;
+      const format = getColorFormat(colorName);
+      if (!format) {
+        throw new RemnoteWriteError('SDK_UNSUPPORTED', `Highlight ${colorName} is not supported by this SDK.`);
+      }
+      await runSdkOperation('rem.setHighlightColor', () => rem.setHighlightColor(format as never));
+      break;
+    }
+    case 'hide_bullet':
+      await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(false));
+      break;
+    case 'show_bullet':
+      await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(true));
+      break;
+    case 'make_concept':
+      await runSdkOperation('rem.setType', () => rem.setType(SetRemType.CONCEPT));
+      break;
+    case 'make_descriptor':
+      await runSdkOperation('rem.setType', () => rem.setType(SetRemType.DESCRIPTOR));
+      break;
+    case 'make_normal':
+      throw new RemnoteWriteError(
+        'SDK_UNSUPPORTED',
+        'The installed RemNote SDK does not expose a reliable reset to normal Rem type.'
+      );
+    case 'insert_inline_math':
+    case 'insert_math_block': {
+      const latex = args.args?.latex?.trim();
+      if (!latex) {
+        throw new RemnoteWriteError('INVALID_ARGS', `${command} requires args.latex.`);
+      }
+      await appendMathToRem(plugin, rem, latex, command === 'insert_math_block', args.args?.text);
+      break;
+    }
+    default:
+      throw new RemnoteWriteError('INVALID_ARGS', `Unsupported RemNote command "${command}".`);
+  }
+
+  const result = resultForCommand(rem, command, idempotencyKey);
+  if (idempotencyKey) {
+    rememberRemnoteCommandResult(idempotencyKey, result);
+  }
+  return result;
+}
+
 export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<MoveRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const newParent = await findRequiredRem(plugin, args.newParentId, 'Parent', 'PARENT_NOT_FOUND');
@@ -1218,7 +1383,7 @@ export async function createListAnswerCard(
   );
 }
 
-export async function createStyledRemTree(
+export async function structuredWriteEngine(
   plugin: RNPlugin,
   args: CreateStyledRemTreeArgs
 ): Promise<CreateStyledRemTreeResult> {
@@ -1448,16 +1613,51 @@ async function verifyCreatedRems(
   };
 }
 
+export async function createStyledRemTree(
+  plugin: RNPlugin,
+  args: CreateStyledRemTreeArgs
+): Promise<CreateStyledRemTreeResult> {
+  return structuredWriteEngine(plugin, args);
+}
+
 export async function applyStructuredNoteBatch(
   plugin: RNPlugin,
   args: ApplyStructuredNoteBatchArgs
 ): Promise<ApplyStructuredNoteBatchResult> {
-  const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const operation = args.operation ?? 'create_child_tree';
+  const target = args.target ?? {
+    mode: 'parent_child' as const,
+    parentId: args.parentId ?? null,
+  };
+  const noteRoot = args.note?.root ?? args.root;
+  const rawNoteChildren = args.note?.children;
+  const noteChildren = Array.isArray(rawNoteChildren) ? rawNoteChildren : [];
+  if (!noteRoot && !noteChildren.length) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Structured note batch requires root, note.root, or note.children.');
+  }
+  if (!noteRoot && (operation === 'create_child_tree' || operation === 'update_root_and_replace_children')) {
+    throw new RemnoteWriteError('INVALID_ARGS', `${operation} requires root or note.root.`);
+  }
+
   const validationState: TreeValidationState = { nodeCount: 0 };
-  const root = normalizeStyledNode(args.root, 1, validationState);
+  const root = noteRoot
+    ? normalizeStyledNode(
+        {
+          ...noteRoot,
+          children: [
+            ...(Array.isArray(noteRoot.children) ? noteRoot.children : []),
+            ...noteChildren,
+          ],
+        },
+        1,
+        validationState
+      )
+    : undefined;
+  const childNodes = root?.children ?? noteChildren.map((child) => normalizeStyledNode(child, 1, validationState));
   const idempotencyKey = args.idempotencyKey?.trim();
   const rollbackOnFailure = args.rollbackOnFailure ?? true;
   const verifyAfterWrite = args.verifyAfterWrite ?? false;
+  const operationId = `structured-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   if (idempotencyKey && !args.dryRun) {
     const cached = STRUCTURED_BATCH_RESULT_CACHE.get(idempotencyKey);
@@ -1470,13 +1670,35 @@ export async function applyStructuredNoteBatch(
     }
   }
 
+  const targetRemId = target.remId ?? null;
+  const requestedParentId = target.parentId ?? args.parentId ?? null;
+  const parentId =
+    operation === 'create_child_tree'
+      ? requestedParentId ?? targetRemId
+      : targetRemId ?? requestedParentId;
+  if (!parentId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Structured note batch target did not resolve to a Rem ID.');
+  }
+
+  const parent = await findRequiredRem(
+    plugin,
+    parentId,
+    operation === 'create_child_tree' ? 'Parent' : 'Target',
+    operation === 'create_child_tree' ? 'PARENT_NOT_FOUND' : 'REM_NOT_FOUND'
+  );
+
   if (args.dryRun) {
     return {
+      operationId,
       status: 'dry_run',
-      parentId: parent._id,
+      targetRemId: operation === 'create_child_tree' ? undefined : parent._id,
+      parentId: operation === 'create_child_tree' ? parent._id : undefined,
+      operation,
       plannedNodeCount: validationState.nodeCount,
       createdNodeCount: 0,
       createdRemIds: [],
+      updatedRemIds: [],
+      deletedRemIds: [],
       dryRun: true,
       ...(idempotencyKey ? { idempotencyKey } : {}),
       rollbackOnFailure,
@@ -1484,24 +1706,102 @@ export async function applyStructuredNoteBatch(
     };
   }
 
+  const createdRemIds: string[] = [];
+  const updatedRemIds: string[] = [];
+  const deletedRemIds: string[] = [];
+
+  async function updateExistingRoot(rem: Rem, node: StyledRemTreeNode) {
+    const richText =
+      node.richText && node.richText.length
+        ? await buildRichTextFromSpans(plugin, node.richText)
+        : node.type === 'mathBlock' || node.type === 'inlineMath'
+          ? await buildRichTextFromSpans(plugin, [
+              { type: node.type, latex: node.latex ?? node.text ?? node.title ?? '' },
+            ])
+          : await buildStyledText(plugin, node.text ?? node.title ?? '', node.style);
+    await runSdkOperation('rem.setText', () => rem.setText(richText));
+    await applyRemStyle(plugin, rem, node.style);
+    updatedRemIds.push(rem._id);
+  }
+
+  async function deleteDirectChildren(rem: Rem) {
+    const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
+    for (const child of children) {
+      const descendants = await runSdkOperation('rem.getDescendants', () => child.getDescendants());
+      deletedRemIds.push(child._id, ...descendants.map((descendant) => descendant._id));
+      await runSdkOperation('rem.remove', () => child.remove());
+    }
+  }
+
+  async function createChildNodes(rem: Rem, nodes: StyledRemTreeNode[]) {
+    for (let index = 0; index < nodes.length; index += 1) {
+      const created = await structuredWriteEngine(plugin, {
+        parentId: rem._id,
+        position: 'end',
+        tree: nodes[index],
+      });
+      createdRemIds.push(...created.createdRemIds);
+    }
+  }
+
   try {
-    const created = await createStyledRemTree(plugin, {
-      parentId: parent._id,
-      position: args.position ?? 'end',
-      tree: root,
-    });
+    let rootCreatedRemId: string | undefined;
+    let rootInsertIndex: number | undefined;
+    let rootInsertPosition: 'start' | 'end' | undefined;
+
+    if (operation === 'create_child_tree') {
+      if (!root) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'create_child_tree requires root or note.root.');
+      }
+      const created = await structuredWriteEngine(plugin, {
+        parentId: parent._id,
+        position: args.position ?? 'end',
+        tree: root,
+      });
+      createdRemIds.push(...created.createdRemIds);
+      rootCreatedRemId = created.rootCreatedRemId;
+      rootInsertIndex = created.rootInsertIndex;
+      rootInsertPosition = created.rootInsertPosition;
+    } else {
+      if (operation === 'update_root_and_replace_children') {
+        if (!root) {
+          throw new RemnoteWriteError('INVALID_ARGS', 'update_root_and_replace_children requires root or note.root.');
+        }
+        await updateExistingRoot(parent, root);
+      }
+      if (operation === 'replace_children' || operation === 'update_root_and_replace_children') {
+        await deleteDirectChildren(parent);
+      }
+      if (
+        operation === 'append_children' ||
+        operation === 'replace_children' ||
+        operation === 'update_root_and_replace_children'
+      ) {
+        await createChildNodes(parent, childNodes);
+      }
+    }
+
     const verification = verifyAfterWrite
-      ? await verifyCreatedRems(plugin, created.createdRemIds, created.rootCreatedRemId)
+      ? await verifyCreatedRems(
+          plugin,
+          Array.from(new Set([...createdRemIds, ...updatedRemIds])),
+          rootCreatedRemId ?? parent._id
+        )
       : undefined;
     const result: ApplyStructuredNoteBatchResult = {
+      operationId,
       status: 'applied',
-      parentId: parent._id,
+      targetRemId: operation === 'create_child_tree' ? rootCreatedRemId : parent._id,
+      parentId: operation === 'create_child_tree' ? parent._id : parent.parent ?? undefined,
+      operation,
       plannedNodeCount: validationState.nodeCount,
-      createdNodeCount: created.createdNodeCount,
-      createdRemIds: created.createdRemIds,
-      rootCreatedRemId: created.rootCreatedRemId,
-      rootInsertIndex: created.rootInsertIndex,
-      rootInsertPosition: created.rootInsertPosition,
+      createdNodeCount: createdRemIds.length,
+      createdRemIds,
+      updatedRemIds,
+      deletedRemIds: Array.from(new Set(deletedRemIds)),
+      rootCreatedRemId,
+      rootInsertIndex,
+      rootInsertPosition,
       dryRun: false,
       ...(idempotencyKey ? { idempotencyKey } : {}),
       rollbackOnFailure,
@@ -1516,16 +1816,25 @@ export async function applyStructuredNoteBatch(
     return result;
   } catch (error: unknown) {
     if (error instanceof RemnoteWriteError) {
-      const createdRemIds = readCreatedRemIdsFromError(error);
-      const rollback = rollbackOnFailure && createdRemIds.length
-        ? await rollbackCreatedRems(plugin, createdRemIds)
+      const nestedCreatedRemIds = readCreatedRemIdsFromError(error);
+      for (const remId of nestedCreatedRemIds) {
+        createdRemIds.push(remId);
+      }
+      const uniqueCreatedRemIds = Array.from(new Set(createdRemIds));
+      const hasPartial = uniqueCreatedRemIds.length > 0 || updatedRemIds.length > 0 || deletedRemIds.length > 0;
+      const rollback = rollbackOnFailure && uniqueCreatedRemIds.length
+        ? await rollbackCreatedRems(plugin, uniqueCreatedRemIds)
         : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
-      throw new RemnoteWriteError(error.code, error.message, {
+      throw new RemnoteWriteError(hasPartial ? 'PARTIAL_FAILURE' : error.code, hasPartial ? 'Structured note batch failed after partial execution.' : error.message, {
         originalDetails: error.details,
+        operationId,
+        idempotencyKey,
         partialExecution: {
           ...getPartialExecutionDetails(error.details),
-          createdNodeCount: createdRemIds.length,
-          createdRemIds,
+          createdNodeCount: uniqueCreatedRemIds.length,
+          createdRemIds: uniqueCreatedRemIds,
+          updatedRemIds,
+          deletedRemIds: Array.from(new Set(deletedRemIds)),
           failedStage: 'apply_structured_note_batch',
           rollbackStatus: rollback.status,
           rollbackRemovedRemIds: rollback.removedRemIds,
@@ -1536,7 +1845,12 @@ export async function applyStructuredNoteBatch(
 
     throw new RemnoteWriteError('SDK_ERROR', 'Structured note batch failed.', {
       sdkMessage: getSdkErrorMessage(error),
+      operationId,
+      idempotencyKey,
       partialExecution: {
+        createdRemIds,
+        updatedRemIds,
+        deletedRemIds: Array.from(new Set(deletedRemIds)),
         failedStage: 'apply_structured_note_batch',
         rollbackStatus: 'not_attempted',
       },

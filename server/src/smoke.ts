@@ -448,6 +448,17 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           status: 'created_styled_tree',
         },
       };
+    case 'apply_remnote_command':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          remId: request.args.target.mode === 'rem_id' ? request.args.target.remId ?? fakeRem.remId : fakeRem.remId,
+          command: request.args.command,
+          status: 'command_applied',
+          idempotencyKey: request.args.idempotencyKey,
+        },
+      };
     case 'apply_structured_note_batch': {
       const dryRun = request.args.dryRun ?? false;
       return {
@@ -1022,8 +1033,21 @@ try {
     throw new Error('create_styled_rem_tree did not return styled tree status.');
   }
 
+  const command = JSON.stringify(
+    await callMcpTool(mcp, 'apply_remnote_command', {
+      target: { mode: 'rem_id', remId: fakeRem.remId },
+      command: 'heading_1',
+      idempotencyKey: 'smoke-command-1',
+    })
+  );
+  if (!command.includes('command_applied') || !command.includes('heading_1')) {
+    throw new Error('apply_remnote_command did not return command status.');
+  }
+
   const batchDryRun = JSON.stringify(
     await callMcpTool(mcp, 'apply_structured_note_batch', {
+      target: { mode: 'parent_child', parentId: fakeRem.remId },
+      operation: 'create_child_tree',
       parentId: fakeRem.remId,
       position: 'end',
       dryRun: true,
@@ -1046,6 +1070,8 @@ try {
 
   const batchApply = JSON.stringify(
     await callMcpTool(mcp, 'apply_structured_note_batch', {
+      target: { mode: 'parent_child', parentId: fakeRem.remId },
+      operation: 'create_child_tree',
       parentId: fakeRem.remId,
       position: 'end',
       dryRun: false,

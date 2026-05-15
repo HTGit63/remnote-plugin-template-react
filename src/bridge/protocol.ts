@@ -39,6 +39,7 @@ export type BridgeToolName =
   | 'set_hide_bullet'
   | 'clear_rem_formatting'
   | 'create_styled_rem_tree'
+  | 'apply_remnote_command'
   | 'apply_structured_note_batch'
   | 'create_basic_flashcard'
   | 'create_concept_card'
@@ -80,6 +81,7 @@ export type SafeWriteBridgeToolName =
   | 'set_hide_bullet'
   | 'clear_rem_formatting'
   | 'create_styled_rem_tree'
+  | 'apply_remnote_command'
   | 'apply_structured_note_batch'
   | 'create_basic_flashcard'
   | 'create_concept_card'
@@ -107,8 +109,11 @@ export type BridgeErrorCode =
   | 'SDK_ERROR'
   | 'TIMEOUT'
   | 'CLIENT_DISCONNECTED'
+  | 'REQUEST_CANCELLED'
   | 'UNKNOWN_TOOL'
   | 'APPROVAL_PENDING'
+  | 'OPERATION_PENDING'
+  | 'PARTIAL_FAILURE'
   | 'INTERNAL_ERROR';
 
 export type ApprovalResolution =
@@ -121,6 +126,8 @@ export type ApprovalRiskLevel = 'safe_write' | 'destructive';
 export type BridgeLifecyclePhase =
   | 'received'
   | 'validated'
+  | 'waiting_for_chatgpt_permission'
+  | 'waiting_for_remnote_approval'
   | 'waiting_for_approval'
   | 'approval_approved'
   | 'approval_rejected'
@@ -132,7 +139,8 @@ export type BridgeLifecyclePhase =
   | 'rollback_started'
   | 'rollback_completed'
   | 'rollback_failed'
-  | 'cancelled';
+  | 'cancelled'
+  | 'timeout';
 
 export interface BridgeLifecycleEvent {
   phase: BridgeLifecyclePhase;
@@ -427,10 +435,63 @@ export interface CreateStyledRemTreeArgs {
   tree: StyledRemTreeNode;
 }
 
+export type ApplyRemnoteCommandTargetMode = 'focused_rem' | 'selected_rem' | 'rem_id';
+export type RemnoteCommandName =
+  | 'heading_1'
+  | 'heading_2'
+  | 'heading_3'
+  | 'normal_text'
+  | 'highlight_yellow'
+  | 'highlight_blue'
+  | 'highlight_green'
+  | 'highlight_red'
+  | 'hide_bullet'
+  | 'show_bullet'
+  | 'make_concept'
+  | 'make_descriptor'
+  | 'make_normal'
+  | 'insert_inline_math'
+  | 'insert_math_block';
+
+export interface ApplyRemnoteCommandArgs {
+  target: {
+    mode: ApplyRemnoteCommandTargetMode;
+    remId?: string | null;
+  };
+  command: RemnoteCommandName;
+  args?: {
+    latex?: string;
+    text?: string;
+  };
+  idempotencyKey?: string;
+}
+
+export type StructuredNoteTargetMode = 'focused_rem' | 'rem_id' | 'parent_child' | 'approved_root';
+export type StructuredNoteOperation =
+  | 'replace_children'
+  | 'append_children'
+  | 'update_root_and_replace_children'
+  | 'create_child_tree';
+
+export interface StructuredNoteTarget {
+  mode: StructuredNoteTargetMode;
+  remId?: string | null;
+  parentId?: string | null;
+  createIfMissing?: boolean;
+}
+
+export interface StructuredNotePayload {
+  root?: StyledRemTreeNode;
+  children?: StyledRemTreeNode[];
+}
+
 export interface ApplyStructuredNoteBatchArgs {
-  parentId: string;
+  target?: StructuredNoteTarget;
+  operation?: StructuredNoteOperation;
+  parentId?: string;
   position?: 'start' | 'end';
-  root: StyledRemTreeNode;
+  root?: StyledRemTreeNode;
+  note?: StructuredNotePayload;
   dryRun?: boolean;
   idempotencyKey?: string;
   rollbackOnFailure?: boolean;
@@ -540,7 +601,15 @@ export interface FormatRemResult {
     | 'span_highlight_set'
     | 'rem_type_set'
     | 'hide_bullet_set'
-    | 'formatting_cleared';
+    | 'formatting_cleared'
+    | 'command_applied';
+}
+
+export interface ApplyRemnoteCommandResult {
+  remId: string;
+  command: RemnoteCommandName;
+  status: 'command_applied' | 'already_applied';
+  idempotencyKey?: string;
 }
 
 export interface CreateStyledRemTreeResult {
@@ -567,11 +636,17 @@ export interface StructuredNoteBatchVerification {
 }
 
 export interface ApplyStructuredNoteBatchResult {
+  operationId?: string;
   status: 'dry_run' | 'applied' | 'already_applied';
-  parentId: string;
+  targetRemId?: string;
+  parentId?: string;
+  operation?: StructuredNoteOperation;
   plannedNodeCount: number;
   createdNodeCount: number;
   createdRemIds: string[];
+  updatedRemIds?: string[];
+  deletedRemIds?: string[];
+  movedRemIds?: string[];
   rootCreatedRemId?: string;
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
@@ -716,6 +791,7 @@ export interface BridgeToolArgs {
   set_hide_bullet: SetHideBulletArgs;
   clear_rem_formatting: ClearRemFormattingArgs;
   create_styled_rem_tree: CreateStyledRemTreeArgs;
+  apply_remnote_command: ApplyRemnoteCommandArgs;
   apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
   create_basic_flashcard: CreateFlashcardArgs;
   create_concept_card: CreateFlashcardArgs;
@@ -759,6 +835,7 @@ export interface BridgeToolResults {
   set_hide_bullet: FormatRemResult;
   clear_rem_formatting: FormatRemResult;
   create_styled_rem_tree: CreateStyledRemTreeResult;
+  apply_remnote_command: ApplyRemnoteCommandResult;
   apply_structured_note_batch: ApplyStructuredNoteBatchResult;
   create_basic_flashcard: CreateFlashcardResult;
   create_concept_card: CreateFlashcardResult;
@@ -843,7 +920,7 @@ export interface BridgeServerHello {
   registryDeclaredTools?: string[];
   mcpRegisteredTools?: string[];
   mcpListedTools?: string[];
-  callabilitySource?: 'registry_only_not_live_execution';
+  callabilitySource?: 'registry_only_not_live_execution' | 'live_execution';
   callableTools?: string[];
   actualMcpCallableTools?: string[];
   unauthMcpCallableTools?: string[];
@@ -901,6 +978,7 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'set_hide_bullet',
   'clear_rem_formatting',
   'create_styled_rem_tree',
+  'apply_remnote_command',
   'apply_structured_note_batch',
   'create_basic_flashcard',
   'create_concept_card',
@@ -1070,6 +1148,12 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,
+  },
+  apply_remnote_command: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
   },
   apply_structured_note_batch: {
     readOnlyHint: false,

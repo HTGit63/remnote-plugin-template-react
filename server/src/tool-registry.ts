@@ -1,4 +1,4 @@
-export const TOOL_REGISTRY_VERSION = '2026-05-14.2';
+export const TOOL_REGISTRY_VERSION = '2026-05-14.3';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -55,6 +55,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'set_hide_bullet', exposure: 'public' },
   { name: 'clear_rem_formatting', exposure: 'public' },
   { name: 'create_styled_rem_tree', exposure: 'public' },
+  { name: 'apply_remnote_command', exposure: 'public' },
   { name: 'apply_structured_note_batch', exposure: 'public' },
   { name: 'create_basic_flashcard', exposure: 'public' },
   { name: 'create_concept_card', exposure: 'public' },

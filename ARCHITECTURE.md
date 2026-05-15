@@ -94,7 +94,7 @@ Unknown tools must return `UNKNOWN_TOOL`. Arbitrary command strings are not a va
 - `trusted_writes`
 - `danger_zone`
 
-Reads are allowed in all modes. Safe writes require approval in `confirm_writes`. Destructive tools such as replace and delete always require approval outside `read_only`, and are blocked in `read_only`.
+Reads are allowed in all modes. Safe writes require approval in `confirm_writes`. Safe writes run without repeated RemNote approval in `trusted_writes` when scope allows. Destructive tools such as replace and delete always require approval outside `read_only`, and are blocked in `read_only`.
 
 The plugin also enforces app-level scopes:
 

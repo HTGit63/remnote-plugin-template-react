@@ -47,6 +47,7 @@ const WRITE_TOOLS = new Set([
   'set_hide_bullet',
   'clear_rem_formatting',
   'create_styled_rem_tree',
+  'apply_remnote_command',
   'apply_structured_note_batch',
   'create_basic_flashcard',
   'create_concept_card',
@@ -144,6 +145,8 @@ function healthCheckArgsFor(
     case 'apply_structured_note_batch':
       return parentId
         ? {
+            target: { mode: 'parent_child', parentId },
+            operation: 'create_child_tree',
             parentId,
             position: 'end',
             dryRun: !options.includeWrites,
@@ -161,6 +164,14 @@ function healthCheckArgsFor(
                 },
               ],
             },
+          }
+        : undefined;
+    case 'apply_remnote_command':
+      return options.includeExistingRemMutations && targetRemId
+        ? {
+            target: { mode: 'rem_id', remId: targetRemId },
+            command: 'heading_3',
+            idempotencyKey: `health-command-${Date.now()}`,
           }
         : undefined;
     case 'create_rem':

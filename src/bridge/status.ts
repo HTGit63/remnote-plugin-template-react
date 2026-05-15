@@ -8,10 +8,11 @@ export interface BridgeStatusSnapshot {
   toolRegistryVersion?: string;
   publicToolCount?: number;
   publicTools?: string[];
-  callabilitySource?: 'registry_only_not_live_execution';
+  callabilitySource?: 'registry_only_not_live_execution' | 'live_execution';
   realPluginVerifiedTools?: string[];
   runtimeUnverifiedTools?: string[];
   sdkUnsupportedTools?: string[];
+  hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }
 
