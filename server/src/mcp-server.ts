@@ -739,6 +739,22 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   );
 
   registerTool(
+    'debug_get_raw_rich_text',
+    {
+      title: 'Debug raw Rem rich text',
+      description:
+        'Use this when validating RemNote rich-text formatting. Returns raw SDK rich text so font color and highlight fields can be inspected directly.',
+      inputSchema: z.object({
+        remId: REM_ID_SCHEMA.describe('The RemNote Rem ID whose raw rich text should be read.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('debug_get_raw_rich_text'),
+    },
+    async ({ remId }) =>
+      bridgeToolResult(() => callPlugin('debug_get_raw_rich_text', { remId }), 'Read raw Rem rich text.')
+  );
+
+  registerTool(
     'get_current_selection',
     {
       title: 'Get current RemNote selection',

@@ -74,7 +74,10 @@ import {
   applyTextColorToAllText,
   applyTextColorToRange,
   applyTextHighlightToRange,
-  normalizeTextColor,
+  normalizeHighlightColorTarget,
+  normalizeTextColorTarget,
+  RICH_TEXT_FONT_COLOR_FIELD,
+  RICH_TEXT_HIGHLIGHT_FIELD,
   resolveRangeFromPlainText,
 } from './richTextFormatting';
 
@@ -298,15 +301,54 @@ function getTextFormats(styles: RichTextSpanInput['styles']): Exclude<RichTextFo
     formats.push('quote');
   }
 
-  const color = styles.color && styles.color !== 'default' ? styles.color : styles.highlight;
-  if (color && color !== 'default') {
-    const format = getColorFormat(color);
-    if (format) {
-      formats.push(format as Exclude<RichTextFormatName, 'cloze'>);
+  return formats;
+}
+
+function applyRawColorFieldsToTextItem(
+  item: RichTextInterface[number],
+  styles: RichTextSpanInput['styles']
+): RichTextInterface[number] {
+  if (!styles || typeof item !== 'object' || item === null || Array.isArray(item)) {
+    return item;
+  }
+
+  const next = { ...(item as Record<string, unknown>) };
+  if (styles.color !== undefined) {
+    const target = normalizeTextColorTarget(styles.color);
+    if (target.colorNumber === null) {
+      delete next[RICH_TEXT_FONT_COLOR_FIELD];
+    } else {
+      next[RICH_TEXT_FONT_COLOR_FIELD] = target.colorNumber;
     }
   }
 
-  return formats;
+  if (styles.highlight !== undefined) {
+    const target = normalizeHighlightColorTarget(styles.highlight);
+    if (target.colorNumber === null) {
+      delete next[RICH_TEXT_HIGHLIGHT_FIELD];
+    } else {
+      next[RICH_TEXT_HIGHLIGHT_FIELD] = target.colorNumber;
+    }
+  }
+
+  if (styles.cloze) {
+    next.cId = `bridge-cloze-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  return next as RichTextInterface[number];
+}
+
+function applyRawColorFieldsToRichText(
+  richText: RichTextInterface,
+  styles: RichTextSpanInput['styles']
+): RichTextInterface {
+  return richText.map((item) => {
+    if (typeof item === 'string') {
+      return applyRawColorFieldsToTextItem({ i: 'm', text: item } as RichTextInterface[number], styles);
+    }
+
+    return applyRawColorFieldsToTextItem(item, styles);
+  }) as RichTextInterface;
 }
 
 function isEscaped(text: string, index: number): boolean {
@@ -426,7 +468,7 @@ async function buildRichTextFromSpans(
     throw new RemnoteWriteError('INVALID_ARGS', 'richText must contain at least one span.');
   }
 
-  let builder: ReturnType<RNPlugin['richText']['text']> | undefined;
+  const output: RichTextInterface = [];
   let appended = false;
 
   for (const span of spans) {
@@ -437,9 +479,7 @@ async function buildRichTextFromSpans(
         throw new RemnoteWriteError('INVALID_ARGS', 'Math span requires latex.');
       }
 
-      builder = builder
-        ? builder.latex(latex, type === 'mathBlock')
-        : plugin.richText.latex(latex, type === 'mathBlock');
+      output.push({ i: 'x', text: latex, block: type === 'mathBlock' } as RichTextInterface[number]);
       appended = true;
       continue;
     }
@@ -453,24 +493,23 @@ async function buildRichTextFromSpans(
       const parsedType = parsedSpan.type ?? 'text';
       if (parsedType === 'mathBlock' || parsedType === 'inlineMath') {
         const latex = parsedSpan.latex ?? parsedSpan.text ?? '';
-        builder = builder
-          ? builder.latex(latex, parsedType === 'mathBlock')
-          : plugin.richText.latex(latex, parsedType === 'mathBlock');
+        output.push({ i: 'x', text: latex, block: parsedType === 'mathBlock' } as RichTextInterface[number]);
       } else {
-        builder = builder
-          ? builder.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles))
-          : plugin.richText.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles));
+        const built = await runSdkOperation('richText.text.value', () =>
+          plugin.richText.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles)).value()
+        );
+        const styled = applyRawColorFieldsToRichText(built, parsedSpan.styles);
+        output.push(...styled);
       }
       appended = true;
     }
   }
 
-  if (!builder || !appended) {
+  if (!appended || output.length === 0) {
     throw new RemnoteWriteError('INVALID_ARGS', 'richText did not contain text or math content.');
   }
 
-  const completedBuilder = builder;
-  return runSdkOperation('richText.value', () => completedBuilder.value());
+  return output;
 }
 
 async function buildStyledText(
@@ -532,6 +571,34 @@ async function setTextColorInRange(
     return {
       remId: rem._id,
       status,
+      ok: true,
+      requestedColor: formatted.requestedColor,
+      normalizedColor: formatted.normalizedColor,
+      methodUsed: formatted.methodUsed,
+      resolvedPlainText: range.resolvedPlainText,
+      start: range.start,
+      end: range.end,
+      verification: {
+        plainText: await getRemPlainString(plugin, rem),
+      },
+    };
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
+  }
+}
+
+async function setTextHighlightInRange(
+  plugin: RNPlugin,
+  rem: Rem,
+  range: { start: number; end: number; resolvedPlainText: string },
+  color: string
+): Promise<FormatRemResult> {
+  try {
+    const formatted = await applyTextHighlightToRange(plugin, rem.text, range.start, range.end, color);
+    await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
+    return {
+      remId: rem._id,
+      status: 'span_highlight_set',
       ok: true,
       requestedColor: formatted.requestedColor,
       normalizedColor: formatted.normalizedColor,
@@ -955,18 +1022,7 @@ export async function setTextSpanHighlight(
       rangeArgs.text,
       rangeArgs.occurrence ?? 1
     );
-    await applyTextHighlightToRange();
-    return {
-      remId: rem._id,
-      status: 'span_highlight_set',
-      ok: false,
-      requestedColor: args.color,
-      normalizedColor: String(normalizeTextColor(args.color)),
-      methodUsed: 'rich_text_rebuild',
-      resolvedPlainText: range.resolvedPlainText,
-      start: range.start,
-      end: range.end,
-    };
+    return setTextHighlightInRange(plugin, rem, range, args.color);
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -1952,7 +2008,12 @@ const RICH_TEXT_COLOR_NUMBERS: Record<string, number> = {
   blue: 6,
 };
 
-function richTextHasColoredSpan(richText: RichTextInterface | undefined, text: string | undefined, color: string): boolean {
+function richTextHasSpanField(
+  richText: RichTextInterface | undefined,
+  text: string | undefined,
+  color: string,
+  field: typeof RICH_TEXT_FONT_COLOR_FIELD | typeof RICH_TEXT_HIGHLIGHT_FIELD
+): boolean {
   if (!richText || !text) {
     return false;
   }
@@ -1968,7 +2029,7 @@ function richTextHasColoredSpan(richText: RichTextInterface | undefined, text: s
     }
 
     const record = item as Record<string, unknown>;
-    return typeof record.text === 'string' && record.text.includes(text) && record.h === expectedColor;
+    return typeof record.text === 'string' && record.text.includes(text) && record[field] === expectedColor;
   });
 }
 
@@ -2024,7 +2085,7 @@ export async function verifyNoteDesign(
 
     if (expected.wholeRemHighlight) {
       const actual = String(await rem.getHighlightColor().catch(() => 'default')).toLowerCase();
-      if (actual !== expected.wholeRemHighlight) {
+      if (actual !== expected.wholeRemHighlight.toLowerCase()) {
         mismatches.push({
           remId,
           type: 'wholeRemHighlight',
@@ -2036,7 +2097,7 @@ export async function verifyNoteDesign(
     }
 
     for (const span of expected.textColorSpans ?? []) {
-      if (!richTextHasColoredSpan(rem.text, span.text, span.color)) {
+      if (!richTextHasSpanField(rem.text, span.text, span.color, RICH_TEXT_FONT_COLOR_FIELD)) {
         mismatches.push({
           remId,
           type: 'textColorSpan',
@@ -2047,14 +2108,13 @@ export async function verifyNoteDesign(
     }
 
     for (const span of expected.textHighlightSpans ?? []) {
-      unsupportedChecks.push({
-        remId,
-        type: 'textHighlightSpan',
-        reason:
-          'Installed @remnote/plugin-sdk 0.0.14 does not expose selected-text highlight as distinct from color/whole-Rem highlight.',
-      });
-      if (span.start !== undefined || span.end !== undefined || span.text) {
-        // Keep payload exercised without claiming false support.
+      if (!richTextHasSpanField(rem.text, span.text, span.color, RICH_TEXT_HIGHLIGHT_FIELD)) {
+        mismatches.push({
+          remId,
+          type: 'textHighlightSpan',
+          expected: span,
+          message: 'Expected highlighted text span was not found in raw rich text highlight field.',
+        });
       }
     }
 

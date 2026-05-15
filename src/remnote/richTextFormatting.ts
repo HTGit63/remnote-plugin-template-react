@@ -23,9 +23,11 @@ const TEXT_COLOR_NUMBERS: Record<InstalledTextColorFormat, number> = {
   Purple: 5,
   Blue: 6,
 };
+export const RICH_TEXT_FONT_COLOR_FIELD = 'tc';
+export const RICH_TEXT_HIGHLIGHT_FIELD = 'h';
 
 type InstalledTextColorFormat = (typeof INSTALLED_TEXT_COLOR_FORMATS)[number];
-type BuilderTextFormat = 'bold' | 'italic' | 'underline' | 'quote' | InstalledTextColorFormat;
+type BuilderTextFormat = 'bold' | 'italic' | 'underline' | 'quote';
 type RangeFormat = BuilderTextFormat | 'cloze';
 
 export class RichTextFormattingError extends Error {
@@ -110,17 +112,17 @@ export function normalizeHighlightColor(input: string): RichTextFormatName {
   return normalizeTextColor(input);
 }
 
-function normalizeTextColorTarget(input: string): {
+export function normalizeTextColorTarget(input: string): {
   requestedColor: string;
   normalizedColor: InstalledTextColorFormat | 'default';
-  colorFormat: InstalledTextColorFormat | null;
+  colorNumber: number | null;
 } {
   const requestedColor = input;
   if (input.trim().toLowerCase() === 'default') {
     return {
       requestedColor,
       normalizedColor: 'default',
-      colorFormat: null,
+      colorNumber: null,
     };
   }
 
@@ -128,8 +130,16 @@ function normalizeTextColorTarget(input: string): {
   return {
     requestedColor,
     normalizedColor,
-    colorFormat: normalizedColor,
+    colorNumber: TEXT_COLOR_NUMBERS[normalizedColor],
   };
+}
+
+export function normalizeHighlightColorTarget(input: string): {
+  requestedColor: string;
+  normalizedColor: InstalledTextColorFormat | 'default';
+  colorNumber: number | null;
+} {
+  return normalizeTextColorTarget(input);
 }
 
 async function richTextLength(plugin: RNPlugin, richText: RichTextInterface): Promise<number> {
@@ -283,29 +293,11 @@ function baseFormatsFromElement(item: unknown): BuilderTextFormat[] {
   return formats;
 }
 
-function hasAdvancedTextFields(item: unknown): item is Record<string, unknown> {
-  if (!isRecord(item)) {
-    return false;
-  }
-
-  return ['cId', 'code', 'url', 'qId', 'hiddenCloze', 'revealedCloze', 'language', 'c'].some(
-    (key) => item[key] !== undefined
-  );
-}
-
-async function buildText(plugin: RNPlugin, text: string, formats: BuilderTextFormat[]): Promise<RichTextInterface> {
-  if (!text) {
-    return [];
-  }
-
-  return plugin.richText.text(text, formats).value();
-}
-
 async function formatTextItems(
-  plugin: RNPlugin,
   richText: RichTextInterface,
   formats: RangeFormat[],
-  colorFormat?: InstalledTextColorFormat | null
+  fontColorNumber?: number | null,
+  highlightColorNumber?: number | null
 ): Promise<RichTextInterface> {
   const output: RichTextInterface = [];
   const shouldApplyCloze = formats.includes('cloze');
@@ -328,52 +320,42 @@ async function formatTextItems(
       continue;
     }
 
-    if (hasAdvancedTextFields(item)) {
-      const next = JSON.parse(JSON.stringify(item)) as Record<string, unknown>;
-      if (colorFormat === null) {
-        delete next.h;
-      } else if (colorFormat) {
-        next.h = TEXT_COLOR_NUMBERS[colorFormat];
-      }
-      if (basicFormats.includes('bold')) {
-        next.b = true;
-      }
-      if (basicFormats.includes('italic')) {
-        next.l = true;
-      }
-      if (basicFormats.includes('underline')) {
-        next.u = true;
-      }
-      if (basicFormats.includes('quote')) {
-        next.q = true;
-      }
-      if (clozeId) {
-        next.cId = clozeId;
-      }
-      output.push(next as RichTextInterface[number]);
-      continue;
+    const next =
+      typeof item === 'string'
+        ? ({ i: 'm', text } as Record<string, unknown>)
+        : (JSON.parse(JSON.stringify(item)) as Record<string, unknown>);
+
+    if (fontColorNumber === null) {
+      delete next[RICH_TEXT_FONT_COLOR_FIELD];
+    } else if (fontColorNumber) {
+      next[RICH_TEXT_FONT_COLOR_FIELD] = fontColorNumber;
+    }
+
+    if (highlightColorNumber === null) {
+      delete next[RICH_TEXT_HIGHLIGHT_FIELD];
+    } else if (highlightColorNumber) {
+      next[RICH_TEXT_HIGHLIGHT_FIELD] = highlightColorNumber;
     }
 
     const inherited = baseFormatsFromElement(item);
-    const nextFormats = Array.from(
-      new Set([
-        ...inherited,
-        ...basicFormats,
-        ...(colorFormat ? [colorFormat] : []),
-      ])
-    ) as BuilderTextFormat[];
-    const built = await buildText(plugin, text, nextFormats);
-    if (clozeId) {
-      for (const builtItem of built) {
-        if (typeof builtItem === 'string') {
-          output.push({ i: 'm', text: builtItem, cId: clozeId } as RichTextInterface[number]);
-        } else if (isRecord(builtItem)) {
-          output.push({ ...builtItem, cId: clozeId } as RichTextInterface[number]);
-        }
-      }
-    } else {
-      output.push(...built);
+    const nextFormats = Array.from(new Set([...inherited, ...basicFormats])) as BuilderTextFormat[];
+    if (nextFormats.includes('bold')) {
+      next.b = true;
     }
+    if (nextFormats.includes('italic')) {
+      next.l = true;
+    }
+    if (nextFormats.includes('underline')) {
+      next.u = true;
+    }
+    if (nextFormats.includes('quote')) {
+      next.q = true;
+    }
+    if (clozeId) {
+      next.cId = clozeId;
+    }
+
+    output.push(next as RichTextInterface[number]);
   }
 
   return output;
@@ -384,11 +366,7 @@ async function normalizeCombinedRichText(
   parts: RichTextInterface[]
 ): Promise<RichTextInterface> {
   const combined = parts.flat() as RichTextInterface;
-  try {
-    return await plugin.richText.normalize(combined);
-  } catch {
-    return combined;
-  }
+  return combined;
 }
 
 export async function applyFormatsToRichTextRange(
@@ -399,7 +377,7 @@ export async function applyFormatsToRichTextRange(
   formats: RangeFormat[]
 ): Promise<RichTextInterface> {
   const split = await splitRichTextByCharRange(plugin, richText, start, end);
-  const target = await formatTextItems(plugin, split.target, formats);
+  const target = await formatTextItems(split.target, formats);
   return normalizeCombinedRichText(plugin, [split.before, target, split.after]);
 }
 
@@ -412,7 +390,7 @@ export async function applyTextColorToRange(
 ): Promise<{ richText: RichTextInterface; requestedColor: string; normalizedColor: string; methodUsed: 'rich_text_rebuild' }> {
   const normalized = normalizeTextColorTarget(color);
   const split = await splitRichTextByCharRange(plugin, richText, start, end);
-  const target = await formatTextItems(plugin, split.target, [], normalized.colorFormat);
+  const target = await formatTextItems(split.target, [], normalized.colorNumber);
   return {
     richText: await normalizeCombinedRichText(plugin, [split.before, target, split.after]),
     requestedColor: normalized.requestedColor,
@@ -431,7 +409,7 @@ export async function applyTextColorToAllText(
 
   for (const item of cloneRichText(richText)) {
     if (isTextElement(item)) {
-      output.push(...(await formatTextItems(plugin, [item] as RichTextInterface, [], normalized.colorFormat)));
+      output.push(...(await formatTextItems([item] as RichTextInterface, [], normalized.colorNumber)));
     } else {
       output.push(item);
     }
@@ -445,20 +423,22 @@ export async function applyTextColorToAllText(
   };
 }
 
-export async function applyTextHighlightToRange(): Promise<never> {
-  throw new RichTextFormattingError(
-    'SDK_UNSUPPORTED',
-    'Selected-text highlight is not exposed as a distinct safe API by installed @remnote/plugin-sdk 0.0.14. Whole-Rem highlight remains supported through set_rem_highlight_color.',
-    {
-      checked: [
-        'RichTextNamespace.text formats',
-        'RichTextFormatName',
-        'RichTextElementTextInterface',
-        'applyTextFormatToRange',
-      ],
-      distinction: 'set_text_span_highlight is not routed to whole-Rem highlight.',
-    }
-  );
+export async function applyTextHighlightToRange(
+  plugin: RNPlugin,
+  richText: RichTextInterface,
+  start: number,
+  end: number,
+  color: string
+): Promise<{ richText: RichTextInterface; requestedColor: string; normalizedColor: string; methodUsed: 'rich_text_rebuild' }> {
+  const normalized = normalizeHighlightColorTarget(color);
+  const split = await splitRichTextByCharRange(plugin, richText, start, end);
+  const target = await formatTextItems(split.target, [], undefined, normalized.colorNumber);
+  return {
+    richText: await normalizeCombinedRichText(plugin, [split.before, target, split.after]),
+    requestedColor: normalized.requestedColor,
+    normalizedColor: normalized.normalizedColor,
+    methodUsed: 'rich_text_rebuild',
+  };
 }
 
 export async function applyClozeToRange(

@@ -13,6 +13,7 @@ import {
   type BridgeToolName,
   type ClearRemFormattingArgs,
   type CreateDocumentArgs,
+  type DebugGetRawRichTextArgs,
   type CreateFlashcardArgs,
   type CreateFolderArgs,
   type CreateListAnswerCardArgs,
@@ -59,6 +60,7 @@ import {
 } from './protocol';
 import { getPermissionDecision } from '../remnote/permissions';
 import {
+  debugGetRawRichText,
   getCurrentSelection,
   readChildren,
   readDocumentOrFolderTree,
@@ -755,6 +757,7 @@ function normalizeArgs<TTool extends BridgeToolName>(
         depth: getTreeDepth(args),
       } as BridgeToolArgs[TTool];
     case 'get_rem_rich':
+    case 'debug_get_raw_rich_text':
       return {
         remId: requiredRemId(args),
       } as BridgeToolArgs[TTool];
@@ -1314,6 +1317,7 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
     case 'get_rem':
     case 'get_rem_tree':
     case 'get_rem_rich':
+    case 'debug_get_raw_rich_text':
     case 'get_rem_breadcrumbs':
     case 'append_to_rem':
     case 'update_rem':
@@ -2070,6 +2074,16 @@ export async function handleBridgeRequest(
       }
       case 'get_rem_rich': {
         const rem = await readRemRich(plugin, request.args);
+        if (!rem) {
+          response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
+          break;
+        }
+
+        response = createBridgeSuccess(request, rem);
+        break;
+      }
+      case 'debug_get_raw_rich_text': {
+        const rem = await debugGetRawRichText(plugin, request.args as DebugGetRawRichTextArgs);
         if (!rem) {
           response = createBridgeFailure(request.id, 'REM_NOT_FOUND', 'Target Rem was not found.');
           break;

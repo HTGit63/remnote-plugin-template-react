@@ -16,6 +16,7 @@ export type BridgeToolName =
   | 'get_rem'
   | 'get_rem_tree'
   | 'get_rem_rich'
+  | 'debug_get_raw_rich_text'
   | 'get_current_selection'
   | 'get_children'
   | 'get_rem_breadcrumbs'
@@ -61,6 +62,7 @@ export type ReadOnlyBridgeToolName =
   | 'get_rem'
   | 'get_rem_tree'
   | 'get_rem_rich'
+  | 'debug_get_raw_rich_text'
   | 'get_current_selection'
   | 'get_children'
   | 'get_rem_breadcrumbs'
@@ -221,6 +223,10 @@ export interface GetRemTreeArgs {
 }
 
 export interface GetRemRichArgs {
+  remId: string;
+}
+
+export interface DebugGetRawRichTextArgs {
   remId: string;
 }
 
@@ -906,6 +912,20 @@ export interface GetRemRichResult {
   detectedContentTypes: DetectedContentType[];
 }
 
+export interface DebugGetRawRichTextResult {
+  remId: string;
+  rawText: unknown;
+  rawBackText?: unknown;
+  richLength?: number;
+  backRichLength?: number;
+  json: string;
+  interpretation: {
+    fontColorField: string;
+    textHighlightField: string;
+    wholeRemHighlightSource: string;
+  };
+}
+
 export interface GetCurrentSelectionResult {
   focusedRemId: string | null;
   selectedRemIds: string[];
@@ -949,6 +969,7 @@ export interface BridgeToolArgs {
   get_rem: GetRemArgs;
   get_rem_tree: GetRemTreeArgs;
   get_rem_rich: GetRemRichArgs;
+  debug_get_raw_rich_text: DebugGetRawRichTextArgs;
   get_current_selection: GetCurrentSelectionArgs;
   get_children: GetChildrenArgs;
   get_rem_breadcrumbs: GetRemBreadcrumbsArgs;
@@ -997,6 +1018,7 @@ export interface BridgeToolResults {
   get_rem: SerializedRem;
   get_rem_tree: SerializedRem;
   get_rem_rich: GetRemRichResult;
+  debug_get_raw_rich_text: DebugGetRawRichTextResult;
   get_current_selection: GetCurrentSelectionResult;
   get_children: GetChildrenResult;
   get_rem_breadcrumbs: GetRemBreadcrumbsResult;
@@ -1144,6 +1166,7 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'get_rem',
   'get_rem_tree',
   'get_rem_rich',
+  'debug_get_raw_rich_text',
   'get_current_selection',
   'get_children',
   'get_rem_breadcrumbs',
@@ -1217,6 +1240,12 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     idempotentHint: true,
   },
   get_rem_rich: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  debug_get_raw_rich_text: {
     readOnlyHint: true,
     openWorldHint: false,
     destructiveHint: false,

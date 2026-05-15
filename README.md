@@ -59,7 +59,7 @@ Implemented now:
 - local auth/session/audit interfaces for future hosted mode without fake OAuth;
 - MCP/ChatGPT-compatible tool layer at `http://127.0.0.1:47392/mcp`.
 
-Current truth: the server lists 46 public MCP tools, but a listed tool is not automatically proven live against the real RemNote plugin and SDK. `get_bridge_diagnostics` is the source for `callabilitySource`, `realPluginVerifiedTools`, `runtimeUnverifiedTools`, `sdkUnsupportedTools`, and the last health-check result.
+Current truth: the server lists 47 public MCP tools, but a listed tool is not automatically proven live against the real RemNote plugin and SDK. `get_bridge_diagnostics` is the source for `callabilitySource`, `realPluginVerifiedTools`, `runtimeUnverifiedTools`, `sdkUnsupportedTools`, and the last health-check result.
 
 ## Local Setup
 
@@ -101,7 +101,7 @@ The plugin dev server and the companion server are separate processes. The manif
 
 ## MCP Tools
 
-The companion server exposes 46 public MCP tools by default:
+The companion server exposes 47 public MCP tools by default:
 
 - `get_bridge_status`
 - `get_bridge_diagnostics`
@@ -113,6 +113,7 @@ The companion server exposes 46 public MCP tools by default:
 - `get_rem`
 - `get_rem_tree`
 - `get_rem_rich`
+- `debug_get_raw_rich_text`
 - `get_current_selection`
 - `get_children`
 - `get_rem_breadcrumbs`
@@ -156,6 +157,10 @@ MCP `initialize` and `tools/list` allow unauthenticated discovery so ChatGPT can
 
 `tools/list` means discoverable. It does not mean every tool already succeeded in a real RemNote session. Use `get_bridge_diagnostics` to inspect recently verified tools, unsupported SDK tools, and runtime-unverified tools.
 
+Font color and highlight are separate. `set_rem_text_color`, `set_text_span_color`, and `update_rem_rich` `styles.color` write raw text color field `tc`. `set_text_span_highlight`, `set_rem_highlight_color`, and `styles.highlight` write highlight/background fields. Use `debug_get_raw_rich_text` to inspect raw RemNote rich text when validating UI behavior.
+
+`run_bridge_health_check` mutation mode also records focused formatting sections: `true_font_color_write`, `text_span_font_color_write`, `whole_rem_highlight_write`, `text_span_highlight_write`, and `raw_rich_text_roundtrip`.
+
 ## Settings
 
 - `Bridge Server URL`: defaults to `ws://localhost:47391/remnote-bridge`
@@ -198,7 +203,7 @@ Scope checks run inside the RemNote plugin before approval or SDK mutation. The 
 
 ## Not Ready Yet
 
-- All 46 public tools are discoverable and smoke-verified against the mock bridge; full real RemNote sandbox verification must be recorded through `run_bridge_health_check` or `npm run bridge:live-test`.
+- All 47 public tools are discoverable and smoke-verified against the mock bridge; full real RemNote sandbox verification must be recorded through `run_bridge_health_check` or `npm run bridge:live-test`.
 - Formatting, math, and structured batch writing are repo-verified and covered by smoke tests, but still need a live RemNote sandbox run before public hosted submission.
 - Public hosted mode.
 - OAuth sign-in and account management.

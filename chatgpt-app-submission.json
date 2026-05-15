@@ -128,6 +128,18 @@
         "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
       }
     },
+    "debug_get_raw_rich_text": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads one Rem's raw rich text payload for formatting diagnostics.",
+        "open_world_justification": "Reads local private RemNote data and does not publish externally.",
+        "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
+      }
+    },
     "get_current_selection": {
       "annotations": {
         "readOnlyHint": true,
@@ -779,11 +791,11 @@
       "expected_output_url": null
     },
     {
-      "description": "Safely delete a specific Rem by ID with guard checks.",
-      "user_prompt": "Dry-run delete rem_child_1, verify it is under rem_parent_1, then delete it only if the preview matches.",
+      "description": "Inspect raw rich text fields for font-color debugging.",
+      "user_prompt": "For rem_123, show the raw rich text payload so I can confirm font color and highlight fields are separate.",
       "file_attachment_urls": null,
-      "tools_triggered": "delete_rem_by_id",
-      "expected_output": "First returns a guarded dry-run preview with breadcrumbs and child count, then deletes only when dryRun is false and the expected parent or ancestor guard matches.",
+      "tools_triggered": "debug_get_raw_rich_text",
+      "expected_output": "Returns the raw RemNote rich text payload and identifies the bridge interpretation fields for font color and text highlight.",
       "expected_output_url": null
     },
     {
@@ -796,10 +808,10 @@
     },
     {
       "description": "Apply formatting operations to existing Rems safely.",
-      "user_prompt": "Apply a style plan that colors the word beta blue in rem_123 and sets rem_456 to H2, continuing on unsupported span highlight errors.",
+      "user_prompt": "Apply a style plan that colors the word beta blue in rem_123, highlights gamma yellow, and sets rem_456 to H2.",
       "file_attachment_urls": null,
       "tools_triggered": "apply_style_plan",
-      "expected_output": "Returns per-operation success, failure, or unsupported status without letting one bad span corrupt the whole plan when continueOnError is true.",
+      "expected_output": "Returns per-operation success or failure without letting one bad span corrupt the whole plan when continueOnError is true.",
       "expected_output_url": null
     },
     {

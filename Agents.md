@@ -45,10 +45,10 @@ The latest inspected state is this working tree after the RemNote bridge formatt
 The repo currently declares:
 
 ```text
-46 public MCP tools
+47 public MCP tools
 3 hidden gated legacy delete tools: delete_rem, delete_focused_rem, delete_selected_rem
-toolRegistryVersion: 2026-05-15.1
-mcpDiscoveryVersion: mcp-discovery-2026-05-15.1
+toolRegistryVersion: 2026-05-15.2
+mcpDiscoveryVersion: mcp-discovery-2026-05-15.2
 ```
 
 The source-level registry exposure problem is mostly fixed.
@@ -57,7 +57,7 @@ The old 8-tool surface was a stale connector/discovery problem.
 
 However, the system is **not complete**.
 
-The older live test report showed only about **26 tools were working reliably**. The current source now exposes 46 public tools, hides risky focus/selection delete, fixes the dedicated text-color/cloze paths at source level, and expands mock smoke coverage. A live RemNote sandbox health-check pass is still required before public hosted submission wording is allowed.
+The older live test report showed only about **26 tools were working reliably**. The current source now exposes 47 public tools, hides risky focus/selection delete, fixes the dedicated text-color/cloze paths at source level, adds raw rich-text diagnostics, and expands mock smoke coverage. A live RemNote sandbox health-check pass is still required before public hosted submission wording is allowed.
 
 ## 1.2 Main current problem
 
@@ -70,7 +70,7 @@ ChatGPT cannot see all tools.
 The current problem is:
 
 ```text
-The bridge exposes 46 public tools, but not all 46 are verified working in live execution against the RemNote plugin and RemNote SDK.
+The bridge exposes 47 public tools, but not all 47 are verified working in live execution against the RemNote plugin and RemNote SDK.
 ```
 
 Diagnostics now correctly say:
@@ -128,13 +128,13 @@ Do not describe the current bridge as fully complete.
 Correct status wording:
 
 ```text
-The source-level 46-tool registry is present and the connector exposes all 46 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
+The source-level 47-tool registry is present and the connector exposes all 47 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
 ```
 
 Incorrect status wording:
 
 ```text
-All 46 tools work live.
+All 47 tools work live.
 Complete.
 Issue fixed.
 ```
@@ -198,14 +198,14 @@ replace_rem caused a stuck call.
 create_rem_tree caused a stuck call.
 get_rem_rich was blocked by the ChatGPT/OpenAI gateway during testing.
 create_cloze_card was blocked by the ChatGPT/OpenAI gateway during testing.
-`set_rem_text_color` and `set_text_span_color` now use rich-text rebuild instead of the broken applyTextFormatToRange path. `set_text_span_highlight` returns clean SDK_UNSUPPORTED because this installed SDK lacks distinct selected-text highlight support.
+`set_rem_text_color` and `set_text_span_color` now use raw rich-text rebuild with `tc` for font color instead of the SDK color format path, which writes `h` highlight/background. `set_text_span_highlight` writes raw `h` span highlight and stays separate from whole-Rem highlight.
 clear_rem_formatting fails with rem.setType argument error.
 ```
 
 2026-05-15 update:
 
 ```text
-Formatting tools now use exact SDK color names Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, Pink, selected-text highlight, and unsupported type reset paths return clean SDK_UNSUPPORTED.
+Formatting tools now use exact supported colors Red, Orange, Yellow, Green, Blue, and Purple. Font color writes `tc`; selected-text highlight writes `h`; Gray, Brown, Pink, and unsupported type reset paths return clean SDK_UNSUPPORTED.
 Live RemNote sandbox QA is still required to move them from source-verified to live-verified.
 ```
 
@@ -781,7 +781,7 @@ Make the project honest about current state.
 Update diagnostics and docs to say:
 
 ```text
-46 tools exposed
+47 tools exposed
 previous live report verified about 26 working
 remaining tools unverified/problematic
 callabilitySource = registry_only_not_live_execution
@@ -1559,7 +1559,7 @@ One tool call writes a complete styled note correctly.
 ## Milestone 4-6 Execution Status — 2026-05-14
 
 - [x] Milestone 4 — SDK formatting fix.
-  Formatting calls now use installed SDK-supported rich-text color names, avoid invalid normal type reset calls, and return `SDK_UNSUPPORTED` for unsupported default whole-Rem highlight clearing or normal type reset instead of raw `SDK_ERROR`.
+  Formatting calls now keep font color and highlight separate: font color writes raw text field `tc`, selected-text highlight writes raw field `h`, and the SDK color format path is avoided because it writes highlight/background. Unsupported default whole-Rem highlight clearing and normal type reset still return clean `SDK_UNSUPPORTED`.
 - [x] Milestone 5 — Math rendering.
   Plain text spans now parse `$...$`, `\(...\)`, `$$...$$`, and `\[...\]` into RemNote rich math nodes. The parser is used by `update_rem_rich`, styled trees, flashcard rich text creation paths, and the batch writer.
 - [x] Milestone 6 — Atomic structured note writer.
@@ -1573,7 +1573,7 @@ npm run validate passed.
 npm run build passed with existing webpack size warnings.
 npm run server:build passed.
 npm run server:smoke passed.
-Live RemNote sandbox QA is still required before marking all 46 tools production-ready in hosted/public wording.
+Live RemNote sandbox QA is still required before marking all 47 tools production-ready in hosted/public wording.
 ```
 
 ## Milestone 7 — Rework tree tools on batch engine
@@ -1643,13 +1643,13 @@ npm run validate passed.
 npm run build passed with existing webpack size warnings.
 npm run server:build passed.
 npm run server:smoke passed.
-chatgpt-app-submission.json parsed with 44 tool entries, 28 test cases, and 4 negative test cases.
+chatgpt-app-submission.json parsed with 47 tool entries, 31 test cases, and 4 negative test cases.
 git diff --check passed.
 ```
 
 ## Final-test execution status — 2026-05-15
 
-- [x] Registry exposes 46 public tools and keeps 3 hidden gated legacy delete tools: `delete_rem`, `delete_focused_rem`, and `delete_selected_rem`.
+- [x] Registry exposes 47 public tools and keeps 3 hidden gated legacy delete tools: `delete_rem`, `delete_focused_rem`, and `delete_selected_rem`.
 - [x] `apply_remnote_command` is public, smoke-tested, and covered in `chatgpt-app-submission.json`.
 - [x] Trusted Writes no longer forces RemNote-side approvals for safe writes when scope allows; replace/delete remain approval-gated.
 - [x] Plugin UI includes Recommended Note Mode, effective permission summary, tool availability counts, lifecycle display, health check, diagnostics copy, recent logs copy, failed request copy, last success, and last failure.
@@ -1664,7 +1664,7 @@ git diff --check passed.
 The bridge is complete only when all are true:
 
 ```text
-46 public tools are discoverable.
+47 public tools are discoverable.
 delete_rem is hidden by default.
 callabilitySource is honest.
 At least all required note-generation tools are live verified.

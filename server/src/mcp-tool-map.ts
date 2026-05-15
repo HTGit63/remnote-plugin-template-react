@@ -21,6 +21,7 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'get_rem':
     case 'get_rem_tree':
     case 'get_rem_rich':
+    case 'debug_get_raw_rich_text':
     case 'get_current_selection':
     case 'get_children':
     case 'get_rem_breadcrumbs':

@@ -17,6 +17,7 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'get_rem',
   'get_rem_tree',
   'get_rem_rich',
+  'debug_get_raw_rich_text',
   'get_current_selection',
   'get_children',
   'get_rem_breadcrumbs',

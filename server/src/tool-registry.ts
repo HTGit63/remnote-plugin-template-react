@@ -1,4 +1,4 @@
-export const TOOL_REGISTRY_VERSION = '2026-05-15.1';
+export const TOOL_REGISTRY_VERSION = '2026-05-15.2';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -29,6 +29,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'get_rem', exposure: 'public' },
   { name: 'get_rem_tree', exposure: 'public' },
   { name: 'get_rem_rich', exposure: 'public' },
+  { name: 'debug_get_raw_rich_text', exposure: 'public' },
   { name: 'get_current_selection', exposure: 'public' },
   { name: 'get_children', exposure: 'public' },
   { name: 'get_rem_breadcrumbs', exposure: 'public' },

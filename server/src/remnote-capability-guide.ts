@@ -131,17 +131,17 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
     facts: [
       'RemNote supports inline formatting such as bold, italic, underline, inline code, text color/highlight, LaTeX, links, references, and tags.',
       'Whole Rem formatting includes headings, whole-Rem highlights, list-item mode, quote-like display, and hidden bullets.',
-      '`set_rem_highlight_color` applies whole-Rem background highlight. `set_text_span_highlight` means selected-text highlight and must not be faked with whole-Rem highlight.',
-      '`set_text_span_color` applies selected text font color. `set_rem_text_color` applies font color to every text segment in a Rem.',
+      '`set_rem_highlight_color` applies whole-Rem background highlight. `set_text_span_highlight` applies selected-text background highlight only.',
+      '`set_text_span_color` applies selected text font color. `set_rem_text_color` applies font color to every text segment in a Rem. Font color uses raw rich-text field `tc`; text highlight uses raw field `h`.',
       'Hidden bullets can improve document appearance, but visual heading behavior is not always the same as true indentation hierarchy.',
-      'Older forum guidance used CSS workarounds for font color; current RemNote help documents text color/highlight in the editor. The installed plugin SDK in this repo safely supports exact format names Red, Orange, Yellow, Green, Blue, and Purple only.',
-      'The installed SDK typings do not expose Gray, Brown, Pink, or selected-text highlight as distinct safe RichText builder formats. Those requests return SDK_UNSUPPORTED.',
+      'Installed SDK `plugin.richText.text(text, ["Blue"])` writes rich-text field `h`, which is highlight/background. The bridge does not use that path for font color.',
+      'The installed SDK color enum supports Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, and Pink return SDK_UNSUPPORTED.',
     ],
     bridgeUse: [
       'For polished notes, prefer `create_polished_note_tree` or `create_styled_rem_tree`, then verify with `verify_note_design` or `get_rem_rich`.',
       'For formatting existing Rems, prefer `apply_style_plan`, then verify with `get_rem_rich`.',
       'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer. Rich math block uses plugin.richText.latex(text, true).',
-      'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, selected-text highlight, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
+      'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
     ],
   },
   {
@@ -193,6 +193,6 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     preferredDeleteTool: 'delete_rem_by_id',
     deprecatedPrivateTools: ['delete_focused_rem', 'delete_selected_rem', 'delete_rem'],
     installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
-    installedSdkUnsupported: ['create_folder', 'selected-text highlight', 'Gray text color', 'Brown text color', 'Pink text color'],
+    installedSdkUnsupported: ['create_folder', 'Gray text color', 'Brown text color', 'Pink text color'],
   };
 }

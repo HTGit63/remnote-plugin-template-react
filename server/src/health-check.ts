@@ -154,6 +154,109 @@ function resultFromResponse(
   };
 }
 
+function responseRawTextItems(response: BridgeResponse): Array<Record<string, unknown>> {
+  if (!response.ok || typeof response.result !== 'object' || response.result === null) {
+    return [];
+  }
+
+  const rawText = (response.result as Record<string, unknown>).rawText;
+  if (!Array.isArray(rawText)) {
+    return [];
+  }
+
+  return rawText.filter((item): item is Record<string, unknown> => {
+    return typeof item === 'object' && item !== null && !Array.isArray(item);
+  });
+}
+
+function rawRoundtripResultFromResponse(
+  tool: string,
+  bridgeTool: BridgeToolName,
+  response: BridgeResponse,
+  startedAt: number
+): BridgeHealthCheckToolResult {
+  const base = resultFromResponse(tool, bridgeTool, response, startedAt);
+  if (!response.ok || base.status !== 'passed') {
+    return base;
+  }
+
+  const rawTextItems = responseRawTextItems(response);
+  const hasFontColor = rawTextItems.some((item) => item.tc !== undefined);
+  const hasHighlight = rawTextItems.some((item) => item.h !== undefined);
+  if (hasFontColor && hasHighlight) {
+    return {
+      ...base,
+      reason: 'Raw rich text contains true font-color field tc and selected-text highlight field h.',
+    };
+  }
+
+  return {
+    ...base,
+    status: 'failed',
+    reason: 'Raw rich text did not preserve both expected fields: true font color tc and text highlight h.',
+    errorCode: 'SDK_ERROR',
+    errorMessage: 'Missing raw tc and/or h fields after font/highlight writes.',
+  };
+}
+
+async function runFormattingHealthSections(
+  hub: BridgeHub,
+  targetRemId: string,
+  timeoutMs: number,
+  signal?: AbortSignal
+): Promise<BridgeHealthCheckToolResult[]> {
+  const sections: BridgeHealthCheckToolResult[] = [];
+
+  async function runSection(
+    tool: string,
+    bridgeTool: BridgeToolName,
+    args: BridgeToolArgs[BridgeToolName],
+    inspect?: (response: BridgeResponse, startedAt: number) => BridgeHealthCheckToolResult
+  ) {
+    const sectionStartedAt = nowMs();
+    const response = await hub.callPlugin(bridgeTool, args as never, timeoutMs, signal);
+    sections.push(
+      inspect
+        ? inspect(response, sectionStartedAt)
+        : resultFromResponse(tool, bridgeTool, response, sectionStartedAt)
+    );
+  }
+
+  await runSection('true_font_color_write', 'set_rem_text_color', {
+    remId: targetRemId,
+    color: 'Blue',
+  });
+  await runSection('text_span_font_color_write', 'set_text_span_color', {
+    remId: targetRemId,
+    range: { start: 0, end: 1 },
+    color: 'Red',
+  });
+  await runSection('whole_rem_highlight_write', 'set_rem_highlight_color', {
+    remId: targetRemId,
+    color: 'Yellow',
+  });
+  await runSection('text_span_highlight_write', 'set_text_span_highlight', {
+    remId: targetRemId,
+    range: { start: 1, end: 2 },
+    color: 'Green',
+  });
+  await runSection(
+    'raw_rich_text_roundtrip',
+    'debug_get_raw_rich_text',
+    {
+      remId: targetRemId,
+    },
+    (response, startedAt) => rawRoundtripResultFromResponse(
+      'raw_rich_text_roundtrip',
+      'debug_get_raw_rich_text',
+      response,
+      startedAt
+    )
+  );
+
+  return sections;
+}
+
 function healthCheckArgsFor(
   bridgeTool: BridgeToolName,
   options: RunBridgeHealthCheckOptions
@@ -175,6 +278,7 @@ function healthCheckArgsFor(
     case 'get_rem':
     case 'get_rem_tree':
     case 'get_rem_rich':
+    case 'debug_get_raw_rich_text':
     case 'get_rem_breadcrumbs':
       return targetRemId
         ? ({
@@ -469,6 +573,15 @@ export async function runBridgeHealthCheck(
     parentId: mode === 'destructive_on_disposable_rem' ? options.parentId?.trim() : effectiveParentId,
     targetRemId: effectiveTargetRemId,
   };
+
+  if (connectedAtStart && mode === 'mutation_on_disposable_rem' && disposableSandboxRemId) {
+    results.push(...(await runFormattingHealthSections(
+      hub,
+      disposableSandboxRemId,
+      timeoutMs,
+      options.signal
+    )));
+  }
 
   for (const tool of publicTools) {
     if (tool === 'create_rem' && disposableSandboxRemId) {

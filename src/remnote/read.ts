@@ -5,6 +5,8 @@ import type {
   GetChildrenResult,
   GetCurrentSelectionArgs,
   GetCurrentSelectionResult,
+  DebugGetRawRichTextArgs,
+  DebugGetRawRichTextResult,
   GetDocumentOrFolderTreeArgs,
   GetDocumentOrFolderTreeResult,
   GetRemArgs,
@@ -44,6 +46,9 @@ const REM_COLOR_BY_NUMBER: Record<number, RemColorName> = {
   5: 'purple',
   6: 'blue',
 };
+
+const RICH_TEXT_FONT_COLOR_FIELD = 'tc';
+const RICH_TEXT_HIGHLIGHT_FIELD = 'h';
 
 export interface FocusedRemStatus {
   found: boolean;
@@ -373,12 +378,14 @@ function normalizeRichSpans(value: unknown): RichTextSpanInput[] {
     }
 
     if (record.i === 'm' || typeof record.text === 'string') {
-      const color = typeof record.h === 'number' ? REM_COLOR_BY_NUMBER[record.h] : undefined;
+      const color = richTextColorName(record[RICH_TEXT_FONT_COLOR_FIELD] ?? record.color ?? record.textColor);
+      const highlight = richTextColorName(record[RICH_TEXT_HIGHLIGHT_FIELD]);
       spans.push({
         type: 'text',
         text: typeof record.text === 'string' ? record.text : '',
         styles: {
           ...(color ? { color } : {}),
+          ...(highlight ? { highlight } : {}),
           ...(record.b ? { bold: true } : {}),
           ...(record.l ? { italic: true } : {}),
           ...(record.u ? { underline: true } : {}),
@@ -399,6 +406,34 @@ function normalizeRichSpans(value: unknown): RichTextSpanInput[] {
   }
 
   return spans;
+}
+
+function richTextColorName(value: unknown): RemColorName | undefined {
+  if (typeof value === 'number') {
+    return REM_COLOR_BY_NUMBER[value];
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized in REM_COLOR_BY_NUMBER) {
+      return REM_COLOR_BY_NUMBER[Number(normalized)];
+    }
+    if (
+      normalized === 'red' ||
+      normalized === 'orange' ||
+      normalized === 'yellow' ||
+      normalized === 'green' ||
+      normalized === 'blue' ||
+      normalized === 'purple' ||
+      normalized === 'pink' ||
+      normalized === 'gray' ||
+      normalized === 'brown'
+    ) {
+      return normalized as RemColorName;
+    }
+  }
+
+  return undefined;
 }
 
 function detectRichTypes(value: unknown, types: Set<DetectedContentType>) {
@@ -485,6 +520,43 @@ export async function readRemRich(
     },
     richSupported: true,
     detectedContentTypes: Array.from(detected),
+  };
+}
+
+export async function debugGetRawRichText(
+  plugin: RNPlugin,
+  args: DebugGetRawRichTextArgs
+): Promise<DebugGetRawRichTextResult | undefined> {
+  const rem = await plugin.rem.findOne(args.remId);
+
+  if (!rem) {
+    return undefined;
+  }
+
+  const richLength = await plugin.richText.length(rem.text).catch(() => undefined);
+  const backRichLength = rem.backText
+    ? await plugin.richText.length(rem.backText).catch(() => undefined)
+    : undefined;
+
+  return {
+    remId: rem._id,
+    rawText: rem.text,
+    rawBackText: rem.backText,
+    richLength,
+    backRichLength,
+    json: JSON.stringify(
+      {
+        text: rem.text,
+        backText: rem.backText,
+      },
+      null,
+      2
+    ),
+    interpretation: {
+      fontColorField: RICH_TEXT_FONT_COLOR_FIELD,
+      textHighlightField: RICH_TEXT_HIGHLIGHT_FIELD,
+      wholeRemHighlightSource: 'rem.getHighlightColor()',
+    },
   };
 }
 

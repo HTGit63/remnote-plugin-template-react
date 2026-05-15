@@ -47,7 +47,7 @@ Live sandbox closeout:
 - run `run_bridge_health_check` against a disposable RemNote sandbox parent with `mode=safe_write`;
 - run `npm run bridge:live-test` with RemNote open, plugin connected, and `REMNOTE_LIVE_TEST_PARENT_ID` set to a disposable Rem;
 - record the health-check result from `get_bridge_diagnostics.lastHealthCheck`;
-- verify ChatGPT refreshes the 46-tool registry after companion server restart.
+- verify ChatGPT refreshes the 47-tool registry after companion server restart.
 
 Public hosted launch work remains later:
 
@@ -98,7 +98,7 @@ Manual checks:
 - if ChatGPT shows stale tools, restart the companion server and refresh the ChatGPT app/connector;
 - call MCP `tools/list` and verify it matches `get_bridge_status.publicTools`;
 - focus a test Rem and call `get_focused_rem`;
-- call `get_bridge_diagnostics` and verify it reports 46 public tools, zero pending requests, no-auth discovery mode, the recent request ledger, and `lastHealthCheck`;
+- call `get_bridge_diagnostics` and verify it reports 47 public tools, zero pending requests, no-auth discovery mode, the recent request ledger, and `lastHealthCheck`;
 - call `get_remnote_capability_guide` and verify it returns Rems, documents/folders, formatting, flashcards, and bridge workflow guidance;
 - call `run_bridge_health_check` with a sandbox `parentId`, first with `mode=read_only`, then with `mode=safe_write`, and record pass/fail/skipped/unsupported results;
 - call `get_children` and verify direct child order;
@@ -135,7 +135,7 @@ Manual checks:
 | Disconnect | plugin disconnect during request | `PLUGIN_NOT_CONNECTED` |
 | Client disconnect | MCP caller disconnects during approval | `CLIENT_DISCONNECTED` recorded and plugin approval cancelled |
 | Server timeout | plugin does not respond | `TIMEOUT` |
-| Diagnostics | call `get_bridge_diagnostics` | reports registry version, 46 tools, pending count, recent outcomes, and last health check |
+| Diagnostics | call `get_bridge_diagnostics` | reports registry version, 47 tools, pending count, recent outcomes, and last health check |
 | Health check | call `run_bridge_health_check` | records pass/fail/skipped/unsupported tools using only disposable `delete_rem_by_id` in destructive mode |
 | Knowledge pool | call `get_remnote_capability_guide` | returns RemNote hierarchy/design/flashcard guidance |
 | Invalid input | malformed bridge request | `INVALID_ARGS` |

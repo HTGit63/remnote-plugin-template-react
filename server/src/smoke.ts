@@ -93,6 +93,23 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           detectedContentTypes: ['plain_text'],
         },
       };
+    case 'debug_get_raw_rich_text':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          remId: request.args.remId,
+          rawText: [{ i: 'm', text: 'Smoke focused Rem', tc: 6, h: 3 }],
+          rawBackText: ['Back text'],
+          richLength: 17,
+          json: JSON.stringify({ text: [{ i: 'm', text: 'Smoke focused Rem', tc: 6, h: 3 }] }, null, 2),
+          interpretation: {
+            fontColorField: 'tc',
+            textHighlightField: 'h',
+            wholeRemHighlightSource: 'rem.getHighlightColor()',
+          },
+        },
+      };
     case 'get_current_selection':
       return {
         id: request.id,
@@ -435,10 +452,17 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'set_text_span_highlight':
       return {
         id: request.id,
-        ok: false,
-        error: {
-          code: 'SDK_UNSUPPORTED',
-          message: 'Selected-text highlight is not exposed as a distinct safe API by installed @remnote/plugin-sdk 0.0.14.',
+        ok: true,
+        result: {
+          ok: true,
+          remId: request.args.remId,
+          resolvedPlainText: request.args.text ?? 'Smok',
+          start: request.args.start ?? request.args.range?.start ?? 0,
+          end: request.args.end ?? request.args.range?.end ?? 4,
+          requestedColor: request.args.color,
+          normalizedColor: 'Yellow',
+          methodUsed: 'rich_text_rebuild',
+          status: 'span_highlight_set',
         },
       };
     case 'set_rem_type':
@@ -943,6 +967,25 @@ try {
     throw new Error('run_bridge_health_check did not pass safe/read health checks.');
   }
 
+  const formattingHealth = JSON.stringify(
+    await callMcpTool(mcp, 'run_bridge_health_check', {
+      mode: 'mutation_on_disposable_rem',
+      parentId: fakeRem.remId,
+      timeoutMs: 2000,
+    })
+  );
+  if (
+    !formattingHealth.includes('true_font_color_write') ||
+    !formattingHealth.includes('text_span_font_color_write') ||
+    !formattingHealth.includes('whole_rem_highlight_write') ||
+    !formattingHealth.includes('text_span_highlight_write') ||
+    !formattingHealth.includes('raw_rich_text_roundtrip') ||
+    !formattingHealth.includes('true font-color field tc') ||
+    formattingHealth.includes('"status":"failed"')
+  ) {
+    throw new Error('run_bridge_health_check mutation mode did not verify font/highlight separation.');
+  }
+
   const destructiveHealth = JSON.stringify(
     await callMcpTool(mcp, 'run_bridge_health_check', {
       mode: 'destructive_on_disposable_rem',
@@ -1154,8 +1197,8 @@ try {
       color: 'Yellow',
     })
   );
-  if (!spanHighlight.includes('SDK_UNSUPPORTED') || spanHighlight.includes('highlight_set')) {
-    throw new Error('set_text_span_highlight did not return precise SDK_UNSUPPORTED without whole-Rem fallback.');
+  if (!spanHighlight.includes('span_highlight_set') || !spanHighlight.includes('rich_text_rebuild') || !spanHighlight.includes('Yellow')) {
+    throw new Error('set_text_span_highlight did not return span highlight rebuild evidence.');
   }
 
   const styledTree = JSON.stringify(
@@ -1316,6 +1359,11 @@ try {
   const rich = JSON.stringify(await callMcpTool(mcp, 'get_rem_rich', { remId: fakeRem.remId }));
   if (!rich.includes('richSupported')) {
     throw new Error('get_rem_rich did not return rich support metadata.');
+  }
+
+  const rawRich = JSON.stringify(await callMcpTool(mcp, 'debug_get_raw_rich_text', { remId: fakeRem.remId }));
+  if (!rawRich.includes('"fontColorField":"tc"') || !rawRich.includes('"textHighlightField":"h"')) {
+    throw new Error('debug_get_raw_rich_text did not expose raw font/highlight field metadata.');
   }
 
   const selection = JSON.stringify(await callMcpTool(mcp, 'get_current_selection', {}));
