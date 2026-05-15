@@ -46,6 +46,9 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'create_styled_rem_tree':
     case 'apply_remnote_command':
     case 'apply_structured_note_batch':
+    case 'create_polished_note_tree':
+    case 'apply_style_plan':
+    case 'verify_note_design':
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -53,6 +56,7 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'create_multiple_choice_card':
     case 'create_list_answer_card':
     case 'replace_rem':
+    case 'delete_rem_by_id':
     case 'delete_focused_rem':
     case 'delete_selected_rem':
     case 'delete_rem':

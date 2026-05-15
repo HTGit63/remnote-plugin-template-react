@@ -19,7 +19,7 @@ export interface RemnoteCapabilityGuideBlock {
   bridgeUse: string[];
 }
 
-export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-05-14.1';
+export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-05-15.1';
 
 export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = [
   {
@@ -47,8 +47,24 @@ export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = 
     url: 'https://help.remnote.com/en/articles/6030579-formatting-your-notes',
   },
   {
+    title: 'Writing Equations with LaTeX',
+    url: 'https://help.remnote.com/en/articles/6565191-writing-equations-with-latex',
+  },
+  {
     title: 'Hiding Bullets',
     url: 'https://help.remnote.com/en/articles/10113772-hiding-bullets',
+  },
+  {
+    title: 'Keyboard Shortcuts',
+    url: 'https://help.remnote.com/en/articles/7893440-keyboard-shortcuts',
+  },
+  {
+    title: 'RemNote Plugin API: RichTextNamespace',
+    url: 'https://plugins.remnote.com/api/classes/RichTextNamespace',
+  },
+  {
+    title: 'RemNote Plugin API: RemNamespace',
+    url: 'https://plugins.remnote.com/api/classes/RemNamespace',
   },
   {
     title: 'Creating Flashcards',
@@ -92,7 +108,7 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
     bridgeUse: [
       'Use `create_document` for page-like notes. Use ordinary Rem trees inside documents for content.',
       'Never fake folders by creating a normal Rem and calling it a folder. Return SDK_UNSUPPORTED when the SDK cannot create a real folder.',
-      'When the user wants a complete note inside an existing document/folder, target that existing Rem as `parentId` and use `apply_structured_note_batch`.',
+      'When the user wants a complete note inside an existing document/folder, target that existing Rem as `parentId` and use `create_polished_note_tree`, `create_styled_rem_tree`, or `apply_structured_note_batch`.',
     ],
   },
   {
@@ -115,13 +131,17 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
     facts: [
       'RemNote supports inline formatting such as bold, italic, underline, inline code, text color/highlight, LaTeX, links, references, and tags.',
       'Whole Rem formatting includes headings, whole-Rem highlights, list-item mode, quote-like display, and hidden bullets.',
+      '`set_rem_highlight_color` applies whole-Rem background highlight. `set_text_span_highlight` means selected-text highlight and must not be faked with whole-Rem highlight.',
+      '`set_text_span_color` applies selected text font color. `set_rem_text_color` applies font color to every text segment in a Rem.',
       'Hidden bullets can improve document appearance, but visual heading behavior is not always the same as true indentation hierarchy.',
-      'Older forum guidance used CSS workarounds for font color; current RemNote help documents text color/highlight in the editor. The installed plugin SDK in this repo safely supports red, orange, yellow, green, blue, and purple only.',
+      'Older forum guidance used CSS workarounds for font color; current RemNote help documents text color/highlight in the editor. The installed plugin SDK in this repo safely supports exact format names Red, Orange, Yellow, Green, Blue, and Purple only.',
+      'The installed SDK typings do not expose Gray, Brown, Pink, or selected-text highlight as distinct safe RichText builder formats. Those requests return SDK_UNSUPPORTED.',
     ],
     bridgeUse: [
-      'For polished notes, use headings on section Rems and children for actual content. Do not flatten a full lesson into one Rem.',
-      'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer.',
-      'Use colors sparingly for semantic emphasis. If pink, gray, default highlight clearing, or normal type reset is requested, return the structured SDK_UNSUPPORTED result instead of guessing.',
+      'For polished notes, prefer `create_polished_note_tree` or `create_styled_rem_tree`, then verify with `verify_note_design` or `get_rem_rich`.',
+      'For formatting existing Rems, prefer `apply_style_plan`, then verify with `get_rem_rich`.',
+      'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer. Rich math block uses plugin.richText.latex(text, true).',
+      'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, selected-text highlight, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
     ],
   },
   {
@@ -146,11 +166,14 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'Read-only tools are safe for context gathering and should not require RemNote approval.',
       'Creating under an existing Rem, updating an existing Rem, moving/reordering existing Rems, replacing text, and deleting Rems require explicit RemNote approval.',
       'Creating a top-level Rem/document is allowed only inside the configured permission scope. Workspace-level create requires workspace_allowed scope.',
-      'The high-level note writer is `apply_structured_note_batch`; it supports dry run, idempotency keys, best-effort rollback evidence, verification, styled nested nodes, flashcards, and math.',
+      'Preferred delete tool is `delete_rem_by_id`. It defaults to dryRun, requires ID-based guards for real deletion, and verifies the Rem cannot be read afterward.',
+      '`delete_focused_rem` and `delete_selected_rem` are deprecated/private because UI focus or selection can point at the wrong Rem. Do not use them.',
+      'High-level note writers are `create_polished_note_tree`, `create_styled_rem_tree`, and `apply_structured_note_batch`; they support idempotency, verification, styled nested nodes, flashcards, and math.',
     ],
     bridgeUse: [
-      'For prepared notes, first read context, then call `apply_structured_note_batch` once with the whole designed tree.',
-      'For safer execution, dry-run the batch, then apply with an `idempotencyKey`, `rollbackOnFailure: true`, and `verifyAfterWrite: true`.',
+      'For prepared notes, first read context, then call `create_polished_note_tree` or `apply_structured_note_batch` once with the whole designed tree.',
+      'For safer execution, dry-run supported batch flows, then apply with an `idempotencyKey`, `rollbackOnFailure: true` where available, and `verifyAfterWrite: true`.',
+      'For deletion, call `delete_rem_by_id` with `dryRun: true`, inspect breadcrumbs/childCount, then retry with `dryRun: false` plus expectedParentId or expectedAncestorId.',
       'Use low-level tools for repair and inspection, not as the default path for full note generation.',
     ],
   },
@@ -166,6 +189,10 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     section,
     blocks,
     sources: REMNOTE_CAPABILITY_GUIDE_SOURCES,
-    recommendedStructuredNoteTool: 'apply_structured_note_batch',
+    recommendedStructuredNoteTool: 'create_polished_note_tree',
+    preferredDeleteTool: 'delete_rem_by_id',
+    deprecatedPrivateTools: ['delete_focused_rem', 'delete_selected_rem', 'delete_rem'],
+    installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
+    installedSdkUnsupported: ['create_folder', 'selected-text highlight', 'Gray text color', 'Brown text color', 'Pink text color'],
   };
 }

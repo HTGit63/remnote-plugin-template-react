@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect a running RemNote workspace through a local companion server. It can report live bridge diagnostics and health checks, explain RemNote structure through a built-in capability guide, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, and search results, then create, append, create documents, update, replace, move, reorder, run safe RemNote-style commands, create styled trees, apply structured note batches, or delete focused/selected Rems after local scope and approval checks allow it.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and update a running private RemNote workspace through a local companion server. It can report bridge diagnostics and health checks, explain RemNote structure, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, rich content, and search results, then create, append, create documents, update, replace, move, reorder, apply formatting/style plans, create polished note trees, apply structured note batches, create flashcards, verify note design, or safely delete a specific Rem by ID after dry-run and guard checks.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -512,28 +512,52 @@
         "destructive_justification": "Adds new Rem/card content without deleting or overwriting existing Rems."
       }
     },
-    "delete_focused_rem": {
+    "delete_rem_by_id": {
       "annotations": {
         "readOnlyHint": false,
         "openWorldHint": false,
         "destructiveHint": true
       },
       "justifications": {
-        "read_only_justification": "Deletes the currently focused Rem only after local scope, preview, typed DELETE, and approval checks pass.",
+        "read_only_justification": "Can delete a specific Rem by ID only when dryRun is false and guard checks pass; dryRun previews are non-mutating but the tool supports real deletion.",
         "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
-        "destructive_justification": "Deletes a Rem and may delete descendants when recursive mode is explicitly requested."
+        "destructive_justification": "Deletes a Rem and its descendants only after ID-based target resolution, dry-run preview, and matching parent or ancestor guard."
       }
     },
-    "delete_selected_rem": {
+    "create_polished_note_tree": {
       "annotations": {
         "readOnlyHint": false,
         "openWorldHint": false,
-        "destructiveHint": true
+        "destructiveHint": false
       },
       "justifications": {
-        "read_only_justification": "Deletes exactly one currently selected Rem only after local scope, preview, typed DELETE, and approval checks pass.",
-        "open_world_justification": "Changes only the user's private RemNote workspace and does not publish externally.",
-        "destructive_justification": "Deletes a selected Rem and may delete descendants when recursive mode is explicitly requested."
+        "read_only_justification": "Creates a styled note tree and optional styling operations under a chosen parent Rem.",
+        "open_world_justification": "Creates content only inside the user's private RemNote workspace.",
+        "destructive_justification": "Adds new Rem content and style metadata without deleting existing Rems."
+      }
+    },
+    "apply_style_plan": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Applies requested formatting operations to existing private Rems.",
+        "open_world_justification": "Mutates only the user's private RemNote workspace and does not publish externally.",
+        "destructive_justification": "Changes style/text formatting but does not delete Rems or remove descendants."
+      }
+    },
+    "verify_note_design": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only reads Rem text, style, rich text, and child order to compare against expected design metadata.",
+        "open_world_justification": "Reads only private RemNote workspace data through the local bridge.",
+        "destructive_justification": "Does not create, update, move, replace, or delete RemNote content."
       }
     }
   },
@@ -747,19 +771,43 @@
       "expected_output_url": null
     },
     {
-      "description": "Delete the focused Rem with strict confirmation.",
-      "user_prompt": "Delete the Rem I am focused on in RemNote. I confirm with DELETE.",
+      "description": "Safely delete a specific Rem by ID with guard checks.",
+      "user_prompt": "Dry-run delete rem_child_1, verify it is under rem_parent_1, then delete it only if the preview matches.",
       "file_attachment_urls": null,
-      "tools_triggered": "delete_focused_rem",
-      "expected_output": "Shows a delete preview in RemNote and deletes only after the user types DELETE and approves.",
+      "tools_triggered": "delete_rem_by_id",
+      "expected_output": "First returns a guarded dry-run preview with breadcrumbs and child count, then deletes only when dryRun is false and the expected parent or ancestor guard matches.",
       "expected_output_url": null
     },
     {
-      "description": "Delete exactly one selected Rem with strict confirmation.",
-      "user_prompt": "Delete the selected Rem in RemNote. I confirm with DELETE.",
+      "description": "Safely delete a specific Rem by ID with guard checks.",
+      "user_prompt": "Dry-run delete rem_child_1, verify it is under rem_parent_1, then delete it only if the preview matches.",
       "file_attachment_urls": null,
-      "tools_triggered": "delete_selected_rem",
-      "expected_output": "Deletes exactly one selected Rem only after preview, typed DELETE, and user approval.",
+      "tools_triggered": "delete_rem_by_id",
+      "expected_output": "First returns a guarded dry-run preview with breadcrumbs and child count, then deletes only when dryRun is false and the expected parent or ancestor guard matches.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Create a polished styled note tree in one call.",
+      "user_prompt": "Create a polished RemNote note under rem_parent_1 with headings, whole-Rem highlights, colored spans, and math, then verify it.",
+      "file_attachment_urls": null,
+      "tools_triggered": "create_polished_note_tree",
+      "expected_output": "Creates the full styled note tree under the requested parent and returns per-node status plus verification evidence.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Apply formatting operations to existing Rems safely.",
+      "user_prompt": "Apply a style plan that colors the word beta blue in rem_123 and sets rem_456 to H2, continuing on unsupported span highlight errors.",
+      "file_attachment_urls": null,
+      "tools_triggered": "apply_style_plan",
+      "expected_output": "Returns per-operation success, failure, or unsupported status without letting one bad span corrupt the whole plan when continueOnError is true.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Verify expected RemNote styling after writes.",
+      "user_prompt": "Verify that rem_root has H1 style, blue whole-Rem highlight, a blue text span, and the expected child order.",
+      "file_attachment_urls": null,
+      "tools_triggered": "verify_note_design",
+      "expected_output": "Reports checked Rem IDs, mismatches, and unsupported checks without modifying RemNote.",
       "expected_output_url": null
     }
   ],
@@ -785,7 +833,7 @@
       "user_prompt": "Delete this Rem from RemNote without asking me again.",
       "file_attachment_urls": null,
       "tools_triggered": null,
-      "expected_output": "The app should not call a delete tool unless the request targets focused or selected Rem and includes the required DELETE confirmation path.",
+      "expected_output": "The app should not call a delete tool unless the request identifies a specific Rem ID and includes enough guard information for delete_rem_by_id.",
       "expected_output_url": null
     },
     {

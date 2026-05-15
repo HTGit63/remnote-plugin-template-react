@@ -41,6 +41,9 @@ export type BridgeToolName =
   | 'create_styled_rem_tree'
   | 'apply_remnote_command'
   | 'apply_structured_note_batch'
+  | 'create_polished_note_tree'
+  | 'apply_style_plan'
+  | 'verify_note_design'
   | 'create_basic_flashcard'
   | 'create_concept_card'
   | 'create_descriptor_card'
@@ -48,6 +51,7 @@ export type BridgeToolName =
   | 'create_multiple_choice_card'
   | 'create_list_answer_card'
   | 'replace_rem'
+  | 'delete_rem_by_id'
   | 'delete_focused_rem'
   | 'delete_selected_rem'
   | 'delete_rem';
@@ -61,7 +65,8 @@ export type ReadOnlyBridgeToolName =
   | 'get_children'
   | 'get_rem_breadcrumbs'
   | 'search_rems'
-  | 'get_document_or_folder_tree';
+  | 'get_document_or_folder_tree'
+  | 'verify_note_design';
 export type SafeWriteBridgeToolName =
   | 'create_rem'
   | 'append_to_rem'
@@ -83,6 +88,8 @@ export type SafeWriteBridgeToolName =
   | 'create_styled_rem_tree'
   | 'apply_remnote_command'
   | 'apply_structured_note_batch'
+  | 'create_polished_note_tree'
+  | 'apply_style_plan'
   | 'create_basic_flashcard'
   | 'create_concept_card'
   | 'create_descriptor_card'
@@ -91,6 +98,7 @@ export type SafeWriteBridgeToolName =
   | 'create_list_answer_card';
 export type DangerousBridgeToolName =
   | 'replace_rem'
+  | 'delete_rem_by_id'
   | 'delete_focused_rem'
   | 'delete_selected_rem'
   | 'delete_rem';
@@ -309,6 +317,15 @@ export interface DeleteSelectedRemArgs {
   confirmText: string;
 }
 
+export interface DeleteRemByIdArgs {
+  remId: string;
+  expectedParentId?: string;
+  expectedAncestorId?: string;
+  confirmTitle?: string;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+}
+
 export type RemHeadingLevel = 'H1' | 'H2' | 'H3' | 'normal';
 export type RemColorName =
   | 'red'
@@ -319,6 +336,7 @@ export type RemColorName =
   | 'purple'
   | 'pink'
   | 'gray'
+  | 'brown'
   | 'default';
 export type RichTextNodeType = 'text' | 'inlineMath' | 'mathBlock';
 export type RemTypeName = 'normal' | 'concept' | 'descriptor';
@@ -330,8 +348,8 @@ export interface TextRange {
 }
 
 export interface RichTextSpanStyle {
-  color?: RemColorName;
-  highlight?: RemColorName;
+  color?: RemColorName | string;
+  highlight?: RemColorName | string;
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
@@ -348,8 +366,8 @@ export interface RichTextSpanInput {
 
 export interface RemStyleInput {
   headingLevel?: RemHeadingLevel;
-  color?: RemColorName;
-  highlight?: RemColorName;
+  color?: RemColorName | string;
+  highlight?: RemColorName | string;
   hideBullet?: boolean;
   remType?: RemTypeName;
 }
@@ -395,24 +413,34 @@ export interface SetRemHeadingLevelArgs {
 
 export interface SetRemTextColorArgs {
   remId: string;
-  color: RemColorName;
+  color: RemColorName | string;
 }
 
 export interface SetRemHighlightColorArgs {
   remId: string;
-  color: RemColorName;
+  color: RemColorName | string;
 }
 
 export interface SetTextSpanColorArgs {
   remId: string;
-  range: TextRange;
-  color: RemColorName;
+  color: RemColorName | string;
+  range?: TextRange;
+  start?: number;
+  end?: number;
+  text?: string;
+  occurrence?: number;
+  verifyAfterWrite?: boolean;
 }
 
 export interface SetTextSpanHighlightArgs {
   remId: string;
-  range: TextRange;
-  color: RemColorName;
+  color: RemColorName | string;
+  range?: TextRange;
+  start?: number;
+  end?: number;
+  text?: string;
+  occurrence?: number;
+  verifyAfterWrite?: boolean;
 }
 
 export interface SetRemTypeArgs {
@@ -496,6 +524,67 @@ export interface ApplyStructuredNoteBatchArgs {
   idempotencyKey?: string;
   rollbackOnFailure?: boolean;
   verifyAfterWrite?: boolean;
+}
+
+export interface StylingPlanOperation {
+  remId: string;
+  type:
+    | 'heading'
+    | 'whole_rem_highlight'
+    | 'text_color_span'
+    | 'text_highlight_span'
+    | 'bold_span'
+    | 'italic_span'
+    | 'math_conversion';
+  start?: number;
+  end?: number;
+  text?: string;
+  occurrence?: number;
+  value: string;
+}
+
+export interface StylingPlan {
+  operations?: StylingPlanOperation[];
+}
+
+export interface CreatePolishedNoteTreeArgs {
+  parentId: string;
+  tree: StyledRemTreeNode;
+  stylingPlan?: StylingPlan;
+  verifyAfterWrite?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface ApplyStylePlanArgs {
+  operations: StylingPlanOperation[];
+  continueOnError?: boolean;
+  verifyAfterWrite?: boolean;
+}
+
+export interface ExpectedStyleMapEntry {
+  plainText?: string;
+  headingLevel?: RemHeadingLevel;
+  wholeRemHighlight?: RemColorName | string;
+  textColorSpans?: Array<{
+    text?: string;
+    start?: number;
+    end?: number;
+    color: RemColorName | string;
+  }>;
+  textHighlightSpans?: Array<{
+    text?: string;
+    start?: number;
+    end?: number;
+    color: RemColorName | string;
+  }>;
+  childOrder?: string[];
+}
+
+export type ExpectedStyleMap = Record<string, ExpectedStyleMapEntry>;
+
+export interface VerifyNoteDesignArgs {
+  rootRemId: string;
+  expectedStyleMap: ExpectedStyleMap;
 }
 
 export interface CreateFlashcardArgs {
@@ -603,6 +692,26 @@ export interface FormatRemResult {
     | 'hide_bullet_set'
     | 'formatting_cleared'
     | 'command_applied';
+  ok?: boolean;
+  requestedColor?: string;
+  normalizedColor?: string;
+  methodUsed?: 'rich_text_rebuild' | 'applyTextFormatToRange';
+  resolvedPlainText?: string;
+  start?: number;
+  end?: number;
+  verification?: Record<string, unknown>;
+  cleared?: {
+    heading?: boolean;
+    wholeRemHighlight?: boolean;
+    hideBullet?: boolean;
+    textFormatting?: boolean;
+    remType?: boolean;
+  };
+  unsupported?: {
+    remTypeReset?: boolean;
+    reason?: string;
+  };
+  warnings?: string[];
 }
 
 export interface ApplyRemnoteCommandResult {
@@ -657,6 +766,48 @@ export interface ApplyStructuredNoteBatchResult {
   verification?: StructuredNoteBatchVerification;
 }
 
+export interface ApplyStylePlanResult {
+  status: 'applied' | 'partial' | 'failed';
+  operations: Array<{
+    index: number;
+    remId: string;
+    type: StylingPlanOperation['type'];
+    status: 'applied' | 'failed' | 'unsupported';
+    result?: unknown;
+    error?: {
+      code: BridgeErrorCode;
+      message: string;
+      details?: unknown;
+    };
+  }>;
+  continueOnError: boolean;
+  verifyAfterWrite: boolean;
+}
+
+export interface CreatePolishedNoteTreeResult extends CreateStyledRemTreeResult {
+  stylePlan?: ApplyStylePlanResult;
+  verification?: StructuredNoteBatchVerification;
+  idempotencyKey?: string;
+}
+
+export interface VerifyNoteDesignResult {
+  rootRemId: string;
+  ok: boolean;
+  checkedRemIds: string[];
+  mismatches: Array<{
+    remId: string;
+    type: string;
+    expected?: unknown;
+    actual?: unknown;
+    message: string;
+  }>;
+  unsupportedChecks: Array<{
+    remId: string;
+    type: string;
+    reason: string;
+  }>;
+}
+
 export interface CreateFlashcardResult {
   createdRemId: string;
   parentId: string;
@@ -686,6 +837,36 @@ export interface DeletePreview {
   descendantCount: number;
   recursive: boolean;
   requiresConfirmText: 'DELETE';
+}
+
+export interface DeleteRemByIdTarget {
+  remId: string;
+  plainText: string;
+  parentId: string | null;
+  breadcrumbs: Array<{ id: string; text: string }>;
+  childCount: number;
+}
+
+export interface DeleteRemByIdResult {
+  dryRun: boolean;
+  target?: DeleteRemByIdTarget;
+  guards?: {
+    expectedParentMatches?: boolean;
+    expectedAncestorMatches?: boolean;
+    confirmTitleMatches?: boolean;
+  };
+  wouldDelete?: {
+    remId: string;
+    childCount: number;
+    includesDescendants: boolean;
+  };
+  deletedRemId?: string;
+  verification?: {
+    deleted: boolean;
+    readAfterDelete: 'missing' | 'still_present';
+  };
+  idempotencyKey?: string;
+  status: 'dry_run' | 'deleted' | 'already_deleted';
 }
 
 export type DetectedContentType =
@@ -793,6 +974,9 @@ export interface BridgeToolArgs {
   create_styled_rem_tree: CreateStyledRemTreeArgs;
   apply_remnote_command: ApplyRemnoteCommandArgs;
   apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
+  create_polished_note_tree: CreatePolishedNoteTreeArgs;
+  apply_style_plan: ApplyStylePlanArgs;
+  verify_note_design: VerifyNoteDesignArgs;
   create_basic_flashcard: CreateFlashcardArgs;
   create_concept_card: CreateFlashcardArgs;
   create_descriptor_card: CreateFlashcardArgs;
@@ -800,6 +984,7 @@ export interface BridgeToolArgs {
   create_multiple_choice_card: CreateMultipleChoiceCardArgs;
   create_list_answer_card: CreateListAnswerCardArgs;
   replace_rem: ReplaceRemArgs;
+  delete_rem_by_id: DeleteRemByIdArgs;
   delete_focused_rem: DeleteFocusedRemArgs;
   delete_selected_rem: DeleteSelectedRemArgs;
   delete_rem: DeleteRemArgs;
@@ -837,6 +1022,9 @@ export interface BridgeToolResults {
   create_styled_rem_tree: CreateStyledRemTreeResult;
   apply_remnote_command: ApplyRemnoteCommandResult;
   apply_structured_note_batch: ApplyStructuredNoteBatchResult;
+  create_polished_note_tree: CreatePolishedNoteTreeResult;
+  apply_style_plan: ApplyStylePlanResult;
+  verify_note_design: VerifyNoteDesignResult;
   create_basic_flashcard: CreateFlashcardResult;
   create_concept_card: CreateFlashcardResult;
   create_descriptor_card: CreateFlashcardResult;
@@ -844,6 +1032,7 @@ export interface BridgeToolResults {
   create_multiple_choice_card: CreateFlashcardResult;
   create_list_answer_card: CreateFlashcardResult;
   replace_rem: ReplaceRemResult;
+  delete_rem_by_id: DeleteRemByIdResult;
   delete_focused_rem: DeleteRemResult;
   delete_selected_rem: DeleteRemResult;
   delete_rem: DeleteRemResult;
@@ -980,6 +1169,9 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'create_styled_rem_tree',
   'apply_remnote_command',
   'apply_structured_note_batch',
+  'create_polished_note_tree',
+  'apply_style_plan',
+  'verify_note_design',
   'create_basic_flashcard',
   'create_concept_card',
   'create_descriptor_card',
@@ -987,6 +1179,7 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'create_multiple_choice_card',
   'create_list_answer_card',
   'replace_rem',
+  'delete_rem_by_id',
   'delete_focused_rem',
   'delete_selected_rem',
   'delete_rem',
@@ -1160,6 +1353,23 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     openWorldHint: false,
     destructiveHint: false,
   },
+  create_polished_note_tree: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  apply_style_plan: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+  },
+  verify_note_design: {
+    readOnlyHint: true,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
   create_basic_flashcard: {
     readOnlyHint: false,
     openWorldHint: false,
@@ -1194,6 +1404,12 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: true,
+  },
+  delete_rem_by_id: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+    idempotentHint: true,
   },
   delete_focused_rem: {
     readOnlyHint: false,

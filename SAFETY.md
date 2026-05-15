@@ -89,15 +89,12 @@ Approval policy:
 Dangerous tools are:
 
 - `replace_rem`
-- `delete_focused_rem`
-- `delete_selected_rem`
+- `delete_rem_by_id`
 - `delete_rem`
 
-These always require explicit approval in the internal bridge protocol, even in trusted modes. `replace_rem`, `delete_focused_rem`, and `delete_selected_rem` are exposed through MCP with destructive hints. `delete_rem` is arbitrary-ID delete and is not exposed by default.
+These always require explicit approval in the internal bridge protocol, even in trusted modes. `replace_rem` is exposed with destructive hints. `delete_rem_by_id` is the only public delete tool and defaults to dry-run with ID guards. Focus/selection delete and legacy `delete_rem` are hidden by default.
 
-Focused/selected delete requires a plugin-side preview showing the target title, target Rem ID, parent title when available, child count, descendant count for recursive deletes, the recursive flag, and the required literal text `DELETE`. The RemNote widget also requires the user to type `DELETE` before the approval button can run the delete.
-
-`delete_rem` can be exposed only for local development by setting `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1`. Keep arbitrary-ID delete disabled for normal use.
+`delete_rem_by_id` dry-run returns target text, parent, breadcrumbs, child count, guard matches, and would-delete evidence. Real delete requires `dryRun: false` plus a matching `expectedParentId` or `expectedAncestorId`; optional `confirmTitle` must match. Keep focus/selection delete and legacy arbitrary-ID delete disabled for normal use.
 
 ## Approval and No-Hang Policy
 

@@ -1,4 +1,4 @@
-export const TOOL_REGISTRY_VERSION = '2026-05-14.3';
+export const TOOL_REGISTRY_VERSION = '2026-05-15.1';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -42,8 +42,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'replace_rem', exposure: 'public' },
   { name: 'move_rem', exposure: 'public' },
   { name: 'reorder_children', exposure: 'public' },
-  { name: 'delete_focused_rem', exposure: 'public' },
-  { name: 'delete_selected_rem', exposure: 'public' },
+  { name: 'delete_rem_by_id', exposure: 'public' },
   { name: 'create_rem_tree', exposure: 'public' },
   { name: 'update_rem_rich', exposure: 'public' },
   { name: 'set_rem_heading_level', exposure: 'public' },
@@ -57,6 +56,9 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'create_styled_rem_tree', exposure: 'public' },
   { name: 'apply_remnote_command', exposure: 'public' },
   { name: 'apply_structured_note_batch', exposure: 'public' },
+  { name: 'create_polished_note_tree', exposure: 'public' },
+  { name: 'apply_style_plan', exposure: 'public' },
+  { name: 'verify_note_design', exposure: 'public' },
   { name: 'create_basic_flashcard', exposure: 'public' },
   { name: 'create_concept_card', exposure: 'public' },
   { name: 'create_descriptor_card', exposure: 'public' },
@@ -67,7 +69,19 @@ export const MCP_TOOL_REGISTRY = [
     name: 'delete_rem',
     exposure: 'gated',
     hiddenReason:
-      'Arbitrary Rem ID delete is disabled by default. Use delete_focused_rem or delete_selected_rem, or explicitly enable REMNOTE_BRIDGE_ENABLE_DELETE_TOOL for local development.',
+      'Legacy arbitrary Rem ID delete is disabled by default. Use guarded delete_rem_by_id.',
+  },
+  {
+    name: 'delete_focused_rem',
+    exposure: 'gated',
+    hiddenReason:
+      'Legacy focus-based delete is hidden because RemNote focus can point at the wrong root. Use delete_rem_by_id with dryRun and guards.',
+  },
+  {
+    name: 'delete_selected_rem',
+    exposure: 'gated',
+    hiddenReason:
+      'Legacy selection-based delete is hidden because RemNote selection can point at the wrong root. Use delete_rem_by_id with dryRun and guards.',
   },
 ] as const satisfies readonly McpToolRegistryEntry[];
 

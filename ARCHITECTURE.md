@@ -187,24 +187,29 @@ The MCP layer exposes safe writes:
 - `clear_rem_formatting`
 - `create_styled_rem_tree`
 - `apply_structured_note_batch`
+- `create_polished_note_tree`
+- `apply_style_plan`
+- `verify_note_design`
 - `create_basic_flashcard`
 - `create_concept_card`
 - `create_descriptor_card`
 - `create_cloze_card`
 - `create_multiple_choice_card`
 - `create_list_answer_card`
-- `delete_focused_rem`
-- `delete_selected_rem`
+
+The MCP layer exposes one public guarded delete:
+
+- `delete_rem_by_id`
 
 `create_document` uses the RemNote SDK `setIsDocument(true)` behavior. `create_folder` returns `SDK_UNSUPPORTED` because the installed SDK typings do not expose a folder creation method.
 
 `get_remnote_capability_guide` is a server-local knowledge pool built from RemNote help/forum sources. It gives ChatGPT/Vivy the working model for Rems, documents, folders, top-level Rems, formatting, flashcards, references, tags, portals, and the preferred bridge workflow.
 
-`run_bridge_health_check` records pass/fail/skipped results for public tools. It is safe by default, can run a structured batch dry run when a parent Rem ID is supplied, and can execute safe writes only when `includeWrites` and a sandbox parent ID are provided. Destructive delete is never executed by the health check.
+`run_bridge_health_check` records pass/fail/skipped/unsupported results for public tools. It is safe by default, can run a structured batch dry run when a parent Rem ID is supplied, can execute safe writes only under a disposable sandbox Rem, and only deletes its own disposable child with `delete_rem_by_id` in destructive health mode.
 
 `apply_structured_note_batch` is the high-level note writer. It validates a styled tree root, supports dry runs and idempotency keys, creates the tree after one approval, can verify created Rem IDs after write, and returns partial execution plus rollback evidence when an SDK operation fails after creating Rems.
 
-`replace_rem`, `delete_focused_rem`, and `delete_selected_rem` are destructive-hinted MCP tools and always require plugin-side approval. Arbitrary-ID `delete_rem` can be registered only with `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` for local development.
+`replace_rem` and `delete_rem_by_id` are destructive-hinted MCP tools. `delete_rem_by_id` defaults to dry-run and requires ID guards for real deletion. Legacy focus/selection delete and `delete_rem` stay hidden unless explicitly enabled for local development.
 
 ## Future Hosted App Architecture
 

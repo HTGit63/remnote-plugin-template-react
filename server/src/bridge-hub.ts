@@ -22,6 +22,7 @@ interface PendingRequest {
   resolve: (response: BridgeResponse) => void;
   timeout: NodeJS.Timeout;
   tool: BridgeToolName;
+  status: 'pending' | 'waiting_for_remnote_approval';
   startedAt: number;
   timeoutMs: number;
   lifecycle: BridgeLifecycleEvent[];
@@ -41,6 +42,7 @@ export interface BridgeHubRequestSnapshot {
   startedAt: string;
   ageMs: number;
   timeoutMs: number;
+  status: 'pending' | 'waiting_for_remnote_approval';
 }
 
 export interface BridgeHubRequestOutcome {
@@ -50,6 +52,7 @@ export interface BridgeHubRequestOutcome {
   finishedAt: string;
   durationMs: number;
   timeoutMs: number;
+  status: 'completed' | 'failed' | 'timed_out' | 'cancelled';
   ok: boolean;
   errorCode?: string;
   lifecycle: BridgeLifecycleEvent[];
@@ -97,6 +100,8 @@ export class BridgeHub {
   private pluginSocket: WebSocket | undefined;
   private pluginReady = false;
   private pending = new Map<string, PendingRequest>();
+  private heartbeatTimer: NodeJS.Timeout | undefined;
+  private pluginSocketAlive = false;
   private lastConnectedAt: string | undefined;
   private lastDisconnectedAt: string | undefined;
   private readonly startedAt = new Date().toISOString();
@@ -148,6 +153,7 @@ export class BridgeHub {
     this.pluginSocket?.close();
     this.pluginSocket = undefined;
     this.pluginReady = false;
+    this.stopHeartbeat();
 
     await new Promise<void>((resolve) => {
       this.wsServer?.close(() => resolve());
@@ -184,6 +190,7 @@ export class BridgeHub {
         startedAt: new Date(request.startedAt).toISOString(),
         ageMs: now - request.startedAt,
         timeoutMs: request.timeoutMs,
+        status: request.status,
       })),
       recentRequests: [...this.recentRequests],
       lastHealthCheck: this.lastHealthCheck,
@@ -272,6 +279,7 @@ export class BridgeHub {
         resolve,
         timeout,
         tool,
+        status: 'pending',
         startedAt,
         timeoutMs,
         lifecycle,
@@ -358,11 +366,18 @@ export class BridgeHub {
     this.pluginSocket?.close(1012, 'New RemNote plugin connection opened.');
     this.pluginSocket = socket;
     this.pluginReady = true;
+    this.pluginSocketAlive = true;
     this.lastConnectedAt = new Date().toISOString();
 
     socket.on('message', (raw) => this.handlePluginMessage(socket, raw));
+    socket.on('pong', () => {
+      if (socket === this.pluginSocket) {
+        this.pluginSocketAlive = true;
+      }
+    });
     socket.on('close', () => this.handlePluginClose(socket));
     socket.on('error', () => this.handlePluginClose(socket));
+    this.startHeartbeat();
   }
 
   private handlePluginClose(socket: WebSocket) {
@@ -372,6 +387,7 @@ export class BridgeHub {
 
     this.pluginReady = false;
     this.pluginSocket = undefined;
+    this.stopHeartbeat();
     this.lastDisconnectedAt = new Date().toISOString();
 
     for (const id of Array.from(this.pending.keys())) {
@@ -408,6 +424,9 @@ export class BridgeHub {
     pending.cleanupAbortListener?.();
     this.pending.delete(id);
     const pluginLifecycle = response.lifecycle;
+    if (pluginLifecycle?.some((event) => event.phase === 'waiting_for_remnote_approval')) {
+      pending.status = 'waiting_for_remnote_approval';
+    }
     this.ensureTerminalLifecycle(pending.lifecycle, response, pluginLifecycle);
     const lifecycle = this.mergeLifecycle(pending.lifecycle, pluginLifecycle);
     const responseWithLifecycle = {
@@ -453,6 +472,7 @@ export class BridgeHub {
     this.recentRequests.unshift({
       id,
       tool: pending.tool,
+      status: this.terminalStatus(response),
       startedAt: new Date(pending.startedAt).toISOString(),
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - pending.startedAt,
@@ -480,6 +500,7 @@ export class BridgeHub {
     this.recentRequests.unshift({
       id,
       tool,
+      status: this.terminalStatus(response),
       startedAt: new Date(startedAt).toISOString(),
       finishedAt: new Date().toISOString(),
       durationMs: Date.now() - startedAt,
@@ -524,6 +545,52 @@ export class BridgeHub {
     }
 
     serverLifecycle.push(createLifecycleEvent('failed', response.error.message));
+  }
+
+  private terminalStatus(response: BridgeResponse): BridgeHubRequestOutcome['status'] {
+    if (response.ok) {
+      return 'completed';
+    }
+
+    if (response.error.code === 'TIMEOUT' || response.error.code === 'APPROVAL_TIMEOUT') {
+      return 'timed_out';
+    }
+
+    if (response.error.code === 'CLIENT_DISCONNECTED' || response.error.code === 'REQUEST_CANCELLED') {
+      return 'cancelled';
+    }
+
+    return 'failed';
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.heartbeatTimer = setInterval(() => {
+      const socket = this.pluginSocket;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (!this.pluginSocketAlive) {
+        socket.terminate();
+        return;
+      }
+
+      this.pluginSocketAlive = false;
+      try {
+        socket.ping();
+      } catch {
+        socket.terminate();
+      }
+    }, 15000);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
+    this.pluginSocketAlive = false;
   }
 
   private getExecutionEvidence(response: BridgeResponse) {

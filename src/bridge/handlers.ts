@@ -1,6 +1,7 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
   type ApplyRemnoteCommandArgs,
+  type ApplyStylePlanArgs,
   type ApplyStructuredNoteBatchArgs,
   type ApprovalResolution,
   type AppendToRemArgs,
@@ -16,12 +17,14 @@ import {
   type CreateFolderArgs,
   type CreateListAnswerCardArgs,
   type CreateMultipleChoiceCardArgs,
+  type CreatePolishedNoteTreeArgs,
   type GetChildrenArgs,
   type CreateRemTreeArgs,
   type CreateRemArgs,
   type CreateClozeCardArgs,
   type CreateStyledRemTreeArgs,
   type DeleteFocusedRemArgs,
+  type DeleteRemByIdArgs,
   type DeleteRemArgs,
   type DeleteSelectedRemArgs,
   type GetDocumentOrFolderTreeArgs,
@@ -48,6 +51,7 @@ import {
   type StyledRemTreeNode,
   type UpdateRemArgs,
   type UpdateRemRichArgs,
+  type VerifyNoteDesignArgs,
   WRITE_APPROVAL_TIMEOUT_MS,
   createBridgeFailure,
   createBridgeSuccess,
@@ -68,6 +72,7 @@ import {
 } from '../remnote/read';
 import {
   applyStructuredNoteBatch,
+  applyStylePlan,
   applyRemnoteCommand,
   appendMarkdownToRem,
   buildDeletePreview,
@@ -78,11 +83,13 @@ import {
   createFolderFromMarkdown,
   createListAnswerCard,
   createMultipleChoiceCard,
+  createPolishedNoteTree,
   createRemFromMarkdown,
   createRemTree,
   createStyledRemTree,
   deleteFocusedRem,
   deleteRem,
+  deleteRemByIdSafe,
   deleteSelectedRem,
   getRemApprovalContext,
   moveRem,
@@ -98,6 +105,7 @@ import {
   setTextSpanHighlight,
   updateRemRich,
   updateRemMarkdown,
+  verifyNoteDesign,
 } from '../remnote/write';
 
 const MAX_REQUEST_ID_CHARS = 128;
@@ -553,7 +561,18 @@ function requiredColor(args: unknown, field = 'color') {
     case 'purple':
     case 'pink':
     case 'gray':
+    case 'brown':
     case 'default':
+      return value;
+    case 'Red':
+    case 'Orange':
+    case 'Yellow':
+    case 'Green':
+    case 'Blue':
+    case 'Purple':
+    case 'Gray':
+    case 'Brown':
+    case 'Pink':
       return value;
     default:
       throw new Error(`${field} must be a supported RemNote color.`);
@@ -620,6 +639,59 @@ function requiredRange(args: unknown): { start: number; end: number } {
   }
 
   return { start: start as number, end: end as number };
+}
+
+function optionalRangeInput(args: unknown): Pick<SetTextSpanColorArgs, 'range' | 'start' | 'end' | 'text' | 'occurrence'> {
+  if (!isPlainObject(args)) {
+    return {};
+  }
+
+  const range = isPlainObject(args.range) ? requiredRange(args) : undefined;
+  const start = typeof args.start === 'number' && Number.isInteger(args.start) ? args.start : undefined;
+  const end = typeof args.end === 'number' && Number.isInteger(args.end) ? args.end : undefined;
+  const text = typeof args.text === 'string' && args.text.trim() ? args.text.trim() : undefined;
+  const occurrence =
+    typeof args.occurrence === 'number' && Number.isInteger(args.occurrence)
+      ? args.occurrence
+      : undefined;
+  if (!range && (start === undefined || end === undefined) && !text) {
+    throw new Error('Provide range, start/end, or text for span formatting.');
+  }
+
+  return {
+    ...(range ? { range } : {}),
+    ...(start !== undefined ? { start } : {}),
+    ...(end !== undefined ? { end } : {}),
+    ...(text ? { text } : {}),
+    ...(occurrence !== undefined ? { occurrence } : {}),
+  };
+}
+
+function requiredStyleOperations(args: unknown): ApplyStylePlanArgs['operations'] {
+  if (!isPlainObject(args) || !Array.isArray(args.operations) || !args.operations.length) {
+    throw new Error('Missing operations.');
+  }
+
+  return args.operations as ApplyStylePlanArgs['operations'];
+}
+
+function optionalStylingPlan(args: unknown): CreatePolishedNoteTreeArgs['stylingPlan'] | undefined {
+  if (!isPlainObject(args) || !isPlainObject(args.stylingPlan)) {
+    return undefined;
+  }
+
+  const operations = Array.isArray(args.stylingPlan.operations)
+    ? (args.stylingPlan.operations as ApplyStylePlanArgs['operations'])
+    : undefined;
+  return operations ? { operations } : undefined;
+}
+
+function requiredExpectedStyleMap(args: unknown): VerifyNoteDesignArgs['expectedStyleMap'] {
+  if (!isPlainObject(args) || !isPlainObject(args.expectedStyleMap)) {
+    throw new Error('Missing expectedStyleMap.');
+  }
+
+  return args.expectedStyleMap as VerifyNoteDesignArgs['expectedStyleMap'];
 }
 
 function requiredStringArray(args: unknown, field: string, maxItems = 50): string[] {
@@ -772,14 +844,14 @@ function normalizeArgs<TTool extends BridgeToolName>(
     case 'set_text_span_color':
       return {
         remId: requiredRemId(args),
-        range: requiredRange(args),
         color: requiredColor(args),
+        ...optionalRangeInput(args),
       } as BridgeToolArgs[TTool];
     case 'set_text_span_highlight':
       return {
         remId: requiredRemId(args),
-        range: requiredRange(args),
         color: requiredColor(args),
+        ...optionalRangeInput(args),
       } as BridgeToolArgs[TTool];
     case 'set_rem_type':
       return {
@@ -833,6 +905,25 @@ function normalizeArgs<TTool extends BridgeToolName>(
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
       } as BridgeToolArgs[TTool];
     }
+    case 'create_polished_note_tree':
+      return {
+        parentId: requiredParentId(args),
+        tree: requiredStyledTree(args),
+        stylingPlan: optionalStylingPlan(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'apply_style_plan':
+      return {
+        operations: requiredStyleOperations(args),
+        continueOnError: optionalBoolean(args, 'continueOnError', true),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+      } as BridgeToolArgs[TTool];
+    case 'verify_note_design':
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        expectedStyleMap: requiredExpectedStyleMap(args),
+      } as BridgeToolArgs[TTool];
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -881,6 +972,15 @@ function normalizeArgs<TTool extends BridgeToolName>(
         recursive: optionalRecursive(args),
         confirmText: requiredConfirmText(args),
       } as BridgeToolArgs[TTool];
+    case 'delete_rem_by_id':
+      return {
+        remId: requiredRemId(args),
+        expectedParentId: optionalRemId(args, 'expectedParentId') ?? undefined,
+        expectedAncestorId: optionalRemId(args, 'expectedAncestorId') ?? undefined,
+        confirmTitle: getStringField(args, 'confirmTitle')?.trim(),
+        dryRun: optionalBoolean(args, 'dryRun', true),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
     default:
       throw new Error('Unknown tool.');
   }
@@ -921,12 +1021,16 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       UpdateRemArgs &
       MoveRemArgs &
       ReplaceRemArgs &
+      DeleteRemByIdArgs &
       DeleteRemArgs &
       CreateDocumentArgs &
       CreateFolderArgs &
       CreateRemArgs &
       CreateRemTreeArgs &
       CreateStyledRemTreeArgs &
+      CreatePolishedNoteTreeArgs &
+      ApplyStylePlanArgs &
+      VerifyNoteDesignArgs &
       ApplyStructuredNoteBatchArgs &
       ApplyRemnoteCommandArgs &
       UpdateRemRichArgs &
@@ -974,6 +1078,8 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
       ReplaceRemArgs &
       UpdateRemRichArgs &
       CreateStyledRemTreeArgs &
+      CreatePolishedNoteTreeArgs &
+      ApplyStylePlanArgs &
       ApplyStructuredNoteBatchArgs &
       ApplyRemnoteCommandArgs &
       CreateFlashcardArgs &
@@ -998,6 +1104,9 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
   }
   if (args.richText || args.tree) {
     return JSON.stringify(args.richText ?? args.tree, null, 2).slice(0, 3000);
+  }
+  if (args.operations) {
+    return JSON.stringify(args.operations, null, 2).slice(0, 3000);
   }
   if (args.root) {
     return JSON.stringify(args.root, null, 2).slice(0, 3000);
@@ -1218,8 +1327,9 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
     case 'set_hide_bullet':
     case 'clear_rem_formatting':
     case 'replace_rem':
+    case 'delete_rem_by_id':
     case 'delete_rem':
-      return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemArgs).remId]);
+      return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemArgs | DeleteRemByIdArgs).remId]);
     case 'get_children':
     case 'reorder_children':
       return uniqueRemIds([
@@ -1238,6 +1348,18 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
     case 'create_styled_rem_tree':
       return uniqueRemIds([(request.args as CreateStyledRemTreeArgs).parentId]);
+    case 'create_polished_note_tree':
+      return uniqueRemIds([
+        (request.args as CreatePolishedNoteTreeArgs).parentId,
+        ...((request.args as CreatePolishedNoteTreeArgs).stylingPlan?.operations ?? []).map((operation) => operation.remId),
+      ]);
+    case 'apply_style_plan':
+      return uniqueRemIds((request.args as ApplyStylePlanArgs).operations.map((operation) => operation.remId));
+    case 'verify_note_design':
+      return uniqueRemIds([
+        (request.args as VerifyNoteDesignArgs).rootRemId,
+        ...Object.keys((request.args as VerifyNoteDesignArgs).expectedStyleMap),
+      ]);
     case 'apply_remnote_command':
       return getCommandStaticScopeTargetIds(request.args as ApplyRemnoteCommandArgs);
     case 'apply_structured_note_batch':
@@ -1612,6 +1734,12 @@ function approvalSummary(request: BridgeRequest): string {
       return `Apply RemNote command ${(request.args as ApplyRemnoteCommandArgs).command}.`;
     case 'apply_structured_note_batch':
       return 'Apply one structured note batch with optional dry-run, rollback, and verification.';
+    case 'create_polished_note_tree':
+      return 'Create a polished RemNote note tree in one call.';
+    case 'apply_style_plan':
+      return 'Apply a multi-operation style plan.';
+    case 'verify_note_design':
+      return 'Verify a RemNote design/style map.';
     case 'create_basic_flashcard':
       return 'Create a basic flashcard.';
     case 'create_concept_card':
@@ -1632,6 +1760,8 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Delete the currently selected Rem.';
     case 'delete_rem':
       return 'Delete target Rem.';
+    case 'delete_rem_by_id':
+      return 'Safely delete target Rem by explicit ID and guard.';
     default:
       return 'Run RemNote bridge request.';
   }
@@ -1651,9 +1781,10 @@ async function buildApprovalRequest(
   const deletePreview =
     targetRemId &&
     (request.tool === 'delete_rem' ||
+      request.tool === 'delete_rem_by_id' ||
       request.tool === 'delete_focused_rem' ||
       request.tool === 'delete_selected_rem')
-      ? await buildDeletePreview(plugin, targetRemId, (request.args as DeleteRemArgs | DeleteFocusedRemArgs | DeleteSelectedRemArgs).recursive ?? false)
+      ? await buildDeletePreview(plugin, targetRemId, request.tool === 'delete_rem_by_id' ? true : (request.args as DeleteRemArgs | DeleteFocusedRemArgs | DeleteSelectedRemArgs).recursive ?? false)
       : undefined;
   const target =
     deletePreview
@@ -1662,6 +1793,8 @@ async function buildApprovalRequest(
       ? await getRemApprovalContext(plugin, targetRemId, 'Parent', 'PARENT_NOT_FOUND')
       : targetRemId &&
           (request.tool === 'create_styled_rem_tree' ||
+            request.tool === 'create_polished_note_tree' ||
+            request.tool === 'apply_style_plan' ||
             request.tool === 'apply_remnote_command' ||
             request.tool === 'apply_structured_note_batch' ||
             request.tool === 'create_basic_flashcard' ||
@@ -1678,7 +1811,7 @@ async function buildApprovalRequest(
   const deadline = new Date(Date.now() + timeoutMs).toISOString();
   let warning: string | undefined;
 
-  if (request.tool === 'delete_rem' || request.tool === 'delete_focused_rem' || request.tool === 'delete_selected_rem') {
+  if (request.tool === 'delete_rem' || request.tool === 'delete_rem_by_id' || request.tool === 'delete_focused_rem' || request.tool === 'delete_selected_rem') {
     warning = deletePreview?.recursive
       ? `Recursive delete removes ${deletePreview.descendantCount} descendants.`
       : hasChildren
@@ -1736,6 +1869,8 @@ async function shouldForceApproval(_plugin: RNPlugin, request: BridgeRequest): P
     case 'create_styled_rem_tree':
     case 'apply_remnote_command':
     case 'create_basic_flashcard':
+    case 'create_polished_note_tree':
+    case 'apply_style_plan':
     case 'create_concept_card':
     case 'create_descriptor_card':
     case 'create_cloze_card':
@@ -1801,6 +1936,9 @@ export async function handleBridgeRequest(
     approvalRequired =
       approvalRequired ||
       (context.permissionMode === 'confirm_writes' && (await shouldForceApproval(plugin, request)));
+    if (request.tool === 'delete_rem_by_id' && (request.args as DeleteRemByIdArgs).dryRun !== false) {
+      approvalRequired = false;
+    }
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
     return finish(response, 'failed');
@@ -2046,6 +2184,15 @@ export async function handleBridgeRequest(
           await applyStructuredNoteBatch(plugin, await effectiveStructuredBatchArgs(plugin, request, context))
         );
         break;
+      case 'create_polished_note_tree':
+        response = createBridgeSuccess(request, await createPolishedNoteTree(plugin, request.args));
+        break;
+      case 'apply_style_plan':
+        response = createBridgeSuccess(request, await applyStylePlan(plugin, request.args));
+        break;
+      case 'verify_note_design':
+        response = createBridgeSuccess(request, await verifyNoteDesign(plugin, request.args));
+        break;
       case 'create_basic_flashcard':
         response = createBridgeSuccess(request, await createBasicFlashcard(plugin, request.args));
         break;
@@ -2072,6 +2219,9 @@ export async function handleBridgeRequest(
         break;
       case 'replace_rem':
         response = createBridgeSuccess(request, await replaceRemMarkdown(plugin, request.args));
+        break;
+      case 'delete_rem_by_id':
+        response = createBridgeSuccess(request, await deleteRemByIdSafe(plugin, request.args));
         break;
       case 'delete_focused_rem':
         response = createBridgeSuccess(request, await deleteFocusedRem(plugin, request.args));

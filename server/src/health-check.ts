@@ -10,12 +10,14 @@ import {
   bridgeToolNameForPublicMcpTool,
 } from './mcp-tool-map.js';
 import type {
+  BridgeHealthCheckMode,
   BridgeHealthCheckResult,
   BridgeHealthCheckStatus,
   BridgeHealthCheckToolResult,
 } from './health-check-types.js';
 
 export interface RunBridgeHealthCheckOptions {
+  mode?: BridgeHealthCheckMode;
   exposeDeleteTool?: boolean;
   includeWrites?: boolean;
   includeExistingRemMutations?: boolean;
@@ -55,9 +57,28 @@ const WRITE_TOOLS = new Set([
   'create_cloze_card',
   'create_multiple_choice_card',
   'create_list_answer_card',
+  'create_polished_note_tree',
 ]);
 
-const DESTRUCTIVE_TOOLS = new Set(['replace_rem', 'delete_focused_rem', 'delete_selected_rem', 'delete_rem']);
+const EXISTING_REM_MUTATION_TOOLS = new Set([
+  'update_rem',
+  'replace_rem',
+  'move_rem',
+  'reorder_children',
+  'update_rem_rich',
+  'set_rem_heading_level',
+  'set_rem_text_color',
+  'set_rem_highlight_color',
+  'set_text_span_color',
+  'set_text_span_highlight',
+  'set_rem_type',
+  'set_hide_bullet',
+  'clear_rem_formatting',
+  'apply_remnote_command',
+  'apply_style_plan',
+]);
+
+const DESTRUCTIVE_TOOLS = new Set(['delete_rem_by_id', 'delete_focused_rem', 'delete_selected_rem', 'delete_rem']);
 
 function nowMs(): number {
   return Date.now();
@@ -86,6 +107,27 @@ function directPass(tool: string, startedAt = nowMs()): BridgeHealthCheckToolRes
   };
 }
 
+function resolveMode(options: RunBridgeHealthCheckOptions): BridgeHealthCheckMode {
+  if (options.mode) {
+    return options.mode;
+  }
+  if (options.includeExistingRemMutations) {
+    return 'mutation_on_disposable_rem';
+  }
+  if (options.includeWrites) {
+    return 'safe_write';
+  }
+  return 'read_only';
+}
+
+function modeIncludesWrites(mode: BridgeHealthCheckMode): boolean {
+  return mode !== 'read_only';
+}
+
+function modeIncludesExistingMutations(mode: BridgeHealthCheckMode): boolean {
+  return mode === 'mutation_on_disposable_rem';
+}
+
 function resultFromResponse(
   tool: string,
   bridgeTool: BridgeToolName,
@@ -104,7 +146,7 @@ function resultFromResponse(
   return {
     tool,
     bridgeTool,
-    status: response.error.code === 'SDK_UNSUPPORTED' ? 'skipped' : 'failed',
+    status: response.error.code === 'SDK_UNSUPPORTED' ? 'unsupported' : 'failed',
     durationMs: durationFrom(startedAt),
     errorCode: response.error.code,
     errorMessage: response.error.message,
@@ -163,6 +205,54 @@ function healthCheckArgsFor(
                   ],
                 },
               ],
+            },
+          }
+        : undefined;
+    case 'create_polished_note_tree':
+      return options.includeWrites && parentId
+        ? {
+            parentId,
+            tree: {
+              text: 'Bridge health polished tree',
+              style: { headingLevel: 'H3', highlightColor: 'yellow' },
+              children: [
+                {
+                  richText: [
+                    { text: 'alpha ' },
+                    { text: 'beta', styles: { color: 'blue', bold: true } },
+                  ],
+                },
+              ],
+            },
+            stylingPlan: {
+              operations: [],
+            },
+            verifyAfterWrite: true,
+            idempotencyKey: `health-polished-${Date.now()}`,
+          }
+        : undefined;
+    case 'apply_style_plan':
+      return options.includeExistingRemMutations && targetRemId
+        ? {
+            operations: [
+              {
+                remId: targetRemId,
+                type: 'text_color_span',
+                text: 'Bridge',
+                occurrence: 1,
+                value: 'Blue',
+              },
+            ],
+            continueOnError: true,
+            verifyAfterWrite: true,
+          }
+        : undefined;
+    case 'verify_note_design':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            expectedStyleMap: {
+              [targetRemId]: {},
             },
           }
         : undefined;
@@ -279,6 +369,19 @@ function healthCheckArgsFor(
     case 'reorder_children':
       return undefined;
     case 'replace_rem':
+      return options.includeExistingRemMutations && targetRemId
+        ? { remId: targetRemId, markdown: 'Bridge health check replaced disposable Rem' }
+        : undefined;
+    case 'delete_rem_by_id':
+      return options.mode === 'destructive_on_disposable_rem' && parentId && targetRemId
+        ? {
+            remId: targetRemId,
+            expectedParentId: parentId,
+            confirmTitle: 'Bridge health disposable delete target',
+            dryRun: false,
+            idempotencyKey: `health-delete-${targetRemId}`,
+          }
+        : undefined;
     case 'delete_focused_rem':
     case 'delete_selected_rem':
     case 'delete_rem':
@@ -292,6 +395,7 @@ function summarizeStatus(results: BridgeHealthCheckToolResult[]): BridgeHealthCh
   const failedCount = results.filter((result) => result.status === 'failed').length;
   const passedCount = results.filter((result) => result.status === 'passed').length;
   const skippedCount = results.filter((result) => result.status === 'skipped').length;
+  const unsupportedCount = results.filter((result) => result.status === 'unsupported').length;
 
   if (failedCount > 0 && passedCount > 0) {
     return 'partial';
@@ -299,10 +403,19 @@ function summarizeStatus(results: BridgeHealthCheckToolResult[]): BridgeHealthCh
   if (failedCount > 0) {
     return 'failed';
   }
-  if (passedCount === 0 && skippedCount > 0) {
+  if (passedCount === 0 && (skippedCount > 0 || unsupportedCount > 0)) {
     return 'skipped';
   }
   return 'passed';
+}
+
+function createdRemIdFromResponse(response: BridgeResponse): string | undefined {
+  if (!response.ok || typeof response.result !== 'object' || response.result === null) {
+    return undefined;
+  }
+
+  const result = response.result as Record<string, unknown>;
+  return typeof result.createdRemId === 'string' ? result.createdRemId : undefined;
 }
 
 export async function runBridgeHealthCheck(
@@ -314,9 +427,54 @@ export async function runBridgeHealthCheck(
   const connectedAtStart = hub.getStatus().connected;
   const publicTools = getPublicMcpToolNames(Boolean(options.exposeDeleteTool));
   const results: BridgeHealthCheckToolResult[] = [];
+  const mode = resolveMode(options);
+  const includeWrites = modeIncludesWrites(mode);
+  const includeExistingRemMutations = modeIncludesExistingMutations(mode);
   const timeoutMs = Math.min(Math.max(options.timeoutMs ?? 5000, 1000), 30000);
+  let effectiveParentId = options.parentId?.trim();
+  let effectiveTargetRemId = options.targetRemId?.trim() || effectiveParentId;
+  let disposableSandboxRemId: string | undefined;
+
+  if (connectedAtStart && includeWrites && effectiveParentId) {
+    const toolStartedAt = nowMs();
+    const title =
+      mode === 'destructive_on_disposable_rem'
+        ? 'Bridge health disposable delete target'
+        : `Bridge health disposable sandbox ${new Date().toISOString()}`;
+    const response = await hub.callPlugin(
+      'create_rem',
+      {
+        parentId: effectiveParentId,
+        markdown: title,
+      },
+      timeoutMs,
+      options.signal
+    );
+    results.push(resultFromResponse('health_disposable_sandbox', 'create_rem', response, toolStartedAt));
+    disposableSandboxRemId = createdRemIdFromResponse(response);
+    if (disposableSandboxRemId) {
+      if (mode === 'safe_write') {
+        effectiveParentId = disposableSandboxRemId;
+      } else {
+        effectiveTargetRemId = disposableSandboxRemId;
+      }
+    }
+  }
+
+  const effectiveOptions: RunBridgeHealthCheckOptions = {
+    ...options,
+    mode,
+    includeWrites,
+    includeExistingRemMutations,
+    parentId: mode === 'destructive_on_disposable_rem' ? options.parentId?.trim() : effectiveParentId,
+    targetRemId: effectiveTargetRemId,
+  };
 
   for (const tool of publicTools) {
+    if (tool === 'create_rem' && disposableSandboxRemId) {
+      continue;
+    }
+
     const toolStartedAt = nowMs();
     if (DIRECT_SERVER_TOOLS.has(tool)) {
       results.push(directPass(tool, toolStartedAt));
@@ -324,7 +482,10 @@ export async function runBridgeHealthCheck(
     }
 
     if ((STATIC_SDK_UNSUPPORTED_TOOLS as readonly string[]).includes(tool)) {
-      results.push(skipped(tool, 'Known installed SDK unsupported tool.', toolStartedAt));
+      results.push({
+        ...skipped(tool, 'Known installed SDK unsupported tool.', toolStartedAt),
+        status: 'unsupported',
+      });
       continue;
     }
 
@@ -335,12 +496,33 @@ export async function runBridgeHealthCheck(
     }
 
     if (DESTRUCTIVE_TOOLS.has(tool)) {
-      results.push(skipped(tool, 'Destructive tools are not executed by health checks.', toolStartedAt, bridgeTool));
+      if (tool !== 'delete_rem_by_id' || mode !== 'destructive_on_disposable_rem') {
+        results.push(skipped(tool, 'Health check never uses focus/selection/legacy deletion.', toolStartedAt, bridgeTool));
+        continue;
+      }
+      if (!disposableSandboxRemId || !options.parentId?.trim()) {
+        results.push(skipped(tool, 'delete_rem_by_id destructive health check requires a disposable Rem created under parentId.', toolStartedAt, bridgeTool));
+        continue;
+      }
+    }
+
+    if (mode === 'destructive_on_disposable_rem' && WRITE_TOOLS.has(tool)) {
+      results.push(skipped(tool, 'Destructive health mode only creates and deletes its own disposable Rem.', toolStartedAt, bridgeTool));
       continue;
     }
 
-    if (WRITE_TOOLS.has(tool) && !options.includeWrites && bridgeTool !== 'apply_structured_note_batch') {
-      results.push(skipped(tool, 'Write checks are disabled. Pass includeWrites=true and parentId to execute.', toolStartedAt, bridgeTool));
+    if (WRITE_TOOLS.has(tool) && !includeWrites && bridgeTool !== 'apply_structured_note_batch') {
+      results.push(skipped(tool, 'Write checks disabled in read_only mode.', toolStartedAt, bridgeTool));
+      continue;
+    }
+
+    if (WRITE_TOOLS.has(tool) && includeWrites && !effectiveParentId) {
+      results.push(skipped(tool, 'Write health checks require parentId so disposable children stay scoped.', toolStartedAt, bridgeTool));
+      continue;
+    }
+
+    if (EXISTING_REM_MUTATION_TOOLS.has(tool) && !includeExistingRemMutations) {
+      results.push(skipped(tool, 'Existing-Rem mutation checks run only in mutation_on_disposable_rem mode.', toolStartedAt, bridgeTool));
       continue;
     }
 
@@ -349,7 +531,7 @@ export async function runBridgeHealthCheck(
       continue;
     }
 
-    const args = healthCheckArgsFor(bridgeTool, options);
+    const args = healthCheckArgsFor(bridgeTool, effectiveOptions);
     if (!args) {
       results.push(skipped(tool, 'Health check needs parentId, targetRemId, or a safer manual workflow for this tool.', toolStartedAt, bridgeTool));
       continue;
@@ -367,6 +549,7 @@ export async function runBridgeHealthCheck(
   const passedCount = results.filter((result) => result.status === 'passed').length;
   const failedCount = results.filter((result) => result.status === 'failed').length;
   const skippedCount = results.filter((result) => result.status === 'skipped').length;
+  const unsupportedCount = results.filter((result) => result.status === 'unsupported').length;
   const result: BridgeHealthCheckResult = {
     id: randomUUID(),
     status: summarizeStatus(results),
@@ -374,14 +557,17 @@ export async function runBridgeHealthCheck(
     finishedAt: new Date().toISOString(),
     durationMs: durationFrom(startedAtMs),
     connectedAtStart,
-    includeWrites: Boolean(options.includeWrites),
-    includeExistingRemMutations: Boolean(options.includeExistingRemMutations),
+    mode,
+    includeWrites,
+    includeExistingRemMutations,
     ...(options.parentId ? { parentId: options.parentId } : {}),
-    ...(options.targetRemId ? { targetRemId: options.targetRemId } : {}),
+    ...(effectiveTargetRemId ? { targetRemId: effectiveTargetRemId } : {}),
+    ...(disposableSandboxRemId ? { disposableSandboxRemId } : {}),
     totalTools: results.length,
     passedCount,
     failedCount,
     skippedCount,
+    unsupportedCount,
     results,
   };
 

@@ -322,27 +322,47 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: { remId: request.args.remId },
       };
-    case 'delete_focused_rem':
-    case 'delete_selected_rem':
+    case 'delete_rem_by_id':
+    {
+      const dryRun = request.args.dryRun !== false;
       return {
         id: request.id,
         ok: true,
         result: {
-          deletedRemId: fakeRem.remId,
-          recursive: request.args.recursive ?? false,
-          preview: {
-            targetRemId: fakeRem.remId,
-            targetTitle: fakeRem.frontText,
-            parentRemId: 'rem-root',
-            parentTitle: 'Root',
+          dryRun,
+          target: {
+            remId: request.args.remId,
+            plainText: request.args.confirmTitle ?? 'Disposable child',
+            parentId: request.args.expectedParentId ?? 'rem-root',
+            breadcrumbs: [
+              { id: 'rem-root', text: 'Root' },
+              { id: request.args.remId, text: request.args.confirmTitle ?? 'Disposable child' },
+            ],
             childCount: 0,
-            descendantCount: 0,
-            recursive: request.args.recursive ?? false,
-            requiresConfirmText: 'DELETE',
           },
-          status: 'deleted',
+          guards: {
+            expectedParentMatches: Boolean(request.args.expectedParentId),
+            expectedAncestorMatches: request.args.expectedAncestorId ? true : undefined,
+            confirmTitleMatches: request.args.confirmTitle ? true : undefined,
+          },
+          wouldDelete: {
+            remId: request.args.remId,
+            childCount: 0,
+            includesDescendants: false,
+          },
+          ...(dryRun
+            ? {}
+            : {
+                deletedRemId: request.args.remId,
+                verification: {
+                  deleted: true,
+                  readAfterDelete: 'not_found',
+                },
+                status: 'deleted',
+              }),
         },
       };
+    }
     case 'delete_rem':
       return {
         id: request.id,
@@ -381,7 +401,14 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
       return {
         id: request.id,
         ok: true,
-        result: { remId: request.args.remId, status: 'text_color_set' },
+        result: {
+          ok: true,
+          remId: request.args.remId,
+          requestedColor: request.args.color,
+          normalizedColor: String(request.args.color).toLowerCase() === 'purple' ? 'Purple' : 'Blue',
+          methodUsed: 'rich_text_rebuild',
+          status: 'text_color_set',
+        },
       };
     case 'set_rem_highlight_color':
       return {
@@ -393,13 +420,26 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
       return {
         id: request.id,
         ok: true,
-        result: { remId: request.args.remId, status: 'span_color_set' },
+        result: {
+          ok: true,
+          remId: request.args.remId,
+          resolvedPlainText: request.args.text ?? 'Smok',
+          start: request.args.start ?? request.args.range?.start ?? 0,
+          end: request.args.end ?? request.args.range?.end ?? 4,
+          requestedColor: request.args.color,
+          normalizedColor: 'Blue',
+          methodUsed: 'rich_text_rebuild',
+          status: 'span_color_set',
+        },
       };
     case 'set_text_span_highlight':
       return {
         id: request.id,
-        ok: true,
-        result: { remId: request.args.remId, status: 'span_highlight_set' },
+        ok: false,
+        error: {
+          code: 'SDK_UNSUPPORTED',
+          message: 'Selected-text highlight is not exposed as a distinct safe API by installed @remnote/plugin-sdk 0.0.14.',
+        },
       };
     case 'set_rem_type':
       return {
@@ -489,6 +529,56 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     }
+    case 'create_polished_note_tree':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'created_polished_tree',
+          parentId: request.args.parentId,
+          rootCreatedRemId: 'rem-polished-root-1',
+          createdNodeCount: 2,
+          createdRemIds: ['rem-polished-root-1', 'rem-polished-child-1'],
+          operationResults: [],
+          verification: request.args.verifyAfterWrite
+            ? {
+                ok: true,
+                checkedRemIds: ['rem-polished-root-1'],
+                mismatches: [],
+                unsupportedChecks: [],
+              }
+            : undefined,
+        },
+      };
+    case 'apply_style_plan':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          ok: true,
+          appliedCount: request.args.operations.length,
+          failedCount: 0,
+          results: request.args.operations.map((operation, index) => ({
+            index,
+            ok: true,
+            remId: operation.remId,
+            type: operation.type,
+            status: 'applied',
+          })),
+        },
+      };
+    case 'verify_note_design':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          rootRemId: request.args.rootRemId,
+          ok: true,
+          checkedRemIds: Object.keys(request.args.expectedStyleMap),
+          mismatches: [],
+          unsupportedChecks: [],
+        },
+      };
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':
@@ -738,6 +828,14 @@ try {
   if (toolNames.includes('delete_rem')) {
     throw new Error('arbitrary ID delete must not be exposed through MCP by default.');
   }
+  if (toolNames.includes('delete_focused_rem') || toolNames.includes('delete_selected_rem')) {
+    throw new Error('focus/selection delete tools must not be exposed through MCP by default.');
+  }
+  for (const requiredTool of ['delete_rem_by_id', 'create_polished_note_tree', 'apply_style_plan', 'verify_note_design']) {
+    if (!toolNames.includes(requiredTool)) {
+      throw new Error(`${requiredTool} must be exposed through MCP.`);
+    }
+  }
 
   if (!tools.includes('outputSchema')) {
     throw new Error('Expected MCP tools to declare outputSchema.');
@@ -819,6 +917,8 @@ try {
       request.lifecycle?.some((event) => event.phase === 'completed')
     ) ||
     !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_rem') ||
+    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_focused_rem') ||
+    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_selected_rem') ||
     diagnosticsResult.registryMismatch?.missing?.length ||
     diagnosticsResult.registryMismatch?.unexpected?.length
   ) {
@@ -841,6 +941,21 @@ try {
   );
   if (!health.includes('"status":"passed"') || !health.includes('apply_structured_note_batch')) {
     throw new Error('run_bridge_health_check did not pass safe/read health checks.');
+  }
+
+  const destructiveHealth = JSON.stringify(
+    await callMcpTool(mcp, 'run_bridge_health_check', {
+      mode: 'destructive_on_disposable_rem',
+      parentId: fakeRem.remId,
+      timeoutMs: 2000,
+    })
+  );
+  if (
+    !destructiveHealth.includes('delete_rem_by_id') ||
+    !destructiveHealth.includes('health_disposable_sandbox') ||
+    destructiveHealth.includes('delete_focused_rem') && destructiveHealth.includes('"status":"passed"')
+  ) {
+    throw new Error('run_bridge_health_check destructive mode did not use disposable delete_rem_by_id safely.');
   }
 
   const diagnosticsAfterHealth = JSON.stringify(await callMcpTool(mcp, 'get_bridge_diagnostics', {}));
@@ -999,15 +1114,48 @@ try {
     throw new Error('set_rem_heading_level did not return heading status.');
   }
 
+  const remTextColor = JSON.stringify(
+    await callMcpTool(mcp, 'set_rem_text_color', {
+      remId: fakeRem.remId,
+      color: 'Purple',
+    })
+  );
+  if (!remTextColor.includes('rich_text_rebuild') || !remTextColor.includes('Purple')) {
+    throw new Error('set_rem_text_color did not return rich text rebuild evidence.');
+  }
+
+  const wholeHighlight = JSON.stringify(
+    await callMcpTool(mcp, 'set_rem_highlight_color', {
+      remId: fakeRem.remId,
+      color: 'Yellow',
+    })
+  );
+  if (!wholeHighlight.includes('highlight_set')) {
+    throw new Error('set_rem_highlight_color did not return whole-Rem highlight status.');
+  }
+
   const spanColor = JSON.stringify(
     await callMcpTool(mcp, 'set_text_span_color', {
       remId: fakeRem.remId,
-      range: { start: 0, end: 4 },
-      color: 'green',
+      text: 'Smoke',
+      occurrence: 1,
+      color: 'Blue',
     })
   );
-  if (!spanColor.includes('span_color_set')) {
-    throw new Error('set_text_span_color did not return span color status.');
+  if (!spanColor.includes('span_color_set') || !spanColor.includes('rich_text_rebuild') || !spanColor.includes('Blue')) {
+    throw new Error('set_text_span_color did not return span color rebuild evidence.');
+  }
+
+  const spanHighlight = JSON.stringify(
+    await callMcpTool(mcp, 'set_text_span_highlight', {
+      remId: fakeRem.remId,
+      text: 'Smoke',
+      occurrence: 1,
+      color: 'Yellow',
+    })
+  );
+  if (!spanHighlight.includes('SDK_UNSUPPORTED') || spanHighlight.includes('highlight_set')) {
+    throw new Error('set_text_span_highlight did not return precise SDK_UNSUPPORTED without whole-Rem fallback.');
   }
 
   const styledTree = JSON.stringify(
@@ -1088,6 +1236,60 @@ try {
     throw new Error('apply_structured_note_batch did not return applied verification status.');
   }
 
+  const polished = JSON.stringify(
+    await callMcpTool(mcp, 'create_polished_note_tree', {
+      parentId: fakeRem.remId,
+      tree: {
+        text: 'Polished root',
+        style: { headingLevel: 'H2', highlightColor: 'Blue' },
+        children: [
+          {
+            richText: [
+              { text: 'alpha ' },
+              { text: 'beta', styles: { color: 'Blue', bold: true } },
+            ],
+          },
+        ],
+      },
+      verifyAfterWrite: true,
+      idempotencyKey: 'smoke-polished-1',
+    })
+  );
+  if (!polished.includes('created_polished_tree') || !polished.includes('verification')) {
+    throw new Error('create_polished_note_tree did not return created tree verification status.');
+  }
+
+  const stylePlan = JSON.stringify(
+    await callMcpTool(mcp, 'apply_style_plan', {
+      operations: [
+        {
+          remId: fakeRem.remId,
+          type: 'text_color_span',
+          text: 'Smoke',
+          occurrence: 1,
+          value: 'Blue',
+        },
+      ],
+      continueOnError: true,
+      verifyAfterWrite: true,
+    })
+  );
+  if (!stylePlan.includes('"appliedCount":1') || !stylePlan.includes('text_color_span')) {
+    throw new Error('apply_style_plan did not return per-operation status.');
+  }
+
+  const designVerify = JSON.stringify(
+    await callMcpTool(mcp, 'verify_note_design', {
+      rootRemId: fakeRem.remId,
+      expectedStyleMap: {
+        [fakeRem.remId]: {},
+      },
+    })
+  );
+  if (!designVerify.includes('"ok":true') || !designVerify.includes(fakeRem.remId)) {
+    throw new Error('verify_note_design did not return verification status.');
+  }
+
   const basicCard = JSON.stringify(
     await callMcpTool(mcp, 'create_basic_flashcard', {
       parentId: fakeRem.remId,
@@ -1160,24 +1362,28 @@ try {
     throw new Error('get_document_or_folder_tree did not return a bounded structure tree.');
   }
 
-  const deleteFocused = JSON.stringify(
-    await callMcpTool(mcp, 'delete_focused_rem', {
-      recursive: false,
-      confirmText: 'DELETE',
+  const deleteDryRun = JSON.stringify(
+    await callMcpTool(mcp, 'delete_rem_by_id', {
+      remId: 'rem-delete-child-1',
+      expectedParentId: fakeRem.remId,
+      confirmTitle: 'Disposable child',
     })
   );
-  if (!deleteFocused.includes('deleted') || !deleteFocused.includes('requiresConfirmText')) {
-    throw new Error('delete_focused_rem did not return strict delete preview/result shape.');
+  if (!deleteDryRun.includes('"dryRun":true') || !deleteDryRun.includes('wouldDelete') || !deleteDryRun.includes('expectedParentMatches')) {
+    throw new Error('delete_rem_by_id dry run did not return guarded preview shape.');
   }
 
-  const deleteSelected = JSON.stringify(
-    await callMcpTool(mcp, 'delete_selected_rem', {
-      recursive: false,
-      confirmText: 'DELETE',
+  const deleteReal = JSON.stringify(
+    await callMcpTool(mcp, 'delete_rem_by_id', {
+      remId: 'rem-delete-child-1',
+      expectedParentId: fakeRem.remId,
+      confirmTitle: 'Disposable child',
+      dryRun: false,
+      idempotencyKey: 'smoke-delete-1',
     })
   );
-  if (!deleteSelected.includes('deleted') || !deleteSelected.includes(fakeRem.remId)) {
-    throw new Error('delete_selected_rem did not return mock selected delete status.');
+  if (!deleteReal.includes('"deletedRemId":"rem-delete-child-1"') || !deleteReal.includes('"readAfterDelete":"not_found"')) {
+    throw new Error('delete_rem_by_id real delete did not return deletion verification.');
   }
 
   const failedAppend = JSON.stringify(

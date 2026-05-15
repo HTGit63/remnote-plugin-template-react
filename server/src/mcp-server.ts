@@ -31,7 +31,27 @@ const MAX_SEARCH_RESULTS_SCHEMA = z.number().int().min(1).max(25);
 const TREE_DEPTH_SCHEMA = z.number().int().min(0).max(3).default(1);
 const ORDERED_CHILD_IDS_SCHEMA = z.array(REM_ID_SCHEMA).max(500);
 const DELETE_CONFIRM_SCHEMA = z.literal('DELETE');
-const COLOR_SCHEMA = z.enum(['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'gray', 'default']);
+const COLOR_SCHEMA = z.enum([
+  'red',
+  'orange',
+  'yellow',
+  'green',
+  'blue',
+  'purple',
+  'pink',
+  'gray',
+  'brown',
+  'default',
+  'Red',
+  'Orange',
+  'Yellow',
+  'Green',
+  'Blue',
+  'Purple',
+  'Gray',
+  'Brown',
+  'Pink',
+]);
 const HEADING_LEVEL_SCHEMA = z.enum(['H1', 'H2', 'H3', 'normal']);
 const REM_TYPE_SCHEMA = z.enum(['normal', 'concept', 'descriptor']);
 const PRACTICE_DIRECTION_SCHEMA = z.enum(['forward', 'backward', 'none', 'both']).default('both');
@@ -69,6 +89,14 @@ const TEXT_RANGE_SCHEMA = z.object({
   start: z.number().int().min(0).describe('Zero-based start character offset.'),
   end: z.number().int().min(1).describe('Exclusive end character offset.'),
 });
+const SPAN_RANGE_INPUT_SCHEMA = {
+  range: TEXT_RANGE_SCHEMA.optional().describe('Character range in the Rem plain text.'),
+  start: z.number().int().min(0).optional().describe('Zero-based start offset. Alternative to range.'),
+  end: z.number().int().min(1).optional().describe('Exclusive end offset. Alternative to range.'),
+  text: z.string().trim().min(1).max(1000).optional().describe('Text to locate when start/end are not provided.'),
+  occurrence: z.number().int().min(1).max(100).default(1).optional().describe('One-based occurrence for text matching.'),
+  verifyAfterWrite: z.boolean().default(false).optional().describe('Return write verification evidence when available.'),
+};
 const PERMISSION_SCOPE_SCHEMA = z
   .enum([
     'current_permission_scope',
@@ -253,6 +281,59 @@ const STRUCTURED_NOTE_SCHEMA = z.object({
   children: z.array(STYLED_REM_TREE_NODE_SCHEMA).max(100).optional().describe('Ordered child nodes to append or replace under the target root.'),
 });
 
+const STYLE_PLAN_OPERATION_SCHEMA = z.object({
+  remId: REM_ID_SCHEMA.describe('Target Rem ID for this style operation.'),
+  type: z
+    .enum([
+      'heading',
+      'whole_rem_highlight',
+      'text_color_span',
+      'text_highlight_span',
+      'bold_span',
+      'italic_span',
+      'math_conversion',
+    ])
+    .describe('Style operation type.'),
+  start: z.number().int().min(0).optional(),
+  end: z.number().int().min(1).optional(),
+  text: z.string().trim().min(1).max(1000).optional(),
+  occurrence: z.number().int().min(1).max(100).default(1).optional(),
+  value: z.string().trim().min(1).max(1000).describe('Color, heading level, or operation value.'),
+});
+
+const STYLING_PLAN_SCHEMA = z.object({
+  operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).max(100).optional(),
+});
+
+const EXPECTED_STYLE_MAP_ENTRY_SCHEMA = z.object({
+  plainText: z.string().max(5000).optional(),
+  headingLevel: HEADING_LEVEL_SCHEMA.optional(),
+  wholeRemHighlight: COLOR_SCHEMA.optional(),
+  textColorSpans: z
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(1000).optional(),
+        start: z.number().int().min(0).optional(),
+        end: z.number().int().min(1).optional(),
+        color: COLOR_SCHEMA,
+      })
+    )
+    .max(50)
+    .optional(),
+  textHighlightSpans: z
+    .array(
+      z.object({
+        text: z.string().trim().min(1).max(1000).optional(),
+        start: z.number().int().min(0).optional(),
+        end: z.number().int().min(1).optional(),
+        color: COLOR_SCHEMA,
+      })
+    )
+    .max(50)
+    .optional(),
+  childOrder: z.array(REM_ID_SCHEMA).max(200).optional(),
+});
+
 type McpToolResult = {
   content: Array<{ type: 'text'; text: string }>;
   structuredContent: Record<string, unknown>;
@@ -268,6 +349,22 @@ export interface CreateMcpServerOptions {
 
 function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {
   return BRIDGE_TOOL_ANNOTATIONS[tool];
+}
+
+function defaultTimeoutForTool(tool: BridgeToolName): number {
+  if (BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+    return 8000;
+  }
+
+  if (BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint) {
+    return 45000;
+  }
+
+  if (tool === 'apply_structured_note_batch' || tool === 'create_polished_note_tree') {
+    return 45000;
+  }
+
+  return 30000;
 }
 
 function failureToToolResult(failure: BridgeFailure): McpToolResult {
@@ -347,7 +444,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs?: number
-  ) => hub.callPlugin(tool, args, timeoutMs, options.requestSignal);
+  ) => hub.callPlugin(tool, args, timeoutMs ?? defaultTimeoutForTool(tool), options.requestSignal);
   const registerTool = ((name: string, config: unknown, handler: unknown) => {
     registeredToolNames.push(name as RegisteredMcpToolName);
     return server.registerTool(name, config as never, handler as never);
@@ -479,8 +576,9 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     {
       title: 'Run bridge health check',
       description:
-        'Use this to test registered RemNote bridge tools and record pass/fail/skipped results in diagnostics. Safe by default; write execution requires includeWrites and a parentId.',
+        'Use this to test registered RemNote bridge tools and record pass/fail/skipped/unsupported results in diagnostics. read_only is default; write/delete modes use disposable Rems under parentId.',
       inputSchema: z.object({
+        mode: z.enum(['read_only', 'safe_write', 'mutation_on_disposable_rem', 'destructive_on_disposable_rem']).default('read_only').describe('read_only only probes reads; safe_write creates disposable content under parentId; mutation_on_disposable_rem mutates a disposable Rem; destructive_on_disposable_rem deletes only its own disposable Rem with delete_rem_by_id.'),
         includeWrites: z.boolean().default(false).describe('False runs read-only checks plus a structured batch dry run when parentId is provided. True executes safe create/write checks under parentId.'),
         includeExistingRemMutations: z.boolean().default(false).describe('True also tests updates/formatting against targetRemId, which requires RemNote approval. Destructive deletes are never executed.'),
         parentId: REM_ID_SCHEMA.optional().describe('Existing parent Rem ID for dry-run/batch/create checks.'),
@@ -495,8 +593,9 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
         idempotentHint: false,
       },
     },
-    async ({ includeWrites, includeExistingRemMutations, parentId, targetRemId, timeoutMs }) => {
+    async ({ mode, includeWrites, includeExistingRemMutations, parentId, targetRemId, timeoutMs }) => {
       const result = await runBridgeHealthCheck(hub, {
+        mode,
         exposeDeleteTool: options.exposeDeleteTool,
         includeWrites,
         includeExistingRemMutations,
@@ -509,7 +608,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
         content: [
           {
             type: 'text',
-            text: `Bridge health check ${result.status}: ${result.passedCount} passed, ${result.failedCount} failed, ${result.skippedCount} skipped.`,
+            text: `Bridge health check ${result.status}: ${result.passedCount} passed, ${result.failedCount} failed, ${result.skippedCount} skipped, ${result.unsupportedCount} unsupported.`,
           },
         ],
         structuredContent: {
@@ -890,47 +989,71 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   );
 
   registerTool(
-    'delete_focused_rem',
+    'delete_rem_by_id',
     {
-      title: 'Delete focused Rem',
+      title: 'Delete Rem by ID safely',
       description:
-        'Use this only when the user explicitly asks to delete the Rem currently focused in RemNote.',
+        'Use this for deletion. Defaults to dryRun=true. Real delete requires dryRun=false plus matching expectedParentId or expectedAncestorId guard.',
       inputSchema: z.object({
-        recursive: z.boolean().default(false).describe('Whether to delete descendants too. Defaults to false.'),
-        confirmText: DELETE_CONFIRM_SCHEMA.describe('Required literal confirmation text.'),
+        remId: REM_ID_SCHEMA.describe('The exact Rem ID to inspect/delete.'),
+        expectedParentId: REM_ID_SCHEMA.optional().describe('Guard: must match actual parent for real delete.'),
+        expectedAncestorId: REM_ID_SCHEMA.optional().describe('Guard: must appear in breadcrumbs for real delete.'),
+        confirmTitle: z.string().trim().max(1000).optional().describe('Optional guard: must match target plain text exactly when provided.'),
+        dryRun: z.boolean().default(true).describe('Default true. Set false only after reviewing the dry-run target.'),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Returns the same delete result on retry in this plugin session.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: annotationsFor('delete_focused_rem'),
+      annotations: annotationsFor('delete_rem_by_id'),
     },
-    async ({ recursive, confirmText }) =>
+    async ({ remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('delete_focused_rem', { recursive, confirmText }),
-        'Delete focused Rem request processed.'
+        () => callPlugin('delete_rem_by_id', { remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey }),
+        dryRun === false ? 'Delete Rem by ID request processed.' : 'Delete Rem by ID dry run processed.'
       )
   );
 
-  registerTool(
-    'delete_selected_rem',
-    {
-      title: 'Delete selected Rem',
-      description:
-        'Use this only when the user explicitly asks to delete exactly one currently selected Rem in RemNote.',
-      inputSchema: z.object({
-        recursive: z.boolean().default(false).describe('Whether to delete descendants too. Defaults to false.'),
-        confirmText: DELETE_CONFIRM_SCHEMA.describe('Required literal confirmation text.'),
-      }),
-      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: annotationsFor('delete_selected_rem'),
-    },
-    async ({ recursive, confirmText }) =>
-      bridgeToolResult(
-        () => callPlugin('delete_selected_rem', { recursive, confirmText }),
-        'Delete selected Rem request processed.'
-      )
-  );
-
-  // Arbitrary ID delete stays off in public descriptors; focused/selected delete remains preview-gated.
+  // Legacy delete tools stay hidden unless local destructive exposure is explicitly enabled.
   if (options.exposeDeleteTool) {
+    registerTool(
+      'delete_focused_rem',
+      {
+        title: 'Delete focused Rem',
+        description:
+          'Legacy/private. Prefer delete_rem_by_id; focus-based delete can target the wrong Rem.',
+        inputSchema: z.object({
+          recursive: z.boolean().default(false).describe('Whether to delete descendants too. Defaults to false.'),
+          confirmText: DELETE_CONFIRM_SCHEMA.describe('Required literal confirmation text.'),
+        }),
+        outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+        annotations: annotationsFor('delete_focused_rem'),
+      },
+      async ({ recursive, confirmText }) =>
+        bridgeToolResult(
+          () => callPlugin('delete_focused_rem', { recursive, confirmText }),
+          'Delete focused Rem request processed.'
+        )
+    );
+
+    registerTool(
+      'delete_selected_rem',
+      {
+        title: 'Delete selected Rem',
+        description:
+          'Legacy/private. Prefer delete_rem_by_id; selection-based delete can target the wrong Rem.',
+        inputSchema: z.object({
+          recursive: z.boolean().default(false).describe('Whether to delete descendants too. Defaults to false.'),
+          confirmText: DELETE_CONFIRM_SCHEMA.describe('Required literal confirmation text.'),
+        }),
+        outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+        annotations: annotationsFor('delete_selected_rem'),
+      },
+      async ({ recursive, confirmText }) =>
+        bridgeToolResult(
+          () => callPlugin('delete_selected_rem', { recursive, confirmText }),
+          'Delete selected Rem request processed.'
+        )
+    );
+
     registerTool(
       'delete_rem',
       {
@@ -1043,14 +1166,14 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       description: 'Use this when one word or character range inside a Rem should be colored.',
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target Rem ID.'),
-        range: TEXT_RANGE_SCHEMA.describe('Character range in the Rem plain text.'),
+        ...SPAN_RANGE_INPUT_SCHEMA,
         color: COLOR_SCHEMA.describe('Color to apply to this text range.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('set_text_span_color'),
     },
-    async ({ remId, range, color }) =>
-      bridgeToolResult(() => callPlugin('set_text_span_color', { remId, range, color }), 'Set text span color.')
+    async ({ remId, range, start, end, text, occurrence, verifyAfterWrite, color }) =>
+      bridgeToolResult(() => callPlugin('set_text_span_color', { remId, range, start, end, text, occurrence, verifyAfterWrite, color }), 'Set text span color.')
   );
 
   registerTool(
@@ -1060,15 +1183,15 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       description: 'Use this when one word or character range inside a Rem should be highlighted.',
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target Rem ID.'),
-        range: TEXT_RANGE_SCHEMA.describe('Character range in the Rem plain text.'),
+        ...SPAN_RANGE_INPUT_SCHEMA,
         color: COLOR_SCHEMA.describe('Highlight color to apply to this text range.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('set_text_span_highlight'),
     },
-    async ({ remId, range, color }) =>
+    async ({ remId, range, start, end, text, occurrence, verifyAfterWrite, color }) =>
       bridgeToolResult(
-        () => callPlugin('set_text_span_highlight', { remId, range, color }),
+        () => callPlugin('set_text_span_highlight', { remId, range, start, end, text, occurrence, verifyAfterWrite, color }),
         'Set text span highlight.'
       )
   );
@@ -1205,6 +1328,70 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
             verifyAfterWrite,
           }),
         'Structured note batch request processed.'
+      )
+  );
+
+  registerTool(
+    'create_polished_note_tree',
+    {
+      title: 'Create polished note tree',
+      description:
+        'Use this when one call should create a polished RemNote note tree, apply optional style operations, and verify after write.',
+      inputSchema: z.object({
+        parentId: REM_ID_SCHEMA.describe('Parent Rem ID for the created polished tree.'),
+        tree: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled Rem tree.'),
+        stylingPlan: STYLING_PLAN_SCHEMA.optional().describe('Optional post-create style operations with explicit Rem IDs.'),
+        verifyAfterWrite: z.boolean().default(false).describe('Read created Rem IDs after write and report missing IDs.'),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate note trees for repeated calls in this plugin session.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('create_polished_note_tree'),
+    },
+    async ({ parentId, tree, stylingPlan, verifyAfterWrite, idempotencyKey }) =>
+      bridgeToolResult(
+        () => callPlugin('create_polished_note_tree', { parentId, tree, stylingPlan, verifyAfterWrite, idempotencyKey }),
+        'Create polished note tree request processed.'
+      )
+  );
+
+  registerTool(
+    'apply_style_plan',
+    {
+      title: 'Apply style plan',
+      description:
+        'Use this when existing Rems need multiple safe style operations with per-operation status.',
+      inputSchema: z.object({
+        operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).min(1).max(100).describe('Ordered style operations.'),
+        continueOnError: z.boolean().default(true).describe('True returns per-operation failures and keeps going.'),
+        verifyAfterWrite: z.boolean().default(false).describe('Return verification evidence when available.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('apply_style_plan'),
+    },
+    async ({ operations, continueOnError, verifyAfterWrite }) =>
+      bridgeToolResult(
+        () => callPlugin('apply_style_plan', { operations, continueOnError, verifyAfterWrite }),
+        'Apply style plan request processed.'
+      )
+  );
+
+  registerTool(
+    'verify_note_design',
+    {
+      title: 'Verify note design',
+      description:
+        'Use this after note creation/styling to compare headings, whole-Rem highlight, colored spans, and child order against an expected style map.',
+      inputSchema: z.object({
+        rootRemId: REM_ID_SCHEMA.describe('Root Rem ID for the design verification.'),
+        expectedStyleMap: z.record(REM_ID_SCHEMA, EXPECTED_STYLE_MAP_ENTRY_SCHEMA).describe('Expected styles keyed by Rem ID.'),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('verify_note_design'),
+    },
+    async ({ rootRemId, expectedStyleMap }) =>
+      bridgeToolResult(
+        () => callPlugin('verify_note_design', { rootRemId, expectedStyleMap }),
+        'Verify note design request processed.'
       )
   );
 

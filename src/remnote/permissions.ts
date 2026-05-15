@@ -22,6 +22,7 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'get_rem_breadcrumbs',
   'search_rems',
   'get_document_or_folder_tree',
+  'verify_note_design',
 ]);
 
 const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
@@ -45,6 +46,8 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'create_styled_rem_tree',
   'apply_remnote_command',
   'apply_structured_note_batch',
+  'create_polished_note_tree',
+  'apply_style_plan',
   'create_basic_flashcard',
   'create_concept_card',
   'create_descriptor_card',
@@ -54,6 +57,7 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
 ]);
 const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'replace_rem',
+  'delete_rem_by_id',
   'delete_focused_rem',
   'delete_selected_rem',
   'delete_rem',

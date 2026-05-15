@@ -36,24 +36,19 @@ The bridge must make RemNote usable for high-quality note generation, editing, r
 
 ---
 
-# 1. Current Diagnosis — 2026-05-14
+# 1. Current Diagnosis — 2026-05-15
 
 ## 1.1 Latest known repo state
 
-The latest inspected commit is:
-
-```text
-81ce44bfad43a2ab4c1eeda1f107449e18938825
-Commit message: 26 Working tools
-```
+The latest inspected state is this working tree after the RemNote bridge formatting/safe-delete patch.
 
 The repo currently declares:
 
 ```text
-44 public MCP tools
-1 hidden gated tool: delete_rem
-toolRegistryVersion: 2026-05-14.3
-mcpDiscoveryVersion: mcp-discovery-2026-05-14.3
+46 public MCP tools
+3 hidden gated legacy delete tools: delete_rem, delete_focused_rem, delete_selected_rem
+toolRegistryVersion: 2026-05-15.1
+mcpDiscoveryVersion: mcp-discovery-2026-05-15.1
 ```
 
 The source-level registry exposure problem is mostly fixed.
@@ -62,7 +57,7 @@ The old 8-tool surface was a stale connector/discovery problem.
 
 However, the system is **not complete**.
 
-The previous live test report showed that only about **26 tools were working reliably**. Milestones 1-9 are now implemented and repo-verified, with a health-check tool available to record a real RemNote sandbox pass before public hosted submission wording is allowed.
+The older live test report showed only about **26 tools were working reliably**. The current source now exposes 46 public tools, hides risky focus/selection delete, fixes the dedicated text-color/cloze paths at source level, and expands mock smoke coverage. A live RemNote sandbox health-check pass is still required before public hosted submission wording is allowed.
 
 ## 1.2 Main current problem
 
@@ -75,7 +70,7 @@ ChatGPT cannot see all tools.
 The current problem is:
 
 ```text
-The bridge exposes 44 public tools, but not all 44 are verified working in live execution against the RemNote plugin and RemNote SDK.
+The bridge exposes 46 public tools, but not all 46 are verified working in live execution against the RemNote plugin and RemNote SDK.
 ```
 
 Diagnostics now correctly say:
@@ -133,13 +128,13 @@ Do not describe the current bridge as fully complete.
 Correct status wording:
 
 ```text
-The source-level 44-tool registry is present and the connector exposes all 44 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
+The source-level 46-tool registry is present and the connector exposes all 46 public tools. Milestones 1-9 are repo-verified, but a recorded live RemNote sandbox health-check pass is still required before public hosted production-ready wording.
 ```
 
 Incorrect status wording:
 
 ```text
-All 44 tools work live.
+All 46 tools work live.
 Complete.
 Issue fixed.
 ```
@@ -203,22 +198,23 @@ replace_rem caused a stuck call.
 create_rem_tree caused a stuck call.
 get_rem_rich was blocked by the ChatGPT/OpenAI gateway during testing.
 create_cloze_card was blocked by the ChatGPT/OpenAI gateway during testing.
-set_rem_text_color and span color/highlight tools fail with SDK format argument errors.
+`set_rem_text_color` and `set_text_span_color` now use rich-text rebuild instead of the broken applyTextFormatToRange path. `set_text_span_highlight` returns clean SDK_UNSUPPORTED because this installed SDK lacks distinct selected-text highlight support.
 clear_rem_formatting fails with rem.setType argument error.
 ```
 
-2026-05-14 update:
+2026-05-15 update:
 
 ```text
-Formatting tools now use SDK-supported color names, best-effort color clearing, and SDK_UNSUPPORTED for unsupported default/highlight/type reset paths.
+Formatting tools now use exact SDK color names Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, Pink, selected-text highlight, and unsupported type reset paths return clean SDK_UNSUPPORTED.
 Live RemNote sandbox QA is still required to move them from source-verified to live-verified.
 ```
 
 ## 3.3 Dangerous tools
 
-These must remain strongly gated:
+These must remain strongly gated or hidden:
 
 ```text
+delete_rem_by_id
 delete_focused_rem
 delete_selected_rem
 delete_rem
@@ -227,10 +223,12 @@ delete_rem
 Rules:
 
 ```text
-delete_rem must remain hidden by default.
-delete_focused_rem and delete_selected_rem must always require approval.
-Delete must require typed confirmText: DELETE.
-Delete must show target title, child count, descendant count, and recursive warning.
+delete_rem_by_id is the only public delete tool.
+delete_rem_by_id defaults to dryRun: true.
+Real delete requires dryRun: false plus matching expectedParentId or expectedAncestorId.
+confirmTitle, when provided, must match the target plain text.
+delete_focused_rem, delete_selected_rem, and delete_rem must remain hidden/private by default.
+Health check must only delete its own disposable child through delete_rem_by_id.
 ```
 
 ---
@@ -783,7 +781,7 @@ Make the project honest about current state.
 Update diagnostics and docs to say:
 
 ```text
-44 tools exposed
+46 tools exposed
 previous live report verified about 26 working
 remaining tools unverified/problematic
 callabilitySource = registry_only_not_live_execution
@@ -1575,7 +1573,7 @@ npm run validate passed.
 npm run build passed with existing webpack size warnings.
 npm run server:build passed.
 npm run server:smoke passed.
-Live RemNote sandbox QA is still required before marking all 44 tools production-ready in hosted/public wording.
+Live RemNote sandbox QA is still required before marking all 46 tools production-ready in hosted/public wording.
 ```
 
 ## Milestone 7 — Rework tree tools on batch engine
@@ -1600,7 +1598,7 @@ Tasks:
 
 ```text
 [x] Add run_bridge_health_check.
-[x] Record pass/fail/skipped tools.
+[x] Record pass/fail/skipped/unsupported tools.
 [x] Surface last health check in diagnostics.
 ```
 
@@ -1633,7 +1631,7 @@ The bridge can be honestly marked repo-ready for structured note generation. Pub
 - [x] Milestone 7 — Rework tree tools on batch engine.
   `create_rem_tree` now validates the simple tree shape and delegates creation to `create_styled_rem_tree`, so the old duplicate recursive write path is removed. `create_styled_rem_tree` remains the shared structured write engine used by `apply_structured_note_batch`.
 - [x] Milestone 8 — Live health-check system.
-  `run_bridge_health_check` is a public MCP tool. It records pass/fail/skipped results, avoids destructive deletes, supports safe dry runs by default, can execute sandbox writes when explicitly requested, and stores `lastHealthCheck` in diagnostics.
+  `run_bridge_health_check` is a public MCP tool. It records pass/fail/skipped/unsupported results, supports read_only, safe_write, mutation_on_disposable_rem, and destructive_on_disposable_rem modes, deletes only its own disposable child through delete_rem_by_id, and stores `lastHealthCheck` in diagnostics.
 - [x] Milestone 9 — Final repo QA.
   Server smoke now verifies `tools/list` registry parity, the RemNote capability guide, health-check recording, structured batch dry-run/apply, note-writing failure survival, plugin timeout, plugin disconnect, and client-disconnect cancellation.
 
@@ -1651,7 +1649,7 @@ git diff --check passed.
 
 ## Final-test execution status — 2026-05-15
 
-- [x] Registry exposes 44 public tools and keeps 1 hidden gated `delete_rem`.
+- [x] Registry exposes 46 public tools and keeps 3 hidden gated legacy delete tools: `delete_rem`, `delete_focused_rem`, and `delete_selected_rem`.
 - [x] `apply_remnote_command` is public, smoke-tested, and covered in `chatgpt-app-submission.json`.
 - [x] Trusted Writes no longer forces RemNote-side approvals for safe writes when scope allows; replace/delete remain approval-gated.
 - [x] Plugin UI includes Recommended Note Mode, effective permission summary, tool availability counts, lifecycle display, health check, diagnostics copy, recent logs copy, failed request copy, last success, and last failure.
@@ -1666,7 +1664,7 @@ git diff --check passed.
 The bridge is complete only when all are true:
 
 ```text
-44 public tools are discoverable.
+46 public tools are discoverable.
 delete_rem is hidden by default.
 callabilitySource is honest.
 At least all required note-generation tools are live verified.

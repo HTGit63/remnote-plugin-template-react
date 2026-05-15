@@ -3,6 +3,8 @@ import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remn
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
+  ApplyStylePlanArgs,
+  ApplyStylePlanResult,
   ApplyStructuredNoteBatchArgs,
   ApplyStructuredNoteBatchResult,
   AppendToRemArgs,
@@ -17,6 +19,8 @@ import type {
   CreateFolderResult,
   CreateListAnswerCardArgs,
   CreateMultipleChoiceCardArgs,
+  CreatePolishedNoteTreeArgs,
+  CreatePolishedNoteTreeResult,
   CreateRemTreeArgs,
   CreateRemTreeNode,
   CreateRemTreeResult,
@@ -27,9 +31,13 @@ import type {
   CreateStyledRemTreeResult,
   DeleteFocusedRemArgs,
   DeletePreview,
+  DeleteRemByIdArgs,
+  DeleteRemByIdResult,
+  DeleteRemByIdTarget,
   DeleteRemArgs,
   DeleteRemResult,
   DeleteSelectedRemArgs,
+  ExpectedStyleMapEntry,
   FormatRemResult,
   MoveRemArgs,
   MoveRemResult,
@@ -56,7 +64,19 @@ import type {
   UpdateRemArgs,
   UpdateRemRichArgs,
   UpdateRemResult,
+  VerifyNoteDesignArgs,
+  VerifyNoteDesignResult,
 } from '../bridge/protocol';
+import {
+  RichTextFormattingError,
+  applyClozeToRange,
+  applyFormatsToRichTextRange,
+  applyTextColorToAllText,
+  applyTextColorToRange,
+  applyTextHighlightToRange,
+  normalizeTextColor,
+  resolveRangeFromPlainText,
+} from './richTextFormatting';
 
 const MAX_MARKDOWN_CHARS = 20000;
 export const CREATE_TREE_MAX_DEPTH = 5;
@@ -84,12 +104,15 @@ const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
   purple: 'Purple',
   pink: undefined,
   gray: undefined,
+  brown: undefined,
   default: undefined,
 };
 
 const COLOR_FORMAT_NAMES: RichTextFormatName[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
 const STRUCTURED_BATCH_RESULT_CACHE = new Map<string, ApplyStructuredNoteBatchResult>();
 const REMNOTE_COMMAND_RESULT_CACHE = new Map<string, ApplyRemnoteCommandResult>();
+const DELETE_BY_ID_RESULT_CACHE = new Map<string, DeleteRemByIdResult>();
+const POLISHED_TREE_RESULT_CACHE = new Map<string, CreatePolishedNoteTreeResult>();
 
 export class RemnoteWriteError extends Error {
   constructor(
@@ -145,6 +168,20 @@ function getPartialExecutionDetails(details: unknown): Record<string, unknown> {
     : {};
 }
 
+function mapFormattingError(error: unknown): RemnoteWriteError {
+  if (error instanceof RichTextFormattingError) {
+    return new RemnoteWriteError(error.code, error.message, error.details);
+  }
+
+  if (error instanceof RemnoteWriteError) {
+    return error;
+  }
+
+  return new RemnoteWriteError('SDK_ERROR', 'RemNote SDK operation failed.', {
+    sdkMessage: getSdkErrorMessage(error),
+  });
+}
+
 function wrapPartialCreateError(
   error: RemnoteWriteError,
   createdRem: Rem | null,
@@ -171,13 +208,14 @@ async function parseMarkdownToRichText(plugin: RNPlugin, markdown: string): Prom
   );
 }
 
-function getColorFormat(color: RemColorName): RichTextFormatName | undefined {
+function getColorFormat(input: string): RichTextFormatName | undefined {
+  const color = remColorNameFromString(input);
   const format = COLOR_FORMATS[color];
-  if (!format && color !== 'default' && color !== 'pink' && color !== 'gray') {
-    throw new RemnoteWriteError('INVALID_ARGS', `Unsupported color "${color}".`);
+  if (!format && color !== 'default' && color !== 'pink' && color !== 'gray' && color !== 'brown') {
+    throw new RemnoteWriteError('INVALID_ARGS', `Unsupported color "${input}".`);
   }
 
-  if (!format && (color === 'pink' || color === 'gray')) {
+  if (!format && (color === 'pink' || color === 'gray' || color === 'brown')) {
     throw new RemnoteWriteError(
       'SDK_UNSUPPORTED',
       `The installed RemNote SDK rich text formatter only exposes red, orange, yellow, green, blue, and purple.`
@@ -185,6 +223,44 @@ function getColorFormat(color: RemColorName): RichTextFormatName | undefined {
   }
 
   return format;
+}
+
+function remColorNameFromString(value: string): RemColorName {
+  const color = value.trim().toLowerCase();
+  switch (color) {
+    case 'red':
+    case 'orange':
+    case 'yellow':
+    case 'green':
+    case 'blue':
+    case 'purple':
+    case 'pink':
+    case 'gray':
+    case 'brown':
+    case 'default':
+      return color;
+    default:
+      throw new RemnoteWriteError('INVALID_ARGS', `Unsupported color "${value}".`);
+  }
+}
+
+function headingLevelFromString(value: string): RemHeadingLevel {
+  switch (value.trim()) {
+    case 'H1':
+    case 'h1':
+      return 'H1';
+    case 'H2':
+    case 'h2':
+      return 'H2';
+    case 'H3':
+    case 'h3':
+      return 'H3';
+    case 'normal':
+    case 'Normal':
+      return 'normal';
+    default:
+      throw new RemnoteWriteError('INVALID_ARGS', `Unsupported heading level "${value}".`);
+  }
 }
 
 function normalizeHeading(level: RemHeadingLevel): 'H1' | 'H2' | 'H3' | undefined {
@@ -432,63 +508,44 @@ function validateTextRange(range: { start: number; end: number }, textLength: nu
   }
 }
 
-async function clearColorFormatsInRange(
-  plugin: RNPlugin,
-  richText: RichTextInterface,
-  start: number,
-  end: number,
-  required = false
-): Promise<RichTextInterface> {
-  let next = richText;
-  let removedAtLeastOne = false;
-  let lastFailure: unknown;
-
-  for (const format of COLOR_FORMAT_NAMES) {
-    try {
-      next = await runSdkOperation('richText.removeTextFormatFromRange', () =>
-        plugin.richText.removeTextFormatFromRange(next, start, end, format)
-      );
-      removedAtLeastOne = true;
-    } catch (error: unknown) {
-      lastFailure = error;
-    }
-  }
-
-  if (required && !removedAtLeastOne && lastFailure) {
-    throw new RemnoteWriteError(
-      'SDK_UNSUPPORTED',
-      'The installed RemNote SDK rejected rich text color clearing for this range.',
-      {
-        start,
-        end,
-        sdkMessage: getSdkErrorMessage(lastFailure),
-      }
-    );
-  }
-
-  return next;
+function rangeInputFromArgs(
+  args: Pick<SetTextSpanColorArgs | SetTextSpanHighlightArgs, 'range' | 'start' | 'end' | 'text' | 'occurrence'>
+): { start?: number; end?: number; text?: string; occurrence?: number } {
+  return {
+    start: args.start ?? args.range?.start,
+    end: args.end ?? args.range?.end,
+    text: args.text,
+    occurrence: args.occurrence,
+  };
 }
 
-async function setColorInRange(
+async function setTextColorInRange(
   plugin: RNPlugin,
   rem: Rem,
-  range: { start: number; end: number },
-  color: RemColorName,
+  range: { start: number; end: number; resolvedPlainText: string },
+  color: string,
   status: FormatRemResult['status']
 ): Promise<FormatRemResult> {
-  const plain = await getRemPlainString(plugin, rem);
-  validateTextRange(range, plain.length);
-
-  const format = getColorFormat(color);
-  let richText = await clearColorFormatsInRange(plugin, rem.text, range.start, range.end, !format);
-  if (format) {
-    richText = await runSdkOperation('richText.applyTextFormatToRange', () =>
-      plugin.richText.applyTextFormatToRange(richText, range.start, range.end, format)
-    );
+  try {
+    const formatted = await applyTextColorToRange(plugin, rem.text, range.start, range.end, color);
+    await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
+    return {
+      remId: rem._id,
+      status,
+      ok: true,
+      requestedColor: formatted.requestedColor,
+      normalizedColor: formatted.normalizedColor,
+      methodUsed: formatted.methodUsed,
+      resolvedPlainText: range.resolvedPlainText,
+      start: range.start,
+      end: range.end,
+      verification: {
+        plainText: await getRemPlainString(plugin, rem),
+      },
+    };
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
   }
-
-  await runSdkOperation('rem.setText', () => rem.setText(richText));
-  return { remId: rem._id, status };
 }
 
 async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleInput | undefined) {
@@ -520,7 +577,13 @@ async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleInput | 
   if (style.color && style.color !== 'default') {
     const plain = await getRemPlainString(plugin, rem);
     if (plain.length > 0) {
-      await setColorInRange(plugin, rem, { start: 0, end: plain.length }, style.color, 'text_color_set');
+      await setTextColorInRange(
+        plugin,
+        rem,
+        { start: 0, end: plain.length, resolvedPlainText: plain },
+        style.color,
+        'text_color_set'
+      );
     }
   }
 }
@@ -836,12 +899,25 @@ export async function setRemTextColor(
   args: SetRemTextColorArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  const plain = await getRemPlainString(plugin, rem);
-  if (!plain.length) {
-    return { remId: rem._id, status: 'text_color_set' };
+  try {
+    const formatted = await applyTextColorToAllText(plugin, rem.text, args.color);
+    await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
+    const plain = await getRemPlainString(plugin, rem);
+    return {
+      remId: rem._id,
+      status: 'text_color_set',
+      ok: true,
+      requestedColor: formatted.requestedColor,
+      normalizedColor: formatted.normalizedColor,
+      methodUsed: formatted.methodUsed,
+      verification: {
+        plainText: plain,
+        textLength: plain.length,
+      },
+    };
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
   }
-
-  return setColorInRange(plugin, rem, { start: 0, end: plain.length }, args.color, 'text_color_set');
 }
 
 export async function setTextSpanColor(
@@ -849,7 +925,19 @@ export async function setTextSpanColor(
   args: SetTextSpanColorArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  return setColorInRange(plugin, rem, args.range, args.color, 'span_color_set');
+  try {
+    const range = await resolveRangeFromPlainText(
+      plugin,
+      rem.text,
+      rangeInputFromArgs(args).start,
+      rangeInputFromArgs(args).end,
+      rangeInputFromArgs(args).text,
+      rangeInputFromArgs(args).occurrence ?? 1
+    );
+    return setTextColorInRange(plugin, rem, range, args.color, 'span_color_set');
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
+  }
 }
 
 export async function setTextSpanHighlight(
@@ -857,7 +945,31 @@ export async function setTextSpanHighlight(
   args: SetTextSpanHighlightArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  return setColorInRange(plugin, rem, args.range, args.color, 'span_highlight_set');
+  const rangeArgs = rangeInputFromArgs(args);
+  try {
+    const range = await resolveRangeFromPlainText(
+      plugin,
+      rem.text,
+      rangeArgs.start,
+      rangeArgs.end,
+      rangeArgs.text,
+      rangeArgs.occurrence ?? 1
+    );
+    await applyTextHighlightToRange();
+    return {
+      remId: rem._id,
+      status: 'span_highlight_set',
+      ok: false,
+      requestedColor: args.color,
+      normalizedColor: String(normalizeTextColor(args.color)),
+      methodUsed: 'rich_text_rebuild',
+      resolvedPlainText: range.resolvedPlainText,
+      start: range.start,
+      end: range.end,
+    };
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
+  }
 }
 
 export async function setRemHighlightColor(
@@ -865,7 +977,8 @@ export async function setRemHighlightColor(
   args: SetRemHighlightColorArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  const format = getColorFormat(args.color);
+  const color = remColorNameFromString(args.color);
+  const format = getColorFormat(color);
   if (!format) {
     throw new RemnoteWriteError(
       'SDK_UNSUPPORTED',
@@ -912,18 +1025,39 @@ export async function clearRemFormatting(
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const plain = await getRemPlainString(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, [{ text: plain || ' ' }]);
-
-  if (rem.type === RemType.CONCEPT || rem.type === RemType.DESCRIPTOR) {
-    throw new RemnoteWriteError(
-      'SDK_UNSUPPORTED',
-      'The installed RemNote SDK does not expose a reliable concept/descriptor reset to normal type.'
-    );
-  }
+  const warnings: string[] = [];
+  const cleared: NonNullable<FormatRemResult['cleared']> = {};
+  const unsupported: NonNullable<FormatRemResult['unsupported']> = {};
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
-  await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
+  cleared.textFormatting = true;
 
-  return { remId: rem._id, status: 'formatting_cleared' };
+  await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
+  cleared.heading = true;
+
+  await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(true));
+  cleared.hideBullet = true;
+
+  cleared.wholeRemHighlight = false;
+  warnings.push('Whole-Rem highlight clearing is not exposed by installed @remnote/plugin-sdk 0.0.14.');
+
+  if (rem.type === RemType.CONCEPT || rem.type === RemType.DESCRIPTOR) {
+    cleared.remType = false;
+    unsupported.remTypeReset = true;
+    unsupported.reason = 'The installed RemNote SDK does not expose a reliable concept/descriptor reset to normal type.';
+    warnings.push(unsupported.reason);
+  } else {
+    cleared.remType = true;
+  }
+
+  return {
+    remId: rem._id,
+    status: 'formatting_cleared',
+    ok: !unsupported.remTypeReset && warnings.length === 0,
+    cleared,
+    unsupported,
+    warnings,
+  };
 }
 
 async function resolveCommandTarget(plugin: RNPlugin, args: ApplyRemnoteCommandArgs): Promise<Rem> {
@@ -1323,6 +1457,12 @@ export async function createClozeCard(
   let end = start >= 0 && args.clozeText ? start + args.clozeText.length : -1;
 
   if (start < 0) {
+    if (args.clozeText) {
+      throw new RemnoteWriteError('INVALID_ARGS', 'clozeText was not found in text.', {
+        clozeText: args.clozeText,
+      });
+    }
+
     const match = /\{\{(.+?)\}\}/.exec(plainText);
     if (match?.index !== undefined) {
       start = match.index;
@@ -1334,9 +1474,12 @@ export async function createClozeCard(
   }
 
   const baseRichText = await buildRichTextFromSpans(plugin, [{ text: plainText }]);
-  const clozeRichText = await runSdkOperation('richText.applyTextFormatToRange', () =>
-    plugin.richText.applyTextFormatToRange(baseRichText, start, end, 'cloze')
-  );
+  let clozeRichText: RichTextInterface;
+  try {
+    clozeRichText = (await applyClozeToRange(plugin, baseRichText, start, end)).richText;
+  } catch (error: unknown) {
+    throw mapFormattingError(error);
+  }
   const rem = await createRemWithRichText(plugin, clozeRichText, parent, insertIndex);
   await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
   await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(args.direction ?? 'both'));
@@ -1451,10 +1594,17 @@ export async function structuredWriteEngine(
       const clozeText = node.clozeText ?? plain;
       const start = plain.indexOf(clozeText);
       if (start >= 0) {
-        const next = await runSdkOperation('richText.applyTextFormatToRange', () =>
-          plugin.richText.applyTextFormatToRange(created.text, start, start + clozeText.length, 'cloze')
-        );
+        let next: RichTextInterface;
+        try {
+          next = (await applyClozeToRange(plugin, created.text, start, start + clozeText.length)).richText;
+        } catch (error: unknown) {
+          throw mapFormattingError(error);
+        }
         await runSdkOperation('rem.setText', () => created.setText(next));
+      } else if (node.clozeText) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'clozeText was not found in clozeCard text.', {
+          clozeText: node.clozeText,
+        });
       }
       await runSdkOperation('rem.setEnablePractice', () => created.setEnablePractice(true));
       await runSdkOperation('rem.setPracticeDirection', () => created.setPracticeDirection(node.direction ?? 'both'));
@@ -1618,6 +1768,318 @@ export async function createStyledRemTree(
   args: CreateStyledRemTreeArgs
 ): Promise<CreateStyledRemTreeResult> {
   return structuredWriteEngine(plugin, args);
+}
+
+async function applyOneStyleOperation(
+  plugin: RNPlugin,
+  operation: ApplyStylePlanArgs['operations'][number]
+): Promise<unknown> {
+  switch (operation.type) {
+    case 'heading':
+      return setRemHeadingLevel(plugin, {
+        remId: operation.remId,
+        level: headingLevelFromString(operation.value),
+      });
+    case 'whole_rem_highlight':
+      return setRemHighlightColor(plugin, {
+        remId: operation.remId,
+        color: remColorNameFromString(operation.value),
+      });
+    case 'text_color_span':
+      return setTextSpanColor(plugin, {
+        remId: operation.remId,
+        color: operation.value,
+        start: operation.start,
+        end: operation.end,
+        text: operation.text,
+        occurrence: operation.occurrence,
+      });
+    case 'text_highlight_span':
+      return setTextSpanHighlight(plugin, {
+        remId: operation.remId,
+        color: operation.value,
+        start: operation.start,
+        end: operation.end,
+        text: operation.text,
+        occurrence: operation.occurrence,
+      });
+    case 'bold_span':
+    case 'italic_span': {
+      const rem = await findRequiredRem(plugin, operation.remId, 'Target');
+      const range = await resolveRangeFromPlainText(
+        plugin,
+        rem.text,
+        operation.start,
+        operation.end,
+        operation.text,
+        operation.occurrence ?? 1
+      );
+      const richText = await applyFormatsToRichTextRange(
+        plugin,
+        rem.text,
+        range.start,
+        range.end,
+        [operation.type === 'bold_span' ? 'bold' : 'italic']
+      );
+      await runSdkOperation('rem.setText', () => rem.setText(richText));
+      return {
+        remId: rem._id,
+        status: 'updated_rich',
+        ok: true,
+        resolvedPlainText: range.resolvedPlainText,
+        start: range.start,
+        end: range.end,
+        methodUsed: 'rich_text_rebuild',
+      } as FormatRemResult;
+    }
+    case 'math_conversion':
+      throw new RemnoteWriteError(
+        'SDK_UNSUPPORTED',
+        'apply_style_plan math_conversion is not safe for existing arbitrary rich text in installed SDK. Use update_rem_rich or create_polished_note_tree with math spans.'
+      );
+    default:
+      throw new RemnoteWriteError('INVALID_ARGS', `Unsupported style operation "${operation.type}".`);
+  }
+}
+
+export async function applyStylePlan(
+  plugin: RNPlugin,
+  args: ApplyStylePlanArgs
+): Promise<ApplyStylePlanResult> {
+  const continueOnError = args.continueOnError ?? true;
+  const operations: ApplyStylePlanResult['operations'] = [];
+
+  for (let index = 0; index < args.operations.length; index += 1) {
+    const operation = args.operations[index];
+    try {
+      const result = await applyOneStyleOperation(plugin, operation);
+      operations.push({
+        index,
+        remId: operation.remId,
+        type: operation.type,
+        status: 'applied',
+        result,
+      });
+    } catch (error: unknown) {
+      const mapped = mapFormattingError(error);
+      operations.push({
+        index,
+        remId: operation.remId,
+        type: operation.type,
+        status: mapped.code === 'SDK_UNSUPPORTED' ? 'unsupported' : 'failed',
+        error: {
+          code: mapped.code,
+          message: mapped.message,
+          details: mapped.details,
+        },
+      });
+      if (!continueOnError) {
+        break;
+      }
+    }
+  }
+
+  const failed = operations.some((operation) => operation.status === 'failed');
+  const unsupported = operations.some((operation) => operation.status === 'unsupported');
+  return {
+    status: failed ? 'failed' : unsupported ? 'partial' : 'applied',
+    operations,
+    continueOnError,
+    verifyAfterWrite: args.verifyAfterWrite ?? false,
+  };
+}
+
+function rememberPolishedTreeResult(idempotencyKey: string, result: CreatePolishedNoteTreeResult) {
+  POLISHED_TREE_RESULT_CACHE.delete(idempotencyKey);
+  POLISHED_TREE_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (POLISHED_TREE_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = POLISHED_TREE_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    POLISHED_TREE_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+export async function createPolishedNoteTree(
+  plugin: RNPlugin,
+  args: CreatePolishedNoteTreeArgs
+): Promise<CreatePolishedNoteTreeResult> {
+  const idempotencyKey = args.idempotencyKey?.trim();
+  if (idempotencyKey) {
+    const cached = POLISHED_TREE_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  const created = await createStyledRemTree(plugin, {
+    parentId: args.parentId,
+    position: 'end',
+    tree: args.tree,
+  });
+  const stylePlan = args.stylingPlan?.operations?.length
+    ? await applyStylePlan(plugin, {
+        operations: args.stylingPlan.operations,
+        continueOnError: true,
+        verifyAfterWrite: args.verifyAfterWrite,
+      })
+    : undefined;
+  const verification = args.verifyAfterWrite
+    ? await verifyCreatedRems(plugin, created.createdRemIds, created.rootCreatedRemId)
+    : undefined;
+  const result: CreatePolishedNoteTreeResult = {
+    ...created,
+    ...(stylePlan ? { stylePlan } : {}),
+    ...(verification ? { verification } : {}),
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+  };
+
+  if (idempotencyKey) {
+    rememberPolishedTreeResult(idempotencyKey, result);
+  }
+
+  return result;
+}
+
+const RICH_TEXT_COLOR_NUMBERS: Record<string, number> = {
+  red: 1,
+  orange: 2,
+  yellow: 3,
+  green: 4,
+  purple: 5,
+  blue: 6,
+};
+
+function richTextHasColoredSpan(richText: RichTextInterface | undefined, text: string | undefined, color: string): boolean {
+  if (!richText || !text) {
+    return false;
+  }
+
+  const expectedColor = RICH_TEXT_COLOR_NUMBERS[color.trim().toLowerCase()];
+  if (!expectedColor) {
+    return false;
+  }
+
+  return richText.some((item) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      return false;
+    }
+
+    const record = item as Record<string, unknown>;
+    return typeof record.text === 'string' && record.text.includes(text) && record.h === expectedColor;
+  });
+}
+
+export async function verifyNoteDesign(
+  plugin: RNPlugin,
+  args: VerifyNoteDesignArgs
+): Promise<VerifyNoteDesignResult> {
+  const checkedRemIds: string[] = [];
+  const mismatches: VerifyNoteDesignResult['mismatches'] = [];
+  const unsupportedChecks: VerifyNoteDesignResult['unsupportedChecks'] = [];
+  const entries = Object.entries(args.expectedStyleMap) as Array<[string, ExpectedStyleMapEntry]>;
+  const idsToCheck: Array<[string, ExpectedStyleMapEntry]> = entries.length
+    ? entries
+    : [[args.rootRemId, args.expectedStyleMap[args.rootRemId] ?? {}]];
+
+  for (const [remId, expected] of idsToCheck) {
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) {
+      mismatches.push({
+        remId,
+        type: 'missing_rem',
+        expected: remId,
+        actual: null,
+        message: 'Expected Rem is missing.',
+      });
+      continue;
+    }
+
+    checkedRemIds.push(remId);
+    const plainText = await getRemPlainString(plugin, rem);
+    if (expected.plainText !== undefined && plainText !== expected.plainText) {
+      mismatches.push({
+        remId,
+        type: 'plainText',
+        expected: expected.plainText,
+        actual: plainText,
+        message: 'Plain text mismatch.',
+      });
+    }
+
+    if (expected.headingLevel) {
+      const actual = (await rem.getFontSize().catch(() => undefined)) ?? 'normal';
+      if (actual !== expected.headingLevel) {
+        mismatches.push({
+          remId,
+          type: 'headingLevel',
+          expected: expected.headingLevel,
+          actual,
+          message: 'Heading level mismatch.',
+        });
+      }
+    }
+
+    if (expected.wholeRemHighlight) {
+      const actual = String(await rem.getHighlightColor().catch(() => 'default')).toLowerCase();
+      if (actual !== expected.wholeRemHighlight) {
+        mismatches.push({
+          remId,
+          type: 'wholeRemHighlight',
+          expected: expected.wholeRemHighlight,
+          actual,
+          message: 'Whole-Rem highlight mismatch.',
+        });
+      }
+    }
+
+    for (const span of expected.textColorSpans ?? []) {
+      if (!richTextHasColoredSpan(rem.text, span.text, span.color)) {
+        mismatches.push({
+          remId,
+          type: 'textColorSpan',
+          expected: span,
+          message: 'Expected colored text span was not found in readable rich text fields.',
+        });
+      }
+    }
+
+    for (const span of expected.textHighlightSpans ?? []) {
+      unsupportedChecks.push({
+        remId,
+        type: 'textHighlightSpan',
+        reason:
+          'Installed @remnote/plugin-sdk 0.0.14 does not expose selected-text highlight as distinct from color/whole-Rem highlight.',
+      });
+      if (span.start !== undefined || span.end !== undefined || span.text) {
+        // Keep payload exercised without claiming false support.
+      }
+    }
+
+    if (expected.childOrder) {
+      const children = await rem.getChildrenRem();
+      const actual = children.map((child) => child._id);
+      if (JSON.stringify(actual) !== JSON.stringify(expected.childOrder)) {
+        mismatches.push({
+          remId,
+          type: 'childOrder',
+          expected: expected.childOrder,
+          actual,
+          message: 'Child order mismatch.',
+        });
+      }
+    }
+  }
+
+  return {
+    rootRemId: args.rootRemId,
+    ok: mismatches.length === 0,
+    checkedRemIds,
+    mismatches,
+    unsupportedChecks,
+  };
 }
 
 export async function applyStructuredNoteBatch(
@@ -1892,7 +2354,182 @@ export async function buildDeletePreview(
   };
 }
 
-async function deleteRemById(
+async function getDeleteTarget(plugin: RNPlugin, rem: Rem): Promise<DeleteRemByIdTarget> {
+  const breadcrumbs: DeleteRemByIdTarget['breadcrumbs'] = [];
+  const seen = new Set<string>();
+  let current: Rem | undefined = rem;
+
+  while (current && !seen.has(current._id)) {
+    seen.add(current._id);
+    breadcrumbs.unshift({
+      id: current._id,
+      text: await getRemTitle(plugin, current),
+    });
+
+    if (!current.parent) {
+      break;
+    }
+
+    current = (await plugin.rem.findOne(current.parent)) ?? undefined;
+  }
+
+  return {
+    remId: rem._id,
+    plainText: await getRemPlainString(plugin, rem),
+    parentId: rem.parent ?? null,
+    breadcrumbs,
+    childCount: rem.children.length,
+  };
+}
+
+function rememberDeleteByIdResult(idempotencyKey: string, result: DeleteRemByIdResult) {
+  DELETE_BY_ID_RESULT_CACHE.delete(idempotencyKey);
+  DELETE_BY_ID_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (DELETE_BY_ID_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = DELETE_BY_ID_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    DELETE_BY_ID_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+async function assertSafeDeleteTarget(plugin: RNPlugin, rem: Rem, target: DeleteRemByIdTarget) {
+  if (!target.parentId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id refuses to delete top-level/workspace root Rems.', {
+      remId: target.remId,
+    });
+  }
+
+  if (/plugin test|mcp regression test root/i.test(target.plainText)) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id refuses to delete Plugin Test / MCP Regression root Rems.', {
+      remId: target.remId,
+      plainText: target.plainText,
+    });
+  }
+
+  const isDocument = await rem.isDocument().catch(() => false);
+  if (isDocument) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id refuses to delete document roots.', {
+      remId: target.remId,
+    });
+  }
+
+  const focusedRem = await plugin.focus.getFocusedRem().catch(() => undefined);
+  const focusedPortal = await plugin.focus.getFocusedPortal().catch(() => undefined);
+  if (focusedRem?._id === target.remId || focusedPortal?._id === target.remId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id refuses to delete the current focused Rem or focused portal.', {
+      remId: target.remId,
+    });
+  }
+}
+
+export async function deleteRemByIdSafe(
+  plugin: RNPlugin,
+  args: DeleteRemByIdArgs
+): Promise<DeleteRemByIdResult> {
+  const remId = args.remId?.trim();
+  if (!remId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id requires remId.');
+  }
+
+  const idempotencyKey = args.idempotencyKey?.trim();
+  if (idempotencyKey) {
+    const cached = DELETE_BY_ID_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: cached.status === 'deleted' ? 'already_deleted' : cached.status,
+      };
+    }
+  }
+
+  const rem = await findRequiredRem(plugin, remId, 'Target');
+  const target = await getDeleteTarget(plugin, rem);
+  const ancestorIds = new Set(target.breadcrumbs.map((item) => item.id));
+  const guards: NonNullable<DeleteRemByIdResult['guards']> = {
+    ...(args.expectedParentId ? { expectedParentMatches: target.parentId === args.expectedParentId } : {}),
+    ...(args.expectedAncestorId ? { expectedAncestorMatches: ancestorIds.has(args.expectedAncestorId) } : {}),
+    ...(args.confirmTitle ? { confirmTitleMatches: target.plainText.trim() === args.confirmTitle.trim() } : {}),
+  };
+  const dryRun = args.dryRun ?? true;
+  const baseResult: DeleteRemByIdResult = {
+    dryRun,
+    target,
+    guards,
+    wouldDelete: {
+      remId: target.remId,
+      childCount: target.childCount,
+      includesDescendants: target.childCount > 0,
+    },
+    ...(idempotencyKey ? { idempotencyKey } : {}),
+    status: dryRun ? 'dry_run' : 'deleted',
+  };
+
+  if (dryRun) {
+    return baseResult;
+  }
+
+  await assertSafeDeleteTarget(plugin, rem, target);
+
+  if (args.expectedParentId && !guards.expectedParentMatches) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'expectedParentId did not match target parent.', {
+      expectedParentId: args.expectedParentId,
+      actualParentId: target.parentId,
+    });
+  }
+
+  if (args.expectedAncestorId && !guards.expectedAncestorMatches) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'expectedAncestorId was not found in target breadcrumbs.', {
+      expectedAncestorId: args.expectedAncestorId,
+      breadcrumbs: target.breadcrumbs,
+    });
+  }
+
+  if (args.confirmTitle && !guards.confirmTitleMatches) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'confirmTitle did not match target plain text.', {
+      confirmTitle: args.confirmTitle,
+      actualPlainText: target.plainText,
+    });
+  }
+
+  const hasPassingGuard = Boolean(guards.expectedParentMatches || guards.expectedAncestorMatches);
+  if (!hasPassingGuard) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Real delete requires dryRun:false plus a matching expectedParentId or expectedAncestorId guard.',
+      { guards }
+    );
+  }
+
+  await runSdkOperation('rem.remove', () => rem.remove());
+  const afterDelete = await plugin.rem.findOne(remId).catch(() => undefined);
+  const result: DeleteRemByIdResult = {
+    ...baseResult,
+    deletedRemId: remId,
+    verification: {
+      deleted: !afterDelete,
+      readAfterDelete: afterDelete ? 'still_present' : 'missing',
+    },
+    status: 'deleted',
+  };
+
+  if (afterDelete) {
+    throw new RemnoteWriteError('SDK_ERROR', 'Rem still resolved after delete.', {
+      remId,
+      verification: result.verification,
+    });
+  }
+
+  if (idempotencyKey) {
+    rememberDeleteByIdResult(idempotencyKey, result);
+  }
+
+  return result;
+}
+
+async function deleteRemByIdLegacy(
   plugin: RNPlugin,
   remId: string,
   args: Pick<DeleteRemArgs, 'recursive' | 'confirmText'>
@@ -1923,7 +2560,7 @@ async function deleteRemById(
 }
 
 export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<DeleteRemResult> {
-  return deleteRemById(plugin, args.remId, args);
+  return deleteRemByIdLegacy(plugin, args.remId, args);
 }
 
 export async function deleteFocusedRem(
@@ -1935,7 +2572,7 @@ export async function deleteFocusedRem(
     throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
   }
 
-  return deleteRemById(plugin, focusedRem._id, args);
+  return deleteRemByIdLegacy(plugin, focusedRem._id, args);
 }
 
 export async function deleteSelectedRem(
@@ -1960,5 +2597,5 @@ export async function deleteSelectedRem(
     );
   }
 
-  return deleteRemById(plugin, selectedRemIds[0], args);
+  return deleteRemByIdLegacy(plugin, selectedRemIds[0], args);
 }
