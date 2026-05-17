@@ -218,6 +218,22 @@ export async function readRemBreadcrumbs(
   };
 }
 
+async function getRemAncestorIds(plugin: RNPlugin, rem: Rem): Promise<Set<string>> {
+  const ancestors = new Set<string>();
+  let current: Rem | undefined = rem;
+
+  while (current && !ancestors.has(current._id)) {
+    ancestors.add(current._id);
+    if (!current.parent) {
+      break;
+    }
+
+    current = (await plugin.rem.findOne(current.parent)) ?? undefined;
+  }
+
+  return ancestors;
+}
+
 export async function searchRems(
   plugin: RNPlugin,
   args: SearchRemsArgs
@@ -235,15 +251,36 @@ export async function searchRems(
         results: [],
         truncated: false,
         searchSupported: true,
+        scopeMetadata: {
+          scopeRequested: args.scope ?? 'current_permission_scope',
+          scopeEnforcement: 'post_filter_ancestor_chain',
+          rawResultCount: 0,
+          filteredResultCount: 0,
+          filteredOutCount: 0,
+        },
       };
     }
   }
 
   const queryRichText: RichTextInterface = [{ i: 'm', text: query }];
+  const rawSearchLimit = contextRem ? MAX_SEARCH_LIMIT + 1 : maxResults + 1;
   const results = await plugin.search.search(queryRichText, contextRem, {
-    numResults: maxResults + 1,
+    numResults: rawSearchLimit,
   });
-  const limitedResults = results.slice(0, maxResults);
+  const filteredResults: Rem[] = [];
+
+  if (contextRem) {
+    for (const result of results) {
+      const ancestorIds = await getRemAncestorIds(plugin, result);
+      if (ancestorIds.has(contextRem._id)) {
+        filteredResults.push(result);
+      }
+    }
+  } else {
+    filteredResults.push(...results);
+  }
+
+  const limitedResults = filteredResults.slice(0, maxResults);
   const summaries: RemChildSummary[] = [];
 
   for (let index = 0; index < limitedResults.length; index += 1) {
@@ -254,8 +291,15 @@ export async function searchRems(
     query,
     contextRemId: contextRem?._id ?? null,
     results: summaries,
-    truncated: results.length > limitedResults.length,
+    truncated: filteredResults.length > limitedResults.length,
     searchSupported: true,
+    scopeMetadata: {
+      scopeRequested: args.scope ?? 'current_permission_scope',
+      scopeEnforcement: contextRem ? 'post_filter_ancestor_chain' : 'none',
+      rawResultCount: results.length,
+      filteredResultCount: filteredResults.length,
+      filteredOutCount: results.length - filteredResults.length,
+    },
   };
 }
 

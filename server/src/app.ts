@@ -34,7 +34,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
     config.bridgeToken && !config.allowNoToken ? 'local_bearer_required' : 'no_auth_allowed';
 
   function registrySummary(registeredToolNames?: readonly string[]) {
-    return getToolRegistrySummary(config.enableDeleteTool, registeredToolNames, {
+    return getToolRegistrySummary(config.enableDeleteTool, config.toolProfile, registeredToolNames, {
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
     });
@@ -70,7 +70,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
       return false;
     }
 
-    if (isPublicMcpToolName(request.params.name, config.enableDeleteTool)) {
+    if (isPublicMcpToolName(request.params.name, config.enableDeleteTool, config.toolProfile)) {
       return false;
     }
 
@@ -163,6 +163,13 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
         return;
       }
 
+      const localPort =
+        typeof req.socket.localPort === 'number'
+          ? req.socket.localPort
+          : config.singlePort
+            ? config.port
+            : config.mcpPort;
+
       writeJson(res, 200, {
         ok: true,
         server: {
@@ -172,8 +179,10 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
           startedAt,
           mcpPath: config.mcpPath,
           bridgePath: config.bridgePath,
-          mcpPort: config.mcpPort,
-          bridgePort: config.bridgePort,
+          mcpPort: config.singlePort ? localPort : config.mcpPort,
+          bridgePort: config.singlePort ? localPort : config.bridgePort,
+          singlePort: config.singlePort,
+          toolProfile: config.toolProfile,
         },
         registry: registrySummary(),
         bridge: hub.getDiagnostics(),
@@ -258,6 +267,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
     const requestAbortController = new AbortController();
     const mcpServer = createMcpServer(hub, {
       exposeDeleteTool: config.enableDeleteTool,
+      toolProfile: config.toolProfile,
       requestSignal: requestAbortController.signal,
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
@@ -310,12 +320,17 @@ export async function startCompanionApp(
   validateConfig(config);
 
   const hub = new BridgeHub(config);
-  await hub.start();
-
   const mcpServer = createMcpHttpServer(config, hub);
+  if (config.singlePort) {
+    hub.attachToServer(mcpServer);
+  } else {
+    await hub.start();
+  }
+
   await new Promise<void>((resolve, reject) => {
     mcpServer.once('error', reject);
-    mcpServer.listen(config.mcpPort, config.bindHost, () => {
+    const listenPort = config.singlePort ? config.port : config.mcpPort;
+    mcpServer.listen(listenPort, config.bindHost, () => {
       mcpServer.off('error', reject);
       resolve();
     });
@@ -331,8 +346,14 @@ export async function startCompanionApp(
     mcpPort,
     bridgePort: hub.bridgePort,
     stop: async () => {
+      if (config.singlePort) {
+        await hub.stop({ closeServer: false });
+        await new Promise<void>((resolve) => mcpServer.close(() => resolve()));
+        return;
+      }
+
       await new Promise<void>((resolve) => mcpServer.close(() => resolve()));
-      await hub.stop();
+      await hub.stop({ closeServer: true });
     },
   };
 }

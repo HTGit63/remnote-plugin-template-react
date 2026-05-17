@@ -1,4 +1,5 @@
-import { createServer, type Server as HttpServer } from 'node:http';
+import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
+import type { Duplex } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
@@ -12,6 +13,8 @@ import {
   type BridgeServerHello,
   type BridgeToolArgs,
   type BridgeToolName,
+  BRIDGE_TOOL_ANNOTATIONS,
+  type BridgeErrorCode,
   createBridgeFailure,
 } from '../../src/bridge/protocol.js';
 import type { CompanionServerConfig } from './config.js';
@@ -94,9 +97,112 @@ function getUniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values));
 }
 
+const TRANSIENT_BRIDGE_ERRORS = new Set<BridgeErrorCode>([
+  'PLUGIN_NOT_CONNECTED',
+  'TIMEOUT',
+  'CLIENT_DISCONNECTED',
+]);
+const RECONNECT_RETRY_WINDOW_MS = 1200;
+const RECONNECT_RETRY_INTERVAL_MS = 50;
+
+function isTransientFailure(response: BridgeResponse): boolean {
+  return !response.ok && TRANSIENT_BRIDGE_ERRORS.has(response.error.code);
+}
+
+function hasLifecyclePhase(lifecycle: readonly BridgeLifecycleEvent[] | undefined, phase: BridgeLifecyclePhase): boolean {
+  return Boolean(lifecycle?.some((event) => event.phase === phase));
+}
+
+function requestReachedPlugin(response: BridgeResponse): boolean {
+  return hasLifecyclePhase(response.lifecycle, 'executing') || hasLifecyclePhase(response.lifecycle, 'waiting_for_remnote_approval');
+}
+
+function hasIdempotencyKey(args: unknown): boolean {
+  return isRecord(args) && typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim().length > 0;
+}
+
+function isDeleteTool(tool: BridgeToolName): boolean {
+  return tool === 'delete_rem_by_id' || tool === 'delete_rem' || tool === 'delete_focused_rem' || tool === 'delete_selected_rem';
+}
+
+function isRealDeleteAttempt(tool: BridgeToolName, args: unknown): boolean {
+  if (tool === 'delete_rem_by_id') {
+    return isRecord(args) && args.dryRun === false;
+  }
+
+  return tool === 'delete_rem' || tool === 'delete_focused_rem' || tool === 'delete_selected_rem';
+}
+
+function retryableFailure(
+  tool: BridgeToolName,
+  response: BridgeResponse,
+  code: BridgeErrorCode,
+  message: string,
+  recommendation: string
+): BridgeResponse {
+  if (response.ok) {
+    return response;
+  }
+
+  const lifecycle = response.lifecycle ?? [];
+  return createBridgeFailure(
+    response.id,
+    code,
+    message,
+    {
+      retryable: true,
+      errorCode: code,
+      originalErrorCode: response.error.code,
+      requestId: response.id,
+      tool,
+      lifecycle,
+      recommendation,
+      originalError: response.error,
+    },
+    lifecycle
+  );
+}
+
+function retryableOriginalFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
+  if (response.ok) {
+    return response;
+  }
+
+  const retryKind = BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint
+    ? 'Retry the read after the RemNote plugin reconnects.'
+    : isDeleteTool(tool)
+      ? 'Run a fresh dry-run preview, then re-check the target before any real delete retry.'
+      : 'Reconnect the RemNote plugin and retry only when the operation is idempotent or you verified no write occurred.';
+
+  return retryableFailure(tool, response, response.error.code, response.error.message, retryKind);
+}
+
+function retryableUnknownWriteFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
+  return retryableFailure(
+    tool,
+    response,
+    'RETRYABLE_UNKNOWN_WRITE_STATUS',
+    'The write may have reached RemNote before the bridge connection ended.',
+    'Re-check the target Rem state before retrying; retry only with the same idempotencyKey when one was supplied.'
+  );
+}
+
+function retryableUnknownDeleteFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
+  return retryableFailure(
+    tool,
+    response,
+    'RETRYABLE_UNKNOWN_DELETE_STATUS',
+    'The delete status is unknown because the bridge connection ended during the request.',
+    'Run a fresh dry-run preview or get_rem on the target ID before attempting any real delete again.'
+  );
+}
+
 export class BridgeHub {
   private server: HttpServer | undefined;
   private wsServer: WebSocketServer | undefined;
+  private attachedUpgradeHandler:
+    | ((req: IncomingMessage, socket: Duplex, head: Buffer) => void)
+    | undefined;
   private pluginSocket: WebSocket | undefined;
   private pluginReady = false;
   private pending = new Map<string, PendingRequest>();
@@ -111,6 +217,7 @@ export class BridgeHub {
   constructor(private readonly config: CompanionServerConfig) {}
 
   start(): Promise<void> {
+    this.detachUpgradeHandler();
     this.server = createServer((req, res) => {
       res.writeHead(404, {
         'cache-control': 'no-store',
@@ -138,7 +245,35 @@ export class BridgeHub {
     });
   }
 
-  async stop(): Promise<void> {
+  async stop(options: { closeServer?: boolean } = {}): Promise<void> {
+    return this.stopWithOptions(options);
+  }
+
+  attachToServer(server: HttpServer): void {
+    this.detachUpgradeHandler();
+    this.server = server;
+    this.wsServer = new WebSocketServer({
+      noServer: true,
+      maxPayload: this.config.maxBridgeMessageBytes,
+    });
+    this.wsServer.on('connection', (socket) => this.handleConnection(socket));
+
+    this.attachedUpgradeHandler = (req, socket, head) => {
+      const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
+      if (url.pathname !== this.config.bridgePath) {
+        socket.destroy();
+        return;
+      }
+
+      this.wsServer?.handleUpgrade(req, socket, head, (websocket) => {
+        this.wsServer?.emit('connection', websocket, req);
+      });
+    };
+
+    server.on('upgrade', this.attachedUpgradeHandler);
+  }
+
+  async stopWithOptions(options: { closeServer?: boolean } = {}): Promise<void> {
     for (const id of Array.from(this.pending.keys())) {
       this.sendCancel(id, 'server_shutdown', 'Bridge server stopped before request completed.');
       this.pending.get(id)?.lifecycle.push(
@@ -155,19 +290,24 @@ export class BridgeHub {
     this.pluginReady = false;
     this.stopHeartbeat();
 
+    this.detachUpgradeHandler();
+
     await new Promise<void>((resolve) => {
       this.wsServer?.close(() => resolve());
       if (!this.wsServer) {
         resolve();
       }
     });
+    this.wsServer = undefined;
 
-    await new Promise<void>((resolve) => {
-      this.server?.close(() => resolve());
-      if (!this.server) {
-        resolve();
-      }
-    });
+    if (options.closeServer ?? true) {
+      await new Promise<void>((resolve) => {
+        this.server?.close(() => resolve());
+        if (!this.server) {
+          resolve();
+        }
+      });
+    }
   }
 
   getStatus(): BridgeHubStatus {
@@ -206,7 +346,64 @@ export class BridgeHub {
     return typeof address === 'object' && address ? address.port : this.config.bridgePort;
   }
 
+  private detachUpgradeHandler() {
+    if (this.server && this.attachedUpgradeHandler) {
+      this.server.off('upgrade', this.attachedUpgradeHandler);
+      this.attachedUpgradeHandler = undefined;
+    }
+  }
+
   async callPlugin<TTool extends BridgeToolName>(
+    tool: TTool,
+    args: BridgeToolArgs[TTool],
+    timeoutMs = this.config.requestTimeoutMs,
+    signal?: AbortSignal
+  ): Promise<BridgeResponse> {
+    const firstResponse = await this.callPluginOnce(tool, args, timeoutMs, signal);
+    const retryPlan = this.getRetryPlan(tool, args, firstResponse);
+
+    if (retryPlan === 'none') {
+      return firstResponse;
+    }
+
+    if (retryPlan === 'retry') {
+      const reconnected = await this.waitForPluginReconnect(signal);
+      if (reconnected) {
+        const retryResponse = await this.callPluginOnce(tool, args, timeoutMs, signal);
+        const retryFailurePlan = this.getRetryPlan(tool, args, retryResponse, false);
+        if (retryFailurePlan === 'unknown_delete') {
+          return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownDeleteFailure(tool, retryResponse));
+        }
+        if (retryFailurePlan === 'unknown_write') {
+          return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownWriteFailure(tool, retryResponse));
+        }
+        if (retryFailurePlan === 'retryable') {
+          return this.recordSyntheticFailure(tool, timeoutMs, retryableOriginalFailure(tool, retryResponse));
+        }
+        return retryResponse;
+      }
+
+      if (requestReachedPlugin(firstResponse) && isRealDeleteAttempt(tool, args)) {
+        return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownDeleteFailure(tool, firstResponse));
+      }
+      if (requestReachedPlugin(firstResponse) && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+        return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownWriteFailure(tool, firstResponse));
+      }
+      return this.recordSyntheticFailure(tool, timeoutMs, retryableOriginalFailure(tool, firstResponse));
+    }
+
+    if (retryPlan === 'unknown_delete') {
+      return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownDeleteFailure(tool, firstResponse));
+    }
+
+    if (retryPlan === 'unknown_write') {
+      return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownWriteFailure(tool, firstResponse));
+    }
+
+    return this.recordSyntheticFailure(tool, timeoutMs, retryableOriginalFailure(tool, firstResponse));
+  }
+
+  private async callPluginOnce<TTool extends BridgeToolName>(
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs = this.config.requestTimeoutMs,
@@ -330,6 +527,80 @@ export class BridgeHub {
     });
   }
 
+  private getRetryPlan<TTool extends BridgeToolName>(
+    tool: TTool,
+    args: BridgeToolArgs[TTool],
+    response: BridgeResponse,
+    allowRetry = true
+  ): 'none' | 'retry' | 'retryable' | 'unknown_write' | 'unknown_delete' {
+    if (!isTransientFailure(response)) {
+      return 'none';
+    }
+
+    const reachedPlugin = requestReachedPlugin(response);
+    if (!response.ok && response.error.code === 'TIMEOUT') {
+      if (isRealDeleteAttempt(tool, args)) {
+        return reachedPlugin ? 'unknown_delete' : 'retryable';
+      }
+      if (reachedPlugin && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+        return 'unknown_write';
+      }
+      return 'retryable';
+    }
+
+    if (isRealDeleteAttempt(tool, args)) {
+      return reachedPlugin ? 'unknown_delete' : 'retryable';
+    }
+
+    if (allowRetry && BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+      return 'retry';
+    }
+
+    if (allowRetry && !BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint && hasIdempotencyKey(args)) {
+      return 'retry';
+    }
+
+    if (reachedPlugin && isDeleteTool(tool)) {
+      return 'unknown_delete';
+    }
+
+    if (reachedPlugin && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+      return 'unknown_write';
+    }
+
+    return 'retryable';
+  }
+
+  private async waitForPluginReconnect(signal?: AbortSignal): Promise<boolean> {
+    const deadline = Date.now() + RECONNECT_RETRY_WINDOW_MS;
+    while (Date.now() <= deadline) {
+      if (signal?.aborted) {
+        return false;
+      }
+
+      if (this.getStatus().connected) {
+        return true;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, RECONNECT_RETRY_INTERVAL_MS));
+    }
+
+    return this.getStatus().connected;
+  }
+
+  private recordSyntheticFailure(
+    tool: BridgeToolName,
+    timeoutMs: number,
+    response: BridgeResponse
+  ): BridgeResponse {
+    if (!response.ok) {
+      const now = Date.now();
+      this.recordImmediateOutcome(response.id, tool, now, timeoutMs, response, response.lifecycle ?? []);
+    }
+
+    return response;
+  }
+
   private handleConnection(socket: WebSocket) {
     socket.once('message', (raw) => {
       const hello = this.parseClientMessage(raw);
@@ -352,7 +623,7 @@ export class BridgeHub {
         type: 'server_hello',
         protocolVersion: 1,
         serverName: 'remnote-companion',
-        ...getToolRegistrySummary(this.config.enableDeleteTool, undefined, {
+        ...getToolRegistrySummary(this.config.enableDeleteTool, this.config.toolProfile, undefined, {
           discoveryAuthMode: 'no_auth_required',
           toolCallAuthMode,
         }),

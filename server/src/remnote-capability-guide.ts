@@ -19,7 +19,7 @@ export interface RemnoteCapabilityGuideBlock {
   bridgeUse: string[];
 }
 
-export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-05-15.1';
+export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-05-17.1';
 
 export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = [
   {
@@ -108,7 +108,7 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
     bridgeUse: [
       'Use `create_document` for page-like notes. Use ordinary Rem trees inside documents for content.',
       'Never fake folders by creating a normal Rem and calling it a folder. Return SDK_UNSUPPORTED when the SDK cannot create a real folder.',
-      'When the user wants a complete note inside an existing document/folder, target that existing Rem as `parentId` and use `create_polished_note_tree`, `create_styled_rem_tree`, or `apply_structured_note_batch`.',
+      'When the user wants a complete note inside an existing document/folder, target that existing Rem as `parentId` and use `create_polished_note_tree` or `apply_structured_note_batch`.',
     ],
   },
   {
@@ -138,7 +138,7 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'The installed SDK color enum supports Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, and Pink return SDK_UNSUPPORTED.',
     ],
     bridgeUse: [
-      'For polished notes, prefer `create_polished_note_tree` or `create_styled_rem_tree`, then verify with `verify_note_design` or `get_rem_rich`.',
+      'For polished notes, prefer `create_polished_note_tree` or `apply_structured_note_batch`, then verify with `verify_note_design` or `get_rem_rich`.',
       'For formatting existing Rems, prefer `apply_style_plan`, then verify with `get_rem_rich`.',
       'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer. Rich math block uses plugin.richText.latex(text, true).',
       'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
@@ -168,12 +168,15 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'Creating a top-level Rem/document is allowed only inside the configured permission scope. Workspace-level create requires workspace_allowed scope.',
       'Preferred delete tool is `delete_rem_by_id`. It defaults to dryRun, requires ID-based guards for real deletion, and verifies the Rem cannot be read afterward.',
       '`delete_focused_rem` and `delete_selected_rem` are deprecated/private because UI focus or selection can point at the wrong Rem. Do not use them.',
-      'High-level note writers are `create_polished_note_tree`, `create_styled_rem_tree`, and `apply_structured_note_batch`; they support idempotency, verification, styled nested nodes, flashcards, and math.',
+      'Preferred high-level note writers are `create_polished_note_tree` and `apply_structured_note_batch`; they support idempotency, verification, styled nested nodes, flashcards, and math.',
+      '`create_styled_rem_tree` is a fallback/developer tool for direct styled tree creation. Do not use it as the normal full-note path.',
     ],
     bridgeUse: [
       'For prepared notes, first read context, then call `create_polished_note_tree` or `apply_structured_note_batch` once with the whole designed tree.',
       'For safer execution, dry-run supported batch flows, then apply with an `idempotencyKey`, `rollbackOnFailure: true` where available, and `verifyAfterWrite: true`.',
+      'For styling existing Rems, use `apply_style_plan`. For checking design after a write, use `verify_note_design`.',
       'For deletion, call `delete_rem_by_id` with `dryRun: true`, inspect breadcrumbs/childCount, then retry with `dryRun: false` plus expectedParentId or expectedAncestorId.',
+      'Use `debug_get_raw_rich_text` only when raw RemNote rich-text fields such as `tc` and `h` need inspection.',
       'Use low-level tools for repair and inspection, not as the default path for full note generation.',
     ],
   },
@@ -190,7 +193,11 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     blocks,
     sources: REMNOTE_CAPABILITY_GUIDE_SOURCES,
     recommendedStructuredNoteTool: 'create_polished_note_tree',
+    recommendedAtomicBatchTool: 'apply_structured_note_batch',
+    recommendedStyleTool: 'apply_style_plan',
+    recommendedVerificationTool: 'verify_note_design',
     preferredDeleteTool: 'delete_rem_by_id',
+    fallbackDeveloperTools: ['create_styled_rem_tree'],
     deprecatedPrivateTools: ['delete_focused_rem', 'delete_selected_rem', 'delete_rem'],
     installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
     installedSdkUnsupported: ['create_folder', 'Gray text color', 'Brown text color', 'Pink text color'],

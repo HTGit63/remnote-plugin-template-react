@@ -49,7 +49,18 @@ src/
     read.ts
     serialize.ts
     write.ts
+    write/
+      basicWrites.ts
+      cardWrites.ts
+      deleteWrites.ts
+      formattingWrites.ts
+      index.ts
+      structuredBatch.ts
+      treeWrites.ts
+      writeTypes.ts
   widgets/
+    components/
+      BridgeWidgetPieces.tsx
     bridge-status.tsx
     index.tsx
 server/
@@ -64,11 +75,24 @@ server/
     index.ts
     mcp-client.ts
     mcp-server.ts
+    remnote-capability-guide.ts
     sessions/
       audit-log.ts
       types.ts
     smoke.ts
     test-client.ts
+    tool-policy.ts
+    tool-registry.ts
+    tools/
+      register-card-tools.ts
+      register-delete-tools.ts
+      register-diagnostic-tools.ts
+      register-formatting-tools.ts
+      register-read-tools.ts
+      register-status-tools.ts
+      register-write-tools.ts
+      schemas.ts
+      tool-context.ts
 ```
 
 ## Bridge Protocol
@@ -129,6 +153,7 @@ It provides:
 
 - WebSocket server on `127.0.0.1:47391/remnote-bridge`;
 - MCP Streamable HTTP endpoint on `127.0.0.1:47392/mcp`;
+- optional single-port mode with `REMNOTE_BRIDGE_SINGLE_PORT=1`, where WebSocket and MCP share one HTTP server and `PORT` / `REMNOTE_BRIDGE_PORT`;
 - one active plugin connection at a time;
 - request/response ID tracking with timeouts;
 - caller-disconnect cancellation for pending bridge requests;
@@ -141,11 +166,13 @@ It provides:
 
 ## MCP/ChatGPT Tool Layer
 
-`server/src/mcp-server.ts` registers the MCP tools. Read tools route through the WebSocket bridge and return structured RemNote payloads. Safe write tools route through the same bridge and depend on the plugin permission mode.
+`server/src/mcp-server.ts` composes the MCP server and delegates tool registration to `server/src/tools/*`. Read tools route through the WebSocket bridge and return structured RemNote payloads. Safe write tools route through the same bridge and depend on the plugin permission mode.
 
-The public tool registry is centralized in `server/src/tool-registry.ts`. `get_bridge_status`, `get_bridge_diagnostics`, `run_bridge_health_check`, `/health`, and authenticated `/diagnostics` all expose or record the same registry version/count so stale ChatGPT connector sessions can be identified quickly.
+The tool registration modules preserve registry order. `server/src/tools/schemas.ts` owns MCP schema declarations, and `server/src/tools/tool-context.ts` owns bridge result formatting plus shared registration context.
 
-Registry/listing fields are kept separate from runtime proof. `publicTools` and `mcpListedTools` show discovery. `realPluginVerifiedTools` shows recent successful bridge execution. `runtimeUnverifiedTools` shows listed tools with no recent success. `sdkUnsupportedTools` shows tools that are known unsupported by the installed RemNote SDK.
+The public tool registry is centralized in `server/src/tool-registry.ts`. Tool policy and simple/full profile behavior are centralized in `server/src/tool-policy.ts`. `get_bridge_status`, `get_bridge_diagnostics`, `run_bridge_health_check`, `/health`, and authenticated `/diagnostics` all expose or record the same registry version/count, active profile, and policy groups so stale ChatGPT connector sessions can be identified quickly.
+
+Registry/listing fields are kept separate from runtime proof. `publicTools` and `mcpListedTools` show discovery. `profileHiddenTools` shows tools intentionally hidden by `REMNOTE_BRIDGE_TOOL_PROFILE=simple`. `realPluginVerifiedTools` shows recent successful bridge execution. `runtimeUnverifiedTools` shows listed tools with no recent success. `sdkUnsupportedTools` shows tools that are known unsupported by the installed RemNote SDK.
 
 The MCP layer exposes bounded read/navigation tools:
 
@@ -212,9 +239,20 @@ The MCP layer exposes one public guarded delete:
 
 `replace_rem` and `delete_rem_by_id` are destructive-hinted MCP tools. `delete_rem_by_id` defaults to dry-run and requires ID guards for real deletion. Legacy focus/selection delete and `delete_rem` stay hidden unless explicitly enabled for local development.
 
-## Future Hosted App Architecture
+## Hosted App Architecture
 
-Hosted mode must add real controls before public deployment:
+Personal hosted mode can run one user on one Render web service with a static bridge token:
+
+```text
+ChatGPT app
+-> public HTTPS /mcp endpoint
+-> hosted companion server, single-port mode
+-> static bridge token
+-> RemNote plugin WSS session
+-> RemNote SDK
+```
+
+Public multi-user hosted mode must add real controls before public deployment:
 
 ```text
 ChatGPT app
@@ -232,6 +270,7 @@ ChatGPT app
 Required hosted controls:
 
 - stable HTTPS endpoint for `/mcp`;
+- stable WSS endpoint for `/remnote-bridge`;
 - OAuth provider with review-safe demo account;
 - pairing flow that binds a plugin device/session to one user;
 - short-lived session tokens stored server-side as hashes;
@@ -239,6 +278,8 @@ Required hosted controls:
 - revocation path for sessions/devices;
 - audit log that excludes note bodies, markdown payloads, tokens, and secrets;
 - production storage for sessions and audit events.
+
+`render.yaml` documents the personal hosted shape. `REMNOTE_BRIDGE_HOSTED_MODE=1` still fails startup because that flag is reserved for the later public OAuth/pairing implementation.
 
 Local mode remains separate:
 

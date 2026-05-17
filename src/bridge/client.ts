@@ -38,13 +38,24 @@ export class BrowserBridgeClient {
   private cancelledRequestIds = new Set<string>();
   private serverInfo: Pick<
     BridgeStatusSnapshot,
+    | 'toolProfile'
     | 'toolRegistryVersion'
+    | 'allPublicToolCount'
+    | 'allPublicTools'
     | 'publicToolCount'
     | 'publicTools'
     | 'callabilitySource'
     | 'realPluginVerifiedTools'
     | 'runtimeUnverifiedTools'
     | 'sdkUnsupportedTools'
+    | 'preferredTools'
+    | 'fallbackTools'
+    | 'debugTools'
+    | 'readTools'
+    | 'cardTools'
+    | 'dangerousTools'
+    | 'unsupportedTools'
+    | 'profileHiddenTools'
     | 'hiddenTools'
     | 'serverStartedAt'
   > = {};
@@ -74,13 +85,24 @@ export class BrowserBridgeClient {
     lastError?: string,
     serverInfo: Pick<
       BridgeStatusSnapshot,
+      | 'toolProfile'
       | 'toolRegistryVersion'
+      | 'allPublicToolCount'
+      | 'allPublicTools'
       | 'publicToolCount'
       | 'publicTools'
       | 'callabilitySource'
       | 'realPluginVerifiedTools'
       | 'runtimeUnverifiedTools'
       | 'sdkUnsupportedTools'
+      | 'preferredTools'
+      | 'fallbackTools'
+      | 'debugTools'
+      | 'readTools'
+      | 'cardTools'
+      | 'dangerousTools'
+      | 'unsupportedTools'
+      | 'profileHiddenTools'
       | 'hiddenTools'
       | 'serverStartedAt'
     > = this.serverInfo
@@ -177,13 +199,24 @@ export class BrowserBridgeClient {
 
     if (this.isServerHello(parsed)) {
       this.serverInfo = {
+        toolProfile: parsed.toolProfile,
         toolRegistryVersion: parsed.toolRegistryVersion,
+        allPublicToolCount: parsed.allPublicToolCount,
+        allPublicTools: parsed.allPublicTools,
         publicToolCount: parsed.publicToolCount,
         publicTools: parsed.publicTools,
         callabilitySource: parsed.callabilitySource,
         realPluginVerifiedTools: parsed.realPluginVerifiedTools,
         runtimeUnverifiedTools: parsed.runtimeUnverifiedTools,
         sdkUnsupportedTools: parsed.sdkUnsupportedTools,
+        preferredTools: parsed.preferredTools,
+        fallbackTools: parsed.fallbackTools,
+        debugTools: parsed.debugTools,
+        readTools: parsed.readTools,
+        cardTools: parsed.cardTools,
+        dangerousTools: parsed.dangerousTools,
+        unsupportedTools: parsed.unsupportedTools,
+        profileHiddenTools: parsed.profileHiddenTools,
         hiddenTools: parsed.hiddenTools,
         serverStartedAt: parsed.serverStartedAt,
       };

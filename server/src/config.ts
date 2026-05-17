@@ -1,10 +1,19 @@
+import {
+  DEFAULT_TOOL_PROFILE,
+  normalizeToolProfile,
+  type ToolProfile,
+} from './tool-policy.js';
+
 export interface CompanionServerConfig {
   bindHost: string;
+  port: number;
   bridgePort: number;
   mcpPort: number;
+  singlePort: boolean;
   bridgePath: string;
   mcpPath: string;
   bridgeToken: string;
+  toolProfile: ToolProfile;
   allowNoToken: boolean;
   allowRemote: boolean;
   allowCors: boolean;
@@ -73,13 +82,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   const allowNoToken = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_NO_TOKEN);
   const bridgeToken = env.REMNOTE_BRIDGE_TOKEN?.trim() ?? '';
   const bindHost = env.REMNOTE_BRIDGE_HOST?.trim() || '127.0.0.1';
+  const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
+  const port = numberFromEnv(env.PORT ?? env.REMNOTE_BRIDGE_PORT, DEFAULT_MCP_PORT);
   const config = {
     bindHost,
+    port,
     bridgePort: numberFromEnv(env.REMNOTE_BRIDGE_WS_PORT, DEFAULT_BRIDGE_PORT),
     mcpPort: numberFromEnv(env.REMNOTE_BRIDGE_MCP_PORT, DEFAULT_MCP_PORT),
+    singlePort,
     bridgePath: env.REMNOTE_BRIDGE_WS_PATH?.trim() || '/remnote-bridge',
     mcpPath: env.REMNOTE_BRIDGE_MCP_PATH?.trim() || '/mcp',
     bridgeToken,
+    toolProfile: normalizeToolProfile(env.REMNOTE_BRIDGE_TOOL_PROFILE ?? DEFAULT_TOOL_PROFILE),
     allowNoToken,
     allowRemote,
     allowCors,

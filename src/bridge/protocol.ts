@@ -119,6 +119,8 @@ export type BridgeErrorCode =
   | 'SDK_ERROR'
   | 'TIMEOUT'
   | 'CLIENT_DISCONNECTED'
+  | 'RETRYABLE_UNKNOWN_WRITE_STATUS'
+  | 'RETRYABLE_UNKNOWN_DELETE_STATUS'
   | 'REQUEST_CANCELLED'
   | 'UNKNOWN_TOOL'
   | 'APPROVAL_PENDING'
@@ -697,6 +699,7 @@ export interface FormatRemResult {
     | 'rem_type_set'
     | 'hide_bullet_set'
     | 'formatting_cleared'
+    | 'formatting_partially_cleared'
     | 'command_applied';
   ok?: boolean;
   requestedColor?: string;
@@ -714,6 +717,7 @@ export interface FormatRemResult {
     remType?: boolean;
   };
   unsupported?: {
+    wholeRemHighlightReset?: boolean;
     remTypeReset?: boolean;
     reason?: string;
   };
@@ -869,8 +873,9 @@ export interface DeleteRemByIdResult {
   deletedRemId?: string;
   verification?: {
     deleted: boolean;
-    readAfterDelete: 'missing' | 'still_present';
+    readAfterDelete: 'not_found' | 'still_present';
   };
+  verifiedDeleted?: boolean;
   idempotencyKey?: string;
   status: 'dry_run' | 'deleted' | 'already_deleted';
 }
@@ -952,6 +957,13 @@ export interface SearchRemsResult {
   results: RemChildSummary[];
   truncated: boolean;
   searchSupported: boolean;
+  scopeMetadata?: {
+    scopeRequested: string;
+    scopeEnforcement: 'post_filter_ancestor_chain' | 'none';
+    rawResultCount: number;
+    filteredResultCount: number;
+    filteredOutCount: number;
+  };
 }
 
 export interface GetDocumentOrFolderTreeResult {
@@ -1116,15 +1128,29 @@ export interface BridgePluginHello {
   token?: string;
 }
 
+export type BridgeToolProfile = 'simple' | 'full';
+export type BridgeToolPolicy =
+  | 'preferred'
+  | 'fallback'
+  | 'debug'
+  | 'read'
+  | 'cards'
+  | 'legacy_hidden'
+  | 'dangerous'
+  | 'unsupported';
+
 export interface BridgeServerHello {
   type: 'server_hello';
   protocolVersion: 1;
   serverName: 'remnote-companion';
+  toolProfile?: BridgeToolProfile;
   toolRegistryVersion?: string;
   serverToolRegistryVersion?: string;
   mcpDiscoveryVersion?: string;
   pluginProtocolVersion?: number;
   registeredTools?: string[];
+  allPublicTools?: string[];
+  allPublicToolCount?: number;
   publicTools?: string[];
   publicToolCount?: number;
   exposedTools?: string[];
@@ -1138,6 +1164,19 @@ export interface BridgeServerHello {
   realPluginVerifiedTools?: string[];
   runtimeUnverifiedTools?: string[];
   sdkUnsupportedTools?: string[];
+  preferredTools?: string[];
+  fallbackTools?: string[];
+  debugTools?: string[];
+  readTools?: string[];
+  cardTools?: string[];
+  dangerousTools?: string[];
+  unsupportedTools?: string[];
+  profileHiddenTools?: Array<{
+    name: string;
+    reason: string;
+    policy?: BridgeToolPolicy;
+    replacement?: string;
+  }>;
   hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }

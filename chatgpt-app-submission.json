@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and update a running private RemNote workspace through a local companion server. It can report bridge diagnostics and health checks, explain RemNote structure, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, rich content, and search results, then create, append, create documents, update, replace, move, reorder, apply formatting/style plans, create polished note trees, apply structured note batches, create flashcards, verify note design, or safely delete a specific Rem by ID after dry-run and guard checks.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and update a running private RemNote workspace through a local or personal hosted companion server. It can report bridge diagnostics and health checks, explain RemNote structure, read focused or selected Rems, inspect ordered children, breadcrumbs, bounded trees, rich content, and search results, then create, append, create documents, update, replace, move, reorder, apply formatting/style plans, create polished note trees, apply structured note batches, create flashcards, verify note design, or safely delete a specific Rem by ID after dry-run and guard checks. Public multi-user hosted use still requires OAuth, pairing, session storage, revocation, and a fresh live RemNote sandbox test before submission.",
     "category": "PRODUCTIVITY"
   },
   "tools": {

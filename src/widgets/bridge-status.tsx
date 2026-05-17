@@ -15,9 +15,16 @@ import {
 import {
   DEFAULT_BRIDGE_SERVER_URL,
   INITIAL_BRIDGE_STATUS,
+  getBridgeNextAction,
   getBridgeStatusLabel,
 } from '../bridge/status';
 import { BrowserBridgeClient } from '../bridge/client';
+import {
+  BridgeTaskBanner,
+  BridgeWidgetHeader,
+  RecommendedModeCard,
+  ToolProfileSummary,
+} from './components/BridgeWidgetPieces';
 import {
   getPermissionDecision,
   getPermissionModeLabel,
@@ -261,6 +268,7 @@ export function BridgeStatusWidget() {
     : undefined;
   const toolAvailability = summarizeToolAvailability(bridgeStatus.publicTools, permissionMode);
   const hiddenToolCount = bridgeStatus.hiddenTools?.length ?? 1;
+  const profileHiddenToolCount = bridgeStatus.profileHiddenTools?.length ?? 0;
   const lastRequests =
     typeof lastServerDiagnostics?.bridge === 'object' &&
     lastServerDiagnostics.bridge !== null &&
@@ -535,6 +543,8 @@ export function BridgeStatusWidget() {
 
   const ready = bridgeStatus.state === 'connected' && !pendingRequest;
   const needsAction = Boolean(pendingRequest);
+  const taskVariant = needsAction ? 'warning' : ready ? 'ready' : 'offline';
+  const bridgeNextAction = getBridgeNextAction(bridgeStatus);
   const taskTitle = needsAction ? 'Action Needed' : ready ? 'Ready' : 'Bridge Offline';
   const taskCopy = needsAction
     ? 'Review this write before RemNote changes.'
@@ -635,29 +645,22 @@ export function BridgeStatusWidget() {
 
   return (
     <div className="bridge-shell plugin-root">
-      <header className="bridge-hero plugin-header">
-          <div className="bridge-mark" aria-hidden="true">RN</div>
-          <div className="bridge-hero-copy">
-            <h2 className="bridge-title">RemNote Bridge</h2>
-            <p className="bridge-subtitle">ChatGPT note access and write approvals.</p>
-          </div>
-          <span className={statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}>
-            {getBridgeStatusLabel(bridgeStatus.state)}
-          </span>
-      </header>
+      <BridgeWidgetHeader
+        status={bridgeStatus}
+        statusClassName={statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}
+        statusLabel={getBridgeStatusLabel(bridgeStatus.state)}
+        nextAction={bridgeNextAction}
+      />
 
       <div className="plugin-body">
         <div className="bridge-stack">
 
-        <section className={['bridge-task-banner', needsAction ? 'bridge-task-banner--warning' : ready ? 'bridge-task-banner--ready' : 'bridge-task-banner--offline'].join(' ')}>
-          <div>
-            <h3>{taskTitle}</h3>
-            <p>{taskCopy}</p>
-          </div>
-          <button type="button" onClick={() => setAccessOpen((open) => !open)} className="bridge-button bridge-button-secondary">
-            Change Access
-          </button>
-        </section>
+        <BridgeTaskBanner
+          variant={taskVariant}
+          title={taskTitle}
+          copy={taskCopy}
+          onChangeAccess={() => setAccessOpen((open) => !open)}
+        />
 
         <section className="bridge-panel bridge-recommendation-panel">
           <div className="bridge-section-head">
@@ -667,27 +670,26 @@ export function BridgeStatusWidget() {
             </div>
             <span className="bridge-pill bridge-pill-success">Recommended</span>
           </div>
+          <ToolProfileSummary
+            toolProfile={bridgeStatus.toolProfile}
+            publicToolCount={bridgeStatus.publicToolCount}
+            allPublicToolCount={bridgeStatus.allPublicToolCount}
+            preferredToolCount={bridgeStatus.preferredTools?.length ?? 0}
+            hiddenByProfileCount={profileHiddenToolCount}
+          />
           <div className="bridge-mode-grid">
-            <div className="bridge-mode-card bridge-mode-card--success">
-              <span className="bridge-pill bridge-pill-success">Green</span>
-              <strong>Focused Rem + Descendants</strong>
-              <p>Vivy can work inside current note and children it creates under it.</p>
-            </div>
-            <div className="bridge-mode-card bridge-mode-card--success">
-              <span className="bridge-pill bridge-pill-success">Green</span>
-              <strong>Trusted Writes</strong>
-              <p>Safe write tools run without repeated RemNote approval prompts.</p>
-            </div>
-            <div className="bridge-mode-card bridge-mode-card--warning">
-              <span className="bridge-pill bridge-pill-warning">Caution</span>
-              <strong>Workspace Allowed</strong>
-              <p>Broad testing/search mode. Does not fix unsupported tools.</p>
-            </div>
-            <div className="bridge-mode-card bridge-mode-card--danger">
-              <span className="bridge-pill bridge-pill-danger">Danger</span>
-              <strong>Danger Zone</strong>
-              <p>High-risk mode. Delete and replace still require approval.</p>
-            </div>
+            <RecommendedModeCard tone="success" badge="Green" title="Focused Rem + Descendants">
+              Vivy can work inside current note and children it creates under it.
+            </RecommendedModeCard>
+            <RecommendedModeCard tone="success" badge="Green" title="Trusted Writes">
+              Safe write tools run without repeated RemNote approval prompts.
+            </RecommendedModeCard>
+            <RecommendedModeCard tone="warning" badge="Caution" title="Workspace Allowed">
+              Broad testing/search mode. Does not fix unsupported tools.
+            </RecommendedModeCard>
+            <RecommendedModeCard tone="danger" badge="Danger" title="Danger Zone">
+              High-risk mode. Delete and replace still require approval.
+            </RecommendedModeCard>
           </div>
           <button type="button" className="bridge-button bridge-button-approve bridge-button-full" onClick={handleUseRecommendedNoteMode}>
             Use Recommended Note Mode
@@ -781,6 +783,11 @@ export function BridgeStatusWidget() {
                   tone={bridgeStatus.publicToolCount && bridgeStatus.publicToolCount < 20 ? 'warning' : 'success'}
                 />
                 <StatusMetric
+                  label="Profile"
+                  value={bridgeStatus.toolProfile ?? 'full'}
+                  tone={profileHiddenToolCount ? 'warning' : 'success'}
+                />
+                <StatusMetric
                   label="Verified"
                   value={`${bridgeStatus.realPluginVerifiedTools?.length ?? 0} live`}
                   tone={bridgeStatus.realPluginVerifiedTools?.length ? 'success' : 'warning'}
@@ -830,6 +837,14 @@ export function BridgeStatusWidget() {
                   value={toolAvailability.blocked}
                 />
                 <DetailRow
+                  label="Preferred Tools"
+                  value={bridgeStatus.preferredTools?.join(', ') || 'Not reported'}
+                />
+                <DetailRow
+                  label="Profile Hidden Tools"
+                  value={bridgeStatus.profileHiddenTools?.map((tool) => tool.name).join(', ') || 'None'}
+                />
+                <DetailRow
                   label="Last Health"
                   value={
                     lastHealthCheck
@@ -857,7 +872,7 @@ export function BridgeStatusWidget() {
               </dl>
               <div className="bridge-inline-actions">
                 <button type="button" onClick={handleHealthCheck} className="bridge-button bridge-button-secondary">
-                  Health Check
+                  Run Final Health Check
                 </button>
                 <button type="button" onClick={handleCopyRecentRequestLogs} className="bridge-button bridge-button-secondary">
                   Copy Logs

@@ -198,7 +198,11 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
       ];
       const maxResults =
         typeof request.args.maxResults === 'number' ? request.args.maxResults : allResults.length;
-      const results = allResults.slice(0, maxResults);
+      const scopedResults =
+        request.args.scope === 'focused_rem_and_descendants' || request.args.contextRemId
+          ? allResults.filter((result) => result.remId === fakeRem.remId)
+          : allResults;
+      const results = scopedResults.slice(0, maxResults);
       return {
         id: request.id,
         ok: true,
@@ -207,8 +211,18 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           contextRemId: request.args.contextRemId ?? null,
           results,
           maxResults,
-          truncated: allResults.length > results.length,
+          truncated: scopedResults.length > results.length,
           searchSupported: true,
+          scopeMetadata: {
+            scopeRequested: request.args.scope ?? 'current_permission_scope',
+            scopeEnforcement:
+              request.args.scope === 'focused_rem_and_descendants' || request.args.contextRemId
+                ? 'post_filter_ancestor_chain'
+                : 'none',
+            rawResultCount: allResults.length,
+            filteredResultCount: scopedResults.length,
+            filteredOutCount: allResults.length - scopedResults.length,
+          },
         },
       };
     }
@@ -481,7 +495,23 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
       return {
         id: request.id,
         ok: true,
-        result: { remId: request.args.remId, status: 'formatting_cleared' },
+        result: {
+          remId: request.args.remId,
+          status: 'formatting_partially_cleared',
+          ok: false,
+          cleared: {
+            textFormatting: true,
+            heading: true,
+            hideBullet: true,
+            wholeRemHighlight: false,
+            remType: false,
+          },
+          unsupported: {
+            wholeRemHighlightReset: true,
+            remTypeReset: true,
+          },
+          warnings: ['Whole-Rem highlight clearing is not exposed by the installed SDK.'],
+        },
       };
     case 'create_styled_rem_tree':
       return {
@@ -773,6 +803,149 @@ async function runReliabilitySmoke() {
     disconnectWs.close();
     await disconnectApp.stop();
   }
+
+  const retryReadApp = await startCompanionApp({
+    bridgePort: 0,
+    mcpPort: 0,
+    bridgeToken: token,
+    allowRemote: false,
+    allowCors: false,
+    requestTimeoutMs: 5000,
+  });
+  let retryReadSecondaryWs: WebSocket | undefined;
+  let retryReadFirstRequest = true;
+  const retryReadUrl = `ws://127.0.0.1:${retryReadApp.bridgePort}${retryReadApp.config.bridgePath}`;
+  const retryReadWs = await connectMockPlugin(
+    retryReadUrl,
+    (request, socket) => {
+      if (retryReadFirstRequest && request.tool === 'get_rem') {
+        retryReadFirstRequest = false;
+        socket.close();
+        setTimeout(() => {
+          connectMockPlugin(retryReadUrl, bridgeResponse)
+            .then((ws) => {
+              retryReadSecondaryWs = ws;
+            })
+            .catch((error: unknown) => {
+              console.error('retry read reconnect failed', error);
+            });
+        }, 25);
+        return undefined;
+      }
+
+      return bridgeResponse(request);
+    }
+  );
+  const retryReadMcp = {
+    url: `http://127.0.0.1:${retryReadApp.mcpPort}${retryReadApp.config.mcpPath}`,
+    token,
+  };
+
+  try {
+    await initializeMcp(retryReadMcp);
+    const retryReadResult = JSON.stringify(
+      await callMcpTool(retryReadMcp, 'get_rem', { remId: fakeRem.remId })
+    );
+    if (!retryReadResult.includes('"ok":true') || !retryReadResult.includes(fakeRem.remId)) {
+      throw new Error('Read retry after reconnect did not return the Rem.');
+    }
+  } finally {
+    retryReadSecondaryWs?.close();
+    retryReadWs.close();
+    await retryReadApp.stop();
+  }
+
+  const unknownWriteApp = await startCompanionApp({
+    bridgePort: 0,
+    mcpPort: 0,
+    bridgeToken: token,
+    allowRemote: false,
+    allowCors: false,
+    requestTimeoutMs: 5000,
+  });
+  const unknownWriteWs = await connectMockPlugin(
+    `ws://127.0.0.1:${unknownWriteApp.bridgePort}${unknownWriteApp.config.bridgePath}`,
+    (_request, socket) => {
+      socket.close();
+      return undefined;
+    }
+  );
+  const unknownWriteMcp = {
+    url: `http://127.0.0.1:${unknownWriteApp.mcpPort}${unknownWriteApp.config.mcpPath}`,
+    token,
+  };
+
+  try {
+    await initializeMcp(unknownWriteMcp);
+    const unknownWriteResult = JSON.stringify(
+      await callMcpTool(unknownWriteMcp, 'apply_structured_note_batch', {
+        parentId: fakeRem.remId,
+        operation: 'create_child_tree',
+        dryRun: false,
+        idempotencyKey: 'disconnect-write-1',
+        root: { text: 'Unknown write status' },
+      })
+    );
+    if (
+      !unknownWriteResult.includes('RETRYABLE_UNKNOWN_WRITE_STATUS') ||
+      !unknownWriteResult.includes('"retryable":true')
+    ) {
+      throw new Error('Disconnected idempotent write did not return retryable unknown write status.');
+    }
+    const diagnostics = unknownWriteApp.hub.getDiagnostics();
+    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode !== 'RETRYABLE_UNKNOWN_WRITE_STATUS') {
+      throw new Error('Unknown write diagnostics did not record terminal retryable state.');
+    }
+  } finally {
+    unknownWriteWs.close();
+    await unknownWriteApp.stop();
+  }
+
+  const unknownDeleteApp = await startCompanionApp({
+    bridgePort: 0,
+    mcpPort: 0,
+    bridgeToken: token,
+    allowRemote: false,
+    allowCors: false,
+    requestTimeoutMs: 5000,
+  });
+  const unknownDeleteWs = await connectMockPlugin(
+    `ws://127.0.0.1:${unknownDeleteApp.bridgePort}${unknownDeleteApp.config.bridgePath}`,
+    (_request, socket) => {
+      socket.close();
+      return undefined;
+    }
+  );
+  const unknownDeleteMcp = {
+    url: `http://127.0.0.1:${unknownDeleteApp.mcpPort}${unknownDeleteApp.config.mcpPath}`,
+    token,
+  };
+
+  try {
+    await initializeMcp(unknownDeleteMcp);
+    const unknownDeleteResult = JSON.stringify(
+      await callMcpTool(unknownDeleteMcp, 'delete_rem_by_id', {
+        remId: 'rem-delete-child-1',
+        expectedParentId: fakeRem.remId,
+        confirmTitle: 'Disposable child',
+        dryRun: false,
+      })
+    );
+    if (
+      !unknownDeleteResult.includes('RETRYABLE_UNKNOWN_DELETE_STATUS') ||
+      !unknownDeleteResult.includes('"retryable":true') ||
+      unknownDeleteResult.includes('"deletedRemId"')
+    ) {
+      throw new Error('Disconnected real delete did not return retryable unknown delete status without claiming deletion.');
+    }
+    const diagnostics = unknownDeleteApp.hub.getDiagnostics();
+    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode !== 'RETRYABLE_UNKNOWN_DELETE_STATUS') {
+      throw new Error('Unknown delete diagnostics did not record terminal retryable state.');
+    }
+  } finally {
+    unknownDeleteWs.close();
+    await unknownDeleteApp.stop();
+  }
 }
 
 async function runCancellationSmoke() {
@@ -820,6 +993,91 @@ async function runCancellationSmoke() {
   } finally {
     cancelWs.close();
     await cancelApp.stop();
+  }
+}
+
+async function runProfileAndSinglePortSmoke() {
+  const singlePortApp = await startCompanionApp({
+    port: 0,
+    bridgePort: 0,
+    mcpPort: 0,
+    singlePort: true,
+    toolProfile: 'simple',
+    bridgeToken: token,
+    allowRemote: false,
+    allowCors: false,
+  });
+  const singlePortWs = await connectMockPlugin(
+    `ws://127.0.0.1:${singlePortApp.bridgePort}${singlePortApp.config.bridgePath}`
+  );
+  const singlePortMcp = {
+    url: `http://127.0.0.1:${singlePortApp.mcpPort}${singlePortApp.config.mcpPath}`,
+    token,
+  };
+
+  try {
+    if (singlePortApp.bridgePort !== singlePortApp.mcpPort) {
+      throw new Error('Single-port mode did not serve WebSocket and MCP on one port.');
+    }
+
+    await initializeMcp(singlePortMcp);
+    const toolNames = getToolNamesFromList(await listMcpTools(singlePortMcp));
+    const expectedToolNames = getPublicMcpToolNames(false, 'simple');
+    if (JSON.stringify(toolNames) !== JSON.stringify(expectedToolNames)) {
+      throw new Error(
+        `Simple profile tools/list mismatch. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
+      );
+    }
+
+    for (const preferredTool of [
+      'create_polished_note_tree',
+      'apply_structured_note_batch',
+      'apply_style_plan',
+      'verify_note_design',
+    ]) {
+      if (!toolNames.includes(preferredTool)) {
+        throw new Error(`Simple profile must expose preferred tool ${preferredTool}.`);
+      }
+    }
+
+    for (const hiddenTool of ['append_to_rem', 'debug_get_raw_rich_text', 'create_styled_rem_tree']) {
+      if (toolNames.includes(hiddenTool)) {
+        throw new Error(`Simple profile must hide ${hiddenTool}.`);
+      }
+    }
+
+    const status = await callMcpTool(singlePortMcp, 'get_bridge_status', {});
+    const statusResult = getStructuredContent(status).result as
+      | {
+          toolProfile?: string;
+          allPublicToolCount?: number;
+          publicToolCount?: number;
+          preferredTools?: string[];
+          profileHiddenTools?: Array<{ name: string }>;
+        }
+      | undefined;
+    if (
+      !statusResult ||
+      statusResult.toolProfile !== 'simple' ||
+      statusResult.publicToolCount !== expectedToolNames.length ||
+      !statusResult.allPublicToolCount ||
+      statusResult.allPublicToolCount <= statusResult.publicToolCount ||
+      !statusResult.preferredTools?.includes('create_polished_note_tree') ||
+      !statusResult.profileHiddenTools?.some((tool) => tool.name === 'append_to_rem')
+    ) {
+      throw new Error('Simple profile status did not expose policy and hidden-tool metadata.');
+    }
+
+    const hiddenToolCall = JSON.stringify(await callMcpTool(singlePortMcp, 'append_to_rem', {
+      remId: fakeRem.remId,
+      markdown: 'hidden by simple profile',
+    }));
+    if (!hiddenToolCall.includes('UNKNOWN_TOOL')) {
+      throw new Error('Simple profile hidden tool call did not return UNKNOWN_TOOL.');
+    }
+  } finally {
+    singlePortWs.close();
+    await singlePortApp.stop();
   }
 }
 
@@ -1201,6 +1459,19 @@ try {
     throw new Error('set_text_span_highlight did not return span highlight rebuild evidence.');
   }
 
+  const clearFormatting = JSON.stringify(
+    await callMcpTool(mcp, 'clear_rem_formatting', {
+      remId: fakeRem.remId,
+    })
+  );
+  if (
+    !clearFormatting.includes('formatting_partially_cleared') ||
+    !clearFormatting.includes('wholeRemHighlightReset') ||
+    !clearFormatting.includes('"ok":false')
+  ) {
+    throw new Error('clear_rem_formatting did not report honest partial clearing for unsupported SDK resets.');
+  }
+
   const styledTree = JSON.stringify(
     await callMcpTool(mcp, 'create_styled_rem_tree', {
       parentId: fakeRem.remId,
@@ -1399,10 +1670,12 @@ try {
     !search.includes('searchSupported') ||
     !search.includes(fakeRem.remId) ||
     !search.includes('"maxResults":1') ||
-    !search.includes('"truncated":true') ||
+    !search.includes('"truncated":false') ||
+    !search.includes('"scopeEnforcement":"post_filter_ancestor_chain"') ||
+    !search.includes('"filteredOutCount":1') ||
     search.includes('Second result')
   ) {
-    throw new Error('search_rems did not honor limit alias while returning bounded search results.');
+    throw new Error('search_rems did not honor scoped filtering while returning bounded search results.');
   }
 
   const documentTree = JSON.stringify(await callMcpTool(mcp, 'get_document_or_folder_tree', { depth: 1 }));
@@ -1465,6 +1738,7 @@ try {
   await app.stop();
 }
 
+await runProfileAndSinglePortSmoke();
 await runReliabilitySmoke();
 await runCancellationSmoke();
 console.log('Server smoke passed.');

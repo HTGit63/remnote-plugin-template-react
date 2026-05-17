@@ -35,10 +35,15 @@
 31. 2026-05-14 milestone 8 complete and verified: `run_bridge_health_check` records pass/fail/skipped/unsupported results and `get_bridge_diagnostics` surfaces the last health check.
 32. 2026-05-14 milestone 9 repo QA complete: safe/read smoke checks, structured note dry-run/apply checks, failure survival, timeout, disconnect, and cancellation checks pass in `server:smoke`.
 33. 2026-05-14 RemNote knowledge pool complete: `get_remnote_capability_guide` exposes Rems, documents/folders/top-level Rems, formatting, flashcards, references/tags/portals, and bridge workflow guidance from RemNote help/forum sources.
+34. 2026-05-17 final-polish Phase 3 complete: tool policy metadata, simple/full profiles, profile-aware MCP registration/listing, preferred-tool diagnostics, and high-level-tool guidance are implemented and smoke-tested.
+35. 2026-05-17 final-polish Phase 4 complete: the widget default view is calmer, approval remains fixed and explicit, advanced diagnostics stay hidden, and profile/health-check controls are visible.
+36. 2026-05-17 final-polish Phase 5 complete for personal hosted readiness: single-port mode, `render.yaml`, root `server:start`, and local smoke coverage for shared WebSocket/MCP serving are done.
+37. 2026-05-17 final-polish Phase 6 complete: MCP registration was split into `server/src/tools/*`, `src/remnote/write.ts` became a category barrel, public tool order is preserved, and hidden legacy deletes remain hidden by default.
+38. 2026-05-17 final-polish Phase 7 local QA/docs complete: automated local gates pass, `bridge:live-test` reaches MCP but still requires a connected RemNote plugin for live tool execution, and `docs/final-polish-phase-6-7.md` records the proof.
 
 ## Current Phase
 
-Milestones 1-9 are complete at repo validation level. The public registry now exposes 44 MCP tools, including `apply_remnote_command`. The 2026-05-15 final-test pass validates repo, mock MCP, audit, and reachable-server diagnostics. A real RemNote sandbox health check is still required before public hosted submission wording can claim live production readiness.
+Milestones 1-9 and final-polish Phases 3-7 are complete at repo/local validation level. The public registry exposes 47 MCP tools by default in the full profile, while `REMNOTE_BRIDGE_TOOL_PROFILE=simple` exposes the reduced normal-use surface. A real RemNote sandbox health check is still required before public hosted submission wording can claim live production readiness.
 
 ## Next Phase
 
@@ -49,7 +54,7 @@ Live sandbox closeout:
 - record the health-check result from `get_bridge_diagnostics.lastHealthCheck`;
 - verify ChatGPT refreshes the 47-tool registry after companion server restart.
 
-Public hosted launch work remains later:
+Public hosted launch work remains later. Personal single-port Render readiness exists, but public multi-user launch still needs:
 
 - implement real OAuth provider integration;
 - implement pairing UI and persistent session store;

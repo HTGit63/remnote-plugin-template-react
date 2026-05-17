@@ -1688,7 +1688,112 @@ QA results are recorded in diagnostics and a health-check matrix.
 
 ---
 
-# 14. Current Practical Guidance for Vivy
+# 14. Final Polish Phase 3-5 Status — 2026-05-17
+
+Phase 3 is done at repo and mock-runtime level.
+
+```text
+[x] server/src/tool-policy.ts exists.
+[x] REMNOTE_BRIDGE_TOOL_PROFILE=simple|full exists.
+[x] full stays default to preserve current connector expectations.
+[x] simple profile hides fallback/debug low-level tools.
+[x] status, diagnostics, MCP registration, tools/list, and plugin hello use the active profile.
+[x] capability guide and MCP descriptions prefer create_polished_note_tree, apply_structured_note_batch, apply_style_plan, verify_note_design, and delete_rem_by_id.
+```
+
+Phase 4 is done at repo validation level.
+
+```text
+[x] default widget view is calmer and shows clear next action.
+[x] approval controls remain fixed at the bottom.
+[x] destructive approval still requires DELETE.
+[x] advanced diagnostics stay hidden by default.
+[x] Run Final Health Check action is visible.
+[x] reusable UI pieces live under src/widgets/components/.
+```
+
+Phase 5 is done for personal hosted readiness at repo and mock-runtime level.
+
+```text
+[x] single-port mode exists through REMNOTE_BRIDGE_SINGLE_PORT=1.
+[x] PORT / REMNOTE_BRIDGE_PORT can drive the shared HTTP port.
+[x] MCP and WebSocket can share one server.
+[x] render.yaml exists for personal hosted Render deployment.
+[x] root npm run server:start exists.
+[x] public hosted mode remains blocked by REMNOTE_BRIDGE_HOSTED_MODE until OAuth/pairing/session support exists.
+```
+
+Verification run:
+
+```text
+npm run check-types: passed
+npm run validate: passed
+npm run build: passed with existing webpack asset-size warnings
+npm run server:build: passed
+npm run server:smoke: passed, including simple profile and single-port coverage
+```
+
+Remaining proof before public production-ready wording:
+
+```text
+real RemNote sandbox health-check pass
+actual Render deploy and hosted WSS/MCP connection proof
+public-hosted OAuth/pairing/session/revocation work
+```
+
+## Final Polish Phase 6-7 Status — 2026-05-17
+
+Phase 6 is done at repo and mock-runtime level.
+
+```text
+[x] server/src/mcp-server.ts is now a small composition layer.
+[x] server/src/tools/schemas.ts centralizes MCP schemas.
+[x] server/src/tools/tool-context.ts centralizes MCP bridge result helpers and registration context.
+[x] server/src/tools/register-status-tools.ts owns bridge status.
+[x] server/src/tools/register-diagnostic-tools.ts owns diagnostics, health check, and capability guide tools.
+[x] server/src/tools/register-read-tools.ts owns read/navigation tools.
+[x] server/src/tools/register-write-tools.ts owns basic, tree, and high-level write registrations.
+[x] server/src/tools/register-formatting-tools.ts owns formatting and verification tools.
+[x] server/src/tools/register-card-tools.ts owns card tools.
+[x] server/src/tools/register-delete-tools.ts owns public guarded delete and hidden legacy delete registrations.
+[x] src/remnote/write.ts is a compatibility barrel for category files under src/remnote/write/.
+[x] protocol.ts remains the single shared contract for now to avoid contract drift.
+```
+
+Phase 7 is done for local automated QA and docs.
+
+```text
+[x] npm run check-types passed.
+[x] npm run validate passed.
+[x] npm run build passed with existing webpack asset-size warnings.
+[x] npm run server:build passed.
+[x] npm run server:smoke passed.
+[x] npm audit passed with 0 vulnerabilities.
+[x] npm audit --omit=dev passed with 0 vulnerabilities.
+[x] git diff --check passed.
+[~] npm run bridge:live-test reached local MCP after starting the companion server and passed tools/list, get_bridge_status, and get_bridge_diagnostics, then failed plugin tools with PLUGIN_NOT_CONNECTED because no live RemNote plugin session was connected.
+```
+
+Docs/source review completed:
+
+```text
+[x] RemNote plugin docs checked: plugin overview, Rem API, rich text, permissions, widgets.
+[x] OpenAI Apps SDK docs checked: reference, connect from ChatGPT, testing, submission, app submission guidelines, security/privacy.
+[x] docs/final-polish-phase-6-7.md records the evidence.
+```
+
+Remaining proof before stronger release wording:
+
+```text
+live RemNote sandbox health checks
+ChatGPT Developer Mode connector refresh/golden prompts
+Render hosted WSS/MCP verification
+OAuth/pairing/session/revocation for public hosted mode
+```
+
+---
+
+# 15. Current Practical Guidance for Vivy
 
 Current repo-verified guidance:
 
@@ -1720,6 +1825,7 @@ Use:
 ```text
 get_remnote_capability_guide
 get_bridge_diagnostics
+create_polished_note_tree for complete polished note trees
 apply_structured_note_batch dryRun=true
 apply_structured_note_batch dryRun=false verifyAfterWrite=true rollbackOnFailure=true
 ```
@@ -1749,7 +1855,7 @@ create_styled_rem_tree
 
 ---
 
-# 15. Implementation Warning
+# 16. Implementation Warning
 
 Do not just add more tools.
 

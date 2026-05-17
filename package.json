@@ -11,6 +11,7 @@
     "server:install": "npm install --prefix server",
     "server:dev": "npm run dev --prefix server",
     "server:build": "npm run build --prefix server",
+    "server:start": "npm start --prefix server",
     "server:smoke": "npm run smoke --prefix server",
     "server:test-client": "npm run test-client --prefix server",
     "bridge:live-test": "npm run live-test --prefix server",

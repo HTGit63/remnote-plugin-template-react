@@ -1,3 +1,11 @@
+import {
+  DEFAULT_TOOL_PROFILE,
+  filterToolsForProfile,
+  getProfileHiddenTools,
+  groupToolsByPolicy,
+  type ToolProfile,
+} from './tool-policy.js';
+
 export const TOOL_REGISTRY_VERSION = '2026-05-15.2';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
@@ -88,14 +96,25 @@ export const MCP_TOOL_REGISTRY = [
 
 export type RegisteredMcpToolName = (typeof MCP_TOOL_REGISTRY)[number]['name'];
 
-export function getPublicMcpToolNames(exposeDeleteTool = false): string[] {
+export function getAllPublicMcpToolNames(exposeDeleteTool = false): string[] {
   return MCP_TOOL_REGISTRY.filter((tool) => tool.exposure === 'public' || exposeDeleteTool).map(
     (tool) => tool.name
   );
 }
 
-export function isPublicMcpToolName(name: string, exposeDeleteTool = false): boolean {
-  return getPublicMcpToolNames(exposeDeleteTool).includes(name);
+export function getPublicMcpToolNames(
+  exposeDeleteTool = false,
+  profile: ToolProfile = DEFAULT_TOOL_PROFILE
+): string[] {
+  return filterToolsForProfile(getAllPublicMcpToolNames(exposeDeleteTool), profile);
+}
+
+export function isPublicMcpToolName(
+  name: string,
+  exposeDeleteTool = false,
+  profile: ToolProfile = DEFAULT_TOOL_PROFILE
+): boolean {
+  return getPublicMcpToolNames(exposeDeleteTool, profile).includes(name);
 }
 
 export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: string; reason: string }> {
@@ -108,8 +127,12 @@ export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: strin
   }));
 }
 
-export function getRegistryMismatch(exposeDeleteTool: boolean, registeredToolNames: readonly string[]) {
-  const expected = getPublicMcpToolNames(exposeDeleteTool);
+export function getRegistryMismatch(
+  exposeDeleteTool: boolean,
+  registeredToolNames: readonly string[],
+  profile: ToolProfile = DEFAULT_TOOL_PROFILE
+) {
+  const expected = getPublicMcpToolNames(exposeDeleteTool, profile);
   const registered = [...registeredToolNames];
   return {
     missing: expected.filter((tool) => !registered.includes(tool)),
@@ -119,9 +142,10 @@ export function getRegistryMismatch(exposeDeleteTool: boolean, registeredToolNam
 
 export function assertRegisteredToolsMatchRegistry(
   exposeDeleteTool: boolean,
-  registeredToolNames: readonly string[]
+  registeredToolNames: readonly string[],
+  profile: ToolProfile = DEFAULT_TOOL_PROFILE
 ) {
-  const mismatch = getRegistryMismatch(exposeDeleteTool, registeredToolNames);
+  const mismatch = getRegistryMismatch(exposeDeleteTool, registeredToolNames, profile);
   if (mismatch.missing.length || mismatch.unexpected.length) {
     throw new Error(
       `MCP tool registry mismatch. Missing: ${mismatch.missing.join(', ') || 'none'}; unexpected: ${
@@ -133,17 +157,22 @@ export function assertRegisteredToolsMatchRegistry(
 
 export function getToolRegistrySummary(
   exposeDeleteTool = false,
+  profile: ToolProfile = DEFAULT_TOOL_PROFILE,
   registeredToolNames?: readonly string[],
   auth?: {
     discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required';
     toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required';
   }
 ) {
-  const publicTools = getPublicMcpToolNames(exposeDeleteTool);
+  const allPublicTools = getAllPublicMcpToolNames(exposeDeleteTool);
+  const publicTools = getPublicMcpToolNames(exposeDeleteTool, profile);
   const registeredTools = registeredToolNames ? [...registeredToolNames] : [...publicTools];
   const hiddenTools = getHiddenMcpTools(exposeDeleteTool);
   const hiddenReasons = Object.fromEntries(hiddenTools.map((tool) => [tool.name, tool.reason]));
-  const mismatch = getRegistryMismatch(exposeDeleteTool, registeredTools);
+  const profileHiddenTools = getProfileHiddenTools(allPublicTools, profile);
+  const policyGroups = groupToolsByPolicy(allPublicTools);
+  const activePolicyGroups = groupToolsByPolicy(publicTools);
+  const mismatch = getRegistryMismatch(exposeDeleteTool, registeredTools, profile);
   const sdkUnsupportedTools = publicTools.filter((tool) =>
     (STATIC_SDK_UNSUPPORTED_TOOLS as readonly string[]).includes(tool)
   );
@@ -157,12 +186,15 @@ export function getToolRegistrySummary(
   return {
     serverVersion: SERVER_VERSION,
     pluginVersion: 'reported-by-plugin-status',
+    toolProfile: profile,
     toolRegistryVersion: TOOL_REGISTRY_VERSION,
     serverToolRegistryVersion: TOOL_REGISTRY_VERSION,
     mcpDiscoveryVersion: MCP_DISCOVERY_VERSION,
     lastDiscoveryRefreshAt: new Date().toISOString(),
     pluginProtocolVersion: BRIDGE_PLUGIN_PROTOCOL_VERSION,
     registeredTools,
+    allPublicTools,
+    allPublicToolCount: allPublicTools.length,
     publicToolCount: publicTools.length,
     publicTools,
     exposedTools: [...publicTools],
@@ -186,6 +218,16 @@ export function getToolRegistrySummary(
     runtimeUnverifiedTools,
     runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
     sdkUnsupportedTools,
+    preferredTools: activePolicyGroups.preferred,
+    fallbackTools: activePolicyGroups.fallback,
+    debugTools: activePolicyGroups.debug,
+    readTools: activePolicyGroups.read,
+    cardTools: activePolicyGroups.cards,
+    dangerousTools: activePolicyGroups.dangerous,
+    unsupportedTools: activePolicyGroups.unsupported,
+    policyGroups,
+    activePolicyGroups,
+    profileHiddenTools,
     hiddenTools,
     hiddenReasons,
     registryMismatch: mismatch,

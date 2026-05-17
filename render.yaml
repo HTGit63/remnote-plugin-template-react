@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: remnote-chatgpt-bridge
+    runtime: node
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: REMNOTE_BRIDGE_SINGLE_PORT
+        value: "1"
+      - key: REMNOTE_BRIDGE_HOST
+        value: "0.0.0.0"
+      - key: REMNOTE_BRIDGE_TOKEN
+        sync: false
+      - key: REMNOTE_BRIDGE_ALLOW_NO_TOKEN
+        value: "0"
+      - key: REMNOTE_BRIDGE_ALLOW_REMOTE
+        value: "1"
+      - key: REMNOTE_BRIDGE_ALLOW_CORS
+        value: "1"
+      - key: REMNOTE_BRIDGE_ALLOWED_ORIGINS
+        value: "https://chatgpt.com,https://chat.openai.com"
+      - key: REMNOTE_BRIDGE_TOOL_PROFILE
+        value: "simple"
+      - key: REMNOTE_BRIDGE_ENABLE_DELETE_TOOL
+        value: "0"
+      - key: REMNOTE_BRIDGE_AUDIT_LOG
+        value: "1"
+      - key: REMNOTE_BRIDGE_HOSTED_MODE
+        value: "0"
