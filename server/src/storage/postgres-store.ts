@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  ChatGptPairingSession,
   IdempotencyRecord,
   McpAuthorizationCode,
   McpClient,
@@ -101,6 +102,20 @@ export class PostgresStorageProvider implements StorageProvider {
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ NOT NULL,
         consumed_at TIMESTAMPTZ
+      );
+
+      CREATE TABLE IF NOT EXISTS chatgpt_pairing_sessions (
+        pairing_id TEXT PRIMARY KEY,
+        pairing_code_hash VARCHAR(64) UNIQUE NOT NULL,
+        authorization_code_hash VARCHAR(64) UNIQUE,
+        access_token_hash VARCHAR(64) UNIQUE,
+        refresh_token_hash VARCHAR(64) UNIQUE,
+        plugin_session_secret_hash VARCHAR(64),
+        status VARCHAR(32) NOT NULL,
+        expires_at TIMESTAMPTZ NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
       );
 
       CREATE TABLE IF NOT EXISTS audit_events (
@@ -426,6 +441,124 @@ export class PostgresStorageProvider implements StorageProvider {
     };
   }
 
+  async createChatGptPairingSession(session: ChatGptPairingSession): Promise<ChatGptPairingSession> {
+    const now = new Date().toISOString();
+    const stored = this.normalizePairingForStorage(session);
+    await this.pool.query(
+      `INSERT INTO chatgpt_pairing_sessions (
+        pairing_id, pairing_code_hash, authorization_code_hash, access_token_hash,
+        refresh_token_hash, plugin_session_secret_hash, status, expires_at,
+        data, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        stored.pairingId,
+        stored.pairingCodeHash,
+        stored.authorizationCodeHash ?? null,
+        stored.accessTokenHash ?? null,
+        stored.refreshTokenHash ?? null,
+        stored.pluginSessionSecretHash ?? null,
+        stored.status,
+        stored.expiresAt,
+        JSON.stringify(stored),
+        stored.createdAt,
+        now,
+      ]
+    );
+    return stored;
+  }
+
+  async getChatGptPairingSessionById(pairingId: string): Promise<ChatGptPairingSession | null> {
+    const res = await this.pool.query(
+      'SELECT * FROM chatgpt_pairing_sessions WHERE pairing_id = $1',
+      [pairingId]
+    );
+    return this.pairingFromRow(res.rows[0]);
+  }
+
+  async getChatGptPairingSessionByPairingCode(pairingCode: string): Promise<ChatGptPairingSession | null> {
+    return this.getPairingByIndexedHash('pairing_code_hash', hashToken(pairingCode));
+  }
+
+  async getChatGptPairingSessionByAuthorizationCode(code: string): Promise<ChatGptPairingSession | null> {
+    return this.getPairingByIndexedHash('authorization_code_hash', hashToken(code));
+  }
+
+  async getChatGptPairingSessionByAccessToken(accessToken: string): Promise<ChatGptPairingSession | null> {
+    return this.getPairingByIndexedHash('access_token_hash', hashToken(accessToken));
+  }
+
+  async getChatGptPairingSessionByRefreshToken(refreshToken: string): Promise<ChatGptPairingSession | null> {
+    return this.getPairingByIndexedHash('refresh_token_hash', hashToken(refreshToken));
+  }
+
+  async getChatGptPairingSessionByPluginSessionSecret(sessionSecret: string): Promise<ChatGptPairingSession | null> {
+    return this.getPairingByIndexedHash('plugin_session_secret_hash', hashToken(sessionSecret));
+  }
+
+  async consumeChatGptPairingAuthorizationCode(code: string): Promise<ChatGptPairingSession | null> {
+    const codeHash = hashToken(code);
+    const current = await this.getPairingByIndexedHash('authorization_code_hash', codeHash);
+    if (!current || current.authorizationCodeConsumedAt) {
+      return null;
+    }
+    return this.updateChatGptPairingSession(current.pairingId, {
+      authorizationCodeConsumedAt: new Date().toISOString(),
+    });
+  }
+
+  async updateChatGptPairingSession(
+    pairingId: string,
+    updates: Partial<Omit<ChatGptPairingSession, 'pairingId' | 'createdAt'>>
+  ): Promise<ChatGptPairingSession> {
+    const existing = await this.getChatGptPairingSessionById(pairingId);
+    if (!existing) {
+      throw new Error(`ChatGPT pairing session with ID ${pairingId} not found.`);
+    }
+
+    const updated = this.normalizePairingForStorage({
+      ...existing,
+      ...updates,
+    });
+    const now = new Date().toISOString();
+    const res = await this.pool.query(
+      `UPDATE chatgpt_pairing_sessions
+       SET pairing_code_hash = $2,
+           authorization_code_hash = $3,
+           access_token_hash = $4,
+           refresh_token_hash = $5,
+           plugin_session_secret_hash = $6,
+           status = $7,
+           expires_at = $8,
+           data = $9,
+           updated_at = $10
+       WHERE pairing_id = $1
+       RETURNING *`,
+      [
+        pairingId,
+        updated.pairingCodeHash,
+        updated.authorizationCodeHash ?? null,
+        updated.accessTokenHash ?? null,
+        updated.refreshTokenHash ?? null,
+        updated.pluginSessionSecretHash ?? null,
+        updated.status,
+        updated.expiresAt,
+        JSON.stringify(updated),
+        now,
+      ]
+    );
+    return this.pairingFromRow(res.rows[0])!;
+  }
+
+  async listChatGptPairingSessions(limit = 50): Promise<ChatGptPairingSession[]> {
+    const res = await this.pool.query(
+      'SELECT * FROM chatgpt_pairing_sessions ORDER BY created_at DESC LIMIT $1',
+      [limit]
+    );
+    return res.rows
+      .map((row: any) => this.pairingFromRow(row))
+      .filter((session: ChatGptPairingSession | null): session is ChatGptPairingSession => Boolean(session));
+  }
+
   async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
     const stored: StoredAuditEvent = {
       id: randomUUID(),
@@ -551,6 +684,54 @@ export class PostgresStorageProvider implements StorageProvider {
       startedAt: row.started_at.toISOString(),
       finishedAt: row.finished_at?.toISOString(),
       errorCode: row.error_code ?? undefined,
+    };
+  }
+
+  private async getPairingByIndexedHash(column: string, hash: string): Promise<ChatGptPairingSession | null> {
+    const allowedColumns = new Set([
+      'pairing_code_hash',
+      'authorization_code_hash',
+      'access_token_hash',
+      'refresh_token_hash',
+      'plugin_session_secret_hash',
+    ]);
+    if (!allowedColumns.has(column)) {
+      throw new Error('Invalid pairing lookup column.');
+    }
+    const res = await this.pool.query(
+      `SELECT * FROM chatgpt_pairing_sessions WHERE ${column} = $1 AND (data->>'revokedAt' IS NULL)`,
+      [hash]
+    );
+    return this.pairingFromRow(res.rows[0]);
+  }
+
+  private pairingFromRow(row: any): ChatGptPairingSession | null {
+    if (!row) {
+      return null;
+    }
+    const data = typeof row.data === 'object' && row.data !== null ? row.data : {};
+    return this.normalizePairingForStorage({
+      ...data,
+      pairingId: row.pairing_id,
+      pairingCodeHash: row.pairing_code_hash,
+      authorizationCodeHash: row.authorization_code_hash ?? data.authorizationCodeHash,
+      accessTokenHash: row.access_token_hash ?? data.accessTokenHash,
+      refreshTokenHash: row.refresh_token_hash ?? data.refreshTokenHash,
+      pluginSessionSecretHash: row.plugin_session_secret_hash ?? data.pluginSessionSecretHash,
+      status: row.status,
+      expiresAt: row.expires_at.toISOString(),
+      createdAt: row.created_at.toISOString(),
+    } as ChatGptPairingSession);
+  }
+
+  private normalizePairingForStorage(session: ChatGptPairingSession): ChatGptPairingSession {
+    return {
+      ...session,
+      requestedScopes: Array.isArray(session.requestedScopes) ? [...session.requestedScopes] : [],
+      approvedScopes: Array.isArray(session.approvedScopes) ? [...session.approvedScopes] : [],
+      accessScope: session.accessScope ?? 'focused-rem-only',
+      trustedWriteMode: session.trustedWriteMode ?? 'ask-every-write',
+      status: session.status ?? 'pending',
     };
   }
 }

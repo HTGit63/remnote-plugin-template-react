@@ -1137,6 +1137,17 @@ export interface BridgePluginHello {
   token?: string;
 }
 
+export interface BridgePluginRegister {
+  type: 'plugin_register';
+  pluginInstanceId: string;
+  pluginConnectionId: string;
+  sessionSecret: string;
+  workspaceLabel?: string;
+  supportedTools: string[];
+  accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
+  trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
+}
+
 export type BridgeToolProfile = 'simple' | 'full';
 export type BridgeToolPolicy =
   | 'preferred'
@@ -1197,7 +1208,7 @@ export interface BridgeCancelRequest {
   message: string;
 }
 
-export type BridgeClientMessage = BridgePluginHello | BridgeResponse;
+export type BridgeClientMessage = BridgePluginHello | BridgePluginRegister | BridgeResponse;
 export type BridgeServerMessage = BridgeServerHello | BridgeRequest | BridgeCancelRequest;
 
 export interface BridgeToolAnnotations {

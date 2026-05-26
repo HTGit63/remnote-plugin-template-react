@@ -8,6 +8,7 @@ import {
   type BridgeLifecycleEvent,
   type BridgeLifecyclePhase,
   type BridgePluginHello,
+  type BridgePluginRegister,
   type BridgeRequest,
   type BridgeResponse,
   type BridgeServerHello,
@@ -280,7 +281,7 @@ export class BridgeHub {
   private readonly socketUsers = new WeakMap<WebSocket, string>();
 
   constructor(private readonly config: CompanionServerConfig, private readonly storage?: StorageProvider) {
-    this.sessionRouter = new SessionRouter(config);
+    this.sessionRouter = new SessionRouter(config, storage);
   }
 
   start(): Promise<void> {
@@ -301,7 +302,7 @@ export class BridgeHub {
       maxPayload: this.config.maxBridgeMessageBytes,
     });
 
-    this.wsServer.on('connection', (socket) => this.handleConnection(socket));
+    this.wsServer.on('connection', (socket, req) => this.handleConnection(socket, req));
 
     return new Promise((resolve, reject) => {
       this.server?.once('error', reject);
@@ -323,7 +324,7 @@ export class BridgeHub {
       noServer: true,
       maxPayload: this.config.maxBridgeMessageBytes,
     });
-    this.wsServer.on('connection', (socket) => this.handleConnection(socket));
+    this.wsServer.on('connection', (socket, req) => this.handleConnection(socket, req));
 
     this.attachedUpgradeHandler = (req, socket, head) => {
       const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -734,8 +735,8 @@ export class BridgeHub {
       if (!connection) {
         return {
           ok: false,
-          error: 'NO_ACTIVE_DEVICE',
-          message: 'No active paired RemNote device is connected for this user.',
+          error: 'PLUGIN_NOT_CONNECTED',
+          message: 'RemNote plugin is not connected. Open RemNote and reconnect the ChatGPT Bridge plugin.',
         };
       }
 
@@ -761,10 +762,24 @@ export class BridgeHub {
     };
   }
 
-  private handleConnection(socket: WebSocket) {
+  private handleConnection(socket: WebSocket, req?: IncomingMessage) {
+    if (!this.isAllowedWebSocketOrigin(req)) {
+      socket.close(1008, 'WebSocket origin not allowed.');
+      return;
+    }
+
     socket.once('message', (raw) => {
+      void this.handleInitialPluginMessage(socket, raw);
+    });
+  }
+
+  private async handleInitialPluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
       const hello = this.parseClientMessage(raw);
-      if (!this.isPluginHello(hello)) {
+      if (!this.isPluginHello(hello) && !this.isPluginRegister(hello)) {
+        socket.close(1008, 'Expected plugin registration.');
+        return;
+      }
+      if (this.config.deploymentMode !== 'public_hosted_oauth' && !this.isPluginHello(hello)) {
         socket.close(1008, 'Expected plugin hello.');
         return;
       }
@@ -773,14 +788,14 @@ export class BridgeHub {
         this.config.deploymentMode !== 'public_hosted_oauth' &&
         this.config.bridgeToken &&
         !this.config.allowNoToken &&
-        hello.token !== this.config.bridgeToken
+        (hello as BridgePluginHello).token !== this.config.bridgeToken
       ) {
         socket.close(1008, 'Invalid bridge token.');
         return;
       }
 
       if (this.config.deploymentMode === 'public_hosted_oauth') {
-        const routed = this.sessionRouter.authenticateAndRegister(socket, hello);
+        const routed = await this.sessionRouter.authenticateAndRegister(socket, hello);
         if (!routed.ok) {
           socket.close(1008, `${routed.error}: ${routed.message}`);
           this.lastDisconnectedAt = new Date().toISOString();
@@ -814,7 +829,6 @@ export class BridgeHub {
         serverStartedAt: this.startedAt,
       };
       socket.send(JSON.stringify(serverHello));
-    });
   }
 
   private replacePluginSocket(socket: WebSocket) {
@@ -1110,7 +1124,7 @@ export class BridgeHub {
       } catch {
         socket.terminate();
       }
-    }, 15000);
+    }, Math.max(5, this.config.pluginHeartbeatIntervalSeconds) * 1000);
   }
 
   private stopHeartbeat() {
@@ -1230,6 +1244,28 @@ export class BridgeHub {
       (message as { protocolVersion?: unknown }).protocolVersion === 1 &&
       (message as { clientName?: unknown }).clientName === 'remnote-plugin'
     );
+  }
+
+  private isPluginRegister(message: BridgeClientMessage | undefined): message is BridgePluginRegister {
+    return (
+      typeof message === 'object' &&
+      message !== null &&
+      (message as { type?: unknown }).type === 'plugin_register' &&
+      typeof (message as { pluginInstanceId?: unknown }).pluginInstanceId === 'string' &&
+      typeof (message as { pluginConnectionId?: unknown }).pluginConnectionId === 'string' &&
+      typeof (message as { sessionSecret?: unknown }).sessionSecret === 'string'
+    );
+  }
+
+  private isAllowedWebSocketOrigin(req?: IncomingMessage): boolean {
+    const origin = req?.headers.origin;
+    if (!origin || this.config.deploymentMode === 'local_dev') {
+      return true;
+    }
+    if (!this.config.allowedOrigins.length) {
+      return false;
+    }
+    return this.config.allowedOrigins.includes(origin);
   }
 
   private parseClientMessage(raw: WebSocket.RawData): BridgeClientMessage | undefined {

@@ -17,9 +17,9 @@
 import type WebSocket from 'ws';
 import { randomUUID } from 'node:crypto';
 import { PluginConnection, type PluginConnectionInfo } from './plugin-connection.js';
-import { RequestLedger, type LedgerEntry } from './request-ledger.js';
-import { validatePluginSessionToken, type PluginPairingSession } from '../auth/pairing-routes.js';
+import { validatePluginSessionToken } from '../auth/pairing-routes.js';
 import type { CompanionServerConfig } from '../config.js';
+import type { StorageProvider } from '../storage/types.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -65,13 +65,26 @@ interface HostedPluginHello {
 
 type PluginHelloMessage = LegacyPluginHello | HostedPluginHello;
 
+interface PluginRegisterMessage {
+  type: 'plugin_register';
+  pluginInstanceId: string;
+  pluginConnectionId: string;
+  sessionSecret: string;
+  workspaceLabel?: string;
+  supportedTools?: string[];
+  accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
+  trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
+}
+
+type PluginRegistrationMessage = PluginHelloMessage | PluginRegisterMessage;
+
 // ─── Session Router ──────────────────────────────────────────────────
 
 export class SessionRouter {
   private connections = new Map<string, PluginConnection>(); // userId → connection
   private config: CompanionServerConfig;
 
-  constructor(config: CompanionServerConfig) {
+  constructor(config: CompanionServerConfig, private readonly storage?: StorageProvider) {
     this.config = config;
   }
 
@@ -83,10 +96,10 @@ export class SessionRouter {
    * Authenticate and register a new plugin WebSocket connection.
    * Returns null on success, or an error code string on failure.
    */
-  authenticateAndRegister(
+  async authenticateAndRegister(
     socket: WebSocket,
-    hello: PluginHelloMessage
-  ): { ok: true; connection: PluginConnection } | { ok: false; error: SessionRouterErrorCode; message: string } {
+    hello: PluginRegistrationMessage
+  ): Promise<{ ok: true; connection: PluginConnection } | { ok: false; error: SessionRouterErrorCode; message: string }> {
     // ─── Legacy mode (local_dev / personal_hosted_token) ────────
     if (!this.isHostedMode) {
       const userId = '__local__';
@@ -107,6 +120,59 @@ export class SessionRouter {
         '__local_session__'
       );
       this.connections.set(userId, conn);
+      return { ok: true, connection: conn };
+    }
+
+    if (hello.type === 'plugin_register') {
+      if (!this.storage) {
+        return {
+          ok: false,
+          error: 'PLUGIN_NOT_PAIRED',
+          message: 'Pairing storage is unavailable.',
+        };
+      }
+      const pairingSession = await this.storage.getChatGptPairingSessionByPluginSessionSecret(hello.sessionSecret);
+      if (
+        !pairingSession ||
+        pairingSession.revokedAt ||
+        (pairingSession.status !== 'approved' && pairingSession.status !== 'connected')
+      ) {
+        return {
+          ok: false,
+          error: 'PLUGIN_SESSION_EXPIRED',
+          message: 'Plugin session is invalid, expired, or revoked. Re-pair required.',
+        };
+      }
+      if (pairingSession.pluginInstanceId !== hello.pluginInstanceId) {
+        return {
+          ok: false,
+          error: 'PLUGIN_NOT_PAIRED',
+          message: 'Plugin instance does not match the approved pairing.',
+        };
+      }
+
+      const userId = pairingSession.oauthSubject || pairingSession.pairingId;
+      const existing = this.connections.get(userId);
+      if (existing && existing.pluginSessionId !== pairingSession.pairingId && existing.isOpen) {
+        existing.close(1012, 'DEVICE_CONFLICT: New paired session connected.');
+        this.connections.delete(userId);
+      }
+
+      const conn = new PluginConnection(
+        socket,
+        hello.pluginConnectionId,
+        userId,
+        hello.pluginInstanceId,
+        pairingSession.pairingId
+      );
+      this.connections.set(userId, conn);
+      await this.storage.updateChatGptPairingSession(pairingSession.pairingId, {
+        status: 'connected',
+        connectedAt: pairingSession.connectedAt ?? new Date().toISOString(),
+        lastSeenAt: new Date().toISOString(),
+        pluginConnectionId: hello.pluginConnectionId,
+        workspaceLabel: hello.workspaceLabel ?? pairingSession.workspaceLabel,
+      });
       return { ok: true, connection: conn };
     }
 

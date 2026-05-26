@@ -16,6 +16,10 @@ export interface AuthenticatedPrincipal {
   sessionId?: string;
   deviceId?: string;
   expiresAt?: string;
+  pairingId?: string;
+  pluginInstanceId?: string;
+  accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
+  trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
 }
 
 export type AuthResult =

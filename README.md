@@ -1,5 +1,44 @@
 # AGENTS.md
 
+## Current Auth Flow - 2026-05-26
+
+This project now uses **ChatGPT MCP OAuth + RemNote Plugin Pairing**.
+
+It is **not RemNote OAuth**. RemNote does not provide a public standalone OAuth/API that lets Render access notes directly. Render can route MCP tool calls only while the RemNote plugin is open, paired, and connected over WebSocket.
+
+Current user flow:
+
+```text
+ChatGPT connector auth
+-> Render /oauth/authorize
+-> Render /connect pairing page
+-> user opens RemNote ChatGPT Bridge plugin
+-> plugin approves pairing code with selected scope/write mode
+-> Render redirects ChatGPT with OAuth authorization code
+-> ChatGPT exchanges code for bearer token
+-> MCP tools route only to that approved plugin instance
+```
+
+Default safety:
+
+```text
+Access scope: Focused Rem only
+Write mode: Ask before every write
+Pairing code TTL: 10 minutes
+Production no-auth: disabled
+Delete tools: hidden or approval-gated by safe delete-by-ID flow
+```
+
+Primary docs:
+
+```text
+AUTH_FLOW.md
+DEPLOY_RENDER.md
+docs/oauth-setup.md
+docs/pairing-flow.md
+docs/render-deployment.md
+```
+
 ## Purpose
 
 This file gives AI coding agents strict instructions for working in this repository.

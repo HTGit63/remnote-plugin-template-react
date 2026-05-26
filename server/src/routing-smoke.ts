@@ -6,19 +6,6 @@ function b64urlSha256(value: string): string {
   return createHash('sha256').update(value).digest('base64url');
 }
 
-function cookieHeader(setCookie: string | null): { cookie: string; csrf: string } {
-  if (!setCookie) {
-    throw new Error('Missing Set-Cookie header.');
-  }
-  const parts = setCookie.split(/,(?=\s*rn_)/).map((part) => part.trim());
-  const cookies = parts.map((part) => part.split(';')[0]).join('; ');
-  const csrf = /rn_csrf=([^;]+)/.exec(setCookie)?.[1];
-  if (!csrf) {
-    throw new Error('Missing CSRF cookie.');
-  }
-  return { cookie: cookies, csrf: decodeURIComponent(csrf) };
-}
-
 async function postJson(url: string, body: unknown, headers: Record<string, string> = {}) {
   const response = await fetch(url, {
     method: 'POST',
@@ -46,58 +33,68 @@ async function postForm(url: string, body: Record<string, string>) {
   return { response, json: text ? JSON.parse(text) : null, text };
 }
 
-async function localDashboardCookies(baseUrl: string) {
-  const authStart = await fetch(`${baseUrl}/auth/start?provider=local`, { redirect: 'manual' });
-  const callbackLocation = authStart.headers.get('location');
-  if (!callbackLocation) {
-    throw new Error('Local dashboard auth failed.');
-  }
-  const callback = await fetch(`${baseUrl}${callbackLocation}`, { redirect: 'manual' });
-  return cookieHeader(callback.headers.get('set-cookie'));
-}
-
-async function pairDevice(baseUrl: string, deviceId: string, cookies: { cookie: string; csrf: string }) {
-  const start = await postJson(`${baseUrl}/api/pair/start`, { deviceId, deviceName: deviceId });
-  const confirm = await postJson(
-    `${baseUrl}/api/pair/confirm`,
-    { pairingCode: start.json.pairingCode },
-    { cookie: cookies.cookie, 'x-csrf-token': cookies.csrf }
-  );
-  if (confirm.response.status !== 200) {
-    throw new Error('Device confirm failed.');
-  }
-  const status = await postJson(`${baseUrl}/api/pair/status`, {
-    pairingCode: start.json.pairingCode,
-    deviceId,
-  });
-  if (status.response.status !== 200) {
-    throw new Error('Device status failed.');
-  }
-  return status.json as {
-    deviceId: string;
-    pluginSessionId: string;
-    pluginSessionToken: string;
-  };
-}
-
-async function oauthToken(baseUrl: string): Promise<string> {
-  const redirectUri = 'http://client.example/callback';
+async function registerClient(baseUrl: string, redirectUri: string): Promise<string> {
   const registration = await postJson(`${baseUrl}/oauth/register`, {
-    client_name: 'Routing smoke client',
+    client_name: 'Routing smoke ChatGPT session',
     redirect_uris: [redirectUri],
   });
+  if (registration.response.status !== 201) {
+    throw new Error(`Client registration failed: ${registration.text}`);
+  }
+  return registration.json.client_id;
+}
+
+async function authorizePairing(baseUrl: string, clientId: string, redirectUri: string) {
   const verifier = randomBytes(32).toString('base64url');
   const authorizeUrl = new URL(`${baseUrl}/oauth/authorize`);
   authorizeUrl.searchParams.set('response_type', 'code');
-  authorizeUrl.searchParams.set('client_id', registration.json.client_id);
+  authorizeUrl.searchParams.set('client_id', clientId);
   authorizeUrl.searchParams.set('redirect_uri', redirectUri);
   authorizeUrl.searchParams.set('code_challenge', b64urlSha256(verifier));
   authorizeUrl.searchParams.set('code_challenge_method', 'S256');
   authorizeUrl.searchParams.set('resource', 'http://127.0.0.1');
   authorizeUrl.searchParams.set('scope', 'bridge:read bridge:write');
-  authorizeUrl.searchParams.set('login_hint', 'local-dev');
+  authorizeUrl.searchParams.set('state', `routing-${Date.now()}`);
   const authorize = await fetch(authorizeUrl, { redirect: 'manual' });
-  const code = new URL(authorize.headers.get('location') ?? '').searchParams.get('code') ?? '';
+  const location = authorize.headers.get('location') ?? '';
+  const pairingId = new URL(location).searchParams.get('pairing_id') ?? '';
+  const connect = await fetch(`${baseUrl}/connect?pairing_id=${encodeURIComponent(pairingId)}`);
+  const pairingCode = (await connect.text()).match(/\b\d{3}-\d{3}\b/)?.[0] ?? '';
+  if (!pairingId || !pairingCode) {
+    throw new Error('OAuth authorize did not create a pairing code.');
+  }
+  return { pairingId, pairingCode, verifier };
+}
+
+async function approvePairing(baseUrl: string, pairingId: string, pairingCode: string) {
+  const pluginInstanceId = `plugin-${pairingId}`;
+  const pluginConnectionId = `conn-${pairingId}`;
+  const approval = await postJson(`${baseUrl}/pairing/approve`, {
+    pairingCode,
+    pluginInstanceId,
+    pluginConnectionId,
+    workspaceLabel: 'Routing smoke workspace',
+    accessScope: 'focused-rem-only',
+    trustedWriteMode: 'ask-every-write',
+  });
+  if (approval.response.status !== 200) {
+    throw new Error(`Pairing approval failed: ${approval.text}`);
+  }
+  const status = await fetch(`${baseUrl}/pairing/status?pairing_id=${encodeURIComponent(pairingId)}`);
+  const statusJson = await status.json() as { redirectUrl?: string };
+  const code = statusJson.redirectUrl ? new URL(statusJson.redirectUrl).searchParams.get('code') ?? '' : '';
+  if (!code) {
+    throw new Error('Approved pairing did not expose OAuth code.');
+  }
+  return {
+    code,
+    pluginInstanceId,
+    pluginConnectionId,
+    sessionSecret: approval.json.sessionSecret as string,
+  };
+}
+
+async function oauthToken(baseUrl: string, code: string, verifier: string, redirectUri: string): Promise<string> {
   const token = await postForm(`${baseUrl}/oauth/token`, {
     grant_type: 'authorization_code',
     code,
@@ -106,23 +103,25 @@ async function oauthToken(baseUrl: string): Promise<string> {
     resource: 'http://127.0.0.1',
   });
   if (token.response.status !== 200) {
-    throw new Error('Routing OAuth token failed.');
+    throw new Error(`Routing OAuth token failed: ${token.text}`);
   }
   return token.json.access_token;
 }
 
-async function connectHostedPlugin(wsUrl: string, session: { deviceId: string; pluginSessionId: string; pluginSessionToken: string }) {
+async function connectHostedPlugin(
+  wsUrl: string,
+  session: { pluginInstanceId: string; pluginConnectionId: string; sessionSecret: string }
+) {
   return new Promise<WebSocket>((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     ws.on('open', () => {
       ws.send(JSON.stringify({
-        type: 'plugin_hello',
-        protocolVersion: 1,
-        clientName: 'remnote-plugin',
-        deploymentMode: 'public_hosted_oauth',
-        deviceId: session.deviceId,
-        pluginSessionId: session.pluginSessionId,
-        pluginSessionToken: session.pluginSessionToken,
+        type: 'plugin_register',
+        pluginInstanceId: session.pluginInstanceId,
+        pluginConnectionId: session.pluginConnectionId,
+        sessionSecret: session.sessionSecret,
+        workspaceLabel: 'Routing smoke workspace',
+        supportedTools: ['ping'],
       }));
     });
     ws.on('message', (raw) => {
@@ -179,32 +178,38 @@ const wsUrl = `ws://127.0.0.1:${app.bridgePort}${app.config.bridgePath}`;
 let ws: WebSocket | undefined;
 
 try {
-  const cookies = await localDashboardCookies(baseUrl);
-  const session = await pairDevice(baseUrl, 'routing-device-a', cookies);
+  const redirectUri = 'https://client.example/callback';
+  const clientId = await registerClient(baseUrl, redirectUri);
+  const pairing = await authorizePairing(baseUrl, clientId, redirectUri);
+  const approved = await approvePairing(baseUrl, pairing.pairingId, pairing.pairingCode);
+  const token = await oauthToken(baseUrl, approved.code, pairing.verifier, redirectUri);
+
   const badSocket = new WebSocket(wsUrl);
   const badClosed = new Promise<boolean>((resolve) => {
     badSocket.on('close', (code) => resolve(code === 1008));
   });
   badSocket.on('open', () => {
     badSocket.send(JSON.stringify({
-      type: 'plugin_hello',
-      protocolVersion: 1,
-      clientName: 'remnote-plugin',
-      deploymentMode: 'public_hosted_oauth',
-      deviceId: 'bad-device',
-      pluginSessionId: 'bad-session',
-      pluginSessionToken: 'bad-token',
+      type: 'plugin_register',
+      pluginInstanceId: 'wrong-plugin',
+      pluginConnectionId: 'wrong-connection',
+      sessionSecret: approved.sessionSecret,
+      supportedTools: ['ping'],
     }));
   });
   if (!(await badClosed)) {
-    throw new Error('Invalid hosted plugin session was not rejected.');
+    throw new Error('Wrong plugin instance was not rejected.');
   }
 
-  ws = await connectHostedPlugin(wsUrl, session);
-  const token = await oauthToken(baseUrl);
+  const offlinePing = await callPing(`${baseUrl}${app.config.mcpPath}`, token);
+  if (!offlinePing.includes('RemNote plugin is not connected. Open RemNote and reconnect the ChatGPT Bridge plugin.')) {
+    throw new Error('Offline plugin did not return reconnect error.');
+  }
+
+  ws = await connectHostedPlugin(wsUrl, approved);
   const ping = await callPing(`${baseUrl}${app.config.mcpPath}`, token);
   if (!ping.includes('pong')) {
-    throw new Error('Hosted OAuth user did not route to paired plugin.');
+    throw new Error('Hosted OAuth session did not route to approved plugin.');
   }
 
   console.log('Routing smoke passed.');

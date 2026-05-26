@@ -30,6 +30,82 @@ export async function authorizeHostedMcpRequest(
   }
 
   const session = await storage.getSessionByAccessToken(token);
+  const pairingSession = session ? null : await storage.getChatGptPairingSessionByAccessToken(token);
+  if (pairingSession) {
+    if (pairingSession.revokedAt) {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Bearer token revoked.',
+        auditReason: 'revoked_oauth_token',
+      };
+    }
+
+    if (!pairingSession.accessTokenExpiresAt || new Date(pairingSession.accessTokenExpiresAt) <= new Date()) {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Bearer token expired.',
+        auditReason: 'expired_oauth_token',
+      };
+    }
+
+    if (config.oauthIssuer && pairingSession.resource && pairingSession.resource !== getExpectedMcpResource(req, config)) {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Bearer token audience mismatch.',
+        auditReason: 'oauth_audience_mismatch',
+      };
+    }
+
+    if (pairingSession.status !== 'approved' && pairingSession.status !== 'connected') {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Bearer token is not connected to an approved RemNote plugin.',
+        auditReason: 'pairing_not_approved',
+      };
+    }
+
+    const scopeGrants = pairingSession.approvedScopes.filter((scope): scope is ScopeGrant =>
+      [
+        'bridge:read',
+        'bridge:write',
+        'bridge:trusted_write',
+        'bridge:delete',
+        'bridge:pair',
+        'bridge:admin',
+      ].includes(scope)
+    );
+    const missingScope = requiredScopes.find((scope) => !scopeGrants.includes(scope));
+    if (missingScope) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: `Insufficient scope: ${missingScope}.`,
+        auditReason: 'insufficient_oauth_scope',
+      };
+    }
+
+    return {
+      ok: true,
+      principal: {
+        subject: `pairing:${pairingSession.pairingId}`,
+        userId: pairingSession.oauthSubject || pairingSession.pairingId,
+        authMode: 'hosted_oauth',
+        scopeGrants,
+        sessionId: pairingSession.pairingId,
+        deviceId: pairingSession.pluginConnectionId,
+        expiresAt: pairingSession.accessTokenExpiresAt,
+        pairingId: pairingSession.pairingId,
+        pluginInstanceId: pairingSession.pluginInstanceId,
+        accessScope: pairingSession.accessScope,
+        trustedWriteMode: pairingSession.trustedWriteMode,
+      },
+    };
+  }
+
   if (!session || session.tokenUse !== 'mcp_access') {
     return {
       ok: false,

@@ -21,10 +21,15 @@ import {
 import { BrowserBridgeClient } from '../bridge/client';
 import {
   clearHostedPairingSession,
+  approveChatGptPairing,
+  denyChatGptPairing,
+  disconnectChatGptPairing,
+  lookupChatGptPairing,
   finishHostedPairing,
   loadHostedPairingSession,
   startHostedPairing,
   type HostedPairingSession,
+  type ChatGptPairingPreview,
   type PendingPairingChallenge,
 } from '../bridge/pairing';
 import {
@@ -214,7 +219,10 @@ export function BridgeStatusWidget() {
   const [debugCopyStatus, setDebugCopyStatus] = useState('No debug copy yet.');
   const [hostedSession, setHostedSession] = useState<HostedPairingSession | null>(null);
   const [pendingPairing, setPendingPairing] = useState<PendingPairingChallenge | null>(null);
-  const [pairingEvent, setPairingEvent] = useState('Pair this RemNote only when using hosted OAuth mode.');
+  const [pairingEvent, setPairingEvent] = useState('Open ChatGPT connector auth, then enter the Render pairing code here.');
+  const [chatGptPairingCode, setChatGptPairingCode] = useState('');
+  const [localConnectionLabel, setLocalConnectionLabel] = useState('');
+  const [chatGptPairingPreview, setChatGptPairingPreview] = useState<ChatGptPairingPreview | null>(null);
   const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
@@ -515,11 +523,73 @@ export function BridgeStatusWidget() {
   };
 
   const handleClearPairing = async () => {
+    if (hostedSession) {
+      await disconnectChatGptPairing(serverUrl, hostedSession);
+    }
     await clearHostedPairingSession(plugin);
     setHostedSession(null);
     setPendingPairing(null);
     setPairingEvent('Hosted pairing cleared on this device.');
     await plugin.app.toast('Pairing cleared.');
+  };
+
+  const handleApproveChatGptPairing = async () => {
+    try {
+      const session = await approveChatGptPairing(plugin, serverUrl, {
+        pairingCode: chatGptPairingCode,
+        permissionMode,
+        permissionScope,
+        localConnectionLabel,
+        workspaceLabel: 'Active RemNote workspace',
+      });
+      setHostedSession(session);
+      setRuntimePermissionScope(
+        session.accessScope === 'full-kb'
+          ? 'workspace_allowed'
+          : session.accessScope === 'current-rem-tree'
+            ? 'focused_rem_and_descendants'
+            : 'focused_rem_only'
+      );
+      setRuntimePermissionMode(
+        session.trustedWriteMode === 'trusted-inside-scope' ? 'trusted_writes' : 'confirm_writes'
+      );
+      setPairingEvent(`Connected to ${session.connectedLabel || 'ChatGPT session'}.`);
+      setChatGptPairingCode('');
+      setChatGptPairingPreview(null);
+      await plugin.app.toast('ChatGPT connection approved.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPairingEvent(message);
+      await plugin.app.toast('ChatGPT pairing failed.');
+    }
+  };
+
+  const handleLookupChatGptPairing = async () => {
+    try {
+      const preview = await lookupChatGptPairing(serverUrl, chatGptPairingCode);
+      setChatGptPairingPreview(preview);
+      setPairingEvent(`Pending request from ${preview.connectionLabel}.`);
+      await plugin.app.toast('Pairing request found.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setChatGptPairingPreview(null);
+      setPairingEvent(message);
+      await plugin.app.toast('Pairing code not found.');
+    }
+  };
+
+  const handleDenyChatGptPairing = async () => {
+    try {
+      await denyChatGptPairing(serverUrl, chatGptPairingCode);
+      setPairingEvent('Connection denied.');
+      setChatGptPairingCode('');
+      setChatGptPairingPreview(null);
+      await plugin.app.toast('ChatGPT connection denied.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPairingEvent(message);
+      await plugin.app.toast('Could not deny pairing.');
+    }
   };
 
   const handleHealthCheck = async () => {
@@ -548,7 +618,13 @@ export function BridgeStatusWidget() {
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    if (hostedSession) {
+      await disconnectChatGptPairing(serverUrl, hostedSession);
+      await clearHostedPairingSession(plugin);
+      setHostedSession(null);
+      setPairingEvent('Disconnected. Open ChatGPT and reconnect the MCP connector, or enter a new pairing code.');
+    }
     setBridgeEnabled(false);
     clientRef.current?.disconnect();
   };
@@ -742,32 +818,69 @@ export function BridgeStatusWidget() {
         <section className="bridge-panel bridge-panel--notice">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
-              <h3>Pairing</h3>
-              <p>Hosted OAuth mode uses a per-device plugin session. Token stays in local storage.</p>
+              <h3>ChatGPT Bridge</h3>
+              <p>Enter the Render pairing code. RemNote plugin must approve before ChatGPT gets access.</p>
             </div>
             <span className={hostedSession ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
-              {hostedSession ? 'Paired' : 'Not paired'}
+              {hostedSession ? 'Connected' : 'Not connected'}
             </span>
           </div>
           <dl className="bridge-detail-list">
-            <DetailRow label="Device Session" value={hostedSession ? 'Stored locally' : 'Missing'} />
+            <DetailRow label="Status" value={hostedSession ? 'Connected to ChatGPT' : 'Not connected'} />
+            <DetailRow label="Connection" value={hostedSession?.connectedLabel ?? (localConnectionLabel || 'ChatGPT session')} />
+            <DetailRow label="Access Scope" value={getPermissionScopeLabel(permissionScope)} />
+            <DetailRow label="Write Mode" value={getPermissionModeLabel(permissionMode)} />
             <DetailRow label="Pairing Status" value={pairingEvent} />
-            {pendingPairing && (
+            {chatGptPairingPreview && !hostedSession && (
               <>
-                <DetailRow label="Pairing Code" value={pendingPairing.pairingCode} mono />
-                <DetailRow label="Expires" value={new Date(pendingPairing.expiresAt).toLocaleTimeString()} />
+                <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
+                <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
               </>
             )}
           </dl>
+          {!hostedSession && (
+            <div className="bridge-access-editor">
+              <label className="bridge-field">
+                Pairing code
+                <input
+                  className="bridge-confirm-input"
+                  value={chatGptPairingCode}
+                  onChange={(event) => {
+                    setChatGptPairingCode(event.target.value);
+                    setChatGptPairingPreview(null);
+                  }}
+                  placeholder="482-913"
+                  autoComplete="off"
+                />
+              </label>
+              <label className="bridge-field">
+                Local label
+                <input
+                  className="bridge-confirm-input"
+                  value={localConnectionLabel}
+                  onChange={(event) => setLocalConnectionLabel(event.target.value)}
+                  placeholder="My ChatGPT"
+                  autoComplete="off"
+                />
+              </label>
+            </div>
+          )}
           <div className="bridge-actions">
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleStartPairing}>
-              Pair RemNote
-            </button>
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleFinishPairing}>
-              Check Pairing
-            </button>
+            {!hostedSession && (
+              <>
+                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
+                  Check Code
+                </button>
+                <button type="button" className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
+                  Approve Connection
+                </button>
+                <button type="button" className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
+                  Deny
+                </button>
+              </>
+            )}
             <button type="button" className="bridge-button bridge-button-reject" onClick={handleClearPairing}>
-              Revoke Local Pairing
+              Disconnect ChatGPT
             </button>
           </div>
         </section>

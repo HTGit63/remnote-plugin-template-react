@@ -1,6 +1,7 @@
 import { createServer, type Server as HttpServer, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from './auth/local-token.js';
+import { handleChatGptPairingRoute } from './auth/chatgpt-pairing-routes.js';
 import { handleDashboardRoute } from './auth/dashboard-routes.js';
 import { handlePairingRoute } from './auth/pairing-routes.js';
 import { buildOauthChallenge, handleOAuthRoute } from './auth/oauth-routes.js';
@@ -22,6 +23,7 @@ import { ConsoleAuditLogger } from './sessions/audit-log.js';
 import type { AuditLogger } from './sessions/types.js';
 import { createStorageProvider, type StorageProvider } from './storage/index.js';
 import { getToolRegistrySummary, isPublicMcpToolName } from './tool-registry.js';
+import { validateMcpToolPermission } from './tool-permissions.js';
 import { getToolPolicyEntry } from './tool-policy.js';
 import { renderDashboard } from './dashboard/templates.js';
 
@@ -169,7 +171,10 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       return;
     }
 
-    if (req.headers.origin && !config.allowCors) {
+    if (
+      req.headers.origin &&
+      (!config.allowCors || !config.allowedOrigins.includes(String(req.headers.origin)))
+    ) {
       auditLogger?.record({
         type: 'mcp_request_rejected',
         timestamp: new Date().toISOString(),
@@ -177,9 +182,9 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         path: req.url,
         remoteAddress: req.socket.remoteAddress,
         statusCode: 403,
-        reason: 'cors_disabled',
+        reason: 'cors_forbidden',
       });
-      writeText(res, 403, 'Browser origins are not allowed unless CORS is explicitly enabled.');
+      writeText(res, 403, 'Browser origin is not allowed.');
       return;
     }
 
@@ -243,6 +248,31 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         startedAt,
       });
       return;
+    }
+
+    if (
+      url.pathname === '/connect' ||
+      url.pathname === '/connected' ||
+      url.pathname === '/denied' ||
+      url.pathname === '/expired' ||
+      url.pathname === '/debug/status' ||
+      url.pathname.startsWith('/pairing/')
+    ) {
+      if (req.method === 'OPTIONS') {
+        const corsAllowed = applyCors(req, res, config);
+        setSecurityHeaders(res);
+        res.writeHead(corsAllowed ? 204 : 403);
+        res.end();
+        return;
+      }
+      applyCors(req, res, config);
+      if (url.pathname.startsWith('/pairing/') && !rateLimitRequest(req, res, config, 'pairing')) {
+        return;
+      }
+      const handled = await handleChatGptPairingRoute(req, res, url, { config, storage });
+      if (handled) {
+        return;
+      }
     }
 
     if (url.pathname === '/health' && req.method === 'GET') {
@@ -362,6 +392,21 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       writeJson(res, auth.statusCode, {
         error: auth.error,
       });
+      return;
+    }
+
+    const toolPermission = validateMcpToolPermission(body, auth.principal);
+    if (!toolPermission.ok) {
+      auditLogger?.record({
+        type: 'mcp_request_rejected',
+        timestamp: new Date().toISOString(),
+        method: req.method,
+        path: url.pathname,
+        remoteAddress: req.socket.remoteAddress,
+        statusCode: 403,
+        reason: toolPermission.auditReason,
+      });
+      writeJson(res, 403, { error: toolPermission.error });
       return;
     }
 

@@ -11,7 +11,7 @@ export class ConsoleAuditLogger implements AuditLogger {
       withoutUndefined({
         type: event.type,
         timestamp: event.timestamp,
-        actorSubject: event.actor?.subject,
+        actorSubject: event.actor?.subject ? '[REDACTED]' : undefined,
         authMode: event.actor?.authMode,
         method: event.method,
         path: event.path,

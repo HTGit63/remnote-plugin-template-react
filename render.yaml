@@ -11,21 +11,37 @@ services:
         value: "1"
       - key: REMNOTE_BRIDGE_HOST
         value: "0.0.0.0"
-      - key: REMNOTE_BRIDGE_TOKEN
-        sync: false
       - key: REMNOTE_BRIDGE_ALLOW_NO_TOKEN
         value: "0"
       - key: REMNOTE_BRIDGE_ALLOW_REMOTE
         value: "1"
       - key: REMNOTE_BRIDGE_ALLOW_CORS
         value: "1"
-      - key: REMNOTE_BRIDGE_ALLOWED_ORIGINS
-        value: "https://chatgpt.com,https://chat.openai.com"
+      - key: ALLOWED_ORIGINS
+        value: "https://chatgpt.com,https://chat.openai.com,https://www.remnote.com"
+      - key: REMNOTE_BRIDGE_DEPLOYMENT_MODE
+        value: "public_hosted_oauth"
+      - key: REMNOTE_BRIDGE_STORAGE
+        value: "postgres"
+      - key: PLUGIN_WS_PATH
+        value: "/remnote"
+      - key: REMNOTE_BRIDGE_MCP_PATH
+        value: "/mcp"
       - key: REMNOTE_BRIDGE_TOOL_PROFILE
         value: "simple"
       - key: REMNOTE_BRIDGE_ENABLE_DELETE_TOOL
         value: "0"
       - key: REMNOTE_BRIDGE_AUDIT_LOG
         value: "1"
-      - key: REMNOTE_BRIDGE_HOSTED_MODE
-        value: "0"
+      - key: SESSION_SECRET
+        sync: false
+      - key: ADMIN_DEBUG_SECRET
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: MCP_SERVER_URL
+        sync: false
+      - key: OAUTH_ISSUER
+        sync: false

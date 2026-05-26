@@ -1,6 +1,7 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
   type BridgePluginHello,
+  type BridgePluginRegister,
   type BridgeCancelRequest,
   type BridgeRequest,
   type BridgeResponse,
@@ -10,6 +11,7 @@ import {
   type PermissionScope,
   type ApprovalResolution,
   createBridgeFailure,
+  BRIDGE_TOOL_NAMES,
 } from './protocol';
 import { type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
@@ -169,6 +171,21 @@ export class BrowserBridgeClient {
 
   private sendHello() {
     const hostedSession = this.options.hostedSession;
+    if (hostedSession?.sessionSecret) {
+      const register: BridgePluginRegister = {
+        type: 'plugin_register',
+        pluginInstanceId: hostedSession.pluginInstanceId || hostedSession.deviceId,
+        pluginConnectionId: hostedSession.pluginConnectionId || hostedSession.pluginSessionId || `conn_${Date.now().toString(36)}`,
+        sessionSecret: hostedSession.sessionSecret,
+        workspaceLabel: hostedSession.deviceName || 'Active RemNote workspace',
+        supportedTools: [...BRIDGE_TOOL_NAMES],
+        accessScope: hostedSession.accessScope,
+        trustedWriteMode: hostedSession.trustedWriteMode,
+      };
+      this.send(register);
+      return;
+    }
+
     const hello: BridgePluginHello = {
       type: 'plugin_hello',
       protocolVersion: PROTOCOL_VERSION,

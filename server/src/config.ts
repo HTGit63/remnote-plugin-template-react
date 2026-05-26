@@ -25,6 +25,15 @@ export interface CompanionServerConfig {
   oauthTokenUrl: string;
   oauthUserinfoUrl: string;
   oauthProvider: string;
+  sessionSecret: string;
+  adminDebugSecret: string;
+  pairingCodeTtlSeconds: number;
+  authorizationCodeTtlSeconds: number;
+  nodeEnv: string;
+  logLevel: string;
+  redactSecretsInLogs: boolean;
+  pluginHeartbeatIntervalSeconds: number;
+  pluginHeartbeatTimeoutSeconds: number;
 
   bindHost: string;
   port: number;
@@ -58,6 +67,10 @@ const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
 const DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 3600;
+const DEFAULT_PAIRING_CODE_TTL_SECONDS = 600;
+const DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS = 300;
+const DEFAULT_PLUGIN_HEARTBEAT_INTERVAL_SECONDS = 30;
+const DEFAULT_PLUGIN_HEARTBEAT_TIMEOUT_SECONDS = 90;
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -106,12 +119,8 @@ export function validateConfig(config: CompanionServerConfig): void {
     if (config.bridgeToken) {
       throw new Error('public_hosted_oauth mode must not use REMNOTE_BRIDGE_TOKEN as public MCP auth.');
     }
-    if (!config.allowNoToken || !publicBaseIsLoopback) {
-      if (!config.oauthClientId || !config.oauthClientSecret || !config.oauthAuthUrl || !config.oauthTokenUrl || !config.oauthUserinfoUrl) {
-        throw new Error(
-          'public_hosted_oauth mode requires dashboard OAuth provider env: REMNOTE_BRIDGE_OAUTH_CLIENT_ID, REMNOTE_BRIDGE_OAUTH_CLIENT_SECRET, REMNOTE_BRIDGE_OAUTH_AUTH_URL, REMNOTE_BRIDGE_OAUTH_TOKEN_URL, and REMNOTE_BRIDGE_OAUTH_USERINFO_URL.'
-        );
-      }
+    if (!config.sessionSecret && !(config.allowNoToken && publicBaseIsLoopback)) {
+      throw new Error('public_hosted_oauth mode requires SESSION_SECRET or REMNOTE_BRIDGE_SESSION_SECRET.');
     }
   }
 
@@ -163,9 +172,12 @@ export function validateConfig(config: CompanionServerConfig): void {
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServerConfig {
+  const nodeEnv = env.NODE_ENV?.trim() || 'development';
   const allowRemote = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_REMOTE);
   const allowCors = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_CORS);
-  const allowNoToken = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_NO_TOKEN);
+  const allowNoToken =
+    boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_NO_TOKEN) ||
+    (nodeEnv === 'development' && boolFromEnv(env.ALLOW_DEV_NO_AUTH));
   const bridgeToken = env.REMNOTE_BRIDGE_TOKEN?.trim() ?? '';
   const bindHost = env.REMNOTE_BRIDGE_HOST?.trim() || '127.0.0.1';
   const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
@@ -189,19 +201,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   }
 
   // Canonical URLs
-  const publicBaseUrl = env.REMNOTE_BRIDGE_PUBLIC_BASE_URL?.trim() || '';
-  const mcpResource = env.REMNOTE_BRIDGE_MCP_RESOURCE?.trim() || publicBaseUrl;
+  const publicBaseUrl = env.REMNOTE_BRIDGE_PUBLIC_BASE_URL?.trim() || env.PUBLIC_BASE_URL?.trim() || '';
+  const mcpServerUrl = env.MCP_SERVER_URL?.trim() || '';
+  const mcpResource = env.REMNOTE_BRIDGE_MCP_RESOURCE?.trim() || mcpServerUrl || publicBaseUrl;
   const dashboardUrl = env.REMNOTE_BRIDGE_DASHBOARD_URL?.trim() || (publicBaseUrl ? `${publicBaseUrl}/dashboard` : '');
 
   // Persistent storage & OAuth placeholder variables
   const databaseUrl = env.DATABASE_URL?.trim() || '';
-  const oauthIssuer = env.REMNOTE_BRIDGE_OAUTH_ISSUER?.trim() || publicBaseUrl;
+  const oauthIssuer = env.REMNOTE_BRIDGE_OAUTH_ISSUER?.trim() || env.OAUTH_ISSUER?.trim() || publicBaseUrl;
   const oauthAccessTokenTtlSeconds = numberFromEnv(
-    env.REMNOTE_BRIDGE_OAUTH_ACCESS_TOKEN_TTL_SECONDS,
+    env.REMNOTE_BRIDGE_OAUTH_ACCESS_TOKEN_TTL_SECONDS ?? env.ACCESS_TOKEN_TTL_SECONDS,
     DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS
   );
   const oauthRefreshTokenTtlSeconds = numberFromEnv(
-    env.REMNOTE_BRIDGE_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
+    env.REMNOTE_BRIDGE_OAUTH_REFRESH_TOKEN_TTL_SECONDS ?? env.REFRESH_TOKEN_TTL_SECONDS,
     DEFAULT_OAUTH_REFRESH_TOKEN_TTL_SECONDS
   );
   const oauthClientId = env.REMNOTE_BRIDGE_OAUTH_CLIENT_ID?.trim() || '';
@@ -210,6 +223,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   const oauthTokenUrl = env.REMNOTE_BRIDGE_OAUTH_TOKEN_URL?.trim() || '';
   const oauthUserinfoUrl = env.REMNOTE_BRIDGE_OAUTH_USERINFO_URL?.trim() || '';
   const oauthProvider = env.REMNOTE_BRIDGE_OAUTH_PROVIDER?.trim() || 'google';
+  const sessionSecret = env.REMNOTE_BRIDGE_SESSION_SECRET?.trim() || env.SESSION_SECRET?.trim() || '';
+  const adminDebugSecret = env.ADMIN_DEBUG_SECRET?.trim() || env.REMNOTE_BRIDGE_ADMIN_DEBUG_SECRET?.trim() || '';
 
   const config = {
     deploymentMode,
@@ -233,7 +248,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     bridgePort: numberFromEnv(env.REMNOTE_BRIDGE_WS_PORT, DEFAULT_BRIDGE_PORT),
     mcpPort: numberFromEnv(env.REMNOTE_BRIDGE_MCP_PORT, DEFAULT_MCP_PORT),
     singlePort,
-    bridgePath: env.REMNOTE_BRIDGE_WS_PATH?.trim() || '/remnote-bridge',
+    bridgePath: env.REMNOTE_BRIDGE_WS_PATH?.trim() || env.PLUGIN_WS_PATH?.trim() || '/remnote-bridge',
     mcpPath: env.REMNOTE_BRIDGE_MCP_PATH?.trim() || '/mcp',
     bridgeToken,
     toolProfile: normalizeToolProfile(env.REMNOTE_BRIDGE_TOOL_PROFILE ?? DEFAULT_TOOL_PROFILE),
@@ -243,7 +258,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     enableDeleteTool: boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_DELETE_TOOL),
     hostedMode,
     auditLog: env.REMNOTE_BRIDGE_AUDIT_LOG === undefined ? true : boolFromEnv(env.REMNOTE_BRIDGE_AUDIT_LOG),
-    allowedOrigins: listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS),
+    allowedOrigins: listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS ?? env.ALLOWED_ORIGINS),
     requestTimeoutMs: numberFromEnv(env.REMNOTE_BRIDGE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
     maxBodyBytes: numberFromEnv(env.REMNOTE_BRIDGE_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES),
     maxBridgeMessageBytes: numberFromEnv(
@@ -252,6 +267,24 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     ),
     rateLimitWindowMs: numberFromEnv(env.REMNOTE_BRIDGE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS),
     rateLimitMaxRequests: numberFromEnv(env.REMNOTE_BRIDGE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS),
+    sessionSecret,
+    adminDebugSecret,
+    pairingCodeTtlSeconds: numberFromEnv(env.PAIRING_CODE_TTL_SECONDS, DEFAULT_PAIRING_CODE_TTL_SECONDS),
+    authorizationCodeTtlSeconds: numberFromEnv(
+      env.AUTHORIZATION_CODE_TTL_SECONDS,
+      DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS
+    ),
+    nodeEnv,
+    logLevel: env.LOG_LEVEL?.trim() || 'info',
+    redactSecretsInLogs: env.REDACT_SECRETS_IN_LOGS === undefined ? true : boolFromEnv(env.REDACT_SECRETS_IN_LOGS),
+    pluginHeartbeatIntervalSeconds: numberFromEnv(
+      env.PLUGIN_HEARTBEAT_INTERVAL_SECONDS,
+      DEFAULT_PLUGIN_HEARTBEAT_INTERVAL_SECONDS
+    ),
+    pluginHeartbeatTimeoutSeconds: numberFromEnv(
+      env.PLUGIN_HEARTBEAT_TIMEOUT_SECONDS,
+      DEFAULT_PLUGIN_HEARTBEAT_TIMEOUT_SECONDS
+    ),
   };
   return config;
 }

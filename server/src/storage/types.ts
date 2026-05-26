@@ -51,6 +51,70 @@ export interface McpAuthorizationCode {
   consumedAt?: string;
 }
 
+export type ChatGptPairingStatus =
+  | 'pending'
+  | 'approved'
+  | 'denied'
+  | 'expired'
+  | 'connected'
+  | 'disconnected';
+
+export type ChatGptAccessScope =
+  | 'focused-rem-only'
+  | 'current-rem-tree'
+  | 'full-kb';
+
+export type ChatGptTrustedWriteMode =
+  | 'ask-every-write'
+  | 'trusted-inside-scope';
+
+export interface ChatGptPairingSession {
+  pairingId: string;
+  pairingCodeHash: string;
+  oauthState: string;
+  codeChallenge?: string;
+  codeChallengeMethod?: 'S256' | 'plain';
+  clientId: string;
+  clientName?: string;
+  chatgptDisplayName?: string;
+  localConnectionLabel?: string;
+
+  status: ChatGptPairingStatus;
+
+  createdAt: string;
+  expiresAt: string;
+  approvedAt?: string;
+  connectedAt?: string;
+  disconnectedAt?: string;
+  lastSeenAt?: string;
+
+  pluginInstanceId?: string;
+  pluginConnectionId?: string;
+  pluginSessionSecretHash?: string;
+  workspaceLabel?: string;
+
+  requestedScopes: string[];
+  approvedScopes: string[];
+
+  accessScope: ChatGptAccessScope;
+  trustedWriteMode: ChatGptTrustedWriteMode;
+
+  authorizationCodeHash?: string;
+  authorizationCodeExpiresAt?: string;
+  authorizationCodeConsumedAt?: string;
+  accessTokenHash?: string;
+  accessTokenExpiresAt?: string;
+  refreshTokenHash?: string;
+  refreshTokenExpiresAt?: string;
+
+  redirectUri?: string;
+  resource?: string;
+  oauthSubject?: string;
+  failedAttempts?: number;
+  lockedUntil?: string;
+  revokedAt?: string;
+}
+
 export interface StoredAuditEvent {
   id: string;
   type: string;
@@ -108,6 +172,21 @@ export interface StorageProvider {
   getMcpClient(clientId: string): Promise<McpClient | null>;
   createMcpAuthorizationCode(code: McpAuthorizationCode): Promise<void>;
   consumeMcpAuthorizationCode(code: string): Promise<McpAuthorizationCode | null>;
+
+  // ChatGPT MCP OAuth + RemNote plugin pairing operations
+  createChatGptPairingSession(session: ChatGptPairingSession): Promise<ChatGptPairingSession>;
+  getChatGptPairingSessionById(pairingId: string): Promise<ChatGptPairingSession | null>;
+  getChatGptPairingSessionByPairingCode(pairingCode: string): Promise<ChatGptPairingSession | null>;
+  getChatGptPairingSessionByAuthorizationCode(code: string): Promise<ChatGptPairingSession | null>;
+  getChatGptPairingSessionByAccessToken(accessToken: string): Promise<ChatGptPairingSession | null>;
+  getChatGptPairingSessionByRefreshToken(refreshToken: string): Promise<ChatGptPairingSession | null>;
+  getChatGptPairingSessionByPluginSessionSecret(sessionSecret: string): Promise<ChatGptPairingSession | null>;
+  consumeChatGptPairingAuthorizationCode(code: string): Promise<ChatGptPairingSession | null>;
+  updateChatGptPairingSession(
+    pairingId: string,
+    updates: Partial<Omit<ChatGptPairingSession, 'pairingId' | 'createdAt'>>
+  ): Promise<ChatGptPairingSession>;
+  listChatGptPairingSessions(limit?: number): Promise<ChatGptPairingSession[]>;
 
   // Audit and idempotency operations
   createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent>;

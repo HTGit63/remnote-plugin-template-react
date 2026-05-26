@@ -1,48 +1,46 @@
 # Pairing Flow
 
-Status: repo/local pairing smoke complete on 2026-05-26.
+Status: ChatGPT-started pairing is implemented. Legacy dashboard pairing routes under `/api/pair/*` remain for compatibility.
 
-## Actors
+## ChatGPT-Started Flow
 
-```text
-Dashboard user session
-RemNote plugin device
-Companion server storage
-BridgeHub SessionRouter
-```
-
-## Flow
-
-1. Plugin gets/creates local `deviceId`.
-2. Plugin calls `POST /api/pair/start` with `deviceId` and device name.
-3. Server creates short-lived numeric pairing code.
-4. User opens dashboard pairing page.
-5. Dashboard calls `POST /api/pair/confirm` with code and CSRF token.
-6. Server binds code to dashboard user, creates plugin session ID/token, and marks code confirmed.
-7. Dashboard response does not include `pluginSessionToken`.
-8. Plugin calls `POST /api/pair/status` with code and same `deviceId`.
-9. Server returns plugin credentials once.
-10. Plugin stores credentials in RemNote local storage.
-11. Plugin opens WSS and sends hosted hello with `deviceId`, `pluginSessionId`, and `pluginSessionToken`.
-12. Server validates and registers connection for that user.
+1. ChatGPT starts OAuth at `/oauth/authorize`.
+2. Server creates `ChatGptPairingSession` with hashed pairing code.
+3. Browser lands on `/connect?pairing_id=...`.
+4. `/connect` displays the one-time code, for example `482-913`.
+5. User opens RemNote plugin and enters the code.
+6. Plugin sends `POST /pairing/approve` with:
+   - plugin instance ID
+   - plugin connection ID
+   - selected access scope
+   - selected write mode
+   - workspace label
+7. Server hashes plugin session secret and returns raw secret once to the plugin.
+8. `/connect` polls `/pairing/status`, receives OAuth redirect URL, and returns to ChatGPT.
+9. ChatGPT exchanges code at `/oauth/token`.
+10. Plugin opens WebSocket and sends `plugin_register`.
+11. Server routes MCP calls only to that pairing/plugin instance.
 
 ## Security Rules
 
-- pairing code expires;
-- code is one-time credential delivery;
-- dashboard never receives plugin session token;
-- plugin token stored in local plugin storage, not synced settings;
-- revoke marks session unusable;
-- invalid or revoked plugin WebSocket hello closes with policy violation;
-- public-hosted tool calls route only to authenticated user's paired plugin.
+- Pairing code expires in 10 minutes by default.
+- Pairing code is one-time use.
+- Raw pairing code is shown only on initial connect page.
+- Authorization code, access token, refresh token, and plugin session secret are stored hashed.
+- Wrong code attempts are rate-limited.
+- Plugin instance ID must match approved pairing.
+- Stale/offline plugin connections do not receive calls.
+- Display labels are not identity.
 
-## Test
+## Plugin Offline Error
 
-```bash
-npm run server:test:pairing
-npm run server:test:routing
+```text
+RemNote plugin is not connected. Open RemNote and reconnect the ChatGPT Bridge plugin.
 ```
 
-## Remaining External Proof
+## Tests
 
-Run same flow with hosted dashboard + real RemNote plugin. Local smoke cannot prove browser/plugin runtime storage behavior inside production RemNote.
+```bash
+npm run server:test:auth
+npm run server:test:routing
+```

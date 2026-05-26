@@ -34,20 +34,27 @@ Do not pretend hosted public mode is complete until OAuth, pairing, persistent s
 Repo-side implementation status:
 
 ```text
-Phase 7: complete - OAuth protected-resource metadata, authorization-server metadata, DCR, PKCE auth-code, refresh rotation, revoke, bearer validation, scope checks, resource/audience checks.
+Phase 7: complete - OAuth protected-resource metadata, authorization-server metadata, DCR, PKCE auth-code gated by RemNote plugin pairing approval, refresh rotation, revoke, bearer validation, scope checks, resource/audience checks.
 Phase 8: complete - trusted focused/selected mode preserved, recommended mode exposed, destructive operations remain approval gated, plugin remains final scope authority.
 Phase 9: complete - hosted session router wired into BridgeHub, paired plugin routing by user, reconnect/status states added, idempotency records stored without note content.
 Phase 10: complete - rate limits, CSRF, security headers, body/payload limits, pairing one-time delivery, revocation, token expiry, no-token public guard.
-Phase 11: complete - dashboard/pairing routes, plugin hosted pairing panel, recommended mode, status labels, local secret storage for plugin session token.
+Phase 11: complete - /connect pairing page, /pairing approval routes, plugin hosted pairing panel, recommended mode, status labels, local secret storage for plugin session secret.
 Phase 12: complete at repo/local smoke level - auth, pairing, routing, server smoke, build, type, plugin validation, diff, and audit gates added/run.
 ```
+
+Current hosted-auth wording:
+
+```text
+ChatGPT MCP OAuth + RemNote Plugin Pairing
+```
+
+Do not call this RemNote OAuth. Render cannot access RemNote by itself; RemNote note access comes through the active paired plugin and RemNote Plugin SDK.
 
 External proof still required before public launch wording:
 
 ```text
 real hosted PostgreSQL DATABASE_URL
 real public HTTPS/WSS Render deployment
-real dashboard OAuth provider credentials and callback
 live RemNote sandbox with plugin connected
 ChatGPT Developer Mode OAuth/MCP run through hosted URL
 privacy policy/support URL/screenshots for submission

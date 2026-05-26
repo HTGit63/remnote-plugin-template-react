@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+  ChatGptPairingSession,
   IdempotencyRecord,
   McpAuthorizationCode,
   McpClient,
@@ -17,6 +18,7 @@ export class MemoryStorageProvider implements StorageProvider {
   private challenges = new Map<string, PairingChallenge>();
   private clients = new Map<string, McpClient>();
   private authorizationCodes = new Map<string, McpAuthorizationCode>();
+  private chatGptPairingSessions = new Map<string, ChatGptPairingSession>();
   private auditEvents: StoredAuditEvent[] = [];
   private idempotencyRecords = new Map<string, IdempotencyRecord>();
 
@@ -163,6 +165,81 @@ export class MemoryStorageProvider implements StorageProvider {
     return consumed;
   }
 
+  async createChatGptPairingSession(
+    session: ChatGptPairingSession
+  ): Promise<ChatGptPairingSession> {
+    const stored = this.clonePairing(session);
+    this.chatGptPairingSessions.set(stored.pairingId, stored);
+    return this.clonePairing(stored);
+  }
+
+  async getChatGptPairingSessionById(pairingId: string): Promise<ChatGptPairingSession | null> {
+    const session = this.chatGptPairingSessions.get(pairingId);
+    return session ? this.clonePairing(session) : null;
+  }
+
+  async getChatGptPairingSessionByPairingCode(pairingCode: string): Promise<ChatGptPairingSession | null> {
+    const targetHash = hashToken(pairingCode);
+    return this.findPairingByHash('pairingCodeHash', targetHash);
+  }
+
+  async getChatGptPairingSessionByAuthorizationCode(code: string): Promise<ChatGptPairingSession | null> {
+    return this.findPairingByHash('authorizationCodeHash', hashToken(code));
+  }
+
+  async getChatGptPairingSessionByAccessToken(accessToken: string): Promise<ChatGptPairingSession | null> {
+    return this.findPairingByHash('accessTokenHash', hashToken(accessToken));
+  }
+
+  async getChatGptPairingSessionByRefreshToken(refreshToken: string): Promise<ChatGptPairingSession | null> {
+    return this.findPairingByHash('refreshTokenHash', hashToken(refreshToken));
+  }
+
+  async getChatGptPairingSessionByPluginSessionSecret(sessionSecret: string): Promise<ChatGptPairingSession | null> {
+    return this.findPairingByHash('pluginSessionSecretHash', hashToken(sessionSecret));
+  }
+
+  async consumeChatGptPairingAuthorizationCode(code: string): Promise<ChatGptPairingSession | null> {
+    const targetHash = hashToken(code);
+    for (const session of this.chatGptPairingSessions.values()) {
+      if (session.authorizationCodeHash !== targetHash || session.authorizationCodeConsumedAt) {
+        continue;
+      }
+
+      const updated: ChatGptPairingSession = {
+        ...session,
+        authorizationCodeConsumedAt: new Date().toISOString(),
+      };
+      this.chatGptPairingSessions.set(session.pairingId, updated);
+      return this.clonePairing(updated);
+    }
+    return null;
+  }
+
+  async updateChatGptPairingSession(
+    pairingId: string,
+    updates: Partial<Omit<ChatGptPairingSession, 'pairingId' | 'createdAt'>>
+  ): Promise<ChatGptPairingSession> {
+    const session = this.chatGptPairingSessions.get(pairingId);
+    if (!session) {
+      throw new Error(`ChatGPT pairing session with ID ${pairingId} not found.`);
+    }
+
+    const updated: ChatGptPairingSession = {
+      ...session,
+      ...updates,
+    };
+    this.chatGptPairingSessions.set(pairingId, updated);
+    return this.clonePairing(updated);
+  }
+
+  async listChatGptPairingSessions(limit = 50): Promise<ChatGptPairingSession[]> {
+    return Array.from(this.chatGptPairingSessions.values())
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, limit)
+      .map((session) => this.clonePairing(session));
+  }
+
   async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
     const stored: StoredAuditEvent = {
       id: randomUUID(),
@@ -197,5 +274,25 @@ export class MemoryStorageProvider implements StorageProvider {
 
   private idempotencyKey(userId: string, tool: string, idempotencyKey: string): string {
     return `${userId}\u0000${tool}\u0000${idempotencyKey}`;
+  }
+
+  private async findPairingByHash(
+    key: 'pairingCodeHash' | 'authorizationCodeHash' | 'accessTokenHash' | 'refreshTokenHash' | 'pluginSessionSecretHash',
+    hash: string
+  ): Promise<ChatGptPairingSession | null> {
+    for (const session of this.chatGptPairingSessions.values()) {
+      if (session[key] === hash && !session.revokedAt) {
+        return this.clonePairing(session);
+      }
+    }
+    return null;
+  }
+
+  private clonePairing(session: ChatGptPairingSession): ChatGptPairingSession {
+    return {
+      ...session,
+      requestedScopes: [...session.requestedScopes],
+      approvedScopes: [...session.approvedScopes],
+    };
   }
 }
