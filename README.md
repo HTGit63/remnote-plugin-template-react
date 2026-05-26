@@ -18,6 +18,38 @@ The bridge must make RemNote usable for high-quality note generation, editing, r
 
 ---
 
+# 0.0 Hosted Auth Status - 2026-05-26
+
+`Agents.md` hosted-auth Phases 7-12 are complete at repo/local smoke level.
+
+Implemented:
+
+```text
+public_hosted_oauth config mode
+OAuth protected-resource and authorization-server metadata
+DCR client registration
+authorization-code + PKCE S256
+opaque hashed access/refresh tokens
+refresh-token rotation and revoke
+MCP bearer validation with 401 challenge and 403 scope rejection
+per-user hosted plugin routing through SessionRouter
+plugin pairing with token delivery only to plugin local storage
+trusted focused/selected write mode preserved
+rate limits, CSRF, security headers, body limits, revocation, idempotency records
+PostgreSQL storage support with pg dependency
+```
+
+Still required before public launch/submission wording:
+
+```text
+real PostgreSQL DATABASE_URL
+real HTTPS/WSS Render deployment
+real dashboard OAuth provider credentials
+live RemNote sandbox plugin test
+ChatGPT Developer Mode OAuth/MCP run
+privacy policy, support URL, screenshots
+```
+
 # 0. Current Product Truth
 
 ## 0.1 Current architecture
@@ -113,14 +145,14 @@ diagnostics tools
 The remaining real issues are:
 
 ```text
-connection flicker / PLUGIN_NOT_CONNECTED during some calls
+connection flicker / PLUGIN_NOT_CONNECTED when no live RemNote plugin is connected
 search_rems scope leakage outside focused/context root
 delete_rem_by_id real delete needs final stable verification
 clear_rem_formatting is partial because the installed SDK cannot fully reset all Rem-level state
 create_folder remains SDK_UNSUPPORTED because the installed SDK does not expose folder creation
 live RemNote sandbox health-check proof is still required
-public hosted mode still needs OAuth, pairing, per-user sessions, and revocation
-code needs modular cleanup after behavior is frozen
+public hosted mode now has repo/local OAuth, pairing, per-user routing, revocation, and smoke tests
+public hosted mode still needs external Render, RemNote sandbox, and ChatGPT Developer Mode proof
 ```
 
 2026-05-17 final-polish phases 3, 4, and 5 are complete at repo and mock-runtime level:

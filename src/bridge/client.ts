@@ -13,6 +13,7 @@ import {
 } from './protocol';
 import { type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
+import type { HostedPairingSession } from './pairing';
 
 const PROTOCOL_VERSION = 1;
 const INITIAL_RECONNECT_MS = 500;
@@ -22,6 +23,7 @@ export interface BrowserBridgeClientOptions {
   plugin: RNPlugin;
   serverUrl: string;
   token?: string;
+  hostedSession?: HostedPairingSession | null;
   getPermissionMode: () => PermissionMode;
   getPermissionScope: () => PermissionScope;
   getApprovedRootRemId: () => string | null;
@@ -145,7 +147,7 @@ export class BrowserBridgeClient {
 
     this.ws.addEventListener('open', () => {
       this.reconnectDelayMs = INITIAL_RECONNECT_MS;
-      this.updateStatus('connected', 'Connected to local companion server.');
+      this.updateStatus('connected', 'Connected to companion server.');
       this.sendHello();
     });
 
@@ -161,16 +163,26 @@ export class BrowserBridgeClient {
 
     this.ws.addEventListener('close', () => {
       this.ws = undefined;
-      this.scheduleReconnect('Disconnected from local companion server.');
+      this.scheduleReconnect('Disconnected from companion server.');
     });
   }
 
   private sendHello() {
+    const hostedSession = this.options.hostedSession;
     const hello: BridgePluginHello = {
       type: 'plugin_hello',
       protocolVersion: PROTOCOL_VERSION,
       clientName: 'remnote-plugin',
-      ...(this.options.token ? { token: this.options.token } : {}),
+      ...(hostedSession
+        ? {
+            deploymentMode: 'public_hosted_oauth' as const,
+            deviceId: hostedSession.deviceId,
+            pluginSessionId: hostedSession.pluginSessionId,
+            pluginSessionToken: hostedSession.pluginSessionToken,
+          }
+        : this.options.token
+          ? { token: this.options.token }
+          : {}),
     };
     this.send(hello);
   }

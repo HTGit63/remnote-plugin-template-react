@@ -128,30 +128,35 @@ The local server is constrained by default:
 - enforces WebSocket message size limits;
 - times out plugin bridge requests;
 - records recent request outcomes and health-check results without note bodies or markdown;
-- keeps only one active plugin WebSocket connection.
+- keeps only one active plugin WebSocket connection in local/personal mode.
+- routes public-hosted MCP calls only to the authenticated user's paired plugin session.
 - supports personal hosted single-port mode only when remote access, CORS allowlist, and `REMNOTE_BRIDGE_TOKEN` are explicitly configured.
-- fails startup if `REMNOTE_BRIDGE_HOSTED_MODE=1` is enabled before real OAuth/pairing support exists.
+- supports public-hosted OAuth mode only with HTTPS public URL, MCP resource, PostgreSQL storage, `DATABASE_URL`, and no static `REMNOTE_BRIDGE_TOKEN`.
 
 Use a generated `REMNOTE_BRIDGE_TOKEN` and enter the same value in the plugin's `Bridge Token` setting for real use.
 
-Personal Render hosting may use a static token for one user. Public multi-user hosting still requires OAuth, pairing, per-user sessions, revocation, rate limiting, privacy policy, and support contact before production-ready wording is allowed.
+Personal Render hosting may use a static token for one user. Public multi-user hosting now has repo/local OAuth, pairing, per-user routing, revocation, and rate limiting. Public launch still requires real provider credentials, hosted PostgreSQL, Render proof, live RemNote proof, privacy policy, support contact, and screenshots.
 
-## Phase 7 Release Readiness Status
+## Hosted-Auth Release Readiness Status
 
-Local automated safety gates passed on 2026-05-17:
+Repo/local automated gates for hosted-auth Phases 7-12 include:
 
 - `npm run check-types`
 - `npm run validate`
 - `npm run build` with existing webpack asset-size warnings
 - `npm run server:build`
 - `npm run server:smoke`
+- `npm run server:test:auth`
+- `npm run server:test:pairing`
+- `npm run server:test:routing`
+- `npm run server:test:security`
 - `npm audit`
 - `npm audit --omit=dev`
 - `git diff --check`
 
-`npm run bridge:live-test` reached the local MCP endpoint after the companion server was started and passed `tools/list`, `get_bridge_status`, and `get_bridge_diagnostics`. It still failed plugin tools with `PLUGIN_NOT_CONNECTED` because no live RemNote plugin session was connected. Do not convert that into live RemNote proof.
+`npm run bridge:live-test` is still live-runtime proof, not repo proof. If no live RemNote plugin session is connected, `PLUGIN_NOT_CONNECTED` is expected and must not be converted into live RemNote proof.
 
-Before public or stronger hosted release wording, run the live RemNote sandbox health checks, ChatGPT Developer Mode golden prompts, and Render hosted endpoint checks.
+Before public or stronger hosted release wording, run live RemNote sandbox health checks, ChatGPT Developer Mode golden prompts, and Render hosted endpoint checks.
 
 ## Privacy Assumptions
 

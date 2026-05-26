@@ -6,6 +6,7 @@ import type { AuthResult, ScopeGrant } from './types.js';
 export const LOCAL_BRIDGE_SCOPE_GRANTS: ScopeGrant[] = [
   'bridge:read',
   'bridge:write',
+  'bridge:trusted_write',
   'bridge:delete',
   'bridge:pair',
 ];
@@ -19,6 +20,7 @@ export function authorizeLocalMcpRequest(
       ok: true,
       principal: {
         subject: 'local-remnote-bridge-no-token',
+        userId: '__local__',
         authMode: 'local_no_token',
         scopeGrants: LOCAL_BRIDGE_SCOPE_GRANTS,
       },
@@ -38,6 +40,7 @@ export function authorizeLocalMcpRequest(
     ok: true,
     principal: {
       subject: 'local-remnote-bridge',
+      userId: '__local__',
       authMode: 'local_bridge_token',
       scopeGrants: LOCAL_BRIDGE_SCOPE_GRANTS,
     },

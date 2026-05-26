@@ -13,7 +13,7 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.settings.registerStringSetting({
     id: 'bridge-server-url',
     title: 'Bridge Server URL',
-    description: 'Local WebSocket bridge endpoint. Keep this on localhost unless you understand the risk.',
+    description: 'Bridge WebSocket endpoint. Use localhost for local mode or the hosted WSS URL after pairing.',
     defaultValue: 'ws://localhost:47391/remnote-bridge',
   });
 

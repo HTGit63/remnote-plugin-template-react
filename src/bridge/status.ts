@@ -1,6 +1,19 @@
 import type { BridgeToolPolicy, BridgeToolProfile } from './protocol';
 
-export type BridgeConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type BridgeConnectionState =
+  | 'not_paired'
+  | 'pairing'
+  | 'paired_offline'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'server_unreachable'
+  | 'token_expired'
+  | 'session_revoked'
+  | 'device_conflict'
+  | 'stale_connection'
+  | 'disconnected'
+  | 'error';
 
 export interface BridgeStatusSnapshot {
   state: BridgeConnectionState;
@@ -46,8 +59,26 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
   switch (state) {
     case 'connected':
       return 'Connected';
+    case 'not_paired':
+      return 'Not Paired';
+    case 'pairing':
+      return 'Pairing';
+    case 'paired_offline':
+      return 'Paired Offline';
     case 'connecting':
       return 'Connecting';
+    case 'reconnecting':
+      return 'Reconnecting';
+    case 'server_unreachable':
+      return 'Server Unreachable';
+    case 'token_expired':
+      return 'Token Expired';
+    case 'session_revoked':
+      return 'Session Revoked';
+    case 'device_conflict':
+      return 'Device Conflict';
+    case 'stale_connection':
+      return 'Stale Connection';
     case 'error':
       return 'Error';
     case 'disconnected':
@@ -64,8 +95,26 @@ export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
   switch (status.state) {
     case 'connected':
       return 'Ready for RemNote tool calls.';
+    case 'not_paired':
+      return 'Pair this RemNote device from the dashboard.';
+    case 'pairing':
+      return 'Enter the pairing code in the dashboard.';
+    case 'paired_offline':
+      return 'Paired device is offline. Reconnect bridge.';
     case 'connecting':
       return 'Connecting to the companion server.';
+    case 'reconnecting':
+      return 'Connection lost. Reconnecting safely.';
+    case 'server_unreachable':
+      return 'Server unreachable. Check hosted URL or local server.';
+    case 'token_expired':
+      return 'Session expired. Pair this device again.';
+    case 'session_revoked':
+      return 'Session revoked. Pair this device again.';
+    case 'device_conflict':
+      return 'Another RemNote device replaced this connection.';
+    case 'stale_connection':
+      return 'Stale connection detected. Reconnect.';
     case 'error':
       return 'Check the companion server and bridge token.';
     case 'disconnected':

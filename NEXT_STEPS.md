@@ -20,7 +20,7 @@
 16. Phase 6 edit/reorder complete: `replace_rem` and `reorder_children` are exposed with approval and deterministic full-list validation.
 17. Phase 7 secure delete complete: public delete is limited to focused/selected Rems with preview, typed `DELETE`, and approval; arbitrary-ID `delete_rem` remains gated by env flag.
 18. Phase 8 reliability complete: request timeout, plugin disconnect, approval timeout, rejection, and duplicate approval paths return structured errors instead of hanging.
-19. Phase 9 secure readiness complete: local auth/session/audit interfaces exist, local token auth still protects `/mcp`, and hosted mode is documented but hard-blocked until real OAuth/pairing is implemented.
+19. Phase 9 secure readiness complete: local auth/session/audit interfaces exist, local token auth still protects `/mcp`, and hosted mode was documented as blocked until real OAuth/pairing. Superseded by 2026-05-26 hosted-auth Phase 7-12 completion below.
 20. Phase 10 release-readiness docs complete: README, architecture, safety, manual QA, and test matrix now match implemented code.
 21. Follow-up reliability complete: live diagnostics, tool registry stamp, 24-tool default registry, client-disconnect cancellation, request outcome ledger, and task-focused plugin UI are implemented and smoke-tested.
 22. 2026-05-09 closeout complete: MCP `tools/list` is asserted against the shared public registry, unknown MCP tool calls return structured `UNKNOWN_TOOL`, alias inputs match manual-test prompts, focused-descendant scope is wired, and the styled-tool SDK surface was audited without exposing fake tools.
@@ -40,25 +40,26 @@
 36. 2026-05-17 final-polish Phase 5 complete for personal hosted readiness: single-port mode, `render.yaml`, root `server:start`, and local smoke coverage for shared WebSocket/MCP serving are done.
 37. 2026-05-17 final-polish Phase 6 complete: MCP registration was split into `server/src/tools/*`, `src/remnote/write.ts` became a category barrel, public tool order is preserved, and hidden legacy deletes remain hidden by default.
 38. 2026-05-17 final-polish Phase 7 local QA/docs complete: automated local gates pass, `bridge:live-test` reaches MCP but still requires a connected RemNote plugin for live tool execution, and `docs/final-polish-phase-6-7.md` records the proof.
+39. 2026-05-26 hosted-auth Phase 7 complete: public-hosted OAuth metadata, DCR, PKCE auth-code, refresh rotation, revoke, bearer verification, audience/resource checks, and scope rejection are implemented and smoke-tested.
+40. 2026-05-26 hosted-auth Phase 8 complete: trusted focused/selected write mode remains plugin-enforced and visible; destructive tools still require approval.
+41. 2026-05-26 hosted-auth Phase 9 complete: hosted calls route by authenticated user to the paired plugin session, status states are expanded, and high-level write idempotency records avoid note content.
+42. 2026-05-26 hosted-auth Phase 10 complete: rate limits, CSRF, security headers, token/session revocation, public-mode config guards, and PostgreSQL storage dependency are wired.
+43. 2026-05-26 hosted-auth Phase 11 complete: plugin pairing delivers session credentials only to plugin local storage, not the dashboard; dashboard pairing/revoke remains session + CSRF gated.
+44. 2026-05-26 hosted-auth Phase 12 complete at repo/local level: auth, pairing, routing, smoke, build, type, validation, diff, and audit gates were added or run.
 
 ## Current Phase
 
-Milestones 1-9 and final-polish Phases 3-7 are complete at repo/local validation level. The public registry exposes 47 MCP tools by default in the full profile, while `REMNOTE_BRIDGE_TOOL_PROFILE=simple` exposes the reduced normal-use surface. A real RemNote sandbox health check is still required before public hosted submission wording can claim live production readiness.
+Milestones 1-9, final-polish Phases 3-7, and hosted-auth Phases 7-12 are complete at repo/local validation level. The public registry exposes 47 MCP tools by default in the full profile, while `REMNOTE_BRIDGE_TOOL_PROFILE=simple` exposes the reduced normal-use surface. A real RemNote sandbox health check, hosted Render run, and ChatGPT Developer Mode run are still required before public hosted production/submission wording.
 
 ## Next Phase
 
-Live sandbox closeout:
+External launch closeout:
 
 - run `run_bridge_health_check` against a disposable RemNote sandbox parent with `mode=safe_write`;
 - run `npm run bridge:live-test` with RemNote open, plugin connected, and `REMNOTE_LIVE_TEST_PARENT_ID` set to a disposable Rem;
 - record the health-check result from `get_bridge_diagnostics.lastHealthCheck`;
-- verify ChatGPT refreshes the 47-tool registry after companion server restart.
-
-Public hosted launch work remains later. Personal single-port Render readiness exists, but public multi-user launch still needs:
-
-- implement real OAuth provider integration;
-- implement pairing UI and persistent session store;
-- deploy stable HTTPS `/mcp`;
+- deploy stable HTTPS `/mcp` and WSS `/remnote-bridge` with PostgreSQL;
+- verify dashboard login with real OAuth provider credentials;
 - run ChatGPT Developer Mode through the hosted endpoint;
 - collect app submission assets.
 
@@ -66,8 +67,7 @@ Public hosted launch work remains later. Personal single-port Render readiness e
 
 - `create_folder` remains blocked by installed `@remnote/plugin-sdk` folder API support.
 - `create_styled_rem_tree` and `apply_structured_note_batch` are now public and smoke-tested. They use SDK rich text, font size, highlight, LaTeX, Rem type, card, and child creation helpers. Folder creation remains blocked by installed SDK support.
-- Hosted mode remains blocked by real OAuth, persistent sessions, and revocation UI.
-- Public submission remains blocked by privacy policy URL, support contact, screenshots, hosted HTTPS MCP URL, and one recorded live RemNote sandbox health-check pass.
+- Public hosted repo code is no longer blocked by missing OAuth/pairing/routing. External launch remains blocked by hosted PostgreSQL URL, provider credentials, Render deployment, ChatGPT Developer Mode proof, privacy policy URL, support contact, screenshots, hosted HTTPS MCP URL, and one recorded live RemNote sandbox health-check pass.
 
 ## Shipping Verification
 

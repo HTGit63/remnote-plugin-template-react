@@ -20,6 +20,14 @@ import {
 } from '../bridge/status';
 import { BrowserBridgeClient } from '../bridge/client';
 import {
+  clearHostedPairingSession,
+  finishHostedPairing,
+  loadHostedPairingSession,
+  startHostedPairing,
+  type HostedPairingSession,
+  type PendingPairingChallenge,
+} from '../bridge/pairing';
+import {
   BridgeTaskBanner,
   BridgeWidgetHeader,
   RecommendedModeCard,
@@ -39,6 +47,15 @@ const statusToneClass: Record<string, string> = {
   connecting: 'bridge-pill bridge-pill-warning',
   disconnected: 'bridge-pill bridge-pill-muted',
   error: 'bridge-pill bridge-pill-danger',
+  not_paired: 'bridge-pill bridge-pill-warning',
+  pairing: 'bridge-pill bridge-pill-warning',
+  paired_offline: 'bridge-pill bridge-pill-warning',
+  reconnecting: 'bridge-pill bridge-pill-warning',
+  server_unreachable: 'bridge-pill bridge-pill-danger',
+  token_expired: 'bridge-pill bridge-pill-danger',
+  session_revoked: 'bridge-pill bridge-pill-danger',
+  device_conflict: 'bridge-pill bridge-pill-danger',
+  stale_connection: 'bridge-pill bridge-pill-warning',
 };
 
 const permissionScopeOptions: Array<{ value: PermissionScope; description: string }> = [
@@ -195,6 +212,9 @@ export function BridgeStatusWidget() {
   const [lastHealthCheck, setLastHealthCheck] = useState<Record<string, unknown> | null>(null);
   const [lastServerDiagnostics, setLastServerDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [debugCopyStatus, setDebugCopyStatus] = useState('No debug copy yet.');
+  const [hostedSession, setHostedSession] = useState<HostedPairingSession | null>(null);
+  const [pendingPairing, setPendingPairing] = useState<PendingPairingChallenge | null>(null);
+  const [pairingEvent, setPairingEvent] = useState('Pair this RemNote only when using hosted OAuth mode.');
   const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
@@ -203,6 +223,22 @@ export function BridgeStatusWidget() {
   const approvedRootRemIdRef = useRef<string | null>(null);
   const clientRef = useRef<BrowserBridgeClient | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    loadHostedPairingSession(plugin)
+      .then((session) => {
+        if (alive) {
+          setHostedSession(session);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('BridgeStatusWidget: failed to load hosted pairing session', error);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [plugin]);
 
   const serverUrl =
     useTracker(async (reactivePlugin) => {
@@ -376,6 +412,7 @@ export function BridgeStatusWidget() {
       plugin,
       serverUrl,
       token: bridgeToken,
+      hostedSession,
       getPermissionMode: () => permissionModeRef.current,
       getPermissionScope: () => permissionScopeRef.current,
       getApprovedRootRemId: () => approvedRootRemIdRef.current,
@@ -396,7 +433,7 @@ export function BridgeStatusWidget() {
       }
       setPendingRequest(null);
     };
-  }, [plugin, serverUrl, bridgeToken, requestApproval, cancelApproval, bridgeEnabled]);
+  }, [plugin, serverUrl, bridgeToken, hostedSession, requestApproval, cancelApproval, bridgeEnabled]);
 
   const handleApprove = async () => {
     if (!pendingRequest) {
@@ -443,6 +480,46 @@ export function BridgeStatusWidget() {
     setRuntimePermissionScope('focused_rem_and_descendants');
     setRuntimePermissionMode('trusted_writes');
     await plugin.app.toast('Recommended note mode enabled.');
+  };
+
+  const handleStartPairing = async () => {
+    try {
+      const challenge = await startHostedPairing(plugin, serverUrl);
+      setPendingPairing(challenge);
+      setPairingEvent(`Pairing code ${challenge.pairingCode} created. Confirm it in the dashboard.`);
+      await plugin.app.toast('Pairing code created.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPairingEvent(message);
+      await plugin.app.toast('Pairing failed to start.');
+    }
+  };
+
+  const handleFinishPairing = async () => {
+    if (!pendingPairing) {
+      await plugin.app.toast('Start pairing first.');
+      return;
+    }
+
+    try {
+      const session = await finishHostedPairing(plugin, serverUrl, pendingPairing);
+      setHostedSession(session);
+      setPendingPairing(null);
+      setPairingEvent('Pairing complete. Hosted session token stored in RemNote local storage.');
+      await plugin.app.toast('RemNote paired.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPairingEvent(message);
+      await plugin.app.toast('Pairing not complete yet.');
+    }
+  };
+
+  const handleClearPairing = async () => {
+    await clearHostedPairingSession(plugin);
+    setHostedSession(null);
+    setPendingPairing(null);
+    setPairingEvent('Hosted pairing cleared on this device.');
+    await plugin.app.toast('Pairing cleared.');
   };
 
   const handleHealthCheck = async () => {
@@ -661,6 +738,39 @@ export function BridgeStatusWidget() {
           copy={taskCopy}
           onChangeAccess={() => setAccessOpen((open) => !open)}
         />
+
+        <section className="bridge-panel bridge-panel--notice">
+          <div className="bridge-section-head">
+            <div className="bridge-heading-copy">
+              <h3>Pairing</h3>
+              <p>Hosted OAuth mode uses a per-device plugin session. Token stays in local storage.</p>
+            </div>
+            <span className={hostedSession ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
+              {hostedSession ? 'Paired' : 'Not paired'}
+            </span>
+          </div>
+          <dl className="bridge-detail-list">
+            <DetailRow label="Device Session" value={hostedSession ? 'Stored locally' : 'Missing'} />
+            <DetailRow label="Pairing Status" value={pairingEvent} />
+            {pendingPairing && (
+              <>
+                <DetailRow label="Pairing Code" value={pendingPairing.pairingCode} mono />
+                <DetailRow label="Expires" value={new Date(pendingPairing.expiresAt).toLocaleTimeString()} />
+              </>
+            )}
+          </dl>
+          <div className="bridge-actions">
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleStartPairing}>
+              Pair RemNote
+            </button>
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleFinishPairing}>
+              Check Pairing
+            </button>
+            <button type="button" className="bridge-button bridge-button-reject" onClick={handleClearPairing}>
+              Revoke Local Pairing
+            </button>
+          </div>
+        </section>
 
         <section className="bridge-panel bridge-recommendation-panel">
           <div className="bridge-section-head">

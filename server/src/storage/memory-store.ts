@@ -1,0 +1,201 @@
+import { randomUUID } from 'node:crypto';
+import type {
+  IdempotencyRecord,
+  McpAuthorizationCode,
+  McpClient,
+  PairingChallenge,
+  Session,
+  StorageProvider,
+  StoredAuditEvent,
+  User,
+} from './types.js';
+import { hashToken } from './crypto-utils.js';
+
+export class MemoryStorageProvider implements StorageProvider {
+  private users = new Map<string, User>();
+  private sessions = new Map<string, Session>();
+  private challenges = new Map<string, PairingChallenge>();
+  private clients = new Map<string, McpClient>();
+  private authorizationCodes = new Map<string, McpAuthorizationCode>();
+  private auditEvents: StoredAuditEvent[] = [];
+  private idempotencyRecords = new Map<string, IdempotencyRecord>();
+
+  async initialize(): Promise<void> {
+    // No-op for in-memory
+  }
+
+  async close(): Promise<void> {
+    // No-op for in-memory
+  }
+
+  // User operations
+  async createUser(email: string): Promise<User> {
+    const id = randomUUID();
+    const user: User = {
+      id,
+      email,
+      createdAt: new Date().toISOString(),
+    };
+    this.users.set(id, user);
+    return user;
+  }
+
+  async getUserById(id: string): Promise<User | null> {
+    return this.users.get(id) ?? null;
+  }
+
+  async getUserByEmail(email: string): Promise<User | null> {
+    for (const user of this.users.values()) {
+      if (user.email.toLowerCase() === email.toLowerCase()) {
+        return user;
+      }
+    }
+    return null;
+  }
+
+  // Session operations
+  async createSession(sessionData: Omit<Session, 'id' | 'createdAt' | 'updatedAt'>): Promise<Session> {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const session: Session = {
+      id,
+      ...sessionData,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.sessions.set(id, session);
+    return session;
+  }
+
+  async getSessionById(id: string): Promise<Session | null> {
+    return this.sessions.get(id) ?? null;
+  }
+
+  async getSessionByAccessToken(accessToken: string): Promise<Session | null> {
+    const targetHash = hashToken(accessToken);
+    for (const session of this.sessions.values()) {
+      if (session.accessTokenHash === targetHash && !session.revokedAt) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  async getSessionByRefreshToken(refreshToken: string): Promise<Session | null> {
+    const targetHash = hashToken(refreshToken);
+    for (const session of this.sessions.values()) {
+      if (session.refreshTokenHash === targetHash && !session.revokedAt) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  async updateSession(
+    id: string,
+    updates: Partial<Omit<Session, 'id' | 'createdAt' | 'updatedAt'>>
+  ): Promise<Session> {
+    const session = this.sessions.get(id);
+    if (!session) {
+      throw new Error(`Session with ID ${id} not found.`);
+    }
+
+    const updatedSession: Session = {
+      ...session,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    this.sessions.set(id, updatedSession);
+    return updatedSession;
+  }
+
+  async deleteSession(id: string): Promise<void> {
+    this.sessions.delete(id);
+  }
+
+  // Pairing Challenge operations
+  async createPairingChallenge(challenge: PairingChallenge): Promise<void> {
+    this.challenges.set(challenge.pairingCodeHash, challenge);
+  }
+
+  async getPairingChallenge(pairingCode: string): Promise<PairingChallenge | null> {
+    const targetHash = hashToken(pairingCode);
+    return this.challenges.get(targetHash) ?? null;
+  }
+
+  async updatePairingChallengeStatus(pairingCode: string, status: PairingChallenge['status']): Promise<void> {
+    const targetHash = hashToken(pairingCode);
+    const challenge = this.challenges.get(targetHash);
+    if (challenge) {
+      challenge.status = status;
+      this.challenges.set(targetHash, challenge);
+    }
+  }
+
+  async upsertMcpClient(client: McpClient): Promise<McpClient> {
+    const stored = {
+      ...client,
+      redirectUris: [...client.redirectUris],
+    };
+    this.clients.set(stored.clientId, stored);
+    return stored;
+  }
+
+  async getMcpClient(clientId: string): Promise<McpClient | null> {
+    return this.clients.get(clientId) ?? null;
+  }
+
+  async createMcpAuthorizationCode(code: McpAuthorizationCode): Promise<void> {
+    this.authorizationCodes.set(code.codeHash, code);
+  }
+
+  async consumeMcpAuthorizationCode(code: string): Promise<McpAuthorizationCode | null> {
+    const targetHash = hashToken(code);
+    const stored = this.authorizationCodes.get(targetHash);
+    if (!stored || stored.consumedAt) {
+      return null;
+    }
+    const consumed = {
+      ...stored,
+      consumedAt: new Date().toISOString(),
+    };
+    this.authorizationCodes.set(targetHash, consumed);
+    return consumed;
+  }
+
+  async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
+    const stored: StoredAuditEvent = {
+      id: randomUUID(),
+      ...event,
+      createdAt: new Date().toISOString(),
+    };
+    this.auditEvents.unshift(stored);
+    if (this.auditEvents.length > 500) {
+      this.auditEvents.length = 500;
+    }
+    return stored;
+  }
+
+  async createOrUpdateIdempotencyRecord(record: Omit<IdempotencyRecord, 'id'>): Promise<IdempotencyRecord> {
+    const key = this.idempotencyKey(record.userId, record.tool, record.idempotencyKey);
+    const existing = this.idempotencyRecords.get(key);
+    const stored: IdempotencyRecord = {
+      id: existing?.id ?? randomUUID(),
+      ...record,
+    };
+    this.idempotencyRecords.set(key, stored);
+    return stored;
+  }
+
+  async getIdempotencyRecord(
+    userId: string,
+    tool: string,
+    idempotencyKey: string
+  ): Promise<IdempotencyRecord | null> {
+    return this.idempotencyRecords.get(this.idempotencyKey(userId, tool, idempotencyKey)) ?? null;
+  }
+
+  private idempotencyKey(userId: string, tool: string, idempotencyKey: string): string {
+    return `${userId}\u0000${tool}\u0000${idempotencyKey}`;
+  }
+}

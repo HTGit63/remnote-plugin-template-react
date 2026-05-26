@@ -3,12 +3,14 @@ export type AuthMode = 'local_bridge_token' | 'local_no_token' | 'mcp_discovery_
 export type ScopeGrant =
   | 'bridge:read'
   | 'bridge:write'
+  | 'bridge:trusted_write'
   | 'bridge:delete'
   | 'bridge:pair'
   | 'bridge:admin';
 
 export interface AuthenticatedPrincipal {
   subject: string;
+  userId?: string;
   authMode: AuthMode;
   scopeGrants: ScopeGrant[];
   sessionId?: string;

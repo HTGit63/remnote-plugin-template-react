@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   type BridgeClientMessage,
@@ -17,8 +17,11 @@ import {
   type BridgeErrorCode,
   createBridgeFailure,
 } from '../../src/bridge/protocol.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { CompanionServerConfig } from './config.js';
 import type { BridgeHealthCheckResult } from './health-check-types.js';
+import { SessionRouter } from './bridge/session-router.js';
+import type { StorageProvider } from './storage/types.js';
 import { getToolRegistrySummary } from './tool-registry.js';
 
 interface PendingRequest {
@@ -30,6 +33,16 @@ interface PendingRequest {
   timeoutMs: number;
   lifecycle: BridgeLifecycleEvent[];
   cleanupAbortListener?: () => void;
+  targetSocket?: WebSocket;
+  targetUserId?: string;
+  idempotency?: {
+    userId: string;
+    tool: BridgeToolName;
+    idempotencyKey: string;
+    targetRoot?: string;
+    requestHash: string;
+    startedAt: string;
+  };
 }
 
 export interface BridgeHubStatus {
@@ -73,6 +86,16 @@ export interface BridgeHubDiagnostics {
   pending: BridgeHubRequestSnapshot[];
   recentRequests: BridgeHubRequestOutcome[];
   lastHealthCheck: BridgeHealthCheckResult | null;
+  sessionRouter?: ReturnType<SessionRouter['getStatus']>;
+  activePluginConnections?: Array<{
+    connectionId: string;
+    userId: string;
+    deviceId: string;
+    pluginSessionId: string;
+    connectedAt: string;
+    lastPongAt: string;
+    alive: boolean;
+  }>;
 }
 
 function createLifecycleEvent(phase: BridgeLifecyclePhase, message?: string): BridgeLifecycleEvent {
@@ -81,6 +104,14 @@ function createLifecycleEvent(phase: BridgeLifecyclePhase, message?: string): Br
     at: new Date().toISOString(),
     ...(message ? { message } : {}),
   };
+}
+
+function hashDiagnosticId(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return `hash_${hash.toString(16)}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -119,6 +150,38 @@ function requestReachedPlugin(response: BridgeResponse): boolean {
 
 function hasIdempotencyKey(args: unknown): boolean {
   return isRecord(args) && typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim().length > 0;
+}
+
+function getIdempotencyKey(args: unknown): string | undefined {
+  return isRecord(args) && typeof args.idempotencyKey === 'string' ? args.idempotencyKey.trim() || undefined : undefined;
+}
+
+function isHighLevelIdempotentWrite(tool: BridgeToolName): boolean {
+  return [
+    'apply_structured_note_batch',
+    'create_polished_note_tree',
+    'create_styled_rem_tree',
+    'apply_style_plan',
+    'apply_remnote_command',
+    'delete_rem_by_id',
+  ].includes(tool);
+}
+
+function targetRootFromArgs(args: unknown): string | undefined {
+  if (!isRecord(args)) {
+    return undefined;
+  }
+  for (const key of ['parentId', 'rootRemId', 'remId', 'targetRoot', 'expectedAncestorId', 'expectedParentId']) {
+    const value = args[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function requestHash(tool: BridgeToolName, args: unknown): string {
+  return createHash('sha256').update(JSON.stringify({ tool, args })).digest('hex');
 }
 
 function isDeleteTool(tool: BridgeToolName): boolean {
@@ -213,8 +276,12 @@ export class BridgeHub {
   private readonly startedAt = new Date().toISOString();
   private readonly recentRequests: BridgeHubRequestOutcome[] = [];
   private lastHealthCheck: BridgeHealthCheckResult | null = null;
+  private readonly sessionRouter: SessionRouter;
+  private readonly socketUsers = new WeakMap<WebSocket, string>();
 
-  constructor(private readonly config: CompanionServerConfig) {}
+  constructor(private readonly config: CompanionServerConfig, private readonly storage?: StorageProvider) {
+    this.sessionRouter = new SessionRouter(config);
+  }
 
   start(): Promise<void> {
     this.detachUpgradeHandler();
@@ -286,6 +353,7 @@ export class BridgeHub {
     }
 
     this.pluginSocket?.close();
+    this.sessionRouter.closeAll('Bridge server stopped.');
     this.pluginSocket = undefined;
     this.pluginReady = false;
     this.stopHeartbeat();
@@ -311,6 +379,15 @@ export class BridgeHub {
   }
 
   getStatus(): BridgeHubStatus {
+    if (this.config.deploymentMode === 'public_hosted_oauth') {
+      return {
+        connected: this.sessionRouter.getStatus().activeConnections > 0,
+        lastConnectedAt: this.lastConnectedAt,
+        lastDisconnectedAt: this.lastDisconnectedAt,
+        pendingRequests: this.pending.size,
+      };
+    }
+
     return {
       connected: this.pluginReady && this.pluginSocket?.readyState === WebSocket.OPEN,
       lastConnectedAt: this.lastConnectedAt,
@@ -334,6 +411,12 @@ export class BridgeHub {
       })),
       recentRequests: [...this.recentRequests],
       lastHealthCheck: this.lastHealthCheck,
+      sessionRouter: this.sessionRouter.getStatus(),
+      activePluginConnections: this.sessionRouter.getActiveConnectionInfos().map((connection) => ({
+        ...connection,
+        userId: connection.userId === '__local__' ? '__local__' : hashDiagnosticId(connection.userId),
+        pluginSessionId: hashDiagnosticId(connection.pluginSessionId),
+      })),
     };
   }
 
@@ -357,9 +440,10 @@ export class BridgeHub {
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs = this.config.requestTimeoutMs,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    principal?: AuthenticatedPrincipal
   ): Promise<BridgeResponse> {
-    const firstResponse = await this.callPluginOnce(tool, args, timeoutMs, signal);
+    const firstResponse = await this.callPluginOnce(tool, args, timeoutMs, signal, principal);
     const retryPlan = this.getRetryPlan(tool, args, firstResponse);
 
     if (retryPlan === 'none') {
@@ -369,7 +453,7 @@ export class BridgeHub {
     if (retryPlan === 'retry') {
       const reconnected = await this.waitForPluginReconnect(signal);
       if (reconnected) {
-        const retryResponse = await this.callPluginOnce(tool, args, timeoutMs, signal);
+        const retryResponse = await this.callPluginOnce(tool, args, timeoutMs, signal, principal);
         const retryFailurePlan = this.getRetryPlan(tool, args, retryResponse, false);
         if (retryFailurePlan === 'unknown_delete') {
           return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownDeleteFailure(tool, retryResponse));
@@ -407,7 +491,8 @@ export class BridgeHub {
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs = this.config.requestTimeoutMs,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    principal?: AuthenticatedPrincipal
   ): Promise<BridgeResponse> {
     const id = randomUUID();
     const startedAt = Date.now();
@@ -428,12 +513,13 @@ export class BridgeHub {
       return response;
     }
 
-    if (!this.pluginReady || !this.pluginSocket || this.pluginSocket.readyState !== WebSocket.OPEN) {
+    const target = this.getTargetSocket(principal);
+    if (!target.ok) {
       lifecycle.push(createLifecycleEvent('failed', 'RemNote plugin is not connected.'));
       const response = createBridgeFailure(
         id,
-        'PLUGIN_NOT_CONNECTED',
-        'RemNote plugin is not connected.',
+        target.error,
+        target.message,
         undefined,
         lifecycle
       );
@@ -447,6 +533,31 @@ export class BridgeHub {
       args,
       timeoutMs,
     };
+    const idempotencyKey = getIdempotencyKey(args);
+    const idempotency =
+      principal?.userId && idempotencyKey && isHighLevelIdempotentWrite(tool)
+        ? {
+            userId: principal.userId,
+            tool,
+            idempotencyKey,
+            targetRoot: targetRootFromArgs(args),
+            requestHash: requestHash(tool, args),
+            startedAt: new Date(startedAt).toISOString(),
+          }
+        : undefined;
+
+    if (idempotency) {
+      this.storage
+        ?.createOrUpdateIdempotencyRecord({
+          ...idempotency,
+          status: 'started',
+          createdRemIds: [],
+          updatedRemIds: [],
+        })
+        .catch((error: unknown) => {
+          console.error('Failed to write idempotency start record:', error instanceof Error ? error.message : String(error));
+        });
+    }
 
     return new Promise<BridgeResponse>((resolve) => {
       const timeout = setTimeout(() => {
@@ -480,6 +591,9 @@ export class BridgeHub {
         startedAt,
         timeoutMs,
         lifecycle,
+        targetSocket: target.socket,
+        targetUserId: target.userId,
+        idempotency,
         cleanupAbortListener: signal ? () => signal.removeEventListener('abort', abortHandler) : undefined,
       });
 
@@ -497,7 +611,7 @@ export class BridgeHub {
 
       try {
         lifecycle.push(createLifecycleEvent('executing', 'Request forwarded to RemNote plugin WebSocket.'));
-        this.pluginSocket?.send(JSON.stringify(request), (error) => {
+        target.socket.send(JSON.stringify(request), (error) => {
           if (!error) {
             return;
           }
@@ -601,6 +715,52 @@ export class BridgeHub {
     return response;
   }
 
+  private getTargetSocket(
+    principal?: AuthenticatedPrincipal
+  ):
+    | { ok: true; socket: WebSocket; userId: string }
+    | { ok: false; error: BridgeErrorCode; message: string } {
+    if (this.config.deploymentMode === 'public_hosted_oauth') {
+      const userId = principal?.userId;
+      if (!userId) {
+        return {
+          ok: false,
+          error: 'PLUGIN_NOT_PAIRED',
+          message: 'MCP request has no paired hosted user.',
+        };
+      }
+
+      const connection = this.sessionRouter.getConnectionForUser(userId);
+      if (!connection) {
+        return {
+          ok: false,
+          error: 'NO_ACTIVE_DEVICE',
+          message: 'No active paired RemNote device is connected for this user.',
+        };
+      }
+
+      return {
+        ok: true,
+        socket: connection.socketRef,
+        userId,
+      };
+    }
+
+    if (!this.pluginReady || !this.pluginSocket || this.pluginSocket.readyState !== WebSocket.OPEN) {
+      return {
+        ok: false,
+        error: 'PLUGIN_NOT_CONNECTED',
+        message: 'RemNote plugin is not connected.',
+      };
+    }
+
+    return {
+      ok: true,
+      socket: this.pluginSocket,
+      userId: '__local__',
+    };
+  }
+
   private handleConnection(socket: WebSocket) {
     socket.once('message', (raw) => {
       const hello = this.parseClientMessage(raw);
@@ -609,16 +769,40 @@ export class BridgeHub {
         return;
       }
 
-      if (this.config.bridgeToken && !this.config.allowNoToken && hello.token !== this.config.bridgeToken) {
+      if (
+        this.config.deploymentMode !== 'public_hosted_oauth' &&
+        this.config.bridgeToken &&
+        !this.config.allowNoToken &&
+        hello.token !== this.config.bridgeToken
+      ) {
         socket.close(1008, 'Invalid bridge token.');
         return;
       }
 
+      if (this.config.deploymentMode === 'public_hosted_oauth') {
+        const routed = this.sessionRouter.authenticateAndRegister(socket, hello);
+        if (!routed.ok) {
+          socket.close(1008, `${routed.error}: ${routed.message}`);
+          this.lastDisconnectedAt = new Date().toISOString();
+          return;
+        }
+        this.socketUsers.set(socket, routed.connection.userId);
+        this.pluginReady = this.sessionRouter.getStatus().activeConnections > 0;
+        this.lastConnectedAt = new Date().toISOString();
+        socket.on('message', (message) => this.handlePluginMessage(socket, message));
+        socket.on('close', () => this.handleHostedPluginClose(socket));
+        socket.on('error', () => this.handleHostedPluginClose(socket));
+        this.startHeartbeat();
+      } else {
+        this.replacePluginSocket(socket);
+      }
+
       const toolCallAuthMode =
-        this.config.bridgeToken && !this.config.allowNoToken
-          ? 'local_bearer_required'
-          : 'no_auth_allowed';
-      this.replacePluginSocket(socket);
+        this.config.deploymentMode === 'public_hosted_oauth'
+          ? 'hosted_oauth_required'
+          : this.config.bridgeToken && !this.config.allowNoToken
+            ? 'local_bearer_required'
+            : 'no_auth_allowed';
       const serverHello: BridgeServerHello = {
         type: 'server_hello',
         protocolVersion: 1,
@@ -672,13 +856,46 @@ export class BridgeHub {
     }
   }
 
+  private handleHostedPluginClose(socket: WebSocket) {
+    const userId = this.socketUsers.get(socket);
+    if (!userId) {
+      return;
+    }
+
+    this.socketUsers.delete(socket);
+    this.sessionRouter.removeConnection(userId);
+    this.pluginReady = this.sessionRouter.getStatus().activeConnections > 0;
+    this.lastDisconnectedAt = new Date().toISOString();
+    if (!this.pluginReady) {
+      this.stopHeartbeat();
+    }
+
+    for (const [id, request] of Array.from(this.pending.entries())) {
+      if (request.targetSocket !== socket) {
+        continue;
+      }
+      request.lifecycle.push(
+        createLifecycleEvent('failed', 'Paired RemNote plugin disconnected before request completed.')
+      );
+      this.resolvePending(
+        id,
+        createBridgeFailure(id, 'PLUGIN_NOT_CONNECTED', 'Paired RemNote plugin disconnected.')
+      );
+    }
+  }
+
   private handlePluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
-    if (socket !== this.pluginSocket) {
+    if (this.config.deploymentMode !== 'public_hosted_oauth' && socket !== this.pluginSocket) {
       return;
     }
 
     const message = this.parseClientMessage(raw);
     if (!message || !('ok' in message)) {
+      return;
+    }
+
+    const pending = this.pending.get(message.id);
+    if (this.config.deploymentMode === 'public_hosted_oauth' && pending?.targetSocket !== socket) {
       return;
     }
 
@@ -715,7 +932,8 @@ export class BridgeHub {
   }
 
   private sendCancel(id: string, reason: BridgeCancelRequest['reason'], message: string) {
-    if (!this.pluginSocket || this.pluginSocket.readyState !== WebSocket.OPEN) {
+    const targetSocket = this.pending.get(id)?.targetSocket ?? this.pluginSocket;
+    if (!targetSocket || targetSocket.readyState !== WebSocket.OPEN) {
       return;
     }
 
@@ -727,7 +945,7 @@ export class BridgeHub {
     };
 
     try {
-      this.pluginSocket.send(JSON.stringify(cancel));
+      targetSocket.send(JSON.stringify(cancel));
     } catch {
       // Best effort: the server-side pending request still resolves locally.
     }
@@ -740,6 +958,7 @@ export class BridgeHub {
     lifecycle: BridgeLifecycleEvent[],
     pluginLifecycle?: BridgeLifecycleEvent[]
   ) {
+    const evidence = this.getExecutionEvidence(response);
     this.recentRequests.unshift({
       id,
       tool: pending.tool,
@@ -752,8 +971,30 @@ export class BridgeHub {
       errorCode: response.ok ? undefined : response.error.code,
       lifecycle,
       ...(pluginLifecycle ? { pluginLifecycle } : {}),
-      ...this.getExecutionEvidence(response),
+      ...evidence,
     });
+
+    if (pending.idempotency) {
+      const status =
+        response.ok
+          ? 'completed'
+          : response.error.code === 'RETRYABLE_UNKNOWN_WRITE_STATUS' ||
+              response.error.code === 'RETRYABLE_UNKNOWN_DELETE_STATUS'
+            ? 'unknown'
+            : 'failed';
+      this.storage
+        ?.createOrUpdateIdempotencyRecord({
+          ...pending.idempotency,
+          status,
+          createdRemIds: 'createdRemIds' in evidence ? evidence.createdRemIds ?? [] : [],
+          updatedRemIds: 'updatedRemIds' in evidence ? evidence.updatedRemIds ?? [] : [],
+          finishedAt: new Date().toISOString(),
+          errorCode: response.ok ? undefined : response.error.code,
+        })
+        .catch((error: unknown) => {
+          console.error('Failed to write idempotency outcome record:', error instanceof Error ? error.message : String(error));
+        });
+    }
 
     if (this.recentRequests.length > 25) {
       this.recentRequests.length = 25;
@@ -837,6 +1078,22 @@ export class BridgeHub {
   private startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
+      if (this.config.deploymentMode === 'public_hosted_oauth') {
+        for (const connection of this.sessionRouter.getActiveConnectionInfos()) {
+          const liveConnection = this.sessionRouter.getConnectionForUser(connection.userId);
+          if (!liveConnection) {
+            continue;
+          }
+          if (!liveConnection.alive) {
+            liveConnection.close(1011, 'Stale connection heartbeat missed.');
+            continue;
+          }
+          liveConnection.alive = false;
+          liveConnection.ping();
+        }
+        return;
+      }
+
       const socket = this.pluginSocket;
       if (!socket || socket.readyState !== WebSocket.OPEN) {
         return;

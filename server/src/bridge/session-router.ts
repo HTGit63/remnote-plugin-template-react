@@ -1,0 +1,218 @@
+/**
+ * Session router — Phase 6.
+ *
+ * Replaces single-global-plugin-socket behavior with per-user/per-device routing.
+ *
+ * Responsibilities:
+ *  - Maps userId → active PluginConnection
+ *  - Enforces device conflict policy (one active device per user by default)
+ *  - Routes MCP tool calls to the correct user's paired plugin
+ *  - Falls back to legacy single-socket mode for local_dev / personal_hosted_token
+ *
+ * Error codes:
+ *  PLUGIN_NOT_PAIRED, PLUGIN_NOT_CONNECTED, DEVICE_CONFLICT,
+ *  PLUGIN_SESSION_EXPIRED, PLUGIN_SESSION_REVOKED, NO_ACTIVE_DEVICE
+ */
+
+import type WebSocket from 'ws';
+import { randomUUID } from 'node:crypto';
+import { PluginConnection, type PluginConnectionInfo } from './plugin-connection.js';
+import { RequestLedger, type LedgerEntry } from './request-ledger.js';
+import { validatePluginSessionToken, type PluginPairingSession } from '../auth/pairing-routes.js';
+import type { CompanionServerConfig } from '../config.js';
+
+// ─── Types ───────────────────────────────────────────────────────────
+
+export type SessionRouterErrorCode =
+  | 'PLUGIN_NOT_PAIRED'
+  | 'PLUGIN_NOT_CONNECTED'
+  | 'DEVICE_CONFLICT'
+  | 'PLUGIN_SESSION_EXPIRED'
+  | 'PLUGIN_SESSION_REVOKED'
+  | 'NO_ACTIVE_DEVICE';
+
+export interface RoutingPrincipal {
+  userId: string;
+  sessionId?: string;
+  scopes?: string[];
+  authMode: string;
+}
+
+export interface SessionRouterStatus {
+  mode: 'local' | 'hosted';
+  activeConnections: number;
+  connectedUsers: string[];
+}
+
+// ─── Hello message types ─────────────────────────────────────────────
+
+interface LegacyPluginHello {
+  type: 'plugin_hello';
+  protocolVersion: number;
+  clientName: string;
+  token?: string;
+}
+
+interface HostedPluginHello {
+  type: 'plugin_hello';
+  protocolVersion: number;
+  clientName: string;
+  deploymentMode: 'public_hosted_oauth' | 'personal_hosted_token' | 'local_dev';
+  deviceId: string;
+  pluginSessionId: string;
+  pluginSessionToken: string;
+}
+
+type PluginHelloMessage = LegacyPluginHello | HostedPluginHello;
+
+// ─── Session Router ──────────────────────────────────────────────────
+
+export class SessionRouter {
+  private connections = new Map<string, PluginConnection>(); // userId → connection
+  private config: CompanionServerConfig;
+
+  constructor(config: CompanionServerConfig) {
+    this.config = config;
+  }
+
+  get isHostedMode(): boolean {
+    return this.config.deploymentMode === 'public_hosted_oauth';
+  }
+
+  /**
+   * Authenticate and register a new plugin WebSocket connection.
+   * Returns null on success, or an error code string on failure.
+   */
+  authenticateAndRegister(
+    socket: WebSocket,
+    hello: PluginHelloMessage
+  ): { ok: true; connection: PluginConnection } | { ok: false; error: SessionRouterErrorCode; message: string } {
+    // ─── Legacy mode (local_dev / personal_hosted_token) ────────
+    if (!this.isHostedMode) {
+      const userId = '__local__';
+      const deviceId = '__local_device__';
+
+      // Close existing connection for this user (single-device policy)
+      const existing = this.connections.get(userId);
+      if (existing) {
+        existing.close(1012, 'New RemNote plugin connection opened.');
+        this.connections.delete(userId);
+      }
+
+      const conn = new PluginConnection(
+        socket,
+        randomUUID(),
+        userId,
+        deviceId,
+        '__local_session__'
+      );
+      this.connections.set(userId, conn);
+      return { ok: true, connection: conn };
+    }
+
+    // ─── Hosted mode: validate plugin session credentials ───────
+    const hosted = hello as HostedPluginHello;
+    if (!hosted.pluginSessionId || !hosted.pluginSessionToken || !hosted.deviceId) {
+      return {
+        ok: false,
+        error: 'PLUGIN_NOT_PAIRED',
+        message: 'Missing pluginSessionId, pluginSessionToken, or deviceId in hello.',
+      };
+    }
+
+    const pairingSession = validatePluginSessionToken(
+      hosted.pluginSessionId,
+      hosted.pluginSessionToken
+    );
+
+    if (!pairingSession) {
+      // Determine specific reason
+      return {
+        ok: false,
+        error: 'PLUGIN_SESSION_EXPIRED',
+        message: 'Plugin session is invalid, expired, or revoked. Re-pair required.',
+      };
+    }
+
+    // Device conflict policy: one active device per user
+    const existing = this.connections.get(pairingSession.userId);
+    if (existing && existing.deviceId !== hosted.deviceId && existing.isOpen) {
+      // Replace existing connection (policy: replace old + record reason)
+      existing.close(1012, 'DEVICE_CONFLICT: New device connected, replacing old connection.');
+      this.connections.delete(pairingSession.userId);
+    }
+
+    const conn = new PluginConnection(
+      socket,
+      randomUUID(),
+      pairingSession.userId,
+      hosted.deviceId,
+      hosted.pluginSessionId
+    );
+    this.connections.set(pairingSession.userId, conn);
+    return { ok: true, connection: conn };
+  }
+
+  /**
+   * Get the active plugin connection for a given user.
+   */
+  getConnectionForUser(userId: string): PluginConnection | null {
+    const conn = this.connections.get(userId);
+    if (!conn || !conn.isOpen) return null;
+    return conn;
+  }
+
+  /**
+   * Get the active plugin connection for the local/legacy mode.
+   */
+  getLocalConnection(): PluginConnection | null {
+    return this.getConnectionForUser('__local__');
+  }
+
+  /**
+   * Remove a connection when a plugin disconnects.
+   */
+  removeConnection(userId: string): void {
+    this.connections.delete(userId);
+  }
+
+  /**
+   * Close all connections (used during shutdown).
+   */
+  closeAll(reason: string): void {
+    for (const [userId, conn] of this.connections) {
+      conn.close(1012, reason);
+    }
+    this.connections.clear();
+  }
+
+  /**
+   * Get router status information.
+   */
+  getStatus(): SessionRouterStatus {
+    const activeConnections: string[] = [];
+    for (const [userId, conn] of this.connections) {
+      if (conn.isOpen) {
+        activeConnections.push(userId);
+      }
+    }
+    return {
+      mode: this.isHostedMode ? 'hosted' : 'local',
+      activeConnections: activeConnections.length,
+      connectedUsers: activeConnections,
+    };
+  }
+
+  /**
+   * Get all active connection infos (for diagnostics).
+   */
+  getActiveConnectionInfos(): PluginConnectionInfo[] {
+    const infos: PluginConnectionInfo[] = [];
+    for (const conn of this.connections.values()) {
+      if (conn.isOpen) {
+        infos.push(conn.getInfo());
+      }
+    }
+    return infos;
+  }
+}

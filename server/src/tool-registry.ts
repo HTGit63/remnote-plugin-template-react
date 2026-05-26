@@ -160,8 +160,8 @@ export function getToolRegistrySummary(
   profile: ToolProfile = DEFAULT_TOOL_PROFILE,
   registeredToolNames?: readonly string[],
   auth?: {
-    discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required';
-    toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required';
+    discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required' | 'hosted_oauth_required';
+    toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'hosted_oauth_required';
   }
 ) {
   const allPublicTools = getAllPublicMcpToolNames(exposeDeleteTool);
@@ -207,12 +207,12 @@ export function getToolRegistrySummary(
     callableTools: [...serverLocalVerifiedTools],
     discoverableTools: [...publicTools],
     unauthDiscoverableTools:
-      auth?.discoveryAuthMode === 'local_bearer_required' ? [] : [...publicTools],
+      auth?.discoveryAuthMode === 'no_auth_required' || !auth?.discoveryAuthMode ? [...publicTools] : [],
     actualMcpCallableTools: [...serverLocalVerifiedTools],
     unauthMcpCallableTools:
-      auth?.toolCallAuthMode === 'local_bearer_required' ? [] : [...serverLocalVerifiedTools],
+      auth?.toolCallAuthMode === 'no_auth_allowed' || !auth?.toolCallAuthMode ? [...serverLocalVerifiedTools] : [],
     unauthToolCallAllowedTools:
-      auth?.toolCallAuthMode === 'local_bearer_required' ? [] : [...publicTools],
+      auth?.toolCallAuthMode === 'no_auth_allowed' || !auth?.toolCallAuthMode ? [...publicTools] : [],
     realPluginVerifiedTools: [],
     verifiedToolCount: serverLocalVerifiedTools.length,
     runtimeUnverifiedTools,

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { BridgeToolArgs, BridgeToolName } from '../../src/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
@@ -25,8 +26,9 @@ export interface CreateMcpServerOptions {
   exposeDeleteTool?: boolean;
   toolProfile?: ToolProfile;
   requestSignal?: AbortSignal;
-  discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required';
-  toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required';
+  discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required' | 'hosted_oauth_required';
+  toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'hosted_oauth_required';
+  principal?: AuthenticatedPrincipal;
 }
 
 export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions = {}): McpServer {
@@ -54,13 +56,29 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs = defaultTimeoutForTool(tool),
-  ) => hub.callPlugin(tool, args, timeoutMs, options.requestSignal);
+  ) => hub.callPlugin(tool, args, timeoutMs, options.requestSignal, options.principal);
   const registerTool = ((name: string, config: never, handler: never) => {
     if (!activeToolNames.has(name as RegisteredMcpToolName)) {
       return undefined as never;
     }
     registeredToolNames.push(name as RegisteredMcpToolName);
-    return server.registerTool(name, config, handler);
+    const requiredScopes = requiredOAuthScopesForTool(name);
+    return server.registerTool(
+      name,
+      {
+        ...(config as Record<string, unknown>),
+        _meta: {
+          ...((config as { _meta?: Record<string, unknown> })._meta ?? {}),
+          securitySchemes: [
+            {
+              type: 'oauth2',
+              scopes: requiredScopes,
+            },
+          ],
+        },
+      } as never,
+      handler
+    );
   }) as McpServer['registerTool'];
 
   const context: ToolRegistrationContext = {
@@ -86,4 +104,25 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   assertRegisteredToolsMatchRegistry(Boolean(options.exposeDeleteTool), registeredToolNames, toolProfile);
 
   return server;
+}
+
+function requiredOAuthScopesForTool(name: string): string[] {
+  if (name === 'delete_rem_by_id' || name === 'replace_rem') {
+    return ['bridge:read', 'bridge:write', 'bridge:delete'];
+  }
+
+  if (
+    name.startsWith('create_') ||
+    name.startsWith('update_') ||
+    name.startsWith('append_') ||
+    name.startsWith('move_') ||
+    name.startsWith('reorder_') ||
+    name.startsWith('set_') ||
+    name.startsWith('clear_') ||
+    name.startsWith('apply_')
+  ) {
+    return ['bridge:read', 'bridge:write'];
+  }
+
+  return ['bridge:read'];
 }

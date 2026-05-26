@@ -1,6 +1,12 @@
 import { createServer, type Server as HttpServer, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from './auth/local-token.js';
+import { handleDashboardRoute } from './auth/dashboard-routes.js';
+import { handlePairingRoute } from './auth/pairing-routes.js';
+import { buildOauthChallenge, handleOAuthRoute } from './auth/oauth-routes.js';
+import { rateLimitRequest } from './auth/rate-limit.js';
+import { authorizeHostedMcpRequest } from './auth/token-verifier.js';
+import type { AuthResult, ScopeGrant } from './auth/types.js';
 import { BridgeHub } from './bridge-hub.js';
 import { type CompanionServerConfig, loadConfig, validateConfig } from './config.js';
 import {
@@ -14,7 +20,10 @@ import {
 import { createMcpServer } from './mcp-server.js';
 import { ConsoleAuditLogger } from './sessions/audit-log.js';
 import type { AuditLogger } from './sessions/types.js';
+import { createStorageProvider, type StorageProvider } from './storage/index.js';
 import { getToolRegistrySummary, isPublicMcpToolName } from './tool-registry.js';
+import { getToolPolicyEntry } from './tool-policy.js';
+import { renderDashboard } from './dashboard/templates.js';
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
 
@@ -27,11 +36,15 @@ export interface RunningCompanionApp {
   stop: () => Promise<void>;
 }
 
-function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): HttpServer {
+function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, storage: StorageProvider): HttpServer {
   const auditLogger: AuditLogger | undefined = config.auditLog ? new ConsoleAuditLogger() : undefined;
   const startedAt = new Date().toISOString();
   const toolCallAuthMode =
-    config.bridgeToken && !config.allowNoToken ? 'local_bearer_required' : 'no_auth_allowed';
+    config.deploymentMode === 'public_hosted_oauth'
+      ? 'hosted_oauth_required'
+      : config.bridgeToken && !config.allowNoToken
+        ? 'local_bearer_required'
+        : 'no_auth_allowed';
 
   function registrySummary(registeredToolNames?: readonly string[]) {
     return getToolRegistrySummary(config.enableDeleteTool, config.toolProfile, registeredToolNames, {
@@ -97,6 +110,50 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
     return true;
   }
 
+  function requiredScopesForMcpRequest(body: unknown): ScopeGrant[] {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return ['bridge:read'];
+    }
+
+    const request = body as { method?: unknown; params?: { name?: unknown } };
+    if (request.method !== 'tools/call' || typeof request.params?.name !== 'string') {
+      return ['bridge:read'];
+    }
+
+    const policy = getToolPolicyEntry(request.params.name).policy;
+    if (policy === 'dangerous') {
+      return ['bridge:read', 'bridge:write', 'bridge:delete'];
+    }
+    if (policy === 'preferred' || policy === 'fallback' || policy === 'cards') {
+      return ['bridge:read', 'bridge:write'];
+    }
+    return ['bridge:read'];
+  }
+
+  async function authorizeMcpRequest(
+    req: Parameters<typeof authorizeLocalMcpRequest>[0],
+    body: unknown,
+    discoveryRequest: boolean
+  ): Promise<AuthResult> {
+    if (discoveryRequest) {
+      return {
+        ok: true,
+        principal: {
+          subject: 'chatgpt-mcp-discovery',
+          userId: '__discovery__',
+          authMode: 'mcp_discovery_noauth',
+          scopeGrants: ['bridge:read'],
+        },
+      };
+    }
+
+    if (config.deploymentMode === 'public_hosted_oauth') {
+      return authorizeHostedMcpRequest(req, config, storage, requiredScopesForMcpRequest(body));
+    }
+
+    return authorizeLocalMcpRequest(req, config);
+  }
+
   return createServer(async (req, res) => {
     if (!validateRequestHost(req, config)) {
       auditLogger?.record({
@@ -128,7 +185,53 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
 
     const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
 
+    if (
+      url.pathname.startsWith('/oauth/') ||
+      url.pathname === '/.well-known/oauth-protected-resource' ||
+      url.pathname === '/.well-known/oauth-authorization-server'
+    ) {
+      if (!rateLimitRequest(req, res, config, 'oauth')) {
+        return;
+      }
+      const handled = await handleOAuthRoute(req, res, url, { config, storage });
+      if (handled) {
+        return;
+      }
+    }
+
     if (url.pathname === '/' && req.method === 'GET') {
+      const registry = registrySummary();
+      const status = hub.getStatus();
+      const activeClientName = status.connected ? 'RemNote Plugin' : 'None';
+      const lastHeartbeatAt = 'N/A';
+
+      const html = renderDashboard({
+        config,
+        bridgeConnected: status.connected,
+        toolRegistryVersion: registry.toolRegistryVersion,
+        publicToolCount: registry.publicToolCount,
+        startedAt,
+        uptimeSeconds: process.uptime(),
+        pid: process.pid,
+        cwd: process.cwd(),
+        activeClientName,
+        lastHeartbeatAt,
+        mismatchCount: registry.registryMismatch.missing.length + registry.registryMismatch.unexpected.length,
+      });
+
+      res.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'content-security-policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline'",
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'cache-control': 'no-store',
+        'x-frame-options': 'DENY',
+      });
+      res.end(html);
+      return;
+    }
+
+    if ((url.pathname === '/api/status' || url.pathname === '/status') && req.method === 'GET') {
       const registry = registrySummary();
       writeJson(res, 200, {
         ok: true,
@@ -190,8 +293,23 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
       return;
     }
 
+    // ── Phase 4 dashboard auth routes ──────────────────────────────
+    const dashboardHandled = await handleDashboardRoute(req, res, url, { config, storage, hub });
+    if (dashboardHandled) return;
+
+    // ── Phase 5 plugin pairing routes ─────────────────────────────
+    if (url.pathname.startsWith('/api/pair') && !rateLimitRequest(req, res, config, 'pair')) {
+      return;
+    }
+    const pairingHandled = await handlePairingRoute(req, res, url, { config, storage });
+    if (pairingHandled) return;
+
     if (url.pathname !== config.mcpPath) {
       writeText(res, 404, 'Not Found');
+      return;
+    }
+
+    if (!rateLimitRequest(req, res, config, 'mcp')) {
       return;
     }
 
@@ -224,16 +342,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
     }
 
     const discoveryRequest = req.method === 'POST' && isMcpDiscoveryRequest(body);
-    const auth = discoveryRequest
-      ? {
-          ok: true as const,
-          principal: {
-            subject: 'chatgpt-mcp-discovery',
-            authMode: 'mcp_discovery_noauth' as const,
-            scopeGrants: ['bridge:read' as const],
-          },
-        }
-      : authorizeLocalMcpRequest(req, config);
+    const auth = await authorizeMcpRequest(req, body, discoveryRequest);
     if (!auth.ok) {
       auditLogger?.record({
         type: 'mcp_request_rejected',
@@ -244,6 +353,12 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
         statusCode: auth.statusCode,
         reason: auth.auditReason,
       });
+      if (config.deploymentMode === 'public_hosted_oauth' && auth.statusCode === 401) {
+        res.setHeader(
+          'WWW-Authenticate',
+          buildOauthChallenge(req, config, requiredScopesForMcpRequest(body).join(' '))
+        );
+      }
       writeJson(res, auth.statusCode, {
         error: auth.error,
       });
@@ -271,6 +386,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub): Htt
       requestSignal: requestAbortController.signal,
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
+      principal: auth.principal,
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
@@ -319,8 +435,12 @@ export async function startCompanionApp(
   };
   validateConfig(config);
 
-  const hub = new BridgeHub(config);
-  const mcpServer = createMcpHttpServer(config, hub);
+  // Initialize persistent storage (Phase 3/4)
+  const storage = createStorageProvider(config);
+  await storage.initialize();
+
+  const hub = new BridgeHub(config, storage);
+  const mcpServer = createMcpHttpServer(config, hub, storage);
   if (config.singlePort) {
     hub.attachToServer(mcpServer);
   } else {

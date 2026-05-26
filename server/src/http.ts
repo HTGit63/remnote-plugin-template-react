@@ -7,6 +7,8 @@ const SECURITY_HEADERS = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
   'cache-control': 'no-store',
+  'content-security-policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  'cross-origin-resource-policy': 'same-origin',
 };
 
 export function isLoopbackHost(hostHeader: string | undefined): boolean {

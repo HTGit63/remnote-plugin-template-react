@@ -154,15 +154,18 @@ It provides:
 - WebSocket server on `127.0.0.1:47391/remnote-bridge`;
 - MCP Streamable HTTP endpoint on `127.0.0.1:47392/mcp`;
 - optional single-port mode with `REMNOTE_BRIDGE_SINGLE_PORT=1`, where WebSocket and MCP share one HTTP server and `PORT` / `REMNOTE_BRIDGE_PORT`;
-- one active plugin connection at a time;
+- local/personal mode with one active plugin connection at a time;
+- public-hosted mode with per-user active plugin routing through `SessionRouter`;
 - request/response ID tracking with timeouts;
 - caller-disconnect cancellation for pending bridge requests;
 - a recent request outcome ledger that stores lifecycle, status/error metadata, created Rem IDs, and partial execution evidence without note content;
 - token checks by default through `REMNOTE_BRIDGE_TOKEN`;
+- public-hosted OAuth bearer checks for `/mcp`;
+- plugin pairing and session-token verification for hosted WebSocket connections;
 - loopback host validation and optional CORS allowlisting.
 - local audit logging for request/auth metadata without note content.
 
-`server/src/auth` and `server/src/sessions` define the future hosted-mode security boundary: OAuth account, user/session identity, device/session IDs, scope grants, revocation, and audit event shapes. The active implementation still uses local bridge-token auth only. `REMNOTE_BRIDGE_HOSTED_MODE=1` fails startup until real OAuth, pairing, and persistent sessions are implemented.
+`server/src/auth`, `server/src/storage`, and `server/src/bridge` implement the hosted-mode security boundary: OAuth user/session identity, device/session IDs, scope grants, token revocation, pairing, audit events, idempotency records, and per-user plugin routing. Local and personal modes still use static bridge-token auth.
 
 ## MCP/ChatGPT Tool Layer
 
@@ -252,7 +255,7 @@ ChatGPT app
 -> RemNote SDK
 ```
 
-Public multi-user hosted mode must add real controls before public deployment:
+Public multi-user hosted mode now has repo/local OAuth, pairing, and routing support:
 
 ```text
 ChatGPT app
@@ -260,18 +263,20 @@ ChatGPT app
 -> OAuth sign-in
 -> user account
 -> paired plugin session
--> short-lived session token
+-> short-lived OAuth access token
 -> scope grants
 -> revocation/audit log
+-> per-user plugin router
 -> RemNote plugin WebSocket session
 -> RemNote SDK
 ```
 
-Required hosted controls:
+Implemented hosted controls:
 
 - stable HTTPS endpoint for `/mcp`;
 - stable WSS endpoint for `/remnote-bridge`;
-- OAuth provider with review-safe demo account;
+- OAuth protected-resource metadata and authorization-server metadata;
+- DCR, authorization-code flow, PKCE S256, refresh rotation, and revoke;
 - pairing flow that binds a plugin device/session to one user;
 - short-lived session tokens stored server-side as hashes;
 - scope grants enforced server-side and plugin-side;
@@ -279,7 +284,7 @@ Required hosted controls:
 - audit log that excludes note bodies, markdown payloads, tokens, and secrets;
 - production storage for sessions and audit events.
 
-`render.yaml` documents the personal hosted shape. `REMNOTE_BRIDGE_HOSTED_MODE=1` still fails startup because that flag is reserved for the later public OAuth/pairing implementation.
+Production/public launch still requires real provider credentials, PostgreSQL `DATABASE_URL`, Render HTTPS/WSS proof, live RemNote plugin proof, and ChatGPT Developer Mode proof. `REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth` is the current public-hosted flag. Legacy `REMNOTE_BRIDGE_HOSTED_MODE=1` maps only to personal token mode.
 
 Local mode remains separate:
 

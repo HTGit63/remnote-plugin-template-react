@@ -11,7 +11,8 @@ Status: complete for personal hosted readiness at repo and mock-runtime level on
 - Added `REMNOTE_BRIDGE_TOOL_PROFILE`, single-port, path, and port examples to `.env.example`.
 - Added root `npm run server:start`.
 - Added `render.yaml` for personal hosted Render deployment with one web service, token auth, CORS allowlist, simple tool profile, and `/health` health check.
-- Kept `REMNOTE_BRIDGE_HOSTED_MODE=1` blocked for public multi-user OAuth/pairing mode.
+- At the time, kept `REMNOTE_BRIDGE_HOSTED_MODE=1` blocked for public multi-user OAuth/pairing mode.
+- 2026-05-26 update: public multi-user OAuth/pairing/routing now exists under `REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth` at repo/local smoke level.
 
 ## Local Hosted Shape
 
@@ -31,4 +32,4 @@ WS     /remnote-bridge
 
 ## Remaining Operator Proof
 
-Render deployment was not executed in this local coding run because it needs the user's Render account and secret token. Public hosted mode is still not production-ready until OAuth, pairing, per-user sessions, revocation, privacy policy, and support assets exist.
+Render deployment was not executed in this local coding run because it needs the user's Render account and secret token. Public hosted mode now has repo/local OAuth, pairing, per-user sessions, and revocation, but still needs hosted PostgreSQL, real provider credentials, Render proof, live RemNote proof, privacy policy, and support assets.

@@ -110,6 +110,11 @@ export type BridgeErrorCode =
   | 'REM_NOT_FOUND'
   | 'PARENT_NOT_FOUND'
   | 'PLUGIN_NOT_CONNECTED'
+  | 'PLUGIN_NOT_PAIRED'
+  | 'DEVICE_CONFLICT'
+  | 'PLUGIN_SESSION_EXPIRED'
+  | 'PLUGIN_SESSION_REVOKED'
+  | 'NO_ACTIVE_DEVICE'
   | 'INVALID_ARGS'
   | 'PERMISSION_DENIED'
   | 'OUT_OF_SCOPE'
@@ -1125,6 +1130,10 @@ export interface BridgePluginHello {
   type: 'plugin_hello';
   protocolVersion: 1;
   clientName: 'remnote-plugin';
+  deploymentMode?: 'public_hosted_oauth' | 'personal_hosted_token' | 'local_dev';
+  deviceId?: string;
+  pluginSessionId?: string;
+  pluginSessionToken?: string;
   token?: string;
 }
 

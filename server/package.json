@@ -8,11 +8,16 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server/src/index.js",
     "test-client": "tsx src/test-client.ts",
+    "test:auth": "tsx src/auth-smoke.ts",
+    "test:pairing": "tsx src/pairing-smoke.ts",
+    "test:routing": "tsx src/routing-smoke.ts",
+    "test:security": "tsx src/auth-smoke.ts",
     "smoke": "tsx src/smoke.ts",
     "live-test": "tsx src/live-test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "pg": "^8.21.0",
     "ws": "^8.20.0",
     "zod": "^4.4.3"
   },
