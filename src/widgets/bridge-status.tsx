@@ -52,7 +52,7 @@ const statusToneClass: Record<string, string> = {
   connecting: 'bridge-pill bridge-pill-warning',
   disconnected: 'bridge-pill bridge-pill-muted',
   error: 'bridge-pill bridge-pill-danger',
-  not_paired: 'bridge-pill bridge-pill-warning',
+  not_paired: 'bridge-pill bridge-pill-muted',
   pairing: 'bridge-pill bridge-pill-warning',
   paired_offline: 'bridge-pill bridge-pill-warning',
   reconnecting: 'bridge-pill bridge-pill-warning',
@@ -165,6 +165,29 @@ function companionHttpUrl(serverUrl: string, pathname: '/health' | '/diagnostics
   url.search = '';
   url.hash = '';
   return url.toString();
+}
+
+function isHostedBridgeUrl(serverUrl: string): boolean {
+  return (
+    serverUrl.startsWith('wss://') &&
+    !serverUrl.includes('localhost') &&
+    !serverUrl.includes('127.0.0.1')
+  );
+}
+
+function isWaitingForChatGptPairing(lastEvent: string): boolean {
+  return /waiting for chatgpt pairing/i.test(lastEvent);
+}
+
+function getFriendlyPairingError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/failed to fetch|networkerror|load failed/i.test(message)) {
+    return 'Could not reach Render pairing endpoint. Check CORS, server URL, or deployment status.';
+  }
+  if (/unexpected token|not valid json/i.test(message)) {
+    return 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
+  }
+  return message || 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
 }
 
 function DetailRow({
@@ -416,6 +439,18 @@ export function BridgeStatusWidget() {
       return undefined;
     }
 
+    if (isHostedBridgeUrl(serverUrl) && !hostedSession?.sessionSecret) {
+      clientRef.current?.disconnect();
+      clientRef.current = null;
+      setBridgeStatus({
+        ...INITIAL_BRIDGE_STATUS,
+        serverUrl,
+        state: 'not_paired',
+        lastEvent: 'Waiting for ChatGPT pairing approval before opening the hosted WebSocket.',
+      });
+      return undefined;
+    }
+
     const client = new BrowserBridgeClient({
       plugin,
       serverUrl,
@@ -558,8 +593,7 @@ export function BridgeStatusWidget() {
       setChatGptPairingPreview(null);
       await plugin.app.toast('ChatGPT connection approved.');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      setPairingEvent(message);
+      setPairingEvent(getFriendlyPairingError(error));
       await plugin.app.toast('ChatGPT pairing failed.');
     }
   };
@@ -571,9 +605,8 @@ export function BridgeStatusWidget() {
       setPairingEvent(`Pending request from ${preview.connectionLabel}.`);
       await plugin.app.toast('Pairing request found.');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
       setChatGptPairingPreview(null);
-      setPairingEvent(message);
+      setPairingEvent(getFriendlyPairingError(error));
       await plugin.app.toast('Pairing code not found.');
     }
   };
@@ -586,8 +619,7 @@ export function BridgeStatusWidget() {
       setChatGptPairingPreview(null);
       await plugin.app.toast('ChatGPT connection denied.');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      setPairingEvent(message);
+      setPairingEvent(getFriendlyPairingError(error));
       await plugin.app.toast('Could not deny pairing.');
     }
   };
@@ -696,14 +728,21 @@ export function BridgeStatusWidget() {
 
   const ready = bridgeStatus.state === 'connected' && !pendingRequest;
   const needsAction = Boolean(pendingRequest);
-  const taskVariant = needsAction ? 'warning' : ready ? 'ready' : 'offline';
-  const bridgeNextAction = getBridgeNextAction(bridgeStatus);
-  const taskTitle = needsAction ? 'Action Needed' : ready ? 'Ready' : 'Bridge Offline';
+  const waitingForPairing =
+    bridgeStatus.state === 'not_paired' || isWaitingForChatGptPairing(bridgeStatus.lastEvent);
+  const taskVariant = needsAction ? 'warning' : ready ? 'ready' : waitingForPairing ? 'warning' : 'offline';
+  const bridgeNextAction = waitingForPairing
+    ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
+    : getBridgeNextAction(bridgeStatus);
+  const statusLabel = waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
+  const taskTitle = needsAction ? 'Action Needed' : ready ? 'Ready' : waitingForPairing ? 'Waiting for ChatGPT pairing' : 'Bridge Offline';
   const taskCopy = needsAction
     ? 'Review this write before RemNote changes.'
     : ready
       ? 'ChatGPT can use the connected RemNote tools.'
-      : 'Start the companion server or check the token.';
+      : waitingForPairing
+        ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
+        : 'Start the companion server or check the token.';
 
   const pendingSection = (
     <section
@@ -801,7 +840,7 @@ export function BridgeStatusWidget() {
       <BridgeWidgetHeader
         status={bridgeStatus}
         statusClassName={statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}
-        statusLabel={getBridgeStatusLabel(bridgeStatus.state)}
+        statusLabel={statusLabel}
         nextAction={bridgeNextAction}
       />
 

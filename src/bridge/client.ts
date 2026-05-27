@@ -149,7 +149,7 @@ export class BrowserBridgeClient {
 
     this.ws.addEventListener('open', () => {
       this.reconnectDelayMs = INITIAL_RECONNECT_MS;
-      this.updateStatus('connected', 'Connected to companion server.');
+      this.updateStatus('connecting', 'WebSocket opened. Registering RemNote plugin...');
       this.sendHello();
     });
 
@@ -249,7 +249,7 @@ export class BrowserBridgeClient {
         hiddenTools: parsed.hiddenTools,
         serverStartedAt: parsed.serverStartedAt,
       };
-      this.updateStatus('connected', 'Server handshake complete.');
+      this.updateStatus('connected', 'Connected to companion server.');
       return;
     }
 
