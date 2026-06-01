@@ -43,6 +43,10 @@ export class BrowserBridgeClient {
   private serverInfo: Pick<
     BridgeStatusSnapshot,
     | 'toolProfile'
+    | 'toolTier'
+    | 'activeToolTier'
+    | 'defaultToolTier'
+    | 'toolSchemaVersion'
     | 'toolRegistryVersion'
     | 'allPublicToolCount'
     | 'allPublicTools'
@@ -60,6 +64,9 @@ export class BrowserBridgeClient {
     | 'dangerousTools'
     | 'unsupportedTools'
     | 'profileHiddenTools'
+    | 'toolMetadata'
+    | 'toolTierSummary'
+    | 'runtimeVerificationMatrix'
     | 'hiddenTools'
     | 'serverStartedAt'
   > = {};
@@ -90,6 +97,10 @@ export class BrowserBridgeClient {
     serverInfo: Pick<
       BridgeStatusSnapshot,
       | 'toolProfile'
+      | 'toolTier'
+      | 'activeToolTier'
+      | 'defaultToolTier'
+      | 'toolSchemaVersion'
       | 'toolRegistryVersion'
       | 'allPublicToolCount'
       | 'allPublicTools'
@@ -107,6 +118,9 @@ export class BrowserBridgeClient {
       | 'dangerousTools'
       | 'unsupportedTools'
       | 'profileHiddenTools'
+      | 'toolMetadata'
+      | 'toolTierSummary'
+      | 'runtimeVerificationMatrix'
       | 'hiddenTools'
       | 'serverStartedAt'
     > = this.serverInfo
@@ -229,6 +243,10 @@ export class BrowserBridgeClient {
     if (this.isServerHello(parsed)) {
       this.serverInfo = {
         toolProfile: parsed.toolProfile,
+        toolTier: parsed.toolTier,
+        activeToolTier: parsed.activeToolTier,
+        defaultToolTier: parsed.defaultToolTier,
+        toolSchemaVersion: parsed.toolSchemaVersion,
         toolRegistryVersion: parsed.toolRegistryVersion,
         allPublicToolCount: parsed.allPublicToolCount,
         allPublicTools: parsed.allPublicTools,
@@ -246,6 +264,9 @@ export class BrowserBridgeClient {
         dangerousTools: parsed.dangerousTools,
         unsupportedTools: parsed.unsupportedTools,
         profileHiddenTools: parsed.profileHiddenTools,
+        toolMetadata: parsed.toolMetadata,
+        toolTierSummary: parsed.toolTierSummary,
+        runtimeVerificationMatrix: parsed.runtimeVerificationMatrix,
         hiddenTools: parsed.hiddenTools,
         serverStartedAt: parsed.serverStartedAt,
       };

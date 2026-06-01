@@ -4,11 +4,22 @@ export type ToolPolicy =
   | 'debug'
   | 'read'
   | 'cards'
-  | 'legacy_hidden'
   | 'dangerous'
   | 'unsupported';
 
-export type ToolProfile = 'simple' | 'full';
+export type ToolTier = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+export type ToolProfile = ToolTier;
+export type ToolCategory =
+  | 'status'
+  | 'read'
+  | 'write'
+  | 'formatting'
+  | 'batch'
+  | 'cards'
+  | 'diagnostics'
+  | 'delete'
+  | 'debug';
+export type ToolRiskLevel = 'low' | 'medium' | 'high' | 'dangerous';
 
 export interface ToolPolicyEntry {
   name: string;
@@ -18,32 +29,83 @@ export interface ToolPolicyEntry {
   replacement?: string;
 }
 
-export const DEFAULT_TOOL_PROFILE: ToolProfile = 'full';
+export interface ToolMetadata {
+  name: string;
+  tier: ToolTier | 'unsupported';
+  category: ToolCategory;
+  riskLevel: ToolRiskLevel;
+  requiresWrite: boolean;
+  requiresDelete: boolean;
+  supportsDryRun: boolean;
+  supportsIdempotency: boolean;
+  recommendedForNormalUse: boolean;
+  runtimeVerified: boolean;
+  runtimeVerifiedSource: 'server_local' | 'recent_plugin_call' | 'registry_only';
+  exposedNormally: boolean;
+  sdkSupported: boolean;
+}
 
-export const SIMPLE_PROFILE_TOOLS = [
+export const DEFAULT_TOOL_PROFILE: ToolProfile = 'core';
+export const TOOL_SCHEMA_VERSION = '2026-06-01.area1';
+
+export const CORE_TIER_TOOLS = [
   'get_bridge_status',
-  'get_bridge_diagnostics',
-  'run_bridge_health_check',
-  'get_remnote_capability_guide',
   'get_plugin_status',
   'get_focused_rem',
   'get_rem',
-  'get_rem_tree',
   'get_children',
+  'get_rem_tree',
   'get_rem_breadcrumbs',
   'search_rems',
+  'create_basic_flashcard',
+  'create_cloze_card',
+  'create_multiple_choice_card',
+  'create_list_answer_card',
+  'delete_rem_by_id',
+] as const;
+
+export const ADVANCED_NOTES_TIER_TOOLS = [
+  'get_current_selection',
+  'get_rem_rich',
+  'get_document_or_folder_tree',
+  'create_rem',
+  'create_document',
+  'append_to_rem',
+  'update_rem',
+  'replace_rem',
+  'move_rem',
+  'reorder_children',
+  'create_rem_tree',
+  'update_rem_rich',
+  'create_styled_rem_tree',
   'create_polished_note_tree',
   'apply_structured_note_batch',
   'apply_style_plan',
   'verify_note_design',
-  'delete_rem_by_id',
-  'create_basic_flashcard',
+  'apply_remnote_command',
+  'set_rem_heading_level',
+  'set_rem_text_color',
+  'set_rem_highlight_color',
+  'set_text_span_color',
+  'set_text_span_highlight',
+  'set_rem_type',
+  'set_hide_bullet',
+  'clear_rem_formatting',
   'create_concept_card',
   'create_descriptor_card',
-  'create_cloze_card',
-  'create_multiple_choice_card',
-  'create_list_answer_card',
 ] as const;
+
+export const DEVELOPER_DIAGNOSTICS_TIER_TOOLS = [
+  'ping_remnote_plugin',
+  'get_bridge_diagnostics',
+  'run_bridge_health_check',
+  'get_remnote_capability_guide',
+  'debug_get_raw_rich_text',
+] as const;
+
+const CORE_SET = new Set<string>(CORE_TIER_TOOLS);
+const ADVANCED_SET = new Set<string>(ADVANCED_NOTES_TIER_TOOLS);
+const DEVELOPER_SET = new Set<string>(DEVELOPER_DIAGNOSTICS_TIER_TOOLS);
 
 export const TOOL_POLICY_ENTRIES = [
   {
@@ -157,37 +219,150 @@ export const TOOL_POLICY_ENTRIES = [
     avoidWhen: ['normal note creation', 'uncertain target identity'],
     replacement: 'update_rem',
   },
-  {
-    name: 'delete_rem',
-    policy: 'legacy_hidden',
-    replacement: 'delete_rem_by_id',
-  },
-  {
-    name: 'delete_focused_rem',
-    policy: 'legacy_hidden',
-    replacement: 'delete_rem_by_id',
-  },
-  {
-    name: 'delete_selected_rem',
-    policy: 'legacy_hidden',
-    replacement: 'delete_rem_by_id',
-  },
 ] as const satisfies readonly ToolPolicyEntry[];
 
 const TOOL_POLICY_BY_NAME: ReadonlyMap<string, ToolPolicyEntry> = new Map(
   TOOL_POLICY_ENTRIES.map((entry) => [entry.name, entry])
 );
 
+function tierForTool(name: string): ToolMetadata['tier'] {
+  if (CORE_SET.has(name)) return 'core';
+  if (ADVANCED_SET.has(name)) return 'advanced_notes';
+  if (DEVELOPER_SET.has(name)) return 'developer_diagnostics';
+  return name === 'create_folder' ? 'unsupported' : 'advanced_notes';
+}
+
+function meta(
+  name: string,
+  category: ToolCategory,
+  riskLevel: ToolRiskLevel,
+  flags: Partial<Omit<ToolMetadata, 'name' | 'tier' | 'category' | 'riskLevel'>> = {}
+): ToolMetadata {
+  const requiresDelete = flags.requiresDelete ?? (riskLevel === 'dangerous' && name.startsWith('delete_'));
+  const requiresWrite =
+    flags.requiresWrite ?? (requiresDelete || ['write', 'formatting', 'batch', 'cards', 'delete'].includes(category));
+  return {
+    name,
+    tier: tierForTool(name),
+    category,
+    riskLevel,
+    requiresWrite,
+    requiresDelete,
+    supportsDryRun: flags.supportsDryRun ?? false,
+    supportsIdempotency: flags.supportsIdempotency ?? false,
+    recommendedForNormalUse: flags.recommendedForNormalUse ?? (tierForTool(name) !== 'developer_diagnostics' && riskLevel !== 'dangerous'),
+    runtimeVerified: flags.runtimeVerified ?? false,
+    runtimeVerifiedSource: flags.runtimeVerifiedSource ?? 'registry_only',
+    exposedNormally: flags.exposedNormally ?? tierForTool(name) !== 'unsupported',
+    sdkSupported: flags.sdkSupported ?? tierForTool(name) !== 'unsupported',
+  };
+}
+
+export const TOOL_METADATA = [
+  meta('get_bridge_status', 'status', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('get_plugin_status', 'status', 'low'),
+  meta('get_focused_rem', 'read', 'low'),
+  meta('get_rem', 'read', 'low'),
+  meta('get_children', 'read', 'low'),
+  meta('get_rem_tree', 'read', 'low'),
+  meta('get_rem_breadcrumbs', 'read', 'low'),
+  meta('search_rems', 'read', 'low'),
+  meta('create_basic_flashcard', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('create_cloze_card', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('create_multiple_choice_card', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('create_list_answer_card', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('delete_rem_by_id', 'delete', 'dangerous', {
+    requiresDelete: true,
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    recommendedForNormalUse: true,
+  }),
+  meta('get_current_selection', 'read', 'low'),
+  meta('get_rem_rich', 'read', 'low'),
+  meta('get_document_or_folder_tree', 'read', 'low'),
+  meta('create_rem', 'write', 'medium', { supportsIdempotency: true }),
+  meta('create_document', 'write', 'medium', { supportsIdempotency: true }),
+  meta('append_to_rem', 'write', 'medium', { supportsIdempotency: true }),
+  meta('update_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('replace_rem', 'write', 'dangerous', { supportsDryRun: true, supportsIdempotency: true, recommendedForNormalUse: false }),
+  meta('move_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('reorder_children', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_rem_tree', 'write', 'medium', { supportsIdempotency: true }),
+  meta('update_rem_rich', 'write', 'high', { supportsIdempotency: true }),
+  meta('create_styled_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_polished_note_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('apply_structured_note_batch', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('apply_style_plan', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('verify_note_design', 'read', 'low'),
+  meta('apply_remnote_command', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('set_rem_heading_level', 'formatting', 'medium'),
+  meta('set_rem_text_color', 'formatting', 'medium'),
+  meta('set_rem_highlight_color', 'formatting', 'medium'),
+  meta('set_text_span_color', 'formatting', 'medium'),
+  meta('set_text_span_highlight', 'formatting', 'medium'),
+  meta('set_rem_type', 'formatting', 'medium'),
+  meta('set_hide_bullet', 'formatting', 'medium'),
+  meta('clear_rem_formatting', 'formatting', 'high'),
+  meta('create_concept_card', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('create_descriptor_card', 'cards', 'medium', { supportsIdempotency: true }),
+  meta('ping_remnote_plugin', 'diagnostics', 'low'),
+  meta('get_bridge_diagnostics', 'diagnostics', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('run_bridge_health_check', 'diagnostics', 'high', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('get_remnote_capability_guide', 'diagnostics', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('debug_get_raw_rich_text', 'debug', 'low'),
+  meta('create_folder', 'write', 'medium', {
+    requiresWrite: true,
+    exposedNormally: false,
+    sdkSupported: false,
+    recommendedForNormalUse: false,
+  }),
+] as const satisfies readonly ToolMetadata[];
+
+const TOOL_METADATA_BY_NAME: ReadonlyMap<string, ToolMetadata> = new Map(
+  TOOL_METADATA.map((entry) => [entry.name, entry])
+);
+
 export function normalizeToolProfile(value: string | undefined): ToolProfile {
-  return value === 'simple' || value === 'full' ? value : DEFAULT_TOOL_PROFILE;
+  switch (value) {
+    case 'simple':
+    case 'core':
+      return 'core';
+    case 'advanced_notes':
+      return 'advanced_notes';
+    case 'developer_diagnostics':
+      return 'developer_diagnostics';
+    case 'full':
+      return 'full';
+    default:
+      return DEFAULT_TOOL_PROFILE;
+  }
 }
 
 export function getToolPolicyEntry(name: string): ToolPolicyEntry {
   return TOOL_POLICY_BY_NAME.get(name) ?? { name, policy: 'fallback' };
 }
 
+export function getToolMetadata(name: string): ToolMetadata {
+  return TOOL_METADATA_BY_NAME.get(name) ?? meta(name, 'write', 'medium');
+}
+
 export function isToolVisibleInProfile(name: string, profile: ToolProfile): boolean {
-  return profile === 'full' || (SIMPLE_PROFILE_TOOLS as readonly string[]).includes(name);
+  if (!getToolMetadata(name).exposedNormally) {
+    return false;
+  }
+  if (profile === 'full') {
+    return true;
+  }
+  if (CORE_SET.has(name)) {
+    return true;
+  }
+  if (profile === 'advanced_notes') {
+    return ADVANCED_SET.has(name);
+  }
+  if (profile === 'developer_diagnostics') {
+    return DEVELOPER_SET.has(name);
+  }
+  return false;
 }
 
 export function filterToolsForProfile<T extends string>(tools: readonly T[], profile: ToolProfile): T[] {
@@ -201,7 +376,6 @@ export function groupToolsByPolicy(toolNames: readonly string[]) {
     debug: [],
     read: [],
     cards: [],
-    legacy_hidden: [],
     dangerous: [],
     unsupported: [],
   };
@@ -222,8 +396,25 @@ export function getProfileHiddenTools(allPublicTools: readonly string[], profile
     .filter((tool) => !isToolVisibleInProfile(tool, profile))
     .map((tool) => ({
       name: tool,
-      reason: 'Hidden by REMNOTE_BRIDGE_TOOL_PROFILE=simple to reduce normal-use tool choice.',
+      reason: `Hidden by active RemNote MCP tool tier "${profile}".`,
       policy: getToolPolicyEntry(tool).policy,
       replacement: getToolPolicyEntry(tool).replacement,
+      tier: getToolMetadata(tool).tier,
     }));
+}
+
+export function getToolTierSummary(profile: ToolProfile) {
+  return {
+    activeTier: profile,
+    aliases: {
+      simple: 'core',
+      full: 'full',
+    },
+    tiers: {
+      core: [...CORE_TIER_TOOLS],
+      advanced_notes: [...ADVANCED_NOTES_TIER_TOOLS],
+      developer_diagnostics: [...DEVELOPER_DIAGNOSTICS_TIER_TOOLS],
+      full: TOOL_METADATA.filter((tool) => tool.exposedNormally).map((tool) => tool.name),
+    },
+  };
 }

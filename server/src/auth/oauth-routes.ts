@@ -10,6 +10,8 @@ import { hashToken } from '../storage/crypto-utils.js';
 import type { ChatGptPairingSession } from '../storage/types.js';
 import type { StorageProvider, User } from '../storage/types.js';
 import { safeLog } from '../security/redaction.js';
+import { TOOL_REGISTRY_VERSION } from '../tool-registry.js';
+import { TOOL_SCHEMA_VERSION } from '../tool-policy.js';
 import { createDashboardSession, generateSessionToken, validateDashboardSession } from './dashboard-session.js';
 import {
   generatePairingCode,
@@ -297,6 +299,10 @@ export async function handleOAuthRoute(
       approvedScopes: [],
       accessScope: 'focused-rem-only',
       trustedWriteMode: 'ask-every-write',
+      toolTier: config.toolProfile,
+      toolTierVersion: TOOL_REGISTRY_VERSION,
+      toolSchemaVersionAtApproval: TOOL_SCHEMA_VERSION,
+      requiresConnectorRefresh: false,
       redirectUri,
       resource,
       oauthSubject: pairingId,

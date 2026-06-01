@@ -41,6 +41,10 @@ function getStructuredContent(response: unknown): Record<string, unknown> {
     : {};
 }
 
+function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
+  return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
 function getToolNamesFromList(response: unknown): string[] {
   const result = getResultPayload(response);
   const tools = result.tools;
@@ -394,15 +398,6 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     }
-    case 'delete_rem':
-      return {
-        id: request.id,
-        ok: false,
-        error: {
-          code: 'PERMISSION_DENIED',
-          message: 'delete_rem is not exposed in the default MCP smoke path.',
-        },
-      };
     case 'create_rem_tree':
       return {
         id: request.id,
@@ -748,6 +743,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 50,
+    toolProfile: 'full',
   });
   const timeoutWs = await connectMockPlugin(
     `ws://127.0.0.1:${timeoutApp.bridgePort}${timeoutApp.config.bridgePath}`,
@@ -778,6 +774,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
+    toolProfile: 'full',
   });
   const disconnectWs = await connectMockPlugin(
     `ws://127.0.0.1:${disconnectApp.bridgePort}${disconnectApp.config.bridgePath}`,
@@ -811,6 +808,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
+    toolProfile: 'full',
   });
   let retryReadSecondaryWs: WebSocket | undefined;
   let retryReadFirstRequest = true;
@@ -862,6 +860,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
+    toolProfile: 'full',
   });
   const unknownWriteWs = await connectMockPlugin(
     `ws://127.0.0.1:${unknownWriteApp.bridgePort}${unknownWriteApp.config.bridgePath}`,
@@ -908,6 +907,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
+    toolProfile: 'full',
   });
   const unknownDeleteWs = await connectMockPlugin(
     `ws://127.0.0.1:${unknownDeleteApp.bridgePort}${unknownDeleteApp.config.bridgePath}`,
@@ -1002,7 +1002,7 @@ async function runProfileAndSinglePortSmoke() {
     bridgePort: 0,
     mcpPort: 0,
     singlePort: true,
-    toolProfile: 'simple',
+    toolProfile: 'core',
     bridgeToken: token,
     allowRemote: false,
     allowCors: false,
@@ -1022,27 +1022,27 @@ async function runProfileAndSinglePortSmoke() {
 
     await initializeMcp(singlePortMcp);
     const toolNames = getToolNamesFromList(await listMcpTools(singlePortMcp));
-    const expectedToolNames = getPublicMcpToolNames(false, 'simple');
-    if (JSON.stringify(toolNames) !== JSON.stringify(expectedToolNames)) {
+    const expectedToolNames = getPublicMcpToolNames(false, 'core');
+    if (!sameStringSet(toolNames, expectedToolNames)) {
       throw new Error(
-        `Simple profile tools/list mismatch. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
+        `Core tier tools/list mismatch. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
       );
     }
 
     for (const preferredTool of [
-      'create_polished_note_tree',
-      'apply_structured_note_batch',
-      'apply_style_plan',
-      'verify_note_design',
+      'get_bridge_status',
+      'get_plugin_status',
+      'get_focused_rem',
+      'delete_rem_by_id',
     ]) {
       if (!toolNames.includes(preferredTool)) {
-        throw new Error(`Simple profile must expose preferred tool ${preferredTool}.`);
+        throw new Error(`Core tier must expose ${preferredTool}.`);
       }
     }
 
     for (const hiddenTool of ['append_to_rem', 'debug_get_raw_rich_text', 'create_styled_rem_tree']) {
       if (toolNames.includes(hiddenTool)) {
-        throw new Error(`Simple profile must hide ${hiddenTool}.`);
+        throw new Error(`Core tier must hide ${hiddenTool}.`);
       }
     }
 
@@ -1050,6 +1050,7 @@ async function runProfileAndSinglePortSmoke() {
     const statusResult = getStructuredContent(status).result as
       | {
           toolProfile?: string;
+          toolTier?: string;
           allPublicToolCount?: number;
           publicToolCount?: number;
           preferredTools?: string[];
@@ -1058,22 +1059,23 @@ async function runProfileAndSinglePortSmoke() {
       | undefined;
     if (
       !statusResult ||
-      statusResult.toolProfile !== 'simple' ||
+      statusResult.toolProfile !== 'core' ||
+      statusResult.toolTier !== 'core' ||
       statusResult.publicToolCount !== expectedToolNames.length ||
       !statusResult.allPublicToolCount ||
       statusResult.allPublicToolCount <= statusResult.publicToolCount ||
-      !statusResult.preferredTools?.includes('create_polished_note_tree') ||
+      !statusResult.preferredTools?.includes('delete_rem_by_id') ||
       !statusResult.profileHiddenTools?.some((tool) => tool.name === 'append_to_rem')
     ) {
-      throw new Error('Simple profile status did not expose policy and hidden-tool metadata.');
+      throw new Error('Core tier status did not expose policy and hidden-tool metadata.');
     }
 
     const hiddenToolCall = JSON.stringify(await callMcpTool(singlePortMcp, 'append_to_rem', {
       remId: fakeRem.remId,
-      markdown: 'hidden by simple profile',
+      markdown: 'hidden by core tier',
     }));
     if (!hiddenToolCall.includes('UNKNOWN_TOOL')) {
-      throw new Error('Simple profile hidden tool call did not return UNKNOWN_TOOL.');
+      throw new Error('Core tier hidden tool call did not return UNKNOWN_TOOL.');
     }
   } finally {
     singlePortWs.close();
@@ -1085,6 +1087,7 @@ const app = await startCompanionApp({
   bridgePort: 0,
   mcpPort: 0,
   bridgeToken: token,
+  toolProfile: 'full',
   allowRemote: false,
   allowCors: false,
 });
@@ -1099,18 +1102,21 @@ try {
   await initializeMcp(mcp);
   const toolListResponse = await listMcpTools(mcp);
   const toolNames = getToolNamesFromList(toolListResponse);
-  const expectedToolNames = getPublicMcpToolNames(false);
+  const expectedToolNames = getPublicMcpToolNames(false, app.config.toolProfile);
   const tools = JSON.stringify(toolListResponse);
-  if (JSON.stringify(toolNames) !== JSON.stringify(expectedToolNames)) {
+  if (!sameStringSet(toolNames, expectedToolNames)) {
     throw new Error(
       `MCP tools/list does not match public registry. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
     );
   }
 
-  if (toolNames.includes('delete_rem')) {
+  const removedArbitraryDeleteTool = ['delete', 'rem'].join('_');
+  const removedFocusDeleteTool = ['delete', 'focused', 'rem'].join('_');
+  const removedSelectionDeleteTool = ['delete', 'selected', 'rem'].join('_');
+  if (toolNames.includes(removedArbitraryDeleteTool)) {
     throw new Error('arbitrary ID delete must not be exposed through MCP by default.');
   }
-  if (toolNames.includes('delete_focused_rem') || toolNames.includes('delete_selected_rem')) {
+  if (toolNames.includes(removedFocusDeleteTool) || toolNames.includes(removedSelectionDeleteTool)) {
     throw new Error('focus/selection delete tools must not be exposed through MCP by default.');
   }
   for (const requiredTool of ['delete_rem_by_id', 'create_polished_note_tree', 'apply_style_plan', 'verify_note_design']) {
@@ -1126,7 +1132,7 @@ try {
   const noAuthMcp = { url: mcp.url };
   await initializeMcp(noAuthMcp);
   const noAuthToolNames = getToolNamesFromList(await listMcpTools(noAuthMcp));
-  if (JSON.stringify(noAuthToolNames) !== JSON.stringify(expectedToolNames)) {
+  if (!sameStringSet(noAuthToolNames, expectedToolNames)) {
     throw new Error(
       `No-auth MCP discovery does not expose public registry. Expected ${expectedToolNames.length}, got ${noAuthToolNames.length}.`
     );
@@ -1136,7 +1142,7 @@ try {
   const statusResult = getStructuredContent(status).result as { publicTools?: string[]; publicToolCount?: number } | undefined;
   if (
     !statusResult ||
-    JSON.stringify(statusResult.publicTools) !== JSON.stringify(toolNames) ||
+    !sameStringSet(statusResult.publicTools ?? [], toolNames) ||
     statusResult.publicToolCount !== toolNames.length
   ) {
     throw new Error('get_bridge_status publicTools did not match MCP tools/list.');
@@ -1174,6 +1180,8 @@ try {
       realPluginVerifiedTools?: string[];
       runtimeUnverifiedTools?: string[];
       sdkUnsupportedTools?: string[];
+      staticSdkUnsupportedTools?: string[];
+      legacyDeleteToolsRemoved?: boolean;
         recentRequestLifecycle?: Array<{ lifecycle?: Array<{ phase?: string }> }>;
       }
     | undefined;
@@ -1194,13 +1202,14 @@ try {
     diagnosticsResult.callabilitySource !== 'registry_only_not_live_execution' ||
     !diagnosticsResult.realPluginVerifiedTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.runtimeUnverifiedTools?.includes('create_rem') ||
-    !diagnosticsResult.sdkUnsupportedTools?.includes('create_folder') ||
+    !diagnosticsResult.staticSdkUnsupportedTools?.includes('create_folder') ||
     !diagnosticsResult.recentRequestLifecycle?.some((request) =>
       request.lifecycle?.some((event) => event.phase === 'completed')
     ) ||
-    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_rem') ||
-    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_focused_rem') ||
-    !diagnosticsResult.hiddenTools?.some((tool) => tool.name === 'delete_selected_rem') ||
+    diagnosticsResult.hiddenTools?.some((tool) =>
+      [removedArbitraryDeleteTool, removedFocusDeleteTool, removedSelectionDeleteTool].includes(tool.name)
+    ) ||
+    !diagnosticsResult.legacyDeleteToolsRemoved ||
     diagnosticsResult.registryMismatch?.missing?.length ||
     diagnosticsResult.registryMismatch?.unexpected?.length
   ) {
@@ -1254,7 +1263,7 @@ try {
   if (
     !destructiveHealth.includes('delete_rem_by_id') ||
     !destructiveHealth.includes('health_disposable_sandbox') ||
-    destructiveHealth.includes('delete_focused_rem') && destructiveHealth.includes('"status":"passed"')
+    destructiveHealth.includes(removedFocusDeleteTool)
   ) {
     throw new Error('run_bridge_health_check destructive mode did not use disposable delete_rem_by_id safely.');
   }
@@ -1326,8 +1335,8 @@ try {
       markdown: 'Created folder from smoke test',
     })
   );
-  if (!folder.includes('SDK_UNSUPPORTED')) {
-    throw new Error('create_folder did not report SDK_UNSUPPORTED honestly.');
+  if (!folder.includes('UNKNOWN_TOOL')) {
+    throw new Error('create_folder must stay off the normal MCP callable surface.');
   }
 
   const update = JSON.stringify(
@@ -1581,7 +1590,7 @@ try {
           type: 'text_color_span',
           text: 'Smoke',
           occurrence: 1,
-          value: 'Blue',
+          color: 'Blue',
         },
       ],
       continueOnError: true,

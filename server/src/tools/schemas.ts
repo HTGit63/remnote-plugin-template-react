@@ -8,6 +8,9 @@ export const MAX_SEARCH_RESULTS_SCHEMA = z.number().int().min(1).max(25);
 export const TREE_DEPTH_SCHEMA = z.number().int().min(0).max(3).default(1);
 export const ORDERED_CHILD_IDS_SCHEMA = z.array(REM_ID_SCHEMA).max(500);
 export const DELETE_CONFIRM_SCHEMA = z.literal('DELETE');
+export const IDEMPOTENCY_KEY_SCHEMA = z.string().trim().min(1).max(128);
+export const DRY_RUN_SCHEMA = z.boolean().default(false);
+export const MAX_TREE_NODE_COUNT_SCHEMA = z.number().int().min(1).max(500).default(150);
 export const COLOR_SCHEMA = z.enum([
   'red',
   'orange',
@@ -125,8 +128,11 @@ export const REORDER_CHILDREN_INPUT_SCHEMA = z
   .object({
     parentRemId: REM_ID_SCHEMA.optional().describe('The parent Rem whose direct children should be reordered.'),
     parentId: REM_ID_SCHEMA.optional().describe('Alias for parentRemId.'),
-    orderedChildRemIds: ORDERED_CHILD_IDS_SCHEMA.optional().describe('Full ordered list of current direct child Rem IDs.'),
+    orderedChildRemIds: ORDERED_CHILD_IDS_SCHEMA.optional().describe('Full ordered list of current direct child Rem IDs. Omit no existing child unless allowPartial=true.'),
     orderedChildIds: ORDERED_CHILD_IDS_SCHEMA.optional().describe('Alias for orderedChildRemIds.'),
+    dryRun: DRY_RUN_SCHEMA.describe('Validate and preview without moving children.'),
+    idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate child reorder requests.'),
+    allowPartial: z.boolean().default(false).describe('False requires the complete direct child list; true allows best-effort partial ordering.'),
   })
   .refine((value) => Boolean(value.parentRemId || value.parentId), {
     message: 'Provide parentRemId or parentId.',
@@ -180,6 +186,7 @@ export const RICH_TEXT_SPAN_SCHEMA: z.ZodType<RichTextSpanInput> = z.object({
 });
 
 export interface StyledRemTreeNodeInput {
+  clientNodeId?: string;
   type?:
     | 'rem'
     | 'mathBlock'
@@ -214,6 +221,7 @@ export interface StyledRemTreeNodeInput {
 
 export const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.lazy(() =>
   z.object({
+    clientNodeId: z.string().trim().min(1).max(128).optional().describe('Client-stable node ID used for dry-run previews and idempotency correlation.'),
     type: z
       .enum([
         'rem',
@@ -258,33 +266,77 @@ export const STRUCTURED_NOTE_SCHEMA = z.object({
   children: z.array(STYLED_REM_TREE_NODE_SCHEMA).max(100).optional().describe('Ordered child nodes to append or replace under the target root.'),
 });
 
-export const STYLE_PLAN_OPERATION_SCHEMA = z.object({
+const STYLE_OPERATION_BASE_SCHEMA = {
   remId: REM_ID_SCHEMA.describe('Target Rem ID for this style operation.'),
-  type: z
-    .enum([
-      'heading',
-      'whole_rem_highlight',
-      'text_color_span',
-      'text_highlight_span',
-      'bold_span',
-      'italic_span',
-      'math_conversion',
-    ])
-    .describe('Style operation type.'),
-  start: z.number().int().min(0).optional(),
-  end: z.number().int().min(1).optional(),
-  text: z.string().trim().min(1).max(1000).optional(),
+};
+
+const STYLE_SPAN_SELECTOR_SCHEMA = {
+  range: TEXT_RANGE_SCHEMA.optional().describe('Character range in plain text.'),
+  start: z.number().int().min(0).optional().describe('Zero-based start offset.'),
+  end: z.number().int().min(1).optional().describe('Exclusive end offset.'),
+  text: z.string().trim().min(1).max(1000).optional().describe('Text selector when offsets are unavailable.'),
   occurrence: z.number().int().min(1).max(100).default(1).optional(),
-  value: z.string().trim().min(1).max(1000).describe('Color, heading level, or operation value.'),
-});
+};
+
+export const STYLE_PLAN_OPERATION_SCHEMA = z.discriminatedUnion('type', [
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('heading'),
+    headingLevel: HEADING_LEVEL_SCHEMA.describe('Heading level to apply.'),
+    value: z.string().trim().min(1).max(1000).optional().describe('Legacy alias for headingLevel.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('whole_rem_highlight'),
+    highlightColor: COLOR_SCHEMA.describe('Whole Rem highlight color.'),
+    value: z.string().trim().min(1).max(1000).optional().describe('Legacy alias for highlightColor.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('text_color_span'),
+    ...STYLE_SPAN_SELECTOR_SCHEMA,
+    color: COLOR_SCHEMA.describe('Font color for the selected text span.'),
+    value: z.string().trim().min(1).max(1000).optional().describe('Legacy alias for color.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('text_highlight_span'),
+    ...STYLE_SPAN_SELECTOR_SCHEMA,
+    highlightColor: COLOR_SCHEMA.describe('Highlight color for the selected text span.'),
+    value: z.string().trim().min(1).max(1000).optional().describe('Legacy alias for highlightColor.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('bold_span'),
+    ...STYLE_SPAN_SELECTOR_SCHEMA,
+    value: z.string().trim().min(1).max(1000).optional().describe('Optional legacy operation value.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('italic_span'),
+    ...STYLE_SPAN_SELECTOR_SCHEMA,
+    value: z.string().trim().min(1).max(1000).optional().describe('Optional legacy operation value.'),
+  }),
+  z.object({
+    ...STYLE_OPERATION_BASE_SCHEMA,
+    type: z.literal('math_conversion'),
+    ...STYLE_SPAN_SELECTOR_SCHEMA,
+    latex: z.string().trim().min(1).max(5000).describe('LaTeX payload for explicit math conversion plans.'),
+    value: z.string().trim().min(1).max(1000).optional().describe('Legacy operation value.'),
+  }),
+]);
 
 export const STYLING_PLAN_SCHEMA = z.object({
   operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).max(100).optional(),
+  dryRun: DRY_RUN_SCHEMA.describe('Validate styling operations without writing.'),
+  idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate post-create styling plans.'),
 });
 
 export const EXPECTED_STYLE_MAP_ENTRY_SCHEMA = z.object({
   plainText: z.string().max(5000).optional(),
   headingLevel: HEADING_LEVEL_SCHEMA.optional(),
+  hideBullet: z.boolean().optional(),
+  remType: REM_TYPE_SCHEMA.optional(),
   wholeRemHighlight: COLOR_SCHEMA.optional(),
   textColorSpans: z
     .array(
@@ -311,3 +363,11 @@ export const EXPECTED_STYLE_MAP_ENTRY_SCHEMA = z.object({
   childOrder: z.array(REM_ID_SCHEMA).max(200).optional(),
 });
 
+export const EXPECTED_STYLE_EXPECTATION_SCHEMA = z.object({
+  remId: REM_ID_SCHEMA.describe('Rem ID whose design should match the expected style entry.'),
+  expected: EXPECTED_STYLE_MAP_ENTRY_SCHEMA.describe('Expected text, style spans, and child order for this Rem.'),
+});
+
+export const EXPECTED_STYLE_PUBLIC_EXPECTATION_SCHEMA = EXPECTED_STYLE_MAP_ENTRY_SCHEMA.extend({
+  remId: REM_ID_SCHEMA.describe('Rem ID whose design should match this expectation.'),
+});

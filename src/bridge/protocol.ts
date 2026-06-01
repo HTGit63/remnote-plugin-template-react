@@ -52,10 +52,7 @@ export type BridgeToolName =
   | 'create_multiple_choice_card'
   | 'create_list_answer_card'
   | 'replace_rem'
-  | 'delete_rem_by_id'
-  | 'delete_focused_rem'
-  | 'delete_selected_rem'
-  | 'delete_rem';
+  | 'delete_rem_by_id';
 
 export type ReadOnlyBridgeToolName =
   | 'get_focused_rem'
@@ -100,10 +97,7 @@ export type SafeWriteBridgeToolName =
   | 'create_list_answer_card';
 export type DangerousBridgeToolName =
   | 'replace_rem'
-  | 'delete_rem_by_id'
-  | 'delete_focused_rem'
-  | 'delete_selected_rem'
-  | 'delete_rem';
+  | 'delete_rem_by_id';
 
 export type BridgeErrorCode =
   | 'NO_FOCUSED_REM'
@@ -265,17 +259,20 @@ export interface GetDocumentOrFolderTreeArgs {
 export interface CreateRemArgs {
   parentId?: string | null;
   markdown: string;
+  idempotencyKey?: string;
 }
 
 export interface AppendToRemArgs {
   remId: string;
   markdown: string;
   position?: 'start' | 'end';
+  idempotencyKey?: string;
 }
 
 export interface CreateDocumentArgs {
   parentId?: string | null;
   markdown: string;
+  idempotencyKey?: string;
 }
 
 export interface CreateFolderArgs {
@@ -286,17 +283,27 @@ export interface CreateFolderArgs {
 export interface UpdateRemArgs {
   remId: string;
   markdown: string;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  expectedPlainText?: string;
 }
 
 export interface MoveRemArgs {
   remId: string;
   newParentId: string;
   index: number;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  expectedParentId?: string;
+  expectedAncestorId?: string;
 }
 
 export interface ReorderChildrenArgs {
   parentRemId: string;
   orderedChildRemIds: string[];
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  allowPartial?: boolean;
 }
 
 export interface CreateRemTreeNode {
@@ -308,27 +315,15 @@ export interface CreateRemTreeArgs {
   parentId: string;
   position?: 'start' | 'end';
   tree: CreateRemTreeNode;
+  idempotencyKey?: string;
 }
 
 export interface ReplaceRemArgs {
   remId: string;
   markdown: string;
-}
-
-export interface DeleteRemArgs {
-  remId: string;
-  recursive?: boolean;
-  confirmText: string;
-}
-
-export interface DeleteFocusedRemArgs {
-  recursive?: boolean;
-  confirmText: string;
-}
-
-export interface DeleteSelectedRemArgs {
-  recursive?: boolean;
-  confirmText: string;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  expectedPlainText?: string;
 }
 
 export interface DeleteRemByIdArgs {
@@ -398,6 +393,7 @@ export type StyledRemTreeNodeType =
   | 'listAnswerCard';
 
 export interface StyledRemTreeNode {
+  clientNodeId?: string;
   type?: StyledRemTreeNodeType;
   title?: string;
   text?: string;
@@ -418,6 +414,7 @@ export interface StyledRemTreeNode {
 export interface UpdateRemRichArgs {
   remId: string;
   richText: RichTextSpanInput[];
+  idempotencyKey?: string;
 }
 
 export interface SetRemHeadingLevelArgs {
@@ -475,6 +472,10 @@ export interface CreateStyledRemTreeArgs {
   parentId: string;
   position?: 'start' | 'end';
   tree: StyledRemTreeNode;
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  maxDepth?: number;
+  maxNodeCount?: number;
 }
 
 export type ApplyRemnoteCommandTargetMode = 'focused_rem' | 'selected_rem' | 'rem_id';
@@ -505,6 +506,7 @@ export interface ApplyRemnoteCommandArgs {
     latex?: string;
     text?: string;
   };
+  dryRun?: boolean;
   idempotencyKey?: string;
 }
 
@@ -538,6 +540,8 @@ export interface ApplyStructuredNoteBatchArgs {
   idempotencyKey?: string;
   rollbackOnFailure?: boolean;
   verifyAfterWrite?: boolean;
+  maxDepth?: number;
+  maxNodeCount?: number;
 }
 
 export interface StylingPlanOperation {
@@ -554,30 +558,42 @@ export interface StylingPlanOperation {
   end?: number;
   text?: string;
   occurrence?: number;
-  value: string;
+  value?: string;
+  color?: RemColorName | string;
+  highlightColor?: RemColorName | string;
+  headingLevel?: RemHeadingLevel;
 }
 
 export interface StylingPlan {
   operations?: StylingPlanOperation[];
+  dryRun?: boolean;
+  idempotencyKey?: string;
 }
 
 export interface CreatePolishedNoteTreeArgs {
   parentId: string;
   tree: StyledRemTreeNode;
   stylingPlan?: StylingPlan;
+  dryRun?: boolean;
   verifyAfterWrite?: boolean;
   idempotencyKey?: string;
+  maxDepth?: number;
+  maxNodeCount?: number;
 }
 
 export interface ApplyStylePlanArgs {
   operations: StylingPlanOperation[];
   continueOnError?: boolean;
   verifyAfterWrite?: boolean;
+  dryRun?: boolean;
+  idempotencyKey?: string;
 }
 
 export interface ExpectedStyleMapEntry {
   plainText?: string;
   headingLevel?: RemHeadingLevel;
+  hideBullet?: boolean;
+  remType?: RemTypeName;
   wholeRemHighlight?: RemColorName | string;
   textColorSpans?: Array<{
     text?: string;
@@ -599,6 +615,11 @@ export type ExpectedStyleMap = Record<string, ExpectedStyleMapEntry>;
 export interface VerifyNoteDesignArgs {
   rootRemId: string;
   expectedStyleMap: ExpectedStyleMap;
+  expectations?: Array<{ remId: string } & ExpectedStyleMapEntry>;
+  expectedStyles?: Array<{
+    remId: string;
+    expected: ExpectedStyleMapEntry;
+  }>;
 }
 
 export interface CreateFlashcardArgs {
@@ -606,6 +627,7 @@ export interface CreateFlashcardArgs {
   front: string;
   back: string;
   direction?: PracticeDirection;
+  idempotencyKey?: string;
 }
 
 export interface CreateClozeCardArgs {
@@ -613,6 +635,7 @@ export interface CreateClozeCardArgs {
   text: string;
   clozeText?: string;
   direction?: PracticeDirection;
+  idempotencyKey?: string;
 }
 
 export interface CreateMultipleChoiceCardArgs {
@@ -621,6 +644,7 @@ export interface CreateMultipleChoiceCardArgs {
   choices: string[];
   correctChoice: string;
   direction?: PracticeDirection;
+  idempotencyKey?: string;
 }
 
 export interface CreateListAnswerCardArgs {
@@ -628,6 +652,7 @@ export interface CreateListAnswerCardArgs {
   prompt: string;
   items: string[];
   direction?: PracticeDirection;
+  idempotencyKey?: string;
 }
 
 export interface CreateRemResult {
@@ -636,6 +661,7 @@ export interface CreateRemResult {
   insertIndex?: number;
   insertPosition?: 'end';
   status: 'created';
+  idempotencyKey?: string;
 }
 
 export interface CreateDocumentResult {
@@ -645,6 +671,7 @@ export interface CreateDocumentResult {
   insertPosition?: 'end';
   document: true;
   status: 'created_document';
+  idempotencyKey?: string;
 }
 
 export interface CreateFolderResult {
@@ -662,18 +689,31 @@ export interface AppendToRemResult {
   insertIndex?: number;
   position?: 'start' | 'end';
   status: 'appended';
+  idempotencyKey?: string;
 }
 
 export interface UpdateRemResult {
   updatedRemId: string;
-  status: 'updated';
+  status: 'updated' | 'dry_run' | 'already_applied';
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  previewMarkdown?: string;
+  beforePlainText?: string;
+  afterPlainText?: string;
+  afterPreviewMarkdown?: string;
 }
 
 export interface MoveRemResult {
   movedRemId: string;
   newParentId: string;
   index: number;
-  status: 'moved';
+  status: 'moved' | 'dry_run' | 'already_applied';
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  beforeParentId?: string | null;
+  afterParentId?: string;
+  beforeBreadcrumbs?: Array<{ id: string; text: string }>;
+  afterBreadcrumbs?: Array<{ id: string; text: string }>;
 }
 
 export interface ReorderChildrenResult {
@@ -681,7 +721,14 @@ export interface ReorderChildrenResult {
   parentId: string;
   orderedChildRemIds: string[];
   orderedChildIds: string[];
-  status: 'reordered';
+  status: 'reordered' | 'dry_run' | 'already_applied';
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  allowPartial?: boolean;
+  missingIds?: string[];
+  extraIds?: string[];
+  beforeOrder?: string[];
+  afterOrder?: string[];
 }
 
 export interface CreateRemTreeResult {
@@ -691,6 +738,7 @@ export interface CreateRemTreeResult {
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
   status: 'created_tree';
+  idempotencyKey?: string;
 }
 
 export interface FormatRemResult {
@@ -728,12 +776,14 @@ export interface FormatRemResult {
     reason?: string;
   };
   warnings?: string[];
+  idempotencyKey?: string;
 }
 
 export interface ApplyRemnoteCommandResult {
   remId: string;
   command: RemnoteCommandName;
-  status: 'command_applied' | 'already_applied';
+  status: 'command_applied' | 'already_applied' | 'dry_run';
+  dryRun?: boolean;
   idempotencyKey?: string;
 }
 
@@ -750,7 +800,15 @@ export interface CreateStyledRemTreeResult {
   }>;
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
-  status: 'created_styled_tree';
+  status: 'created_styled_tree' | 'dry_run' | 'already_applied';
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  plannedNodeCount?: number;
+  idMap?: Record<string, string>;
+  previewOutline?: string[];
+  styleOperationCount?: number;
+  mathNodeCount?: number;
+  cardNodeCount?: number;
 }
 
 export interface StructuredNoteBatchVerification {
@@ -780,10 +838,19 @@ export interface ApplyStructuredNoteBatchResult {
   rollbackOnFailure: boolean;
   verifyAfterWrite: boolean;
   verification?: StructuredNoteBatchVerification;
+  styleCount?: number;
+  mathCount?: number;
+  cardCount?: number;
+  rollback?: {
+    attempted: boolean;
+    completed: boolean;
+    removedRemIds?: string[];
+    failedRemIds?: string[];
+  };
 }
 
 export interface ApplyStylePlanResult {
-  status: 'applied' | 'partial' | 'failed';
+  status: 'applied' | 'partial' | 'failed' | 'dry_run' | 'already_applied';
   operations: Array<{
     index: number;
     remId: string;
@@ -798,12 +865,27 @@ export interface ApplyStylePlanResult {
   }>;
   continueOnError: boolean;
   verifyAfterWrite: boolean;
+  dryRun?: boolean;
+  idempotencyKey?: string;
 }
 
 export interface CreatePolishedNoteTreeResult extends CreateStyledRemTreeResult {
   stylePlan?: ApplyStylePlanResult;
   verification?: StructuredNoteBatchVerification;
   idempotencyKey?: string;
+  rootRemId?: string;
+  createdRemCount?: number;
+  styleOperationsApplied?: number;
+  rollback?: {
+    attempted: boolean;
+    completed: boolean;
+    removedRemIds?: string[];
+    failedRemIds?: string[];
+  };
+  phases?: Array<{
+    name: 'validate_tree' | 'create_tree' | 'apply_styles' | 'verify_design' | 'rollback';
+    status: 'completed' | 'skipped' | 'failed';
+  }>;
 }
 
 export interface VerifyNoteDesignResult {
@@ -816,6 +898,7 @@ export interface VerifyNoteDesignResult {
     expected?: unknown;
     actual?: unknown;
     message: string;
+    fixSuggestion?: string;
   }>;
   unsupportedChecks: Array<{
     remId: string;
@@ -831,17 +914,14 @@ export interface CreateFlashcardResult {
   direction: PracticeDirection;
   createdChildRemIds?: string[];
   status: 'created_flashcard';
+  idempotencyKey?: string;
 }
 
 export interface ReplaceRemResult {
   remId: string;
-}
-
-export interface DeleteRemResult {
-  deletedRemId: string;
-  recursive: boolean;
-  preview: DeletePreview;
-  status: 'deleted';
+  status?: 'replaced' | 'dry_run' | 'already_applied';
+  dryRun?: boolean;
+  idempotencyKey?: string;
 }
 
 export interface DeletePreview {
@@ -1024,9 +1104,6 @@ export interface BridgeToolArgs {
   create_list_answer_card: CreateListAnswerCardArgs;
   replace_rem: ReplaceRemArgs;
   delete_rem_by_id: DeleteRemByIdArgs;
-  delete_focused_rem: DeleteFocusedRemArgs;
-  delete_selected_rem: DeleteSelectedRemArgs;
-  delete_rem: DeleteRemArgs;
 }
 
 export interface BridgeToolResults {
@@ -1073,9 +1150,6 @@ export interface BridgeToolResults {
   create_list_answer_card: CreateFlashcardResult;
   replace_rem: ReplaceRemResult;
   delete_rem_by_id: DeleteRemByIdResult;
-  delete_focused_rem: DeleteRemResult;
-  delete_selected_rem: DeleteRemResult;
-  delete_rem: DeleteRemResult;
 }
 
 export type BridgeRequest<TTool extends BridgeToolName = BridgeToolName> = {
@@ -1147,16 +1221,16 @@ export interface BridgePluginRegister {
   supportedTools: string[];
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
+  toolTier?: BridgeToolProfile;
 }
 
-export type BridgeToolProfile = 'simple' | 'full';
+export type BridgeToolProfile = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
 export type BridgeToolPolicy =
   | 'preferred'
   | 'fallback'
   | 'debug'
   | 'read'
   | 'cards'
-  | 'legacy_hidden'
   | 'dangerous'
   | 'unsupported';
 
@@ -1165,6 +1239,10 @@ export interface BridgeServerHello {
   protocolVersion: 1;
   serverName: 'remnote-companion';
   toolProfile?: BridgeToolProfile;
+  toolTier?: BridgeToolProfile;
+  activeToolTier?: BridgeToolProfile;
+  defaultToolTier?: BridgeToolProfile;
+  toolSchemaVersion?: string;
   toolRegistryVersion?: string;
   serverToolRegistryVersion?: string;
   mcpDiscoveryVersion?: string;
@@ -1197,7 +1275,11 @@ export interface BridgeServerHello {
     reason: string;
     policy?: BridgeToolPolicy;
     replacement?: string;
+    tier?: string;
   }>;
+  toolMetadata?: Record<string, unknown>;
+  toolTierSummary?: Record<string, unknown>;
+  runtimeVerificationMatrix?: Array<Record<string, unknown>>;
   hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }
@@ -1263,9 +1345,6 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'create_list_answer_card',
   'replace_rem',
   'delete_rem_by_id',
-  'delete_focused_rem',
-  'delete_selected_rem',
-  'delete_rem',
 ] as const;
 
 export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotations> = {
@@ -1499,21 +1578,6 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     openWorldHint: false,
     destructiveHint: true,
     idempotentHint: true,
-  },
-  delete_focused_rem: {
-    readOnlyHint: false,
-    openWorldHint: false,
-    destructiveHint: true,
-  },
-  delete_selected_rem: {
-    readOnlyHint: false,
-    openWorldHint: false,
-    destructiveHint: true,
-  },
-  delete_rem: {
-    readOnlyHint: false,
-    openWorldHint: false,
-    destructiveHint: true,
   },
 };
 

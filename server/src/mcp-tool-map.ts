@@ -58,9 +58,6 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'create_list_answer_card':
     case 'replace_rem':
     case 'delete_rem_by_id':
-    case 'delete_focused_rem':
-    case 'delete_selected_rem':
-    case 'delete_rem':
       return tool;
     default:
       return undefined;

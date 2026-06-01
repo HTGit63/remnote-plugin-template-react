@@ -21,6 +21,10 @@ export interface BridgeStatusSnapshot {
   lastEvent: string;
   lastError?: string;
   toolProfile?: BridgeToolProfile;
+  toolTier?: BridgeToolProfile;
+  activeToolTier?: BridgeToolProfile;
+  defaultToolTier?: BridgeToolProfile;
+  toolSchemaVersion?: string;
   toolRegistryVersion?: string;
   allPublicToolCount?: number;
   allPublicTools?: string[];
@@ -42,7 +46,11 @@ export interface BridgeStatusSnapshot {
     reason: string;
     policy?: BridgeToolPolicy;
     replacement?: string;
+    tier?: string;
   }>;
+  toolMetadata?: Record<string, unknown>;
+  toolTierSummary?: Record<string, unknown>;
+  runtimeVerificationMatrix?: Array<Record<string, unknown>>;
   hiddenTools?: Array<{ name: string; reason: string }>;
   serverStartedAt?: string;
 }

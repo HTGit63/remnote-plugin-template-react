@@ -167,7 +167,7 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'Creating under an existing Rem, updating an existing Rem, moving/reordering existing Rems, replacing text, and deleting Rems require explicit RemNote approval.',
       'Creating a top-level Rem/document is allowed only inside the configured permission scope. Workspace-level create requires workspace_allowed scope.',
       'Preferred delete tool is `delete_rem_by_id`. It defaults to dryRun, requires ID-based guards for real deletion, and verifies the Rem cannot be read afterward.',
-      '`delete_focused_rem` and `delete_selected_rem` are deprecated/private because UI focus or selection can point at the wrong Rem. Do not use them.',
+      'Legacy focus/selection delete tools are removed. Only guarded explicit-ID deletion is available.',
       'Preferred high-level note writers are `create_polished_note_tree` and `apply_structured_note_batch`; they support idempotency, verification, styled nested nodes, flashcards, and math.',
       '`create_styled_rem_tree` is a fallback/developer tool for direct styled tree creation. Do not use it as the normal full-note path.',
     ],
@@ -198,7 +198,7 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     recommendedVerificationTool: 'verify_note_design',
     preferredDeleteTool: 'delete_rem_by_id',
     fallbackDeveloperTools: ['create_styled_rem_tree'],
-    deprecatedPrivateTools: ['delete_focused_rem', 'delete_selected_rem', 'delete_rem'],
+    deprecatedPrivateTools: [],
     installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
     installedSdkUnsupported: ['create_folder', 'Gray text color', 'Brown text color', 'Pink text color'],
   };

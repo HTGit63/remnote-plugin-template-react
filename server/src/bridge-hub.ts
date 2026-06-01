@@ -186,7 +186,7 @@ function requestHash(tool: BridgeToolName, args: unknown): string {
 }
 
 function isDeleteTool(tool: BridgeToolName): boolean {
-  return tool === 'delete_rem_by_id' || tool === 'delete_rem' || tool === 'delete_focused_rem' || tool === 'delete_selected_rem';
+  return tool === 'delete_rem_by_id';
 }
 
 function isRealDeleteAttempt(tool: BridgeToolName, args: unknown): boolean {
@@ -194,7 +194,7 @@ function isRealDeleteAttempt(tool: BridgeToolName, args: unknown): boolean {
     return isRecord(args) && args.dryRun === false;
   }
 
-  return tool === 'delete_rem' || tool === 'delete_focused_rem' || tool === 'delete_selected_rem';
+  return false;
 }
 
 function retryableFailure(

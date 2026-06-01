@@ -20,6 +20,8 @@ import { PluginConnection, type PluginConnectionInfo } from './plugin-connection
 import { validatePluginSessionToken } from '../auth/pairing-routes.js';
 import type { CompanionServerConfig } from '../config.js';
 import type { StorageProvider } from '../storage/types.js';
+import { TOOL_REGISTRY_VERSION } from '../tool-registry.js';
+import { normalizeToolProfile, TOOL_SCHEMA_VERSION } from '../tool-policy.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -74,6 +76,7 @@ interface PluginRegisterMessage {
   supportedTools?: string[];
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
+  toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
 }
 
 type PluginRegistrationMessage = PluginHelloMessage | PluginRegisterMessage;
@@ -172,6 +175,14 @@ export class SessionRouter {
         lastSeenAt: new Date().toISOString(),
         pluginConnectionId: hello.pluginConnectionId,
         workspaceLabel: hello.workspaceLabel ?? pairingSession.workspaceLabel,
+        accessScope: hello.accessScope ?? pairingSession.accessScope,
+        trustedWriteMode: hello.trustedWriteMode ?? pairingSession.trustedWriteMode,
+        toolTier: hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier,
+        toolTierVersion: TOOL_REGISTRY_VERSION,
+        toolSchemaVersionAtApproval: pairingSession.toolSchemaVersionAtApproval ?? TOOL_SCHEMA_VERSION,
+        requiresConnectorRefresh:
+          Boolean(pairingSession.requiresConnectorRefresh) ||
+          Boolean(hello.toolTier && pairingSession.toolTier && normalizeToolProfile(hello.toolTier) !== pairingSession.toolTier),
       });
       return { ok: true, connection: conn };
     }

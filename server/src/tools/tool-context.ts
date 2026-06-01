@@ -10,6 +10,7 @@ import { BRIDGE_TOOL_ANNOTATIONS } from '../../../src/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
 import type { BridgeRuntimeInfo } from '../config.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
+import type { ToolProfile } from '../tool-policy.js';
 
 export type McpToolResult = {
   content: Array<{
@@ -38,6 +39,7 @@ export interface ToolRegistrationContext {
   exposeDeleteTool: boolean;
   requestSignal?: AbortSignal;
   runtimeInfo?: BridgeRuntimeInfo;
+  toolProfile?: ToolProfile;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

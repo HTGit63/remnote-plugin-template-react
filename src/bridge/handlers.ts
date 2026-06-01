@@ -24,10 +24,7 @@ import {
   type CreateRemArgs,
   type CreateClozeCardArgs,
   type CreateStyledRemTreeArgs,
-  type DeleteFocusedRemArgs,
   type DeleteRemByIdArgs,
-  type DeleteRemArgs,
-  type DeleteSelectedRemArgs,
   type GetDocumentOrFolderTreeArgs,
   type GetCurrentSelectionArgs,
   type GetRemArgs,
@@ -89,10 +86,7 @@ import {
   createRemFromMarkdown,
   createRemTree,
   createStyledRemTree,
-  deleteFocusedRem,
-  deleteRem,
   deleteRemByIdSafe,
-  deleteSelectedRem,
   getRemApprovalContext,
   moveRem,
   replaceRemMarkdown,
@@ -674,7 +668,30 @@ function requiredStyleOperations(args: unknown): ApplyStylePlanArgs['operations'
     throw new Error('Missing operations.');
   }
 
-  return args.operations as ApplyStylePlanArgs['operations'];
+  return normalizeStyleOperations(args.operations);
+}
+
+function normalizeStyleOperations(operations: unknown[]): ApplyStylePlanArgs['operations'] {
+  return operations.map((operation) => {
+    if (!isPlainObject(operation)) {
+      throw new Error('Style operation must be an object.');
+    }
+    const type = getStringField(operation, 'type');
+    const explicitValue =
+      getStringField(operation, 'value') ??
+      getStringField(operation, 'headingLevel') ??
+      getStringField(operation, 'highlightColor') ??
+      getStringField(operation, 'color') ??
+      getStringField(operation, 'latex');
+    if (!explicitValue && type !== 'bold_span' && type !== 'italic_span') {
+      throw new Error(`Style operation ${type ?? 'unknown'} needs headingLevel, color, highlightColor, latex, or value.`);
+    }
+
+    return {
+      ...operation,
+      value: explicitValue ?? type ?? 'apply',
+    } as ApplyStylePlanArgs['operations'][number];
+  });
 }
 
 function optionalStylingPlan(args: unknown): CreatePolishedNoteTreeArgs['stylingPlan'] | undefined {
@@ -683,13 +700,43 @@ function optionalStylingPlan(args: unknown): CreatePolishedNoteTreeArgs['styling
   }
 
   const operations = Array.isArray(args.stylingPlan.operations)
-    ? (args.stylingPlan.operations as ApplyStylePlanArgs['operations'])
+    ? normalizeStyleOperations(args.stylingPlan.operations)
     : undefined;
-  return operations ? { operations } : undefined;
+  return operations
+    ? {
+        operations,
+        dryRun: optionalBoolean(args.stylingPlan, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args.stylingPlan),
+      }
+    : undefined;
 }
 
 function requiredExpectedStyleMap(args: unknown): VerifyNoteDesignArgs['expectedStyleMap'] {
-  if (!isPlainObject(args) || !isPlainObject(args.expectedStyleMap)) {
+  if (!isPlainObject(args)) {
+    throw new Error('Missing expectedStyleMap.');
+  }
+  if (Array.isArray(args.expectations)) {
+    return Object.fromEntries(
+      args.expectations.map((entry) => {
+        if (!isPlainObject(entry) || typeof entry.remId !== 'string') {
+          throw new Error('expectations entries must include remId.');
+        }
+        const { remId: _remId, ...expected } = entry;
+        return [entry.remId, expected];
+      })
+    ) as VerifyNoteDesignArgs['expectedStyleMap'];
+  }
+  if (Array.isArray(args.expectedStyles)) {
+    return Object.fromEntries(
+      args.expectedStyles.map((entry) => {
+        if (!isPlainObject(entry) || typeof entry.remId !== 'string' || !isPlainObject(entry.expected)) {
+          throw new Error('expectedStyles entries must include remId and expected.');
+        }
+        return [entry.remId, entry.expected];
+      })
+    ) as VerifyNoteDesignArgs['expectedStyleMap'];
+  }
+  if (!isPlainObject(args.expectedStyleMap)) {
     throw new Error('Missing expectedStyleMap.');
   }
 
@@ -789,45 +836,60 @@ function normalizeArgs<TTool extends BridgeToolName>(
       return {
         parentId: optionalParentId(args),
         markdown: requiredMarkdown(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'append_to_rem':
       return {
         remId: requiredRemId(args),
         markdown: requiredMarkdown(args),
         position: optionalAppendPosition(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'create_document':
     case 'create_folder':
       return {
         parentId: optionalParentId(args),
         markdown: requiredMarkdown(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'update_rem':
       return {
         remId: requiredRemId(args),
         markdown: requiredMarkdown(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        expectedPlainText: getStringField(args, 'expectedPlainText')?.trim(),
       } as BridgeToolArgs[TTool];
     case 'move_rem':
       return {
         remId: requiredRemId(args),
         newParentId: requiredRemId(args, 'newParentId'),
         index: requiredIndex(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        expectedParentId: optionalRemId(args, 'expectedParentId') ?? undefined,
+        expectedAncestorId: optionalRemId(args, 'expectedAncestorId') ?? undefined,
       } as BridgeToolArgs[TTool];
     case 'reorder_children':
       return {
         parentRemId: requiredRemIdFromFields(args, ['parentRemId', 'parentId']),
         orderedChildRemIds: requiredOrderedChildRemIds(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        allowPartial: optionalBoolean(args, 'allowPartial'),
       } as BridgeToolArgs[TTool];
     case 'create_rem_tree':
       return {
         parentId: requiredParentId(args),
         position: optionalAppendPosition(args),
         tree: requiredTree(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'update_rem_rich':
       return {
         remId: requiredRemId(args),
         richText: requiredRichText(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'set_rem_heading_level':
       return {
@@ -875,12 +937,17 @@ function normalizeArgs<TTool extends BridgeToolName>(
         parentId: requiredParentId(args),
         position: optionalAppendPosition(args),
         tree: requiredStyledTree(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
       } as BridgeToolArgs[TTool];
     case 'apply_remnote_command':
       return {
         target: requiredCommandTarget(args),
         command: requiredRemnoteCommand(args),
         args: optionalCommandArgs(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
         idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'apply_structured_note_batch':
@@ -906,6 +973,8 @@ function normalizeArgs<TTool extends BridgeToolName>(
         idempotencyKey: optionalIdempotencyKey(args),
         rollbackOnFailure: optionalBoolean(args, 'rollbackOnFailure', true),
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
       } as BridgeToolArgs[TTool];
     }
     case 'create_polished_note_tree':
@@ -913,19 +982,26 @@ function normalizeArgs<TTool extends BridgeToolName>(
         parentId: requiredParentId(args),
         tree: requiredStyledTree(args),
         stylingPlan: optionalStylingPlan(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
         idempotencyKey: optionalIdempotencyKey(args),
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
       } as BridgeToolArgs[TTool];
     case 'apply_style_plan':
       return {
         operations: requiredStyleOperations(args),
         continueOnError: optionalBoolean(args, 'continueOnError', true),
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'verify_note_design':
       return {
         rootRemId: requiredRemId(args, 'rootRemId'),
         expectedStyleMap: requiredExpectedStyleMap(args),
+        expectations: isPlainObject(args) && Array.isArray(args.expectations) ? (args.expectations as VerifyNoteDesignArgs['expectations']) : undefined,
+        expectedStyles: isPlainObject(args) && Array.isArray(args.expectedStyles) ? (args.expectedStyles as VerifyNoteDesignArgs['expectedStyles']) : undefined,
       } as BridgeToolArgs[TTool];
     case 'create_basic_flashcard':
     case 'create_concept_card':
@@ -935,6 +1011,7 @@ function normalizeArgs<TTool extends BridgeToolName>(
         front: requiredTextField(args, 'front'),
         back: requiredTextField(args, 'back'),
         direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'create_cloze_card':
       return {
@@ -942,6 +1019,7 @@ function normalizeArgs<TTool extends BridgeToolName>(
         text: requiredTextField(args, 'text'),
         clozeText: getStringField(args, 'clozeText')?.trim() || undefined,
         direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'create_multiple_choice_card':
       return {
@@ -950,6 +1028,7 @@ function normalizeArgs<TTool extends BridgeToolName>(
         choices: requiredStringArray(args, 'choices', 20),
         correctChoice: requiredTextField(args, 'correctChoice'),
         direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'create_list_answer_card':
       return {
@@ -957,23 +1036,15 @@ function normalizeArgs<TTool extends BridgeToolName>(
         prompt: requiredTextField(args, 'prompt'),
         items: requiredStringArray(args, 'items', 50),
         direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'replace_rem':
       return {
         remId: requiredRemId(args),
         markdown: requiredMarkdown(args),
-      } as BridgeToolArgs[TTool];
-    case 'delete_focused_rem':
-    case 'delete_selected_rem':
-      return {
-        recursive: optionalRecursive(args),
-        confirmText: requiredConfirmText(args),
-      } as BridgeToolArgs[TTool];
-    case 'delete_rem':
-      return {
-        remId: requiredRemId(args),
-        recursive: optionalRecursive(args),
-        confirmText: requiredConfirmText(args),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        expectedPlainText: getStringField(args, 'expectedPlainText')?.trim(),
       } as BridgeToolArgs[TTool];
     case 'delete_rem_by_id':
       return {
@@ -1025,7 +1096,6 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       MoveRemArgs &
       ReplaceRemArgs &
       DeleteRemByIdArgs &
-      DeleteRemArgs &
       CreateDocumentArgs &
       CreateFolderArgs &
       CreateRemArgs &
@@ -1242,7 +1312,7 @@ async function getSingleSelectedRemId(plugin: RNPlugin): Promise<string> {
   if (selectedRemIds.length !== 1) {
     throw new RemnoteWriteError(
       'INVALID_ARGS',
-      'delete_selected_rem requires exactly one selected Rem.',
+      'selected_rem target requires exactly one selected Rem.',
       {
         selectedRemCount: selectedRemIds.length,
       }
@@ -1250,23 +1320,6 @@ async function getSingleSelectedRemId(plugin: RNPlugin): Promise<string> {
   }
 
   return selectedRemIds[0];
-}
-
-async function resolveDeleteTargetRemId(plugin: RNPlugin, request: BridgeRequest): Promise<string | undefined> {
-  if (request.tool === 'delete_focused_rem') {
-    const focusedRemId = await getFocusedRemId(plugin);
-    if (!focusedRemId) {
-      throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
-    }
-
-    return focusedRemId;
-  }
-
-  if (request.tool === 'delete_selected_rem') {
-    return getSingleSelectedRemId(plugin);
-  }
-
-  return undefined;
 }
 
 async function resolveCommandTargetRemId(plugin: RNPlugin, request: BridgeRequest): Promise<string | undefined> {
@@ -1332,8 +1385,7 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
     case 'clear_rem_formatting':
     case 'replace_rem':
     case 'delete_rem_by_id':
-    case 'delete_rem':
-      return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemArgs | DeleteRemByIdArgs).remId]);
+      return uniqueRemIds([(request.args as GetRemArgs | AppendToRemArgs | DeleteRemByIdArgs).remId]);
     case 'get_children':
     case 'reorder_children':
       return uniqueRemIds([
@@ -1501,12 +1553,10 @@ async function enforceScope(
     );
   }
 
-  const deleteTargetRemId = await resolveDeleteTargetRemId(plugin, request);
   const commandTargetRemId = await resolveCommandTargetRemId(plugin, request);
   const structuredBatchTargetRemId = await resolveStructuredBatchScopeRemId(plugin, request, context);
   const targetRemIds = uniqueRemIds([
     ...getStaticScopeTargetIds(request),
-    deleteTargetRemId,
     commandTargetRemId,
     structuredBatchTargetRemId,
     implicitScopedRoot,
@@ -1758,12 +1808,6 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Create a list-answer card.';
     case 'replace_rem':
       return 'Replace target Rem text.';
-    case 'delete_focused_rem':
-      return 'Delete the currently focused Rem.';
-    case 'delete_selected_rem':
-      return 'Delete the currently selected Rem.';
-    case 'delete_rem':
-      return 'Delete target Rem.';
     case 'delete_rem_by_id':
       return 'Safely delete target Rem by explicit ID and guard.';
     default:
@@ -1778,17 +1822,11 @@ async function buildApprovalRequest(
   timeoutMs: number,
   destructive: boolean
 ): Promise<PendingApprovalRequest> {
-  const targetRemId =
-    (await resolveDeleteTargetRemId(plugin, request)) ??
-    getRequestTargetRemId(request) ??
-    undefined;
+  const targetRemId = getRequestTargetRemId(request) ?? undefined;
   const deletePreview =
     targetRemId &&
-    (request.tool === 'delete_rem' ||
-      request.tool === 'delete_rem_by_id' ||
-      request.tool === 'delete_focused_rem' ||
-      request.tool === 'delete_selected_rem')
-      ? await buildDeletePreview(plugin, targetRemId, request.tool === 'delete_rem_by_id' ? true : (request.args as DeleteRemArgs | DeleteFocusedRemArgs | DeleteSelectedRemArgs).recursive ?? false)
+    request.tool === 'delete_rem_by_id'
+      ? await buildDeletePreview(plugin, targetRemId, true)
       : undefined;
   const target =
     deletePreview
@@ -1815,7 +1853,7 @@ async function buildApprovalRequest(
   const deadline = new Date(Date.now() + timeoutMs).toISOString();
   let warning: string | undefined;
 
-  if (request.tool === 'delete_rem' || request.tool === 'delete_rem_by_id' || request.tool === 'delete_focused_rem' || request.tool === 'delete_selected_rem') {
+  if (request.tool === 'delete_rem_by_id') {
     warning = deletePreview?.recursive
       ? `Recursive delete removes ${deletePreview.descendantCount} descendants.`
       : hasChildren
@@ -2236,15 +2274,6 @@ export async function handleBridgeRequest(
         break;
       case 'delete_rem_by_id':
         response = createBridgeSuccess(request, await deleteRemByIdSafe(plugin, request.args));
-        break;
-      case 'delete_focused_rem':
-        response = createBridgeSuccess(request, await deleteFocusedRem(plugin, request.args));
-        break;
-      case 'delete_selected_rem':
-        response = createBridgeSuccess(request, await deleteSelectedRem(plugin, request.args));
-        break;
-      case 'delete_rem':
-        response = createBridgeSuccess(request, await deleteRem(plugin, request.args));
         break;
       default:
         response = createBridgeFailure('unknown', 'UNKNOWN_TOOL', 'Unknown bridge tool.');

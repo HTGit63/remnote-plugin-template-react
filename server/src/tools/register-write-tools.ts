@@ -6,8 +6,10 @@ import {
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
   GET_CHILDREN_INPUT_SCHEMA,
   HEADING_LEVEL_SCHEMA,
+  IDEMPOTENCY_KEY_SCHEMA,
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
+  MAX_TREE_NODE_COUNT_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
   POSITION_SCHEMA,
   PRACTICE_DIRECTION_SCHEMA,
@@ -40,13 +42,14 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       inputSchema: z.object({
         parentId: z.string().trim().max(256).nullable().optional().describe('Optional parent Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown content to create in RemNote.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate Rem creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_rem'),
     },
-    async ({ parentId, markdown }) =>
+    async ({ parentId, markdown, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_rem', { parentId: parentId ?? null, markdown }),
+        () => callPlugin('create_rem', { parentId: parentId ?? null, markdown, idempotencyKey }),
         'Create Rem request processed.'
       )
   );
@@ -60,13 +63,14 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       inputSchema: z.object({
         parentId: z.string().trim().max(256).nullable().optional().describe('Optional parent Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown title/content for the new document Rem.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate document creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_document'),
     },
-    async ({ parentId, markdown }) =>
+    async ({ parentId, markdown, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_document', { parentId: parentId ?? null, markdown }),
+        () => callPlugin('create_document', { parentId: parentId ?? null, markdown, idempotencyKey }),
         'Create document request processed.'
       )
   );
@@ -100,13 +104,14 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
         remId: REM_ID_SCHEMA.describe('The target RemNote Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown content to append under the target Rem.'),
         position: POSITION_SCHEMA.describe('Where to place the new child under the target Rem.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate append requests when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('append_to_rem'),
     },
-    async ({ remId, markdown, position }) =>
+    async ({ remId, markdown, position, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('append_to_rem', { remId, markdown, position }),
+        () => callPlugin('append_to_rem', { remId, markdown, position, idempotencyKey }),
         'Append request processed.'
       )
   );
@@ -119,12 +124,15 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target RemNote Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown content that replaces the target Rem text.'),
+        dryRun: z.boolean().default(false).describe('Validate target and preview new markdown without replacing text.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate update requests.'),
+        expectedPlainText: z.string().max(5000).optional().describe('Guard: current Rem plain text must match before update.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('update_rem'),
     },
-    async ({ remId, markdown }) =>
-      bridgeToolResult(() => callPlugin('update_rem', { remId, markdown }), 'Update request processed.')
+    async ({ remId, markdown, dryRun, idempotencyKey, expectedPlainText }) =>
+      bridgeToolResult(() => callPlugin('update_rem', { remId, markdown, dryRun, idempotencyKey, expectedPlainText }), 'Update request processed.')
   );
 
   registerTool(
@@ -136,12 +144,15 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target RemNote Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Markdown content that replaces the target Rem text.'),
+        dryRun: z.boolean().default(false).describe('Validate target and preview new markdown without replacing text.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate replace requests.'),
+        expectedPlainText: z.string().max(5000).optional().describe('Guard: current Rem plain text must match before replace.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('replace_rem'),
     },
-    async ({ remId, markdown }) =>
-      bridgeToolResult(() => callPlugin('replace_rem', { remId, markdown }), 'Replace request processed.')
+    async ({ remId, markdown, dryRun, idempotencyKey, expectedPlainText }) =>
+      bridgeToolResult(() => callPlugin('replace_rem', { remId, markdown, dryRun, idempotencyKey, expectedPlainText }), 'Replace request processed.')
   );
 
   registerTool(
@@ -153,12 +164,16 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
         remId: REM_ID_SCHEMA.describe('The Rem ID to move.'),
         newParentId: REM_ID_SCHEMA.describe('The new parent Rem ID.'),
         index: z.number().int().min(0).describe('Zero-based child index under the new parent.'),
+        dryRun: z.boolean().default(false).describe('Validate target, parent, and index without moving.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate move requests.'),
+        expectedParentId: REM_ID_SCHEMA.optional().describe('Guard: current parent must match before real move.'),
+        expectedAncestorId: REM_ID_SCHEMA.optional().describe('Guard: current ancestor chain must include this ID before real move.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('move_rem'),
     },
-    async ({ remId, newParentId, index }) =>
-      bridgeToolResult(() => callPlugin('move_rem', { remId, newParentId, index }), 'Move request processed.')
+    async ({ remId, newParentId, index, dryRun, idempotencyKey, expectedParentId, expectedAncestorId }) =>
+      bridgeToolResult(() => callPlugin('move_rem', { remId, newParentId, index, dryRun, idempotencyKey, expectedParentId, expectedAncestorId }), 'Move request processed.')
   );
 
   registerTool(
@@ -171,12 +186,15 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('reorder_children'),
     },
-    async ({ parentRemId, parentId, orderedChildRemIds, orderedChildIds }) =>
+    async ({ parentRemId, parentId, orderedChildRemIds, orderedChildIds, dryRun, idempotencyKey, allowPartial }) =>
       bridgeToolResult(
         () =>
           callPlugin('reorder_children', {
             parentRemId: parentRemId ?? parentId ?? '',
             orderedChildRemIds: orderedChildRemIds ?? orderedChildIds ?? [],
+            dryRun,
+            idempotencyKey,
+            allowPartial,
           }),
         'Reorder children request processed.'
       )
@@ -194,13 +212,14 @@ export function registerTreeWriteTools({ registerTool, callPlugin }: ToolRegistr
         parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the created tree root.'),
         position: POSITION_SCHEMA.describe('Where to place the tree root under the parent Rem.'),
         tree: REM_TREE_NODE_SCHEMA.describe('Structured Rem tree to create.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate tree creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_rem_tree'),
     },
-    async ({ parentId, position, tree }) =>
+    async ({ parentId, position, tree, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_rem_tree', { parentId, position, tree }),
+        () => callPlugin('create_rem_tree', { parentId, position, tree, idempotencyKey }),
         'Create Rem tree request processed.'
       )
   );
@@ -213,12 +232,13 @@ export function registerTreeWriteTools({ registerTool, callPlugin }: ToolRegistr
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The target Rem ID.'),
         richText: z.array(RICH_TEXT_SPAN_SCHEMA).min(1).max(200).describe('Ordered RemNote rich text spans.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate rich text updates when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('update_rem_rich'),
     },
-    async ({ remId, richText }) =>
-      bridgeToolResult(() => callPlugin('update_rem_rich', { remId, richText }), 'Updated Rem rich text.')
+    async ({ remId, richText, idempotencyKey }) =>
+      bridgeToolResult(() => callPlugin('update_rem_rich', { remId, richText, idempotencyKey }), 'Updated Rem rich text.')
   );
 
 }
@@ -239,14 +259,15 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
             text: z.string().max(5000).optional().describe('Optional prefix text for math insertion.'),
           })
           .optional(),
+        dryRun: z.boolean().default(false).describe('Validate command target and payload without applying the command.'),
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate command application for repeated calls in this plugin session.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_remnote_command'),
     },
-    async ({ target, command, args, idempotencyKey }) =>
+    async ({ target, command, args, dryRun, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('apply_remnote_command', { target, command, args, idempotencyKey }),
+        () => callPlugin('apply_remnote_command', { target, command, args, dryRun, idempotencyKey }),
         'Applied RemNote command.'
       )
   );
@@ -268,11 +289,13 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate writes for repeated calls in this server session.'),
         rollbackOnFailure: z.boolean().default(true).describe('Best-effort remove Rems created before a failed batch.'),
         verifyAfterWrite: z.boolean().default(false).describe('Read created Rem IDs after write and report missing IDs.'),
+        maxDepth: TREE_DEPTH_SCHEMA.describe('Maximum accepted depth for this batch plan.'),
+        maxNodeCount: MAX_TREE_NODE_COUNT_SCHEMA.describe('Maximum accepted node count for this batch plan.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_structured_note_batch'),
     },
-    async ({ target, operation, parentId, position, root, note, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite }) =>
+    async ({ target, operation, parentId, position, root, note, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite, maxDepth, maxNodeCount }) =>
       bridgeToolResult(
         () =>
           callPlugin('apply_structured_note_batch', {
@@ -286,6 +309,8 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
             idempotencyKey,
             rollbackOnFailure,
             verifyAfterWrite,
+            maxDepth,
+            maxNodeCount,
           }),
         'Structured note batch request processed.'
       )
@@ -301,15 +326,18 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
         parentId: REM_ID_SCHEMA.describe('Parent Rem ID for the created polished tree.'),
         tree: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled Rem tree.'),
         stylingPlan: STYLING_PLAN_SCHEMA.optional().describe('Optional post-create style operations with explicit Rem IDs.'),
+        dryRun: z.boolean().default(false).describe('Validate and preview the full polished note plan without writing.'),
         verifyAfterWrite: z.boolean().default(false).describe('Read created Rem IDs after write and report missing IDs.'),
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate note trees for repeated calls in this plugin session.'),
+        maxDepth: TREE_DEPTH_SCHEMA.describe('Maximum accepted depth for this note tree.'),
+        maxNodeCount: MAX_TREE_NODE_COUNT_SCHEMA.describe('Maximum accepted node count for this note tree.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_polished_note_tree'),
     },
-    async ({ parentId, tree, stylingPlan, verifyAfterWrite, idempotencyKey }) =>
+    async ({ parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount }) =>
       bridgeToolResult(
-        () => callPlugin('create_polished_note_tree', { parentId, tree, stylingPlan, verifyAfterWrite, idempotencyKey }),
+        () => callPlugin('create_polished_note_tree', { parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount }),
         'Create polished note tree request processed.'
       )
   );

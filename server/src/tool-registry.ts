@@ -2,11 +2,15 @@ import {
   DEFAULT_TOOL_PROFILE,
   filterToolsForProfile,
   getProfileHiddenTools,
+  getToolMetadata,
   groupToolsByPolicy,
+  getToolTierSummary,
+  TOOL_METADATA,
+  TOOL_SCHEMA_VERSION,
   type ToolProfile,
 } from './tool-policy.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-05-15.2';
+export const TOOL_REGISTRY_VERSION = '2026-06-01.1';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -35,23 +39,26 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'get_plugin_status', exposure: 'public' },
   { name: 'get_focused_rem', exposure: 'public' },
   { name: 'get_rem', exposure: 'public' },
+  { name: 'get_children', exposure: 'public' },
   { name: 'get_rem_tree', exposure: 'public' },
+  { name: 'get_rem_breadcrumbs', exposure: 'public' },
+  { name: 'search_rems', exposure: 'public' },
+  { name: 'create_basic_flashcard', exposure: 'public' },
+  { name: 'create_cloze_card', exposure: 'public' },
+  { name: 'create_multiple_choice_card', exposure: 'public' },
+  { name: 'create_list_answer_card', exposure: 'public' },
+  { name: 'delete_rem_by_id', exposure: 'public' },
   { name: 'get_rem_rich', exposure: 'public' },
   { name: 'debug_get_raw_rich_text', exposure: 'public' },
   { name: 'get_current_selection', exposure: 'public' },
-  { name: 'get_children', exposure: 'public' },
-  { name: 'get_rem_breadcrumbs', exposure: 'public' },
-  { name: 'search_rems', exposure: 'public' },
   { name: 'get_document_or_folder_tree', exposure: 'public' },
   { name: 'create_rem', exposure: 'public' },
   { name: 'create_document', exposure: 'public' },
-  { name: 'create_folder', exposure: 'public' },
   { name: 'append_to_rem', exposure: 'public' },
   { name: 'update_rem', exposure: 'public' },
   { name: 'replace_rem', exposure: 'public' },
   { name: 'move_rem', exposure: 'public' },
   { name: 'reorder_children', exposure: 'public' },
-  { name: 'delete_rem_by_id', exposure: 'public' },
   { name: 'create_rem_tree', exposure: 'public' },
   { name: 'update_rem_rich', exposure: 'public' },
   { name: 'set_rem_heading_level', exposure: 'public' },
@@ -68,45 +75,39 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'create_polished_note_tree', exposure: 'public' },
   { name: 'apply_style_plan', exposure: 'public' },
   { name: 'verify_note_design', exposure: 'public' },
-  { name: 'create_basic_flashcard', exposure: 'public' },
   { name: 'create_concept_card', exposure: 'public' },
   { name: 'create_descriptor_card', exposure: 'public' },
-  { name: 'create_cloze_card', exposure: 'public' },
-  { name: 'create_multiple_choice_card', exposure: 'public' },
-  { name: 'create_list_answer_card', exposure: 'public' },
-  {
-    name: 'delete_rem',
-    exposure: 'gated',
-    hiddenReason:
-      'Legacy arbitrary Rem ID delete is disabled by default. Use guarded delete_rem_by_id.',
-  },
-  {
-    name: 'delete_focused_rem',
-    exposure: 'gated',
-    hiddenReason:
-      'Legacy focus-based delete is hidden because RemNote focus can point at the wrong root. Use delete_rem_by_id with dryRun and guards.',
-  },
-  {
-    name: 'delete_selected_rem',
-    exposure: 'gated',
-    hiddenReason:
-      'Legacy selection-based delete is hidden because RemNote selection can point at the wrong root. Use delete_rem_by_id with dryRun and guards.',
-  },
 ] as const satisfies readonly McpToolRegistryEntry[];
 
 export type RegisteredMcpToolName = (typeof MCP_TOOL_REGISTRY)[number]['name'];
 
+const allPublicToolCache = new Map<string, string[]>();
+const publicToolProfileCache = new Map<string, string[]>();
+
 export function getAllPublicMcpToolNames(exposeDeleteTool = false): string[] {
-  return MCP_TOOL_REGISTRY.filter((tool) => tool.exposure === 'public' || exposeDeleteTool).map(
-    (tool) => tool.name
-  );
+  void exposeDeleteTool;
+  const cacheKey = `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:all-public`;
+  const cached = allPublicToolCache.get(cacheKey);
+  if (cached) {
+    return [...cached];
+  }
+  const names = MCP_TOOL_REGISTRY.filter((tool) => tool.exposure === 'public').map((tool) => tool.name);
+  allPublicToolCache.set(cacheKey, names);
+  return [...names];
 }
 
 export function getPublicMcpToolNames(
   exposeDeleteTool = false,
   profile: ToolProfile = DEFAULT_TOOL_PROFILE
 ): string[] {
-  return filterToolsForProfile(getAllPublicMcpToolNames(exposeDeleteTool), profile);
+  const cacheKey = `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:${profile}:${exposeDeleteTool ? 'delete-on' : 'delete-off'}`;
+  const cached = publicToolProfileCache.get(cacheKey);
+  if (cached) {
+    return [...cached];
+  }
+  const names = filterToolsForProfile(getAllPublicMcpToolNames(exposeDeleteTool), profile);
+  publicToolProfileCache.set(cacheKey, names);
+  return [...names];
 }
 
 export function isPublicMcpToolName(
@@ -118,13 +119,8 @@ export function isPublicMcpToolName(
 }
 
 export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: string; reason: string }> {
-  return MCP_TOOL_REGISTRY.filter((tool) => tool.exposure === 'gated' && !exposeDeleteTool).map((tool) => ({
-    name: tool.name,
-    reason:
-      'hiddenReason' in tool
-        ? tool.hiddenReason
-        : 'Tool is not exposed by current server configuration.',
-  }));
+  void exposeDeleteTool;
+  return [];
 }
 
 export function getRegistryMismatch(
@@ -187,6 +183,10 @@ export function getToolRegistrySummary(
     serverVersion: SERVER_VERSION,
     pluginVersion: 'reported-by-plugin-status',
     toolProfile: profile,
+    toolTier: profile,
+    activeToolTier: profile,
+    defaultToolTier: DEFAULT_TOOL_PROFILE,
+    toolSchemaVersion: TOOL_SCHEMA_VERSION,
     toolRegistryVersion: TOOL_REGISTRY_VERSION,
     serverToolRegistryVersion: TOOL_REGISTRY_VERSION,
     mcpDiscoveryVersion: MCP_DISCOVERY_VERSION,
@@ -218,6 +218,26 @@ export function getToolRegistrySummary(
     runtimeUnverifiedTools,
     runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
     sdkUnsupportedTools,
+    staticSdkUnsupportedTools: [...STATIC_SDK_UNSUPPORTED_TOOLS],
+    unsupportedToolsAvailableOnlyAsDiagnostics: [...STATIC_SDK_UNSUPPORTED_TOOLS],
+    toolMetadata: Object.fromEntries(publicTools.map((tool) => [tool, getToolMetadata(tool)])),
+    allToolMetadata: Object.fromEntries(TOOL_METADATA.map((tool) => [tool.name, tool])),
+    toolTierSummary: getToolTierSummary(profile),
+    runtimeVerificationMatrix: publicTools.map((tool) => {
+      const metadata = getToolMetadata(tool);
+      return {
+        ...metadata,
+        listed: true,
+        registered: registeredTools.includes(tool),
+        serverLocalVerified: serverLocalVerifiedTools.includes(tool),
+        sdkUnsupported: sdkUnsupportedTools.includes(tool),
+      };
+    }),
+    registryCache: {
+      enabled: true,
+      key: `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:${profile}`,
+      dimensions: ['registryVersion', 'activeTier', 'deleteExposure', 'schemaVersion'],
+    },
     preferredTools: activePolicyGroups.preferred,
     fallbackTools: activePolicyGroups.fallback,
     debugTools: activePolicyGroups.debug,
@@ -231,7 +251,9 @@ export function getToolRegistrySummary(
     hiddenTools,
     hiddenReasons,
     registryMismatch: mismatch,
-    deleteToolExposed: exposeDeleteTool,
+    deleteToolExposed: false,
+    legacyDeleteToolsRemoved: true,
+    requiresConnectorRefresh: false,
     discoveryAuthMode: auth?.discoveryAuthMode ?? 'no_auth_required',
     toolCallAuthMode: auth?.toolCallAuthMode ?? 'no_auth_allowed',
   };

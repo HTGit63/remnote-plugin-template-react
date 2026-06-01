@@ -6,6 +6,7 @@ import {
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
   GET_CHILDREN_INPUT_SCHEMA,
   HEADING_LEVEL_SCHEMA,
+  IDEMPOTENCY_KEY_SCHEMA,
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
@@ -37,6 +38,7 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
     front: z.string().trim().min(1).max(5000).describe('Card front text.'),
     back: z.string().trim().min(1).max(5000).describe('Card back text.'),
     direction: PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
+    idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate card creation when the same key is reused.'),
   });
 
   registerTool(
@@ -48,9 +50,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_basic_flashcard'),
     },
-    async ({ parentId, front, back, direction }) =>
+    async ({ parentId, front, back, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_basic_flashcard', { parentId, front, back, direction }),
+        () => callPlugin('create_basic_flashcard', { parentId, front, back, direction, idempotencyKey }),
         'Created basic flashcard.'
       )
   );
@@ -64,9 +66,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_concept_card'),
     },
-    async ({ parentId, front, back, direction }) =>
+    async ({ parentId, front, back, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_concept_card', { parentId, front, back, direction }),
+        () => callPlugin('create_concept_card', { parentId, front, back, direction, idempotencyKey }),
         'Created concept card.'
       )
   );
@@ -80,9 +82,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_descriptor_card'),
     },
-    async ({ parentId, front, back, direction }) =>
+    async ({ parentId, front, back, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_descriptor_card', { parentId, front, back, direction }),
+        () => callPlugin('create_descriptor_card', { parentId, front, back, direction, idempotencyKey }),
         'Created descriptor card.'
       )
   );
@@ -97,13 +99,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         text: z.string().trim().min(1).max(5000).describe('Full cloze text.'),
         clozeText: z.string().trim().max(1000).optional().describe('Optional exact text range to cloze.'),
         direction: PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate cloze card creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_cloze_card'),
     },
-    async ({ parentId, text, clozeText, direction }) =>
+    async ({ parentId, text, clozeText, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_cloze_card', { parentId, text, clozeText, direction }),
+        () => callPlugin('create_cloze_card', { parentId, text, clozeText, direction, idempotencyKey }),
         'Created cloze card.'
       )
   );
@@ -120,13 +123,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         choices: z.array(z.string().trim().min(1).max(1000)).min(2).max(20).describe('Available choices.'),
         correctChoice: z.string().trim().min(1).max(1000).describe('Correct choice text.'),
         direction: PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate multiple-choice card creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_multiple_choice_card'),
     },
-    async ({ parentId, question, choices, correctChoice, direction }) =>
+    async ({ parentId, question, choices, correctChoice, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_multiple_choice_card', { parentId, question, choices, correctChoice, direction }),
+        () => callPlugin('create_multiple_choice_card', { parentId, question, choices, correctChoice, direction, idempotencyKey }),
         'Created multiple-choice card.'
       )
   );
@@ -141,13 +145,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         prompt: z.string().trim().min(1).max(5000).describe('Card prompt.'),
         items: z.array(z.string().trim().min(1).max(1000)).min(1).max(50).describe('Expected list items.'),
         direction: PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
+        idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate list-answer card creation when the same key is reused.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_list_answer_card'),
     },
-    async ({ parentId, prompt, items, direction }) =>
+    async ({ parentId, prompt, items, direction, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('create_list_answer_card', { parentId, prompt, items, direction }),
+        () => callPlugin('create_list_answer_card', { parentId, prompt, items, direction, idempotencyKey }),
         'Created list-answer card.'
       )
   );

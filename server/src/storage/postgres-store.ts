@@ -731,6 +731,8 @@ export class PostgresStorageProvider implements StorageProvider {
       approvedScopes: Array.isArray(session.approvedScopes) ? [...session.approvedScopes] : [],
       accessScope: session.accessScope ?? 'focused-rem-only',
       trustedWriteMode: session.trustedWriteMode ?? 'ask-every-write',
+      toolTier: session.toolTier ?? 'core',
+      requiresConnectorRefresh: session.requiresConnectorRefresh ?? false,
       status: session.status ?? 'pending',
     };
   }

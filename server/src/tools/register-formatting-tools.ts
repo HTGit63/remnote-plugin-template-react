@@ -3,11 +3,14 @@ import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
   COLOR_SCHEMA,
   DELETE_CONFIRM_SCHEMA,
+  EXPECTED_STYLE_EXPECTATION_SCHEMA,
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
+  EXPECTED_STYLE_PUBLIC_EXPECTATION_SCHEMA,
   GET_CHILDREN_INPUT_SCHEMA,
   HEADING_LEVEL_SCHEMA,
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
+  MAX_TREE_NODE_COUNT_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
   POSITION_SCHEMA,
   PRACTICE_DIRECTION_SCHEMA,
@@ -175,13 +178,17 @@ export function registerFormattingTools({ registerTool, callPlugin }: ToolRegist
         parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the created tree root.'),
         position: POSITION_SCHEMA.describe('Where to place the tree root under the parent Rem.'),
         tree: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled Rem tree.'),
+        dryRun: z.boolean().default(false).describe('Validate and preview without creating Rems.'),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate styled tree writes.'),
+        maxDepth: TREE_DEPTH_SCHEMA.describe('Maximum accepted depth for this tree.'),
+        maxNodeCount: MAX_TREE_NODE_COUNT_SCHEMA.describe('Maximum accepted node count for this tree.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_styled_rem_tree'),
     },
-    async ({ parentId, position, tree }) =>
+    async ({ parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount }) =>
       bridgeToolResult(
-        () => callPlugin('create_styled_rem_tree', { parentId, position, tree }),
+        () => callPlugin('create_styled_rem_tree', { parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount }),
         'Create styled Rem tree request processed.'
       )
   );
@@ -199,13 +206,15 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
         operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).min(1).max(100).describe('Ordered style operations.'),
         continueOnError: z.boolean().default(true).describe('True returns per-operation failures and keeps going.'),
         verifyAfterWrite: z.boolean().default(false).describe('Return verification evidence when available.'),
+        dryRun: z.boolean().default(false).describe('Validate and preview operations without writing.'),
+        idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Prevents duplicate style-plan writes.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_style_plan'),
     },
-    async ({ operations, continueOnError, verifyAfterWrite }) =>
+    async ({ operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey }) =>
       bridgeToolResult(
-        () => callPlugin('apply_style_plan', { operations, continueOnError, verifyAfterWrite }),
+        () => callPlugin('apply_style_plan', { operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey }),
         'Apply style plan request processed.'
       )
   );
@@ -218,14 +227,26 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
         'Preferred verification tool after note creation or styling. Compares headings, highlights, colored spans, plain text, and child order against an expected style map.',
       inputSchema: z.object({
         rootRemId: REM_ID_SCHEMA.describe('Root Rem ID for the design verification.'),
-        expectedStyleMap: z.record(REM_ID_SCHEMA, EXPECTED_STYLE_MAP_ENTRY_SCHEMA).describe('Expected styles keyed by Rem ID.'),
+        expectations: z.array(EXPECTED_STYLE_PUBLIC_EXPECTATION_SCHEMA).min(1).max(200).optional().describe('Preferred public array of Rem IDs with expected text, style, math, and child order fields.'),
+        expectedStyles: z.array(EXPECTED_STYLE_EXPECTATION_SCHEMA).min(1).max(200).optional().describe('Internal explicit list of Rem IDs and expected style entries.'),
+        expectedStyleMap: z.record(REM_ID_SCHEMA, EXPECTED_STYLE_MAP_ENTRY_SCHEMA).optional().describe('Legacy expected styles keyed by Rem ID.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('verify_note_design'),
     },
-    async ({ rootRemId, expectedStyleMap }) =>
+    async ({ rootRemId, expectedStyleMap, expectedStyles, expectations }) =>
       bridgeToolResult(
-        () => callPlugin('verify_note_design', { rootRemId, expectedStyleMap }),
+        () => callPlugin('verify_note_design', {
+          rootRemId,
+          expectedStyleMap: expectedStyleMap ?? (expectations?.length
+            ? Object.fromEntries(expectations.map((entry) => {
+              const { remId, ...expected } = entry;
+              return [remId, expected];
+            }))
+            : Object.fromEntries((expectedStyles ?? []).map((entry) => [entry.remId, entry.expected]))),
+          expectations,
+          expectedStyles,
+        }),
         'Verify note design request processed.'
       )
   );

@@ -1166,7 +1166,7 @@ export function BridgeStatusWidget() {
                 />
                 <StatusMetric
                   label="Profile"
-                  value={bridgeStatus.toolProfile ?? 'full'}
+                  value={bridgeStatus.activeToolTier ?? bridgeStatus.toolTier ?? bridgeStatus.toolProfile ?? 'core'}
                   tone={profileHiddenToolCount ? 'warning' : 'success'}
                 />
                 <StatusMetric

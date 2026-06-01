@@ -91,6 +91,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     exposeDeleteTool: Boolean(options.exposeDeleteTool),
     requestSignal: options.requestSignal,
     runtimeInfo: options.runtimeInfo,
+    toolProfile,
   };
 
   registerStatusTools(context);

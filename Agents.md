@@ -1,1951 +1,436 @@
-# AGENTS.md — RemNote ChatGPT Bridge Hosted-Auth Refinement
+# AGENTS.md — RemNote MCP Bridge Reliability, Tooling, Tiering, and Productization Plan
 
-## Purpose
+## Project
 
-This file gives coding agents strict instructions for the next major refinement of the RemNote ChatGPT Bridge.
+Repository: `HTGit63/remnote-plugin-template-react`
 
-The bridge already has strong RemNote functionality. The next mission is not to add random tools. The next mission is to make the connection dependable, uniquely paired, secure, recoverable, and smooth for trusted focused/selected Rem workflows.
+Current goal: turn the RemNote ↔ Render ↔ ChatGPT MCP bridge into a reliable hosted plugin app that normal users can connect, configure, and use without manual bearer-token setup.
 
-The target product is:
+Current status: the hosted bridge is now able to connect RemNote, Render, and ChatGPT. The next phase is **productization**:
 
 ```text
-ChatGPT / Vivy = reasoning layer
-Render hosted bridge = identity, routing, session, dashboard, MCP endpoint
-RemNote plugin = RemNote SDK access layer and final local scope enforcement
-RemNote knowledge base = user-owned data
+reliable tools
+clear tool tiers
+better schemas
+safe complex operations
+fast batch workflows
+hosted diagnostics
+runtime verification
+clean user experience
+release hardening
 ```
 
-Do not build an AI chatbot inside RemNote.
-
-Do not put OpenAI API keys in the plugin.
-
-Do not call OpenAI from the plugin.
-
-Do not scrape ChatGPT.
-
-Do not scrape the RemNote DOM.
-
-Do not pretend hosted public mode is complete until OAuth, pairing, persistent sessions, revocation, and per-user routing are implemented and tested.
+This AGENTS.md is intentionally specific. Do not treat it as a loose suggestion list. Work through it in phases and report clearly what was completed, skipped, or deferred.
 
 ---
 
-## 0.3 Phase 7-12 Completion Status - 2026-05-26
+# 0. Non-Negotiable Requirements
 
-Repo-side implementation status:
+## 0.1 Keep the hosted architecture
 
-```text
-Phase 7: complete - OAuth protected-resource metadata, authorization-server metadata, DCR, PKCE auth-code gated by RemNote plugin pairing approval, refresh rotation, revoke, bearer validation, scope checks, resource/audience checks.
-Phase 8: complete - trusted focused/selected mode preserved, recommended mode exposed, destructive operations remain approval gated, plugin remains final scope authority.
-Phase 9: complete - hosted session router wired into BridgeHub, paired plugin routing by user, reconnect/status states added, idempotency records stored without note content.
-Phase 10: complete - rate limits, CSRF, security headers, body/payload limits, pairing one-time delivery, revocation, token expiry, no-token public guard.
-Phase 11: complete - /connect pairing page, /pairing approval routes, plugin hosted pairing panel, recommended mode, status labels, local secret storage for plugin session secret.
-Phase 12: complete at repo/local smoke level - auth, pairing, routing, server smoke, build, type, plugin validation, diff, and audit gates added/run.
-```
-
-Current hosted-auth wording:
+Target user flow:
 
 ```text
-ChatGPT MCP OAuth + RemNote Plugin Pairing
+RemNote Plugin → Render Companion Server → ChatGPT MCP Connector
 ```
 
-Do not call this RemNote OAuth. Render cannot access RemNote by itself; RemNote note access comes through the active paired plugin and RemNote Plugin SDK.
+Hosted mode must use ChatGPT OAuth/pairing/session authentication. Do **not** require ChatGPT users to manually paste or configure `REMNOTE_BRIDGE_TOKEN`.
 
-External proof still required before public launch wording:
+`REMNOTE_BRIDGE_TOKEN` may remain for local developer mode only.
+
+## 0.2 Do not remove useful complex tools
+
+Some tools have complex schemas, but they are valuable because they can perform large structured note operations in one pass. Do **not** remove them just because ChatGPT Developer Mode labels them as unclear. Improve them.
+
+The important complex tools are:
 
 ```text
-real hosted PostgreSQL DATABASE_URL
-real public HTTPS/WSS Render deployment
-live RemNote sandbox with plugin connected
-ChatGPT Developer Mode OAuth/MCP run through hosted URL
-privacy policy/support URL/screenshots for submission
+verify_note_design
+apply_style_plan
+apply_remnote_command
+create_polished_note_tree
+apply_structured_note_batch
+create_styled_rem_tree
+reorder_children
+move_rem
+replace_rem
+update_rem
 ```
+
+These tools are essential for complicated workflows. Improve schema clarity, safety, verification, and speed without reducing capability.
+
+## 0.3 Delete legacy destructive tools completely
+
+Remove these tools from the codebase entirely. Do not merely hide them.
+
+```text
+delete_focused_rem
+delete_selected_rem
+delete_rem
+```
+
+`delete_rem_by_id` is enough and must remain the only delete path.
+
+Delete these names from:
+
+```text
+server/src/tools/register-delete-tools.ts
+server/src/tool-registry.ts
+server/src/tool-policy.ts
+server/src/health-check.ts
+server/src/mcp-tool-map.ts
+server/src/remnote-capability-guide.ts
+src/bridge/protocol.ts
+src/bridge/handlers.ts
+src/bridge/client.ts
+plugin-side handlers
+tests
+docs
+diagnostic output
+capability guide
+sample payloads
+```
+
+Do not leave them as:
+
+```text
+hidden
+legacy
+private
+local-dev only
+gated
+deprecated
+dangerous
+```
+
+They must be gone.
+
+## 0.4 Keep every other useful tool
+
+Keep all other tools unless they are truly unsupported by the installed RemNote SDK.
+
+If a tool is unsupported, do not expose it as a normal callable tool. Mark it clearly as unsupported in diagnostics and docs.
+
+## 0.5 Tool tiers must be easy to change from the RemNote plugin
+
+Users must be able to change tool tier/profile directly inside the RemNote plugin UI.
+
+This must work:
+
+```text
+before bridge connection
+after bridge connection
+before ChatGPT pairing
+after ChatGPT pairing
+```
+
+When tier changes, the server, plugin, and ChatGPT connector state must be handled clearly. If ChatGPT needs reconnection to reload the schema, the plugin must say so.
 
 ---
 
-# 0. Current Repository Truth
+# 1. Current Codebase Gaps To Address
 
-## 0.1 Current working branch context
+These are known gaps from code review and runtime testing.
 
-Work against the latest active branch unless the user says otherwise:
+## 1.1 Current tier/profile system is too limited
 
-```text
-release/final-polish
-```
-
-The current bridge is functionally strong. It already includes:
+Current code only supports:
 
 ```text
-RemNote plugin widget
-typed bridge protocol
-WebSocket bridge client inside RemNote plugin
-Node/TypeScript companion server
-MCP Streamable HTTP endpoint
-single-port personal Render shape
-tool registry and simple/full tool profiles
-bounded read/navigation tools
-safe write tools
-structured note batch tools
-polished note tree tools
-formatting tools
-flashcard tools
-guarded delete-by-ID
-diagnostics and health checks
-approval lifecycle evidence
-audit-log interfaces
-hosted OAuth/pairing/session storage implementation
-public-hosted per-user routing
+simple
+full
 ```
 
-Do not break the working bridge while adding hosted auth.
-
----
-
-## 0.2 Important baseline limitations and 2026-05-26 status
-
-The following were real code-level limitations at the start of the hosted-auth pass. Keep them here as regression guards.
-
-### Auth is no longer only local-token based
-
-Local/personal auth still uses:
+That is not enough for a public app. Replace or extend it with real tiers:
 
 ```text
-server/src/auth/local-token.ts
+core
+advanced_notes
+developer_diagnostics
+full
 ```
 
-It grants local bridge scopes and validates a static bearer token or `x-remnote-bridge-token`.
-
-This is acceptable for local/personal testing only.
-
-Public multi-user hosted mode now uses OAuth bearer validation through:
+Expected behavior:
 
 ```text
-server/src/auth/oauth-routes.ts
-server/src/auth/token-verifier.ts
+core = safe ordinary user tools
+advanced_notes = structured writing, styling, rich editing
+developer_diagnostics = debug and certification tools
+full = all non-removed, non-unsupported tools
 ```
 
----
-
-### Public hosted mode uses explicit deployment mode
-
-Legacy compatibility flag:
-
-```bash
-REMNOTE_BRIDGE_HOSTED_MODE=1
-```
-
-maps to personal token mode.
-
-Public hosted OAuth now uses:
-
-```bash
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
-```
-
-Startup requires HTTPS public URL, MCP resource, PostgreSQL storage, `DATABASE_URL`, and no static `REMNOTE_BRIDGE_TOKEN`.
-
----
-
-### Auth/session/storage types are implemented
-
-These files define and implement hosted mode primitives:
+Do not break existing env compatibility immediately. Accept old values as aliases:
 
 ```text
-server/src/auth/types.ts
-server/src/storage/types.ts
-server/src/storage/memory-store.ts
-server/src/storage/postgres-store.ts
-server/src/sessions/audit-log.ts
+simple → core
+full → full
 ```
 
-They include concepts such as:
+## 1.2 Current tool profile is mostly environment-driven
+
+The current configuration reads `REMNOTE_BRIDGE_TOOL_PROFILE` from environment. That is fine for initial server boot, but not enough for plugin-controlled dynamic tier switching.
+
+Implement dynamic tier state using hosted pairing/session state and plugin state.
+
+The active tier should be derived in this order:
 
 ```text
-hosted_oauth
-OAuthAccount
-HostedSessionToken
-PairedPluginSession
-SessionStore
-AuditLogger
+explicit ChatGPT pairing/session tier
+plugin-selected tier
+server default tier from env
+safe fallback: core
 ```
 
-PostgreSQL storage exists and is required for public-hosted mode outside loopback smoke tests.
+## 1.3 Storage models need tier/session fields
 
----
-
-### BridgeHub now has hosted per-user routing
-
-Local/personal mode still holds one active plugin WebSocket connection.
-
-Public-hosted mode now routes:
-
-```text
-user_id + device_id + plugin_session_id → plugin WebSocket connection
-```
-
-Regression guard: the server must route each ChatGPT MCP request only to the plugin session paired to the authenticated user.
-
----
-
-### Render service has dashboard routes
-
-The hosted server now has dashboard, login, pairing, logout, and diagnostics routes. Root/health still provide machine status.
-
-Regression guard: the hosted Render side needs:
-
-```text
-login/logout
-pair RemNote plugin
-show ChatGPT OAuth status
-show plugin connection status
-show active device
-show current access mode
-show revocation controls
-show diagnostics
-```
-
----
-
-### Plugin supports static and hosted session WebSocket hello
-
-Local/personal mode sends:
+Add fields to hosted ChatGPT pairing/session state:
 
 ```ts
-{
-  type: "plugin_hello",
-  token: bridgeToken
-}
+toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+toolTierVersion?: string;
+toolTierChangedAt?: string;
+toolSchemaVersionAtApproval?: string;
+requiresConnectorRefresh?: boolean;
 ```
 
-Hosted mode now sends:
+Add any needed DB migration for Postgres storage and equivalent support for memory storage.
 
-```ts
-{
-  type: "plugin_hello",
-  deviceId,
-  pluginSessionId,
-  pluginSessionToken,
-  protocolVersion,
-  clientName
-}
-```
+## 1.4 ChatGPT schema refresh must be handled
 
-Static bridge token remains only for local/personal mode.
+Changing the tool tier may not automatically refresh ChatGPT’s tool schema.
 
----
-
-### Plugin wording supports hosted states
-
-Hosted mode must keep these clearer states:
+Required UX:
 
 ```text
-Not paired
-Pairing required
-Paired but offline
-Connecting
-Connected
-Reconnecting
-Token expired
-Session revoked
-Another device connected
-Server unreachable
+Tool tier changed. Reconnect ChatGPT connector to refresh available tools.
 ```
 
----
+If live schema refresh is possible through MCP discovery, implement it. If not, show a clear reconnect-required state.
 
-### Trusted write behavior exists and must be preserved
+Do not silently show stale tools.
 
-Current permission model already supports:
+## 1.5 Runtime verification state is not first-class yet
 
-```text
-read_only
-confirm_writes
-trusted_writes
-danger_zone
-```
+The bridge currently distinguishes registry-listed tools from runtime-verified tools, but this must become a proper verification matrix.
 
-And scopes:
+Add persistent or session-level runtime verification records:
 
 ```text
-focused_rem_only
-focused_rem_and_descendants
-selected_rem_only
-selected_rem_and_descendants
-approved_document_or_folder
-workspace_allowed
-```
-
-This is good. Preserve it.
-
-The recommended seamless mode is:
-
-```text
-trusted_writes + focused_rem_and_descendants
-```
-
-Safe writes inside the allowed scope should run without repeated RemNote-side approvals.
-
-Destructive operations must still require explicit approval.
-
----
-
-### Search scope filtering exists and must remain enforced
-
-`search_rems` already does ancestor-chain post-filtering when a context root exists.
-
-Do not regress this.
-
-For scoped search, the tool must keep returning scope metadata:
-
-```text
-scopeRequested
-scopeEnforcement
-rawResultCount
-filteredResultCount
-filteredOutCount
-```
-
----
-
-### Server dependencies do not yet include hosted-auth dependencies
-
-Current server dependencies are minimal:
-
-```text
-@modelcontextprotocol/sdk
-ws
-zod
-```
-
-Hosted auth will require new dependencies or explicit custom implementations for:
-
-```text
-OAuth/OIDC client integration
-JWT/JWKS verification
-secure cookies
-CSRF protection
-database driver or ORM
-passwordless/session handling if needed
-rate limiting
-HTML/dashboard rendering or static assets
-```
-
-Prefer established libraries and providers. Do not hand-roll crypto or OAuth logic unless absolutely necessary.
-
----
-
-# 1. External Standards to Follow
-
-The hosted MCP server must follow current MCP/OpenAI auth expectations:
-
-```text
-OAuth 2.1 authorization-code flow with PKCE
-OAuth protected resource metadata
-OAuth authorization server metadata
-Authorization: Bearer <access_token> on MCP requests
-server-side token verification on every request
-issuer validation
-audience/resource validation
-expiration validation
-scope validation
-short-lived access tokens
-no access tokens in URLs
-401 WWW-Authenticate challenge when auth is required
-```
-
-The MCP canonical resource must be stable, HTTPS, and consistent. Example:
-
-```text
-https://your-service.onrender.com
-```
-
-or:
-
-```text
-https://your-service.onrender.com/mcp
-```
-
-Choose one canonical resource and use it consistently in:
-
-```text
-protected resource metadata
-authorization request resource parameter
-token request resource parameter
-token audience/resource claim
-MCP token verification
-WWW-Authenticate challenge
-```
-
----
-
-# 2. Non-Negotiable Rules
-
-## 2.1 Product rules
-
-Do not add random tools.
-
-Do not expand tool surface while doing auth work.
-
-Do not remove working local token mode until OAuth/pairing is fully tested.
-
-Do not remove `trusted_writes`.
-
-Do not loosen plugin-side scope enforcement.
-
-Do not let server-side auth become the only write boundary.
-
-Do not trust ChatGPT or the server alone to enforce RemNote scope.
-
-Do not use workspace-wide access as the default.
-
-Do not silently delete, replace, or move user notes.
-
-Do not fake unsupported RemNote SDK features.
-
-Do not log note bodies, markdown payloads, OAuth tokens, plugin tokens, refresh tokens, authorization codes, or secrets.
-
-Do not put tokens in URL query strings except short-lived one-time pairing codes when there is no safer alternative, and even then avoid logging them.
-
----
-
-## 2.2 Security rules
-
-All hosted traffic must use:
-
-```text
-HTTPS for HTTP endpoints
-WSS for plugin WebSocket
-secure cookies
-exact redirect URI matching
-PKCE S256
-state parameter validation
-CSRF protection for dashboard mutation routes
-short-lived access tokens
-hashed stored session tokens
-revocation support
-rate limiting on auth and pairing endpoints
-audit logs without note content
-```
-
-Every token stored server-side must be hashed unless it must be recoverable for a valid technical reason.
-
-Every user-specific MCP call must resolve to:
-
-```text
-authenticated user_id
-valid scopes
-active paired plugin session
-allowed RemNote permission scope
-connected plugin WebSocket
-```
-
-If any of those are missing, fail safely.
-
----
-
-## 2.3 Data privacy rules
-
-Never persist note content by default.
-
-Never log full Rem text, markdown payloads, rich text payloads, or raw note trees.
-
-Acceptable logs:
-
-```text
-request id
 tool name
-user id hash or internal id
-device id
-session id
-status
-error code
-duration
-scope
-permission mode
-connection status
-created/updated/deleted Rem IDs when needed for recovery
-partial execution evidence without note body
+tier
+category
+risk level
+registered
+exposed
+runtime verified
+last success timestamp
+last failure timestamp
+last error code
+average latency
+supports dry-run
+supports idempotency
+requires write
+requires delete
+recommended fallback
 ```
+
+Expose the matrix through:
+
+```text
+get_bridge_diagnostics
+dashboard
+RemNote plugin advanced details
+run_bridge_health_check
+```
+
+## 1.6 Health check routing must be hosted-session aware
+
+`run_bridge_health_check` must use the same principal/session-aware plugin routing path as normal MCP tool calls.
+
+Do not call raw hub/plugin routing in hosted mode without the authenticated ChatGPT principal. This is what can cause false `NO_PAIRED_PLUGIN_SESSION` failures.
+
+Required fix:
+
+```text
+health-check.ts must receive/use the principal-aware callPlugin wrapper
+```
+
+## 1.7 Hosted diagnostics must not depend on local bearer auth
+
+Keep `/diagnostics` protected for admin/local debugging if needed.
+
+But the RemNote plugin hosted UI needs its own hosted-safe diagnostics route, such as:
+
+```text
+POST /api/plugin/diagnostics
+POST /api/plugin/health-check
+POST /api/plugin/copy-failed-request
+```
+
+Authenticate these using hosted plugin session/pairing state, not `REMNOTE_BRIDGE_TOKEN`.
+
+## 1.8 Some schemas are too broad or ambiguous
+
+Do not remove the tools. Improve the schemas.
+
+Known schema problems:
+
+```text
+apply_structured_note_batch has overlapping target/parentId/root/note shapes
+apply_style_plan uses generic value
+verify_note_design uses dynamic expectedStyleMap record
+create_polished_note_tree mixes creation and post-create styling plan
+create_styled_rem_tree recursive payload is powerful but needs tighter constraints
+move/reorder/update/replace need dry-run and guards
+```
+
+## 1.9 Static MCP server registration may be inefficient
+
+Each MCP request can rebuild/register tool definitions. For 47 tools this is acceptable during testing, but not ideal for a public app.
+
+Add caching of static tool definitions and registry summaries. Still inject request-specific values:
+
+```text
+principal
+request signal
+session
+active tier/profile
+runtime info
+```
+
+Cache invalidation must occur when tool tier/profile changes or when registry version changes.
+
+## 1.10 Test scripts listed in the plan may not exist yet
+
+Add the missing test scripts rather than pretending they ran.
+
+Required new scripts include:
+
+```text
+server:test:tools-core
+server:test:tools-advanced
+server:test:tools-diagnostics
+server:test:tool-schemas
+server:test:hosted-diagnostics
+server:test:tier-switching
+server:test:idempotency
+server:test:performance
+```
+
+If an existing script covers the same purpose, document the mapping.
 
 ---
 
-## 2.4 RemNote safety rules
+# 2. Work Division
 
-Plugin-side scope enforcement remains mandatory.
+Divide the work into three main areas:
 
-Destructive tools always require explicit approval.
+1. **MCP server, tool registry, schemas, permissions, and performance**
+2. **RemNote plugin UI, tier controls, hosted diagnostics, and user experience**
+3. **Testing, verification matrix, documentation, deployment checks, and release hardening**
 
-Public delete remains:
+Each area has required tasks and acceptance criteria.
+
+---
+
+# Area 1 — MCP Server, Tool Registry, Schemas, Permissions, and Performance
+
+## 1.1 Remove legacy destructive delete tools completely
+
+Delete these tools from the entire repo:
+
+```text
+delete_focused_rem
+delete_selected_rem
+delete_rem
+```
+
+Keep only:
 
 ```text
 delete_rem_by_id
 ```
 
-Hidden legacy delete tools stay hidden unless intentionally enabled for local development:
+`delete_rem_by_id` must remain guarded:
 
 ```text
-delete_rem
-delete_focused_rem
-delete_selected_rem
+dryRun defaults true
+real delete requires dryRun=false
+real delete requires expectedParentId, expectedAncestorId, or confirmTitle
+real delete must return clear target confirmation data
 ```
 
-`delete_rem_by_id` must default to:
+Required output for dry run and real delete:
 
-```text
-dryRun: true
-```
-
-Real delete requires guard evidence:
-
-```text
-dryRun: false
-expectedParentId or expectedAncestorId
-optional confirmTitle match
-post-delete verification
-```
-
-If delete status is uncertain, return unknown/retryable status and require a fresh dry-run.
-
----
-
-# 3. Target Hosted Architecture
-
-## 3.1 Final target
-
-```text
-ChatGPT App
-  ↓ OAuth 2.1 + PKCE
-Render Hosted MCP Server
-  ↓ token verification + user routing
-Bridge Session Router
-  ↓ user_id → active plugin_session_id
-Secure WSS Bridge
-  ↓ plugin session token + heartbeat
-RemNote Plugin
-  ↓ local permission mode + local scope enforcement
-Focused / Selected / Approved Rem subtree
-```
-
----
-
-## 3.2 Account and pairing flow
-
-```text
-1. User opens Render dashboard.
-2. User signs in with Google or another established OAuth/OIDC provider.
-3. Render creates or loads user account.
-4. User opens RemNote plugin.
-5. Plugin shows Not Paired.
-6. User clicks Pair RemNote.
-7. Plugin opens hosted pairing URL.
-8. Server creates short-lived pairing challenge.
-9. User confirms pairing in dashboard.
-10. Plugin receives local device/session credentials.
-11. Plugin connects to WSS using plugin session token.
-12. ChatGPT connects to MCP using OAuth.
-13. Server maps ChatGPT OAuth user → paired plugin session.
-14. MCP tool calls route only to that user's RemNote plugin.
-```
-
----
-
-## 3.3 Required identity objects
-
-Implement persistent storage for:
-
-```text
-users
-oauth_accounts
-dashboard_sessions
-plugin_devices
-plugin_sessions
-pairing_challenges
-mcp_clients
-mcp_authorization_codes
-mcp_access_tokens or token hashes
-mcp_refresh_tokens or token hashes
-scope_grants
-audit_events
-idempotency_records
-request_outcomes
-```
-
-Start with PostgreSQL for durable state. Redis may be added for short-lived challenges and rate limiting, but it should not be the only durable store.
-
----
-
-# 4. Required Execution Order
-
-Do these phases in order.
-
-Do not skip phases.
-
-Do not mix auth, routing, and UI in one uncontrolled change.
-
-Each phase must leave the repo buildable.
-
----
-
-# Phase 0 — Baseline, Branch Safety, and Proof Log
-
-## Goal
-
-Protect the current working bridge before major hosted-auth work begins.
-
-## Tasks
-
-1. Confirm the active branch.
-
-```bash
-git status
-git branch --show-current
-```
-
-2. Create a new branch for hosted auth.
-
-```bash
-git checkout release/final-polish
-git pull
-git checkout -b feature/hosted-auth-pairing
-```
-
-3. Record current behavior in:
-
-```text
-docs/hosted-auth-baseline.md
-```
-
-Include:
-
-```text
-current branch
-commit SHA
-tool profile
-public tool count in full profile
-public tool count in simple profile
-hidden delete tools
-current Render env shape
-current known limitations
-```
-
-4. Run baseline validation.
-
-```bash
-npm run check-types
-npm run validate
-npm run build
-npm run server:build
-npm run server:smoke
-npm audit
-npm audit --omit=dev
-git diff --check
-```
-
-5. If RemNote is available, run live sandbox test.
-
-```bash
-npm run bridge:live-test
-```
-
-If RemNote is not connected, record that the live test reached MCP but plugin tools were unavailable.
-
-## Acceptance Criteria
-
-```text
-new branch exists
-baseline doc exists
-current tool behavior recorded
-automated checks pass or failures are documented
-no hosted-auth code added yet
-```
-
----
-
-# Phase 1 — Mode Boundaries and Configuration Cleanup
-
-## Goal
-
-Make local, personal hosted, and public hosted modes explicit before adding OAuth.
-
-## Required modes
-
-```text
-local_dev
-personal_hosted_token
-public_hosted_oauth
-```
-
-## Tasks
-
-1. Refactor config in:
-
-```text
-server/src/config.ts
-```
-
-Add explicit mode parsing:
-
-```ts
-type BridgeDeploymentMode =
-  | "local_dev"
-  | "personal_hosted_token"
-  | "public_hosted_oauth";
-```
-
-2. Preserve existing local behavior.
-
-3. Preserve personal hosted token behavior.
-
-4. Keep public hosted OAuth blocked until Phase 5+, then enable only behind strict config validation.
-
-5. Add canonical URL config:
-
-```bash
-REMNOTE_BRIDGE_PUBLIC_BASE_URL=https://your-service.onrender.com
-REMNOTE_BRIDGE_MCP_RESOURCE=https://your-service.onrender.com
-REMNOTE_BRIDGE_DASHBOARD_URL=https://your-service.onrender.com/dashboard
-```
-
-6. Add strict validation:
-
-```text
-local_dev:
-  may bind localhost
-  token required unless explicit no-token dev flag is set
-
-personal_hosted_token:
-  must bind 0.0.0.0
-  must use HTTPS/WSS externally
-  must require static token
-  must allow only configured CORS origins
-
-public_hosted_oauth:
-  must require DB URL
-  must require OAuth provider config
-  must require public base URL
-  must not use static bridge token as public auth
-```
-
-7. Add environment example docs:
-
-```text
-.env.local.example
-.env.personal-hosted.example
-.env.public-hosted.example
-```
-
-## Acceptance Criteria
-
-```text
-all existing tests pass
-current local token mode still works
-personal hosted token mode still works
-public hosted mode either stays blocked before Phase 5 or requires strict OAuth/PostgreSQL config after implementation
-config errors are helpful
-```
-
----
-
-# Phase 2 — Render Dashboard Foundation
-
-## Goal
-
-Give the Render service a real user-facing web UI without changing auth behavior yet.
-
-## Files likely involved
-
-```text
-server/src/app.ts
-server/src/http.ts
-server/src/dashboard/*
-server/src/static/*
-```
-
-## Tasks
-
-1. Replace root JSON-only page with simple HTML dashboard shell.
-
-2. Keep JSON status available at:
-
-```text
-GET /health
-GET /diagnostics
-GET /api/status
-```
-
-3. Dashboard should show:
-
-```text
-server status
-bridge connected / disconnected
-tool profile
-public tool count
-deployment mode
-current auth mode
-plugin connected status
-last connected time
-last disconnected time
-```
-
-4. For personal token mode, dashboard can show:
-
-```text
-not signed in
-personal token mode active
-public OAuth mode requires hosted config
-```
-
-5. Add UI placeholders for future:
-
-```text
-Sign in
-Pair RemNote
-Connected devices
-ChatGPT connection
-Revoke session
-Audit log
-```
-
-6. Do not add fake sign-in buttons that pretend to work.
-
-7. Use strict security headers:
-
-```text
-content-security-policy
-x-content-type-options
-referrer-policy
-cache-control
-frame-ancestors
-```
-
-8. Keep `/mcp` behavior unchanged.
-
-## Acceptance Criteria
-
-```text
-/ shows dashboard HTML
-/health still returns JSON
-/diagnostics still requires auth where appropriate
-/mcp behavior unchanged
-no note data displayed
-no secrets displayed
-```
-
----
-
-# Phase 3 — Persistent Storage Layer
-
-## Goal
-
-Add durable storage before account login, pairing, or OAuth.
-
-## Preferred storage
-
-Use PostgreSQL for durable state.
-
-Add an in-memory store only for tests and local smoke tests.
-
-## New files
-
-```text
-server/src/storage/types.ts
-server/src/storage/postgres-store.ts
-server/src/storage/memory-store.ts
-server/src/storage/migrations/*
-server/src/storage/index.ts
-```
-
-## Required interfaces
-
-```ts
-interface UserStore {}
-interface OAuthAccountStore {}
-interface DashboardSessionStore {}
-interface PluginDeviceStore {}
-interface PluginSessionStore {}
-interface PairingChallengeStore {}
-interface McpOAuthStore {}
-interface AuditEventStore {}
-interface IdempotencyStore {}
-```
-
-## Required tables
-
-```text
-users
-oauth_accounts
-dashboard_sessions
-plugin_devices
-plugin_sessions
-pairing_challenges
-mcp_clients
-mcp_authorization_codes
-mcp_tokens
-scope_grants
-audit_events
-idempotency_records
-request_outcomes
-```
-
-## Token storage rule
-
-Store only hashes for:
-
-```text
-dashboard session tokens
-plugin session tokens
-pairing challenge secrets
-authorization codes
-access tokens if persisted
-refresh tokens
-```
-
-Use constant-time comparison for secret verification.
-
-## Acceptance Criteria
-
-```text
-storage interfaces exist
-memory store passes unit/smoke tests
-PostgreSQL migrations exist
-no OAuth flow depends on in-memory-only state
-tokens are hashed at rest
-no note content is stored
-```
-
----
-
-# Phase 4 — User Login for Render Dashboard
-
-## Goal
-
-Allow the user to sign into the Render dashboard with Google or an established OIDC provider.
-
-## Strong preference
-
-Use an established identity provider or library.
-
-Do not hand-roll Google OAuth/OIDC unless necessary.
-
-## Required routes
-
-```text
-GET  /login
-GET  /auth/start
-GET  /auth/callback
-POST /logout
-GET  /dashboard
-```
-
-## Required behavior
-
-1. User signs into dashboard.
-2. Server creates local `user_id`.
-3. OAuth account is linked to user.
-4. Dashboard session cookie is issued.
-
-## Cookie requirements
-
-```text
-HttpOnly
-Secure in hosted mode
-SameSite=Lax or Strict
-short expiration
-rotation on login
-server-side revocation
-```
-
-## CSRF requirements
-
-Dashboard mutation routes must require CSRF tokens.
-
-This includes:
-
-```text
-logout
-pair/start
-pair/confirm
-revoke device
-disconnect session
-change default permission mode
-```
-
-## Acceptance Criteria
-
-```text
-dashboard login works
-logout revokes server-side session
-dashboard route requires auth
-CSRF protects mutation routes
-no MCP auth changed yet
-no plugin pairing yet
-```
-
----
-
-# Phase 5 — RemNote Plugin Pairing
-
-## Goal
-
-Bind one RemNote plugin installation/device to one signed-in dashboard user.
-
-## Required plugin UI changes
-
-Add or refactor:
-
-```text
-src/widgets/components/PairingPanel.tsx
-src/widgets/hooks/usePairingState.ts
-src/bridge/pairing.ts
-```
-
-Plugin default view must show:
-
-```text
-Not paired
-Pair this RemNote
-Paired as user@email.com
-Connected / Reconnecting / Offline
-Revoke pairing
-```
-
-## Pairing flow
-
-Use short-lived pairing challenge.
-
-Recommended flow:
-
-```text
-1. Plugin creates local deviceId if missing.
-2. Plugin calls /pair/start or opens /pair/start URL with device public info.
-3. Server creates pairingChallengeId and one-time code.
-4. User signs into dashboard if needed.
-5. User confirms pairing.
-6. Plugin completes pairing and receives:
-   - deviceId
-   - pluginSessionId
-   - pluginSessionToken
-   - expiresAt
-7. Plugin stores session token in RemNote local storage, not synced storage.
-8. Plugin reconnects WSS with session credentials.
-```
-
-## Storage rule inside RemNote plugin
-
-Use local storage for sensitive plugin session token.
-
-Synced storage may store non-sensitive preferences only:
-
-```text
-preferred permission mode
-preferred permission scope
-server URL
-UI preferences
-```
-
-Do not sync plugin session token across devices unless explicitly designed.
-
-## WebSocket hello update
-
-Change plugin hello from static token to:
-
-```ts
+```json
 {
-  type: "plugin_hello",
-  protocolVersion: 1,
-  clientName: "remnote-plugin",
-  deploymentMode: "public_hosted_oauth" | "personal_hosted_token" | "local_dev",
-  deviceId,
-  pluginSessionId,
-  pluginSessionToken
+  "ok": true,
+  "dryRun": true,
+  "target": {
+    "remId": "...",
+    "title": "...",
+    "parentId": "...",
+    "breadcrumbs": ["..."],
+    "childCount": 8
+  },
+  "wouldDelete": true,
+  "deleted": false
 }
 ```
 
-Personal/local mode may continue to support:
+## 1.2 Implement real tool tiers
 
-```ts
-token: bridgeToken
-```
-
-## Server validation
-
-Server must verify:
+Replace the old `simple/full` mental model with:
 
 ```text
-pluginSessionId exists
-token hash matches
-session not expired
-session not revoked
-device belongs to user
-device is allowed
+core
+advanced_notes
+developer_diagnostics
+full
 ```
 
-## Acceptance Criteria
+### Core tier
 
-```text
-plugin can pair to signed-in user
-paired plugin connects to hosted WSS
-invalid plugin token is rejected
-revoked plugin session cannot connect
-expired plugin session shows re-pair required
-local/personal token mode still works
-```
-
----
-
-# Phase 6 — Multi-User Bridge Session Router
-
-## Goal
-
-Replace single global plugin socket behavior with per-user/per-device routing.
-
-## Current problem
-
-Current bridge hub is effectively:
-
-```text
-one active pluginSocket
-```
-
-Hosted mode needs:
-
-```text
-user_id → one or more plugin sessions → active WebSocket connections
-```
-
-## New design
-
-Create:
-
-```text
-server/src/bridge/session-router.ts
-server/src/bridge/plugin-connection.ts
-server/src/bridge/request-ledger.ts
-```
-
-Refactor existing:
-
-```text
-server/src/bridge-hub.ts
-```
-
-Do not destroy local behavior. Wrap it.
-
-## Required routing key
-
-Every MCP tool call must include authenticated principal:
-
-```ts
-{
-  userId,
-  sessionId,
-  scopes,
-  authMode
-}
-```
-
-Then route:
-
-```text
-principal.userId → active paired plugin connection
-```
-
-## Multiple device policy
-
-Start simple:
-
-```text
-one active plugin device per user by default
-```
-
-If a second plugin connects:
-
-```text
-either replace old connection and record reason
-or reject new connection with DEVICE_CONFLICT
-```
-
-Expose this clearly in dashboard and plugin UI.
-
-Do not silently route to the wrong device.
-
-## Required error codes
-
-```text
-PLUGIN_NOT_PAIRED
-PLUGIN_NOT_CONNECTED
-DEVICE_CONFLICT
-PLUGIN_SESSION_EXPIRED
-PLUGIN_SESSION_REVOKED
-NO_ACTIVE_DEVICE
-```
-
-## Acceptance Criteria
-
-```text
-two users cannot access each other's plugin
-one user's ChatGPT call routes only to their paired plugin
-wrong token cannot hijack connection
-device conflict is explicit
-local token mode still supports one active plugin
-```
-
----
-
-# Phase 7 — ChatGPT OAuth / MCP Authorization
-
-## Goal
-
-Make ChatGPT connect using OAuth instead of manual static token.
-
-## Required endpoints
-
-Protected resource metadata:
-
-```text
-GET /.well-known/oauth-protected-resource
-```
-
-Authorization server metadata:
-
-```text
-GET /.well-known/oauth-authorization-server
-```
-
-OAuth flow:
-
-```text
-GET  /oauth/authorize
-POST /oauth/token
-POST /oauth/revoke
-```
-
-Optional but recommended:
-
-```text
-POST /oauth/register
-GET  /oauth/jwks
-```
-
-## Required OAuth features
-
-```text
-authorization-code flow
-PKCE S256
-state validation
-resource parameter support
-exact redirect URI validation
-short-lived access tokens
-refresh token rotation if refresh tokens are used
-scope enforcement
-audience/resource validation
-JWT signature verification or opaque token introspection
-```
-
-## ChatGPT client registration
-
-Prefer one of:
-
-```text
-CIMD if supported
-DCR if implemented
-predefined OAuth client if simpler for initial private testing
-```
-
-Do not require the user to manually paste API keys or bridge tokens into ChatGPT for public hosted mode.
-
-## MCP auth behavior
-
-For unauthenticated protected tool calls, return:
-
-```text
-401 Unauthorized
-WWW-Authenticate: Bearer resource_metadata="https://.../.well-known/oauth-protected-resource", scope="bridge:read bridge:write"
-```
-
-Each tool descriptor should declare security schemes.
-
-Do not rely only on server-level auth defaults.
-
-## Required scopes
-
-Use narrow scopes:
-
-```text
-bridge:read
-bridge:write
-bridge:trusted_write
-bridge:delete
-bridge:admin
-bridge:pair
-```
-
-Recommended default ChatGPT scopes:
-
-```text
-bridge:read
-bridge:write
-```
-
-Only grant delete/admin when explicitly needed.
-
-## Token verification
-
-Every MCP request must validate:
-
-```text
-signature or token hash
-issuer
-audience/resource
-expiration
-not-before if present
-revocation status
-scopes
-user id
-```
-
-If invalid:
-
-```text
-401 for missing/expired/invalid token
-403 for valid token with insufficient scope
-```
-
-## Acceptance Criteria
-
-```text
-ChatGPT auth flow starts from MCP 401 challenge
-OAuth authorization-code + PKCE completes
-ChatGPT sends Authorization: Bearer token
-server verifies token on every MCP request
-wrong audience token is rejected
-expired token is rejected
-insufficient scope returns 403
-MCP request resolves user_id
-```
-
----
-
-# Phase 8 — Trusted Write Mode Without Repeated RemNote Approval
-
-## Goal
-
-Make the seamless workflow safe and dependable.
-
-## Required default recommendation
-
-For normal note writing:
-
-```text
-permissionMode = trusted_writes
-permissionScope = focused_rem_and_descendants
-```
-
-or:
-
-```text
-permissionMode = trusted_writes
-permissionScope = selected_rem_and_descendants
-```
-
-## Approval rules
-
-| Operation | Trusted focused/selected mode |
-|---|---|
-| read focused Rem | no RemNote approval |
-| read selected Rem | no RemNote approval |
-| create child under allowed root | no RemNote approval |
-| append/update/style inside allowed root | no RemNote approval |
-| create structured note tree inside allowed root | no RemNote approval |
-| flashcard creation inside allowed root | no RemNote approval |
-| search inside scoped root | no RemNote approval |
-| replace Rem | approval required |
-| delete Rem | approval required |
-| workspace-level create | blocked unless workspace scope |
-| workspace-level search | blocked unless workspace scope |
-
-## Server-side mirror
-
-Server should store the user's default preference, but plugin remains final authority.
-
-Server may know:
-
-```text
-preferredPermissionMode
-preferredPermissionScope
-approvedRootRemId metadata if user set it
-```
-
-But the plugin must still enforce actual RemNote scope.
-
-## Required UI
-
-Plugin should show a one-click mode:
-
-```text
-Use Recommended Note Mode
-```
-
-Dashboard should show current mode:
-
-```text
-Focused Rem + Descendants
-Trusted Writes
-Destructive actions still require confirmation
-```
-
-## Acceptance Criteria
-
-```text
-safe writes inside focused descendants do not request repeated RemNote approval
-safe writes outside scope are blocked
-destructive tools still require approval
-trusted mode is visible to user
-scope can be downgraded immediately
-```
-
----
-
-# Phase 9 — Resilience, Reconnect, and Safe Failure Handling
-
-## Goal
-
-Make the connection dependable under real hosted conditions.
-
-## Required connection states
-
-Both dashboard and plugin must display:
-
-```text
-not_paired
-pairing
-paired_offline
-connecting
-connected
-reconnecting
-server_unreachable
-token_expired
-session_revoked
-device_conflict
-stale_connection
-```
-
-## WebSocket requirements
-
-Keep heartbeat/ping-pong behavior.
-
-Add:
-
-```text
-connection id
-last heartbeat timestamp
-server instance id
-device id
-session id
-reconnect attempt count
-close code/reason
-```
-
-## Render deployment behavior
-
-Handle:
-
-```text
-server restart
-Render redeploy
-SIGTERM
-stale WebSocket
-plugin browser sleep/wake
-network interruption
-duplicate plugin tab/window
-```
-
-## Request safety rules
-
-Read requests:
-
-```text
-may retry once after reconnect
-```
-
-Safe writes:
-
-```text
-must require idempotencyKey for auto-retry
-must not blindly retry if request reached plugin
-must verify target state before retry where possible
-```
-
-Deletes:
-
-```text
-never auto-retry real delete
-must require fresh dry-run preview after uncertainty
-```
-
-Unknown write status:
-
-```text
-return RETRYABLE_UNKNOWN_WRITE_STATUS
-include lifecycle
-include requestId
-include recommendation
-```
-
-Unknown delete status:
-
-```text
-return RETRYABLE_UNKNOWN_DELETE_STATUS
-include lifecycle
-require target re-check
-```
-
-## Idempotency
-
-Persist idempotency records for high-level write tools:
-
-```text
-apply_structured_note_batch
-create_polished_note_tree
-create_styled_rem_tree
-apply_style_plan
-flashcard batch operations if added
-```
-
-Idempotency record should include:
-
-```text
-userId
-tool
-idempotencyKey
-target root
-request hash
-status
-createdRemIds
-updatedRemIds
-startedAt
-finishedAt
-errorCode
-```
-
-Do not store full note content.
-
-## Acceptance Criteria
-
-```text
-Render redeploy does not corrupt state
-disconnect during read gives clean retry/failure
-disconnect during safe write gives idempotent recovery or unknown write status
-disconnect during delete never claims success without verification
-pending requests always resolve once
-recent request ledger remains useful
-```
-
----
-
-# Phase 10 — Security Hardening
-
-## Goal
-
-Make the hosted system safe enough for trusted testers.
-
-## Required controls
-
-```text
-rate limiting on /oauth/*, /pair/*, /mcp
-CSRF on dashboard mutations
-CORS allowlist
-strict origin checks
-secure cookie settings
-CSP headers
-no token logs
-no note content logs
-request body limits
-WebSocket payload limits
-pairing challenge expiration
-session revocation
-access token expiration
-refresh token rotation if used
-audit log retention policy
-```
-
-## OAuth-specific controls
-
-```text
-exact redirect URI matching
-state validation
-PKCE verifier validation
-resource parameter required
-audience/resource validation
-issuer validation
-scope validation
-JWKS cache with rotation
-clock skew handling
-```
-
-## Optional but valuable
-
-```text
-OpenAI connector mTLS validation if the deployment environment supports it
-admin allowlist during private beta
-email/domain allowlist during early testing
-```
-
-## Acceptance Criteria
-
-```text
-security checklist documented
-auth failure paths return correct 401/403
-tokens are never logged
-pairing code cannot be reused
-revoked session cannot call tools
-wrong user cannot route to another plugin
-```
-
----
-
-# Phase 11 — Dashboard and Plugin UX Finalization
-
-## Goal
-
-Make the product easy to understand for normal users.
-
-## Dashboard required screens
-
-```text
-Home / status
-Login
-Pair RemNote
-Connected devices
-ChatGPT connection
-Permissions
-Audit / recent activity
-Diagnostics
-Support / privacy links
-```
-
-## Dashboard status cards
-
-```text
-Signed in as
-ChatGPT OAuth connected
-RemNote plugin connected
-Active device
-Last heartbeat
-Current access scope
-Current write mode
-Last successful tool call
-Last failed tool call
-```
-
-## Plugin required screens
-
-```text
-Not paired
-Pairing
-Connected
-Reconnecting
-Approval needed
-Recommended Note Mode
-Advanced diagnostics
-```
-
-## UX rules
-
-Default view must be simple.
-
-Advanced diagnostics must be hidden.
-
-Approval view must be clear and scrollable.
-
-Approval footer must remain fixed.
-
-Do not show local server IDs to normal users unless in advanced diagnostics.
-
-Do not show raw JSON by default.
-
-## Acceptance Criteria
-
-```text
-new user knows what to click
-paired user sees connected state
-offline user gets clear next action
-trusted mode is understandable
-dangerous actions are clearly separated
-```
-
----
-
-# Phase 12 — Tests, QA, Docs, and Release Gate
-
-## Goal
-
-Prove the bridge works before calling it done.
-
-## Required automated tests
-
-Add or update tests for:
-
-```text
-config mode validation
-protected resource metadata
-authorization server metadata
-PKCE authorization flow
-token verification
-expired token rejection
-wrong audience rejection
-scope rejection
-pairing challenge creation
-pairing challenge expiration
-pairing challenge one-time use
-plugin session verification
-plugin session revocation
-per-user bridge routing
-device conflict
-trusted write scope enforcement
-idempotency behavior
-unknown write status
-unknown delete status
-dashboard CSRF
-no note content in audit logs
-```
-
-## Required validation commands
-
-```bash
-npm run check-types
-npm run validate
-npm run build
-npm run server:build
-npm run server:smoke
-npm run bridge:live-test
-npm audit
-npm audit --omit=dev
-git diff --check
-```
-
-Add new scripts if needed:
-
-```bash
-npm run server:test:auth
-npm run server:test:pairing
-npm run server:test:routing
-npm run server:test:security
-```
-
-## Required manual RemNote tests
-
-Use a disposable sandbox:
-
-```text
-Test KB Space / ChatGPT Bridge Sandbox
-```
-
-Manual tests:
-
-```text
-pair plugin
-connect WSS
-connect ChatGPT OAuth
-get_bridge_status
-get_focused_rem
-get_rem_tree
-search_rems scoped to sandbox
-create_polished_note_tree
-apply_structured_note_batch
-apply_style_plan
-verify_note_design
-create flashcards
-delete_rem_by_id dryRun
-delete_rem_by_id real delete on disposable child
-disconnect plugin mid-read
-disconnect plugin mid-write
-Render redeploy while plugin is connected
-token expiration
-session revocation
-wrong user access attempt
-```
-
-## Required Render tests
-
-```text
-/ dashboard loads
-/health works
-/diagnostics works with auth
-/.well-known/oauth-protected-resource works
-/.well-known/oauth-authorization-server works
-/oauth/authorize works
-/oauth/token works
-/mcp returns OAuth challenge when needed
-/mcp accepts valid bearer token
-/remnote-bridge accepts paired plugin WSS
-/remnote-bridge rejects invalid plugin session
-```
-
-## Docs to update
-
-```text
-README.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-docs/hosted-auth-design.md
-docs/render-deployment.md
-docs/oauth-setup.md
-docs/pairing-flow.md
-docs/test-matrix.md
-chatgpt-app-submission.json
-```
-
-## Release wording
-
-Correct:
-
-```text
-The bridge supports local and personal hosted token modes. Public hosted OAuth mode is implemented only after OAuth, pairing, persistent sessions, revocation, routing, and live RemNote tests pass.
-```
-
-Incorrect:
-
-```text
-Public hosted mode is ready because Render deploys.
-OAuth is done because auth types exist.
-Pairing is done because a static bridge token works.
-Multi-user routing works because one plugin socket works.
-```
-
-## Acceptance Criteria
-
-```text
-all tests pass
-manual RemNote sandbox passes
-Render hosted flow passes
-ChatGPT OAuth flow passes
-wrong-user routing is impossible in tests
-revocation works
-docs are honest
-public hosted mode flag can be enabled safely
-```
-
----
-
-# 5. File-Level Implementation Guide
-
-## Server files likely to change
-
-```text
-server/src/config.ts
-server/src/app.ts
-server/src/http.ts
-server/src/index.ts
-server/src/bridge-hub.ts
-server/src/auth/local-token.ts
-server/src/auth/types.ts
-server/src/sessions/types.ts
-server/src/sessions/audit-log.ts
-server/src/mcp-server.ts
-server/src/tools/*
-server/package.json
-render.yaml
-```
-
-## Server files likely to add
-
-```text
-server/src/auth/oauth-provider.ts
-server/src/auth/oauth-metadata.ts
-server/src/auth/oauth-authorize.ts
-server/src/auth/oauth-token.ts
-server/src/auth/token-verifier.ts
-server/src/auth/pkce.ts
-server/src/auth/jwks.ts
-server/src/auth/csrf.ts
-server/src/auth/cookies.ts
-server/src/auth/rate-limit.ts
-
-server/src/storage/types.ts
-server/src/storage/postgres-store.ts
-server/src/storage/memory-store.ts
-server/src/storage/migrations/*
-
-server/src/pairing/routes.ts
-server/src/pairing/service.ts
-server/src/pairing/types.ts
-
-server/src/dashboard/routes.ts
-server/src/dashboard/templates.ts
-server/src/dashboard/assets.ts
-
-server/src/bridge/session-router.ts
-server/src/bridge/plugin-connection.ts
-server/src/bridge/request-ledger.ts
-```
-
-## Plugin files likely to change
-
-```text
-src/bridge/client.ts
-src/bridge/protocol.ts
-src/bridge/status.ts
-src/widgets/bridge-status.tsx
-src/widgets/components/*
-src/remnote/permissions.ts
-```
-
-## Plugin files likely to add
-
-```text
-src/bridge/pairing.ts
-src/bridge/session.ts
-src/widgets/components/PairingPanel.tsx
-src/widgets/components/ConnectionPanel.tsx
-src/widgets/components/TrustedModePanel.tsx
-src/widgets/hooks/usePairingState.ts
-src/widgets/hooks/useHostedBridgeConnection.ts
-```
-
-## Docs likely to change
-
-```text
-README.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-docs/*
-chatgpt-app-submission.json
-```
-
----
-
-# 6. Tool Behavior Preservation Rules
-
-Do not regress these working behaviors:
+Safe default for ordinary users.
 
 ```text
 get_bridge_status
-get_bridge_diagnostics
-run_bridge_health_check
-get_remnote_capability_guide
-ping_remnote_plugin
 get_plugin_status
 get_focused_rem
 get_rem
-get_rem_tree
-get_rem_rich
-debug_get_raw_rich_text
-get_current_selection
 get_children
+get_rem_tree
 get_rem_breadcrumbs
 search_rems
+create_basic_flashcard
+create_cloze_card
+create_multiple_choice_card
+create_list_answer_card
+delete_rem_by_id
+```
+
+### Advanced Notes tier
+
+For real note writing and structured editing.
+
+```text
+get_current_selection
+get_rem_rich
 get_document_or_folder_tree
 create_rem
-append_to_rem
 create_document
+append_to_rem
 update_rem
 replace_rem
 move_rem
 reorder_children
 create_rem_tree
-update_rem_rich
+create_styled_rem_tree
+create_polished_note_tree
+apply_structured_note_batch
+apply_style_plan
+verify_note_design
+apply_remnote_command
 set_rem_heading_level
 set_rem_text_color
 set_rem_highlight_color
@@ -1954,118 +439,1136 @@ set_text_span_highlight
 set_rem_type
 set_hide_bullet
 clear_rem_formatting
+create_concept_card
+create_descriptor_card
+```
+
+### Developer / Diagnostics tier
+
+For debugging, tool certification, raw rich-text inspection, and bridge development.
+
+```text
+ping_remnote_plugin
+get_bridge_diagnostics
+run_bridge_health_check
+get_remnote_capability_guide
+debug_get_raw_rich_text
+```
+
+### Full tier
+
+All non-removed and non-unsupported tools.
+
+### Removed
+
+```text
+delete_focused_rem
+delete_selected_rem
+delete_rem
+```
+
+### Unsupported
+
+If `create_folder` is still unsupported by the RemNote SDK, do not expose it as a normal callable tool. Either remove it from public tiers or mark it as `sdk_unsupported` and keep it out of ChatGPT callable schema.
+
+## 1.3 Add tier metadata to every tool
+
+Each tool must have metadata:
+
+```json
+{
+  "tier": "core",
+  "category": "read",
+  "riskLevel": "low",
+  "requiresWrite": false,
+  "requiresDelete": false,
+  "supportsDryRun": false,
+  "supportsIdempotency": false,
+  "recommendedForNormalUse": true,
+  "runtimeVerified": false
+}
+```
+
+Risk levels:
+
+```text
+low
+medium
+high
+dangerous
+```
+
+Categories:
+
+```text
+status
+diagnostics
+read
+write
+formatting
+batch
+cards
+delete
+debug
+```
+
+## 1.4 Dynamic tier resolution
+
+Active tier must be resolvable per session/request.
+
+Required order:
+
+```text
+request/session tier
+paired ChatGPT session tier
+active RemNote plugin tier
+server default tier
+core fallback
+```
+
+Expose active tier in:
+
+```text
+/health
+get_bridge_status
+get_plugin_status
+get_bridge_diagnostics
+run_bridge_health_check
+tool registry summary
+dashboard
+RemNote plugin UI
+```
+
+If active tier changes, set:
+
+```text
+requiresConnectorRefresh=true
+```
+
+unless the connector schema is refreshed automatically.
+
+## 1.5 Improve complex schemas without reducing tool power
+
+Improve these essential tools:
+
+```text
+verify_note_design
+apply_style_plan
+apply_remnote_command
+create_polished_note_tree
+apply_structured_note_batch
+create_styled_rem_tree
+reorder_children
+move_rem
+replace_rem
+update_rem
+```
+
+General schema rules:
+
+```text
+avoid untyped any/object
+avoid generic value fields
+avoid multiple competing ways to express the same target
+prefer discriminated unions
+prefer explicit fields
+add examples in descriptions
+normalize legacy aliases internally
+do not expose legacy aliases if they confuse ChatGPT
+return normalized execution plans
+support dry-run where practical
+support idempotency where practical
+```
+
+## 1.6 Improve `apply_style_plan`
+
+Replace generic operation format:
+
+```json
+{
+  "type": "heading",
+  "value": "H2"
+}
+```
+
+with discriminated operation types:
+
+```json
+{
+  "type": "heading",
+  "remId": "abc",
+  "headingLevel": "H2"
+}
+```
+
+```json
+{
+  "type": "text_color_span",
+  "remId": "abc",
+  "text": "equilibrium",
+  "occurrence": 1,
+  "color": "Blue"
+}
+```
+
+```json
+{
+  "type": "text_highlight_span",
+  "remId": "abc",
+  "start": 10,
+  "end": 20,
+  "highlightColor": "Yellow"
+}
+```
+
+```json
+{
+  "type": "whole_rem_highlight",
+  "remId": "abc",
+  "highlightColor": "Yellow"
+}
+```
+
+Required behavior:
+
+```text
+validate ranges
+validate text occurrence
+validate colors
+support dryRun
+support idempotencyKey
+return normalized plan
+return per-operation result
+support continueOnError
+support verifyAfterWrite
+```
+
+## 1.7 Improve `verify_note_design`
+
+Add an array-based input format.
+
+Preferred public shape:
+
+```json
+{
+  "rootRemId": "root123",
+  "expectations": [
+    {
+      "remId": "root123",
+      "plainText": "5.1 — Physical Origin of the Harmonic Oscillator",
+      "headingLevel": "H1",
+      "hideBullet": false
+    },
+    {
+      "remId": "child123",
+      "plainText": "Physical Idea",
+      "headingLevel": "H2"
+    }
+  ],
+  "expectedChildOrder": ["child123", "child456"],
+  "verifyRichText": true,
+  "verifyMath": true
+}
+```
+
+Keep old `expectedStyleMap` internally only if needed, but prefer the array shape for public schema.
+
+Must verify:
+
+```text
+plain text
+heading levels
+hidden bullets
+Rem type
+whole Rem color/highlight
+span-level color/highlight
+bold/italic/underline where supported
+child order
+inline math
+block math
+flashcard/card structure where possible
+```
+
+Return actionable mismatch objects:
+
+```json
+{
+  "remId": "abc",
+  "field": "headingLevel",
+  "expected": "H2",
+  "actual": "normal",
+  "fixSuggestion": "Use apply_style_plan heading operation"
+}
+```
+
+## 1.8 Improve `apply_remnote_command`
+
+Keep this tool, but make it safer.
+
+Required:
+
+```text
+explicit command union
+target validation
+dry-run/preview mode
+idempotencyKey
+no destructive commands
+return normalized command plan
+recommend safer specialized tool when applicable
+```
+
+If command is equivalent to a specialized tool, metadata should say:
+
+```json
+{
+  "recommendedTool": "set_rem_heading_level"
+}
+```
+
+## 1.9 Improve `create_polished_note_tree`
+
+This should become a reliable main workflow.
+
+Required phases:
+
+```text
+1. validate tree
+2. create tree
+3. apply styles
+4. verify design
+5. rollback if configured and safe
+6. return complete report
+```
+
+Required output:
+
+```json
+{
+  "ok": true,
+  "rootRemId": "...",
+  "createdRemCount": 18,
+  "createdRemIds": ["..."],
+  "styleOperationsApplied": 4,
+  "verification": {
+    "ok": true,
+    "mismatches": []
+  },
+  "rollback": {
+    "attempted": false,
+    "completed": false
+  },
+  "idempotencyKey": "..."
+}
+```
+
+Important: heading styles must apply reliably. If RemNote SDK cannot apply heading during creation, automatically apply heading in a post-create style phase.
+
+## 1.10 Improve `apply_structured_note_batch`
+
+Keep it as the safest batch writer but simplify the public path.
+
+Preferred input path:
+
+```json
+{
+  "operation": "create_child_tree",
+  "target": {
+    "mode": "parent_child",
+    "parentId": "abc"
+  },
+  "position": "end",
+  "tree": {
+    "text": "Root title",
+    "children": []
+  },
+  "dryRun": true,
+  "verifyAfterWrite": true
+}
+```
+
+Internal normalization should support older shapes if needed:
+
+```text
+parentId
+root
+note.root
+note.children
+```
+
+but public schema should prefer one clean path.
+
+Required:
+
+```text
+dry-run preview
+node count
+style count
+card count
+math count
+rollback support
+idempotency auto-generation
+verification after write
+clear partial-failure report
+```
+
+## 1.11 Improve `create_styled_rem_tree`
+
+Keep it in Advanced Notes tier.
+
+Required:
+
+```text
+stricter recursive schema
+max depth
+max node count
+dryRun
+idempotencyKey
+input node key support
+created ID map
+style/math/card count
+preview outline
+```
+
+Preferred node shape should allow optional `clientNodeId`:
+
+```json
+{
+  "clientNodeId": "intro-heading",
+  "type": "rem",
+  "text": "Physical Idea",
+  "style": { "headingLevel": "H2" },
+  "children": []
+}
+```
+
+Return:
+
+```json
+{
+  "idMap": {
+    "intro-heading": "createdRemId"
+  }
+}
+```
+
+## 1.12 Improve risky edit tools
+
+These are necessary and should stay, but they need stronger safeguards.
+
+### `reorder_children`
+
+Required:
+
+```text
+dryRun
+parentRemId
+full ordered child ID list
+validate IDs are current direct children
+refuse partial reorder unless explicitly allowPartial=true
+before/after order
+idempotencyKey
+```
+
+### `move_rem`
+
+Required:
+
+```text
+dryRun
+source Rem ID
+new parent ID
+expected current parent or ancestor guard
+before/after breadcrumbs
+prevent moving into own descendant
+idempotencyKey
+```
+
+### `replace_rem`
+
+Required:
+
+```text
+dryRun
+expected current text/title guard
+before/after preview
+refuse if expected text/title does not match
+idempotencyKey
+```
+
+### `update_rem`
+
+Required:
+
+```text
+dryRun
+expected current text/title guard when possible
+patch-style update option
+before/after preview
+idempotencyKey
+```
+
+## 1.13 Improve write permissions
+
+Map permission modes clearly:
+
+```text
+read_only → no write tools execute
+confirm_writes → dry-run/preview first, approval required for real write
+trusted_writes → trusted writes allowed inside approved scope
+danger_zone → advanced/risky tools allowed, still no removed legacy delete tools
+```
+
+Do not let `danger_zone` resurrect removed delete tools.
+
+## 1.14 Performance improvements
+
+### Cache static tool definitions
+
+Avoid rebuilding all static tool schemas on every MCP call if possible.
+
+Cache by:
+
+```text
+tool registry version
+active tier/profile
+delete exposure flag
+schema version
+```
+
+Still inject:
+
+```text
+principal
+request signal
+session state
+runtime info
+```
+
+### Prefer batch writes
+
+Normal workflow should be:
+
+```text
+create/append tree in batch
+apply style batch
+verify batch
+```
+
+Avoid many single-Rem calls.
+
+### Add idempotency everywhere writes happen
+
+Add required or auto-generated idempotency keys for:
+
+```text
+create_polished_note_tree
+create_styled_rem_tree
+apply_structured_note_batch
+apply_style_plan
+apply_remnote_command
+create_rem_tree
+move_rem
+reorder_children
+replace_rem
+update_rem
+create_rem
+create_document
+append_to_rem
+update_rem_rich
+card creation tools
+delete_rem_by_id
+```
+
+If omitted, generate one and return it.
+
+### Add response size controls
+
+Large trees and diagnostics can become huge.
+
+Add:
+
+```text
+maxDepth
+maxChildren
+maxResultBytes
+truncated: true/false
+continuation token or follow-up read hints
+```
+
+### Add request cancellation and timeout consistency
+
+Every long write, health check, and verification task must honor abort signals and configured timeout.
+
+---
+
+# Area 2 — RemNote Plugin UI, Tier Controls, Hosted Diagnostics, and UX
+
+## 2.1 Add a visible tier selector
+
+Show:
+
+```text
+Core
+Advanced Notes
+Developer / Diagnostics
+Full
+```
+
+For each tier show:
+
+```text
+tool count
+risk explanation
+whether ChatGPT reconnect is needed
+whether tier is active on server
+```
+
+## 2.2 Sync tier state with server
+
+Add server endpoint:
+
+```text
+GET /api/plugin/tool-tier
+POST /api/plugin/tool-tier
+```
+
+Authentication:
+
+```text
+hosted plugin session/pairing state
+not local bridge token
+```
+
+State must update:
+
+```text
+plugin local storage
+server session state
+ChatGPT pairing session record
+dashboard
+health output
+diagnostics output
+```
+
+## 2.3 Stale session detection
+
+If permission scope/mode/tier changes after ChatGPT pairing, show:
+
+```text
+Reconnect required: ChatGPT was approved with an older permission scope or tool tier.
+```
+
+The plugin must not show `Ready` if the paired ChatGPT session cannot use the selected tier/scope.
+
+## 2.4 Hosted diagnostics
+
+Add hosted-safe plugin diagnostics endpoints.
+
+The RemNote plugin advanced buttons must work in hosted mode:
+
+```text
+Run Quick Health Check
+Run Standard Health Check
+Run Full Health Check
+Copy Logs
+Copy Diagnostics
+Copy Failed Request
+Copy Tool Verification Matrix
+```
+
+Do not call local-token-only `/diagnostics` from hosted plugin UI.
+
+## 2.5 Health check levels
+
+Implement:
+
+```text
+quick
+standard
+full
+```
+
+### Quick
+
+```text
+server reachable
+plugin connected
+focused Rem readable
+one small read operation
+```
+
+### Standard
+
+```text
+quick checks
+get_children
+get_rem_tree
+dry-run structured note write
+style-plan dry-run
+verification dry-run
+```
+
+### Full
+
+```text
+all exposed tools in active tier
+runtime verification matrix
+latency report
+unsupported tools
+schema warnings
+permission issues
+```
+
+## 2.6 Better error messages
+
+Errors must explain the real fix.
+
+Examples:
+
+```text
+Tool unavailable because active tier is Core. Switch to Advanced Notes and reconnect ChatGPT.
+```
+
+```text
+ChatGPT session was approved with focused-rem-only. Reconnect with focused Rem + descendants.
+```
+
+```text
+This write requires trusted writes or confirmation approval.
+```
+
+```text
+This tool is unsupported by the installed RemNote SDK.
+```
+
+## 2.7 Hosted mode should hide local token UI
+
+In hosted mode, the RemNote plugin should not make the user think a local bridge token is necessary.
+
+Show bridge token fields only in local developer mode or under advanced local settings.
+
+## 2.8 Dashboard improvements
+
+Dashboard should show:
+
+```text
+Deployment mode
+Auth mode
+Active tier
+Tool counts by tier
+Verified tool count
+Runtime-unverified tool count
+Last successful tool
+Last failed tool
+Average latency
+Plugin connection status
+ChatGPT pairing status
+Session stale yes/no
+```
+
+---
+
+# Area 3 — Testing, Verification Matrix, Documentation, Deployment, and Release Hardening
+
+## 3.1 Runtime tool verification matrix
+
+Track:
+
+```text
+tool name
+tier
+category
+risk level
+registered
+exposed
+runtime verified
+last success timestamp
+last failure timestamp
+last error code
+average latency
+p95 latency if available
+supports dry-run
+supports idempotency
+requires write
+requires delete
+recommended fallback
+schema warning status
+```
+
+Expose in:
+
+```text
+get_bridge_diagnostics
+dashboard
+RemNote plugin advanced details
+run_bridge_health_check
+```
+
+## 3.2 Verify every kept tool
+
+Add runtime tests for every kept tool.
+
+### Read tools
+
+```text
+get_plugin_status
+get_focused_rem
+get_current_selection
+get_rem
+get_rem_tree
+get_rem_rich
+debug_get_raw_rich_text
+get_children
+get_rem_breadcrumbs
+search_rems
+get_document_or_folder_tree
+```
+
+### Write tools
+
+```text
+create_rem
+create_document
+append_to_rem
+update_rem
+replace_rem
+move_rem
+reorder_children
+create_rem_tree
 create_styled_rem_tree
 apply_structured_note_batch
 create_polished_note_tree
+apply_remnote_command
+update_rem_rich
+```
+
+### Formatting tools
+
+```text
+set_rem_heading_level
+set_rem_text_color
+set_rem_highlight_color
+set_text_span_color
+set_text_span_highlight
+set_rem_type
+set_hide_bullet
+clear_rem_formatting
 apply_style_plan
 verify_note_design
+```
+
+### Flashcard/card tools
+
+```text
 create_basic_flashcard
 create_concept_card
 create_descriptor_card
 create_cloze_card
 create_multiple_choice_card
 create_list_answer_card
+```
+
+### Diagnostics/status tools
+
+```text
+ping_remnote_plugin
+get_bridge_status
+get_bridge_diagnostics
+run_bridge_health_check
+get_remnote_capability_guide
+```
+
+### Delete
+
+```text
 delete_rem_by_id
 ```
 
-Known unsupported behavior remains unsupported:
+Only dry-run delete should be tested automatically. Real delete must use a dedicated throwaway sandbox Rem and strong guards.
 
-```text
-create_folder returns SDK_UNSUPPORTED
-clear_rem_formatting may be partial and must report honestly
+## 3.3 Add certification scripts
+
+Add or map scripts:
+
+```bash
+npm run server:test:tools-core
+npm run server:test:tools-advanced
+npm run server:test:tools-diagnostics
+npm run server:test:tool-schemas
+npm run server:test:hosted-diagnostics
+npm run server:test:tier-switching
+npm run server:test:idempotency
+npm run server:test:performance
+npm run server:test:e2e-hosted-smoke
 ```
 
-Hidden legacy deletes remain hidden by default:
+Do not report these commands as run if they do not exist.
+
+## 3.4 Schema quality tests
+
+Fail tests if public schemas contain:
 
 ```text
-delete_rem
-delete_focused_rem
-delete_selected_rem
+untyped any
+generic object where typed schema is practical
+recursive children:any[]
+generic value for unrelated operation types
+dynamic record maps without array alternative
+removed tools
+unsupported tools exposed in normal tiers
+missing descriptions
+missing examples for complex tools
+missing tier metadata
+missing dry-run metadata for risky tools
+missing idempotency metadata for multi-step writes
+```
+
+## 3.5 Performance tests
+
+Track:
+
+```text
+status/read tools: < 700 ms typical
+get_children/get_rem_tree: < 1 s typical
+small write: < 1.5 s typical
+18-25 Rem note tree: < 3 s typical
+style batch: < 1.5 s typical
+verification: < 1.5 s typical
+card creation: < 4 s typical
+diagnostics quick: < 1 s typical
+diagnostics standard: < 3 s typical
+```
+
+Report regressions but do not fail hard unless clearly broken.
+
+## 3.6 Hosted mode regression tests
+
+Verify:
+
+```text
+hosted MCP does not require local bearer token
+hosted MCP uses OAuth/pairing/session auth
+local mode still requires token unless explicit dev no-auth
+health check uses principal-aware routing
+hosted diagnostics do not use local bearer-token path
+tool tier changes update registry
+stale ChatGPT session detection works
+/health returns public endpoints, not 127.0.0.1
+allowed origins include RemNote/ChatGPT/public base origins
+plugin reconnect after server restart works
+session expiry and refresh behavior works
+```
+
+## 3.7 End-to-end workflow checklist
+
+Create an automated or semi-automated checklist:
+
+```text
+deploy Render
+open RemNote plugin
+select Core tier
+connect plugin
+pair ChatGPT
+get focused Rem
+switch to Advanced Notes tier
+reconnect if required
+create styled note tree
+apply style plan
+verify note design
+create flashcards
+run guarded delete dry-run
+run quick health check
+run standard health check
+export diagnostics
+rotate exposed secrets after testing
+```
+
+## 3.8 Documentation updates
+
+Update:
+
+```text
+README
+hosted setup guide
+local setup guide
+Render env guide
+RemNote plugin guide
+ChatGPT connector guide
+tool tier guide
+permission mode guide
+recommended workflows
+safe write workflow
+delete safety guide
+troubleshooting guide
+diagnostics guide
+performance guide
+release checklist
+```
+
+## 3.9 Security hardening
+
+Required:
+
+```text
+rotate exposed secrets after testing
+redact tokens/session secrets in all logs
+audit pairing approval/disconnect/tool calls
+rate limit pairing and diagnostics endpoints
+validate CORS origins
+reject unknown origins in hosted websocket
+expire stale plugin sessions
+support revocation/disconnect cleanup
+never expose raw tokens in UI diagnostics
+```
+
+## 3.10 Product readiness checklist
+
+Before public release:
+
+```text
+Render starts cleanly in hosted mode
+/health shows hosted_oauth_required
+bridge.connected true after plugin connect
+ChatGPT connector connects without manual bearer token
+Core tier works
+Advanced Notes tier works
+Developer Diagnostics tier works
+Full tier works
+tool tier switching works
+stale session warnings work
+all kept tools have schema-quality review
+all kept tools have runtime verification status
+legacy delete tools removed entirely
+delete_rem_by_id remains guarded
+complex note creation applies headings/styles correctly
+math/rich-text verification works
+hosted diagnostics UI works
+performance report available
+documentation complete
 ```
 
 ---
 
-# 7. Definition of Done
+# 4. Tool Improvement Priorities
 
-The hosted-auth refinement is done only when all are true:
+Work in this order:
+
+1. Remove legacy delete tools completely.
+2. Implement real tier/profile system in server and plugin UI.
+3. Add tier metadata and dynamic tier resolution.
+4. Improve complex schemas.
+5. Fix hosted health check routing.
+6. Fix hosted diagnostics and plugin advanced buttons.
+7. Make note creation auto-style and auto-verify.
+8. Add runtime tool verification matrix.
+9. Add performance/idempotency improvements.
+10. Add full documentation and release checklist.
+
+---
+
+# 5. Acceptance Criteria
+
+## Functional
 
 ```text
-1. Local dev mode still works.
-2. Personal hosted token mode still works.
-3. Public hosted OAuth mode has real dashboard login.
-4. RemNote plugin pairing works.
-5. ChatGPT OAuth works through MCP.
-6. MCP tokens are verified on every request.
-7. User A cannot reach User B's RemNote plugin.
-8. Plugin session revocation works.
-9. Token expiration works.
-10. Pairing challenge is one-time and short-lived.
-11. Plugin stores sensitive session token locally, not synced.
-12. Server routes by user_id and plugin_session_id.
-13. Trusted focused/selected write mode is seamless for safe writes.
-14. Destructive tools still require approval.
-15. Unknown write/delete states are handled safely.
-16. Render redeploy/reconnect does not corrupt writes.
-17. Dashboard is usable.
-18. Plugin UI is clear.
-19. Tests cover auth, pairing, routing, session expiry, revocation, and scope.
-20. Docs are honest about what is production-ready.
+all tools except removed legacy delete tools remain available through a tier
+users can switch tiers inside RemNote plugin
+ChatGPT can understand active tier
+delete_rem_by_id is the only delete tool
+complex tools remain powerful but become clearer, safer, faster, better verified
+hosted diagnostics work without local bearer token
+health checks route correctly in hosted mode
+batch writing is preferred normal path
+multi-step write tools support idempotency
+tool verification matrix is visible and useful
+```
+
+## Safety
+
+```text
+no focus-based delete
+no selected-Rem delete
+no legacy direct delete
+risky tools support dry-run/preview/guards
+permission mode and tier state are visible
+stale ChatGPT sessions are detected
+danger zone does not resurrect removed delete tools
+```
+
+## Performance
+
+```text
+avoid rebuilding static schemas unnecessarily
+prefer batch operations
+track latency by tool
+report slow tools
+cap large response sizes
+honor abort/timeouts
+```
+
+## UX
+
+```text
+normal users can connect without understanding tokens
+tool tier can be changed from plugin
+diagnostics are readable
+errors explain real fixes
+reconnect-required states are clear
+hosted mode hides local-token UI
 ```
 
 ---
 
-# 8. Coding Agent Behavior
+# 6. Development Commands To Run
 
-When implementing:
+Run these before reporting completion:
 
-```text
-preserve working behavior first
-use feature flags
-commit small phases
-run checks after each phase
-document limitations honestly
-never fake auth
-never fake pairing
-never fake SDK support
-never widen RemNote scope silently
-never log secrets
-never log note bodies
+```bash
+npm run server:build
+npm run server:test:auth
+npm run server:test:routing
+npm run server:smoke
+npm run server:test:pairing
+npm run server:test:security
+npm run server:test:tools-core
+npm run server:test:tools-advanced
+npm run server:test:tools-diagnostics
+npm run server:test:tool-schemas
+npm run server:test:hosted-diagnostics
+npm run server:test:tier-switching
+npm run server:test:idempotency
+npm run server:test:performance
+npm run server:test:e2e-hosted-smoke
+npm run check-types
+npm run build
+git diff --check
 ```
 
-If a change risks breaking current working tools, stop and make the smallest possible isolated change.
-
-If an implementation choice is uncertain, prefer:
-
-```text
-established identity provider over custom OAuth
-database-backed sessions over memory
-scoped permissions over broad permissions
-explicit errors over silent fallback
-one active device over ambiguous routing
-safe failure over automatic retry
-```
+If some scripts do not exist yet, create them or explicitly report which scripts are still missing and why.
 
 ---
 
-# 9. Final Mission Statement
+# 7. Final Report Format Required From Codex
 
-The bridge already knows how to work with RemNote.
-
-Now make it trustworthy.
-
-The final product should feel like:
+When finished, report:
 
 ```text
-I sign in.
-I pair my RemNote.
-ChatGPT connects to my RemNote only.
-The connection stays stable.
-If it disconnects, it fails safely.
-If I choose focused/selected trusted mode, safe note writing is smooth.
-Dangerous actions still ask.
-My notes are not leaked.
-My tokens are not exposed.
-Another user cannot touch my RemNote.
+Summary
+Files changed
+Tools removed
+Tools kept
+Tier/profile behavior
+Dynamic tier switching behavior
+Complex schema improvements
+Hosted diagnostics fixes
+Health check routing fixes
+Runtime verification matrix
+Performance improvements
+Security improvements
+Tests added
+Commands run
+Known limitations
+Manual runtime checks still needed
 ```
 
-That is the standard for this phase.
+Do not claim live Render/ChatGPT success unless it was actually tested live.

@@ -29,14 +29,10 @@ import type {
   CreateClozeCardArgs,
   CreateStyledRemTreeArgs,
   CreateStyledRemTreeResult,
-  DeleteFocusedRemArgs,
   DeletePreview,
   DeleteRemByIdArgs,
   DeleteRemByIdResult,
   DeleteRemByIdTarget,
-  DeleteRemArgs,
-  DeleteRemResult,
-  DeleteSelectedRemArgs,
   ExpectedStyleMapEntry,
   FormatRemResult,
   MoveRemArgs,
@@ -96,6 +92,7 @@ interface ValidatedTreeNode {
 
 interface TreeValidationState {
   nodeCount: number;
+  maxDepthSeen?: number;
 }
 
 const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
@@ -114,8 +111,19 @@ const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
 const COLOR_FORMAT_NAMES: RichTextFormatName[] = ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'];
 const STRUCTURED_BATCH_RESULT_CACHE = new Map<string, ApplyStructuredNoteBatchResult>();
 const REMNOTE_COMMAND_RESULT_CACHE = new Map<string, ApplyRemnoteCommandResult>();
+const STYLE_PLAN_RESULT_CACHE = new Map<string, ApplyStylePlanResult>();
+const STYLED_TREE_RESULT_CACHE = new Map<string, CreateStyledRemTreeResult>();
 const DELETE_BY_ID_RESULT_CACHE = new Map<string, DeleteRemByIdResult>();
 const POLISHED_TREE_RESULT_CACHE = new Map<string, CreatePolishedNoteTreeResult>();
+const CREATE_REM_RESULT_CACHE = new Map<string, CreateRemResult>();
+const CREATE_DOCUMENT_RESULT_CACHE = new Map<string, CreateDocumentResult>();
+const APPEND_RESULT_CACHE = new Map<string, AppendToRemResult>();
+const UPDATE_RESULT_CACHE = new Map<string, UpdateRemResult>();
+const UPDATE_RICH_RESULT_CACHE = new Map<string, FormatRemResult>();
+const MOVE_RESULT_CACHE = new Map<string, MoveRemResult>();
+const REORDER_RESULT_CACHE = new Map<string, ReorderChildrenResult>();
+const CREATE_TREE_RESULT_CACHE = new Map<string, CreateRemTreeResult>();
+const FLASHCARD_RESULT_CACHE = new Map<string, CreateFlashcardResult>();
 
 export class RemnoteWriteError extends Error {
   constructor(
@@ -125,6 +133,24 @@ export class RemnoteWriteError extends Error {
   ) {
     super(message);
     this.name = 'RemnoteWriteError';
+  }
+}
+
+function getWriteIdempotencyKey(input: string | undefined, prefix: string): string {
+  const trimmed = input?.trim();
+  return trimmed || `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function rememberCachedResult<T>(cache: Map<string, T>, idempotencyKey: string, result: T) {
+  cache.delete(idempotencyKey);
+  cache.set(idempotencyKey, result);
+
+  while (cache.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = cache.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    cache.delete(oldestKey);
   }
 }
 
@@ -763,6 +789,7 @@ function validateTreeNode(
   }
 
   state.nodeCount += 1;
+  state.maxDepthSeen = Math.max(state.maxDepthSeen ?? 0, depth);
   if (state.nodeCount > CREATE_TREE_MAX_NODES) {
     throw new RemnoteWriteError('INVALID_ARGS', `Tree node count exceeds ${CREATE_TREE_MAX_NODES}.`);
   }
@@ -845,6 +872,12 @@ export async function createRemFromMarkdown(
   plugin: RNPlugin,
   args: CreateRemArgs
 ): Promise<CreateRemResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-rem');
+  const cached = CREATE_REM_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
@@ -857,18 +890,27 @@ export async function createRemFromMarkdown(
     insertIndex
   );
 
-  return {
+  const result: CreateRemResult = {
     createdRemId: createdRem._id,
     parentId,
     ...(insertIndex !== undefined ? { insertIndex, insertPosition: 'end' as const } : {}),
     status: 'created',
+    idempotencyKey,
   };
+  rememberCachedResult(CREATE_REM_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function createDocumentFromMarkdown(
   plugin: RNPlugin,
   args: CreateDocumentArgs
 ): Promise<CreateDocumentResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-document');
+  const cached = CREATE_DOCUMENT_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
@@ -878,13 +920,16 @@ export async function createDocumentFromMarkdown(
 
   await runSdkOperation('rem.setIsDocument', () => createdRem.setIsDocument(true));
 
-  return {
+  const result: CreateDocumentResult = {
     createdRemId: createdRem._id,
     parentId,
     ...(insertIndex !== undefined ? { insertIndex, insertPosition: 'end' as const } : {}),
     document: true,
     status: 'created_document',
+    idempotencyKey,
   };
+  rememberCachedResult(CREATE_DOCUMENT_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function createFolderFromMarkdown(
@@ -901,6 +946,12 @@ export async function appendMarkdownToRem(
   plugin: RNPlugin,
   args: AppendToRemArgs
 ): Promise<AppendToRemResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'append-rem');
+  const cached = APPEND_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const parent = await findRequiredRem(plugin, args.remId, 'Target');
   const markdown = normalizeMarkdown(args.markdown);
   const richText = await parseMarkdownToRichText(plugin, markdown);
@@ -912,44 +963,93 @@ export async function appendMarkdownToRem(
     insertIndex
   );
 
-  return {
+  const result: AppendToRemResult = {
     targetRemId: parent._id,
     createdRemId: createdRem._id,
     insertIndex,
     position: args.position ?? 'end',
     status: 'appended',
+    idempotencyKey,
   };
+  rememberCachedResult(APPEND_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function updateRemMarkdown(
   plugin: RNPlugin,
   args: UpdateRemArgs
 ): Promise<UpdateRemResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'update-rem');
+  if (!args.dryRun) {
+    const cached = UPDATE_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const beforePlainText = await getRemPlainString(plugin, rem);
+  if (args.expectedPlainText !== undefined && beforePlainText !== args.expectedPlainText) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'expectedPlainText did not match current Rem text.', {
+      remId: rem._id,
+      expectedPlainText: args.expectedPlainText,
+      actualPlainText: beforePlainText,
+    });
+  }
   const markdown = normalizeMarkdown(args.markdown);
   const richText = await parseMarkdownToRichText(plugin, markdown);
 
-  await runSdkOperation('rem.setText', () => rem.setText(richText));
+  if (args.dryRun) {
+    return {
+      updatedRemId: rem._id,
+      status: 'dry_run',
+      dryRun: true,
+      previewMarkdown: markdown,
+      beforePlainText,
+      afterPreviewMarkdown: markdown,
+      idempotencyKey,
+    };
+  }
 
-  return {
+  await runSdkOperation('rem.setText', () => rem.setText(richText));
+  const afterPlainText = await getRemPlainString(plugin, rem);
+
+  const result: UpdateRemResult = {
     updatedRemId: rem._id,
     status: 'updated',
+    idempotencyKey,
+    beforePlainText,
+    afterPlainText,
   };
+  rememberCachedResult(UPDATE_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function updateRemRich(
   plugin: RNPlugin,
   args: UpdateRemRichArgs
 ): Promise<FormatRemResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'update-rich');
+  const cached = UPDATE_RICH_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const richText = await buildRichTextFromSpans(plugin, args.richText);
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
 
-  return {
+  const result: FormatRemResult = {
     remId: rem._id,
     status: 'updated_rich',
+    idempotencyKey,
   };
+  rememberCachedResult(UPDATE_RICH_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function setRemHeadingLevel(
@@ -1202,8 +1302,8 @@ export async function applyRemnoteCommand(
   plugin: RNPlugin,
   args: ApplyRemnoteCommandArgs
 ): Promise<ApplyRemnoteCommandResult> {
-  const idempotencyKey = args.idempotencyKey?.trim();
-  if (idempotencyKey) {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'remnote-command');
+  if (!args.dryRun) {
     const cached = REMNOTE_COMMAND_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
       return {
@@ -1215,6 +1315,16 @@ export async function applyRemnoteCommand(
 
   const rem = await resolveCommandTarget(plugin, args);
   const command = args.command;
+
+  if (args.dryRun) {
+    return {
+      remId: rem._id,
+      command,
+      status: 'dry_run',
+      dryRun: true,
+      idempotencyKey,
+    };
+  }
 
   switch (command) {
     case 'heading_1':
@@ -1272,15 +1382,41 @@ export async function applyRemnoteCommand(
   }
 
   const result = resultForCommand(rem, command, idempotencyKey);
-  if (idempotencyKey) {
-    rememberRemnoteCommandResult(idempotencyKey, result);
-  }
+  rememberRemnoteCommandResult(idempotencyKey, result);
   return result;
 }
 
 export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<MoveRemResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'move-rem');
+  if (!args.dryRun) {
+    const cached = MOVE_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const newParent = await findRequiredRem(plugin, args.newParentId, 'Parent', 'PARENT_NOT_FOUND');
+  const beforeTarget = await getDeleteTarget(plugin, rem);
+  const beforeAncestorIds = new Set(beforeTarget.breadcrumbs.map((item) => item.id));
+
+  if (args.expectedParentId && rem.parent !== args.expectedParentId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'expectedParentId did not match current parent.', {
+      remId: rem._id,
+      expectedParentId: args.expectedParentId,
+      actualParentId: rem.parent ?? null,
+    });
+  }
+  if (args.expectedAncestorId && !beforeAncestorIds.has(args.expectedAncestorId)) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'expectedAncestorId was not found in current breadcrumbs.', {
+      remId: rem._id,
+      expectedAncestorId: args.expectedAncestorId,
+      breadcrumbs: beforeTarget.breadcrumbs,
+    });
+  }
 
   await assertNewParentIsNotDescendant(plugin, rem, newParent);
 
@@ -1293,20 +1429,62 @@ export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<Move
     });
   }
 
-  await runSdkOperation('rem.setParent', () => rem.setParent(newParent, args.index));
+  if (args.dryRun) {
+    return {
+      movedRemId: rem._id,
+      newParentId: newParent._id,
+      index: args.index,
+      status: 'dry_run',
+      dryRun: true,
+      idempotencyKey,
+      beforeParentId: rem.parent ?? null,
+      afterParentId: newParent._id,
+      beforeBreadcrumbs: beforeTarget.breadcrumbs,
+    };
+  }
 
-  return {
+  if (!args.expectedParentId && !args.expectedAncestorId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Real move requires expectedParentId or expectedAncestorId guard.', {
+      remId: rem._id,
+      currentParentId: rem.parent ?? null,
+      breadcrumbs: beforeTarget.breadcrumbs,
+    });
+  }
+
+  await runSdkOperation('rem.setParent', () => rem.setParent(newParent, args.index));
+  const moved = (await plugin.rem.findOne(rem._id)) ?? rem;
+  const afterTarget = await getDeleteTarget(plugin, moved);
+
+  const result: MoveRemResult = {
     movedRemId: rem._id,
     newParentId: newParent._id,
     index: args.index,
     status: 'moved',
+    idempotencyKey,
+    beforeParentId: beforeTarget.parentId,
+    afterParentId: newParent._id,
+    beforeBreadcrumbs: beforeTarget.breadcrumbs,
+    afterBreadcrumbs: afterTarget.breadcrumbs,
   };
+  rememberCachedResult(MOVE_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function reorderChildren(
   plugin: RNPlugin,
   args: ReorderChildrenArgs
 ): Promise<ReorderChildrenResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'reorder-children');
+  if (!args.dryRun) {
+    const cached = REORDER_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
   const parent = await findRequiredRem(plugin, args.parentRemId, 'Parent', 'PARENT_NOT_FOUND');
   const currentChildren = await runSdkOperation('rem.getChildrenRem', () => parent.getChildrenRem());
   const currentIds = currentChildren.map((child) => child._id);
@@ -1320,7 +1498,7 @@ export async function reorderChildren(
 
   const missingIds = currentIds.filter((id) => !requestedSet.has(id));
   const extraIds = requestedIds.filter((id) => !currentSet.has(id));
-  if (missingIds.length > 0 || extraIds.length > 0) {
+  if (!args.allowPartial && (missingIds.length > 0 || extraIds.length > 0)) {
     throw new RemnoteWriteError(
       'INVALID_ARGS',
       'orderedChildRemIds must contain exactly the current direct child IDs.',
@@ -1330,6 +1508,29 @@ export async function reorderChildren(
         extraIds,
       }
     );
+  }
+  if (args.allowPartial && extraIds.length > 0) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'orderedChildRemIds contains Rem IDs that are not current direct children.', {
+      parentRemId: parent._id,
+      extraIds,
+    });
+  }
+
+  if (args.dryRun) {
+    return {
+      parentRemId: parent._id,
+      parentId: parent._id,
+      orderedChildRemIds: requestedIds,
+      orderedChildIds: requestedIds,
+      status: 'dry_run',
+      dryRun: true,
+      allowPartial: args.allowPartial,
+      missingIds,
+      extraIds,
+      beforeOrder: currentIds,
+      afterOrder: requestedIds,
+      idempotencyKey,
+    };
   }
 
   const childrenById = new Map(currentChildren.map((child) => [child._id, child]));
@@ -1344,21 +1545,34 @@ export async function reorderChildren(
     await runSdkOperation('rem.setParent', () => child.setParent(parent, index));
   }
 
-  return {
+  const result: ReorderChildrenResult = {
     parentRemId: parent._id,
     parentId: parent._id,
     orderedChildRemIds: requestedIds,
     orderedChildIds: requestedIds,
     status: 'reordered',
+    allowPartial: args.allowPartial,
+    beforeOrder: currentIds,
+    afterOrder: requestedIds,
+    idempotencyKey,
   };
+  rememberCachedResult(REORDER_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function createRemTree(
   plugin: RNPlugin,
   args: CreateRemTreeArgs
 ): Promise<CreateRemTreeResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-tree');
+  const cached = CREATE_TREE_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const validationState: TreeValidationState = { nodeCount: 0 };
   const tree = validateTreeNode(args.tree, 1, validationState);
+  assertTreeLimits(validationState, {}, 'Rem tree');
 
   try {
     const created = await createStyledRemTree(plugin, {
@@ -1366,14 +1580,17 @@ export async function createRemTree(
       position: args.position ?? 'end',
       tree: simpleTreeToStyledNode(tree),
     });
-    return {
+    const result: CreateRemTreeResult = {
       rootCreatedRemId: created.rootCreatedRemId,
       createdNodeCount: created.createdNodeCount,
       createdRemIds: created.createdRemIds,
       rootInsertIndex: created.rootInsertIndex,
       rootInsertPosition: args.position ?? 'end',
       status: 'created_tree',
+      idempotencyKey,
     };
+    rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
+    return result;
   } catch (error: unknown) {
     if (error instanceof RemnoteWriteError) {
       const createdRemIds = readCreatedRemIdsFromError(error);
@@ -1420,6 +1637,7 @@ function normalizeStyledNode(
   }
 
   state.nodeCount += 1;
+  state.maxDepthSeen = Math.max(state.maxDepthSeen ?? 0, depth);
   if (state.nodeCount > CREATE_TREE_MAX_NODES) {
     throw new RemnoteWriteError('INVALID_ARGS', `Styled tree node count exceeds ${CREATE_TREE_MAX_NODES}.`);
   }
@@ -1432,6 +1650,50 @@ function normalizeStyledNode(
   return {
     ...rawNode,
     children: children.map((child) => normalizeStyledNode(child, depth + 1, state)),
+  };
+}
+
+function assertTreeLimits(
+  state: TreeValidationState,
+  limits: { maxDepth?: number; maxNodeCount?: number },
+  label: string
+) {
+  if (limits.maxDepth !== undefined && (state.maxDepthSeen ?? 0) > limits.maxDepth) {
+    throw new RemnoteWriteError('INVALID_ARGS', `${label} depth exceeds requested maxDepth.`, {
+      maxDepth: limits.maxDepth,
+      actualDepth: state.maxDepthSeen ?? 0,
+    });
+  }
+
+  if (limits.maxNodeCount !== undefined && state.nodeCount > limits.maxNodeCount) {
+    throw new RemnoteWriteError('INVALID_ARGS', `${label} node count exceeds requested maxNodeCount.`, {
+      maxNodeCount: limits.maxNodeCount,
+      actualNodeCount: state.nodeCount,
+    });
+  }
+}
+
+function collectStyledTreePlan(node: StyledRemTreeNode, depth = 0, outline: string[] = []) {
+  const type: StyledRemTreeNodeType = node.type ?? 'rem';
+  const children = node.children ?? [];
+  let styleOperationCount = node.style ? Object.keys(node.style).filter((key) => (node.style as Record<string, unknown>)[key] !== undefined).length : 0;
+  let mathNodeCount = type === 'inlineMath' || type === 'mathBlock' || Boolean(node.richText?.some((span) => span.type === 'inlineMath' || span.type === 'mathBlock' || span.latex)) ? 1 : 0;
+  let cardNodeCount = type.endsWith('Card') ? 1 : 0;
+  const label = node.text ?? node.title ?? node.front ?? node.latex ?? type;
+  outline.push(`${'  '.repeat(depth)}- [${type}] ${label}`.slice(0, 240));
+
+  for (const child of children) {
+    const childStats = collectStyledTreePlan(child, depth + 1, outline);
+    styleOperationCount += childStats.styleOperationCount;
+    mathNodeCount += childStats.mathNodeCount;
+    cardNodeCount += childStats.cardNodeCount;
+  }
+
+  return {
+    styleOperationCount,
+    mathNodeCount,
+    cardNodeCount,
+    previewOutline: outline,
   };
 }
 
@@ -1480,6 +1742,12 @@ export async function createBasicFlashcard(
   cardType: CreateFlashcardResult['cardType'] = 'basic',
   remType?: RemTypeName
 ): Promise<CreateFlashcardResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, `card-${cardType}`);
+  const cached = FLASHCARD_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
   const { rem, childIds } = await createFlashcardRem(
@@ -1493,20 +1761,29 @@ export async function createBasicFlashcard(
     remType
   );
 
-  return {
+  const result: CreateFlashcardResult = {
     createdRemId: rem._id,
     parentId: parent._id,
     cardType,
     direction: args.direction ?? 'both',
     ...(childIds.length ? { createdChildRemIds: childIds } : {}),
     status: 'created_flashcard',
+    idempotencyKey,
   };
+  rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function createClozeCard(
   plugin: RNPlugin,
   args: CreateClozeCardArgs
 ): Promise<CreateFlashcardResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'card-cloze');
+  const cached = FLASHCARD_RESULT_CACHE.get(idempotencyKey);
+  if (cached) {
+    return cached;
+  }
+
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
   const plainText = args.text;
@@ -1541,13 +1818,16 @@ export async function createClozeCard(
   await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
   await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(args.direction ?? 'both'));
 
-  return {
+  const result: CreateFlashcardResult = {
     createdRemId: rem._id,
     parentId: parent._id,
     cardType: 'cloze',
     direction: args.direction ?? 'both',
     status: 'created_flashcard',
+    idempotencyKey,
   };
+  rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
+  return result;
 }
 
 export async function createMultipleChoiceCard(
@@ -1562,6 +1842,7 @@ export async function createMultipleChoiceCard(
       front: args.question,
       back,
       direction: args.direction ?? 'forward',
+      idempotencyKey: args.idempotencyKey,
     },
     'multiple_choice'
   );
@@ -1578,6 +1859,7 @@ export async function createListAnswerCard(
       front: args.prompt,
       back: args.items.join('\n'),
       direction: args.direction ?? 'forward',
+      idempotencyKey: args.idempotencyKey,
     },
     'list_answer'
   );
@@ -1587,11 +1869,43 @@ export async function structuredWriteEngine(
   plugin: RNPlugin,
   args: CreateStyledRemTreeArgs
 ): Promise<CreateStyledRemTreeResult> {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'styled-tree');
+  if (!args.dryRun) {
+    const cached = STYLED_TREE_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const validationState: TreeValidationState = { nodeCount: 0 };
   const tree = normalizeStyledNode(args.tree, 1, validationState);
+  assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Styled tree');
+  const plan = collectStyledTreePlan(tree);
   const createdRemIds: string[] = [];
   const createdNodes: CreateStyledRemTreeResult['createdNodes'] = [];
+  const idMap: Record<string, string> = {};
+
+  if (args.dryRun) {
+    return {
+      rootCreatedRemId: '',
+      createdNodeCount: 0,
+      createdRemIds,
+      createdNodes,
+      rootInsertPosition: args.position ?? 'end',
+      status: 'dry_run',
+      dryRun: true,
+      plannedNodeCount: validationState.nodeCount,
+      idempotencyKey,
+      previewOutline: plan.previewOutline,
+      styleOperationCount: plan.styleOperationCount,
+      mathNodeCount: plan.mathNodeCount,
+      cardNodeCount: plan.cardNodeCount,
+    };
+  }
 
   async function createNode(
     node: StyledRemTreeNode,
@@ -1678,6 +1992,9 @@ export async function structuredWriteEngine(
     }
 
     await applyRemStyle(plugin, created, node.style);
+    if (node.clientNodeId) {
+      idMap[node.clientNodeId] = created._id;
+    }
     createdRemIds.push(created._id, ...childIds);
     createdNodes.push({
       remId: created._id,
@@ -1699,7 +2016,7 @@ export async function structuredWriteEngine(
     const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
     const root = await createNode(tree, parent, rootInsertIndex, 0);
 
-    return {
+    const result: CreateStyledRemTreeResult = {
       rootCreatedRemId: root._id,
       createdNodeCount: createdRemIds.length,
       createdRemIds,
@@ -1707,7 +2024,15 @@ export async function structuredWriteEngine(
       rootInsertIndex,
       rootInsertPosition: args.position ?? 'end',
       status: 'created_styled_tree',
+      idempotencyKey,
+      idMap,
+      previewOutline: plan.previewOutline,
+      styleOperationCount: plan.styleOperationCount,
+      mathNodeCount: plan.mathNodeCount,
+      cardNodeCount: plan.cardNodeCount,
     };
+    rememberStyledTreeResult(idempotencyKey, result);
+    return result;
   } catch (error: unknown) {
     if (error instanceof RemnoteWriteError) {
       throw new RemnoteWriteError(error.code, error.message, {
@@ -1748,6 +2073,32 @@ function rememberStructuredBatchResult(idempotencyKey: string, result: ApplyStru
       return;
     }
     STRUCTURED_BATCH_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+function rememberStylePlanResult(idempotencyKey: string, result: ApplyStylePlanResult) {
+  STYLE_PLAN_RESULT_CACHE.delete(idempotencyKey);
+  STYLE_PLAN_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (STYLE_PLAN_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = STYLE_PLAN_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    STYLE_PLAN_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+function rememberStyledTreeResult(idempotencyKey: string, result: CreateStyledRemTreeResult) {
+  STYLED_TREE_RESULT_CACHE.delete(idempotencyKey);
+  STYLED_TREE_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (STYLED_TREE_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = STYLED_TREE_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    STYLED_TREE_RESULT_CACHE.delete(oldestKey);
   }
 }
 
@@ -1831,30 +2182,47 @@ async function applyOneStyleOperation(
   plugin: RNPlugin,
   operation: ApplyStylePlanArgs['operations'][number]
 ): Promise<unknown> {
+  const operationValue =
+    operation.value ??
+    operation.headingLevel ??
+    operation.highlightColor ??
+    operation.color;
   switch (operation.type) {
     case 'heading':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'heading operation requires headingLevel.');
+      }
       return setRemHeadingLevel(plugin, {
         remId: operation.remId,
-        level: headingLevelFromString(operation.value),
+        level: headingLevelFromString(operationValue),
       });
     case 'whole_rem_highlight':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'whole_rem_highlight operation requires highlightColor.');
+      }
       return setRemHighlightColor(plugin, {
         remId: operation.remId,
-        color: remColorNameFromString(operation.value),
+        color: remColorNameFromString(operationValue),
       });
     case 'text_color_span':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'text_color_span operation requires color.');
+      }
       return setTextSpanColor(plugin, {
         remId: operation.remId,
-        color: operation.value,
+        color: operationValue,
         start: operation.start,
         end: operation.end,
         text: operation.text,
         occurrence: operation.occurrence,
       });
     case 'text_highlight_span':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'text_highlight_span operation requires highlightColor.');
+      }
       return setTextSpanHighlight(plugin, {
         remId: operation.remId,
-        color: operation.value,
+        color: operationValue,
         start: operation.start,
         end: operation.end,
         text: operation.text,
@@ -1904,6 +2272,37 @@ export async function applyStylePlan(
   args: ApplyStylePlanArgs
 ): Promise<ApplyStylePlanResult> {
   const continueOnError = args.continueOnError ?? true;
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'structured-batch');
+  if (!args.dryRun) {
+    const cached = STYLE_PLAN_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'already_applied',
+      };
+    }
+  }
+
+  if (args.dryRun) {
+    return {
+      status: 'dry_run',
+      operations: args.operations.map((operation, index) => ({
+        index,
+        remId: operation.remId,
+        type: operation.type,
+        status: 'applied',
+        result: {
+          dryRun: true,
+          value: operation.value,
+        },
+      })),
+      continueOnError,
+      verifyAfterWrite: args.verifyAfterWrite ?? false,
+      dryRun: true,
+      idempotencyKey,
+    };
+  }
+
   const operations: ApplyStylePlanResult['operations'] = [];
 
   for (let index = 0; index < args.operations.length; index += 1) {
@@ -1938,12 +2337,17 @@ export async function applyStylePlan(
 
   const failed = operations.some((operation) => operation.status === 'failed');
   const unsupported = operations.some((operation) => operation.status === 'unsupported');
-  return {
+  const result: ApplyStylePlanResult = {
     status: failed ? 'failed' : unsupported ? 'partial' : 'applied',
     operations,
     continueOnError,
     verifyAfterWrite: args.verifyAfterWrite ?? false,
+    idempotencyKey,
   };
+  if (result.status === 'applied') {
+    rememberStylePlanResult(idempotencyKey, result);
+  }
+  return result;
 }
 
 function rememberPolishedTreeResult(idempotencyKey: string, result: CreatePolishedNoteTreeResult) {
@@ -1963,8 +2367,8 @@ export async function createPolishedNoteTree(
   plugin: RNPlugin,
   args: CreatePolishedNoteTreeArgs
 ): Promise<CreatePolishedNoteTreeResult> {
-  const idempotencyKey = args.idempotencyKey?.trim();
-  if (idempotencyKey) {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'polished-tree');
+  if (!args.dryRun) {
     const cached = POLISHED_TREE_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
       return cached;
@@ -1975,12 +2379,18 @@ export async function createPolishedNoteTree(
     parentId: args.parentId,
     position: 'end',
     tree: args.tree,
+    dryRun: args.dryRun,
+    idempotencyKey,
+    maxDepth: args.maxDepth,
+    maxNodeCount: args.maxNodeCount,
   });
   const stylePlan = args.stylingPlan?.operations?.length
     ? await applyStylePlan(plugin, {
         operations: args.stylingPlan.operations,
         continueOnError: true,
         verifyAfterWrite: args.verifyAfterWrite,
+        dryRun: args.dryRun || args.stylingPlan.dryRun,
+        idempotencyKey: args.stylingPlan.idempotencyKey,
       })
     : undefined;
   const verification = args.verifyAfterWrite
@@ -1990,10 +2400,24 @@ export async function createPolishedNoteTree(
     ...created,
     ...(stylePlan ? { stylePlan } : {}),
     ...(verification ? { verification } : {}),
-    ...(idempotencyKey ? { idempotencyKey } : {}),
+    idempotencyKey,
+    rootRemId: created.rootCreatedRemId,
+    createdRemCount: created.createdRemIds.length,
+    styleOperationsApplied: stylePlan?.operations.filter((operation) => operation.status === 'applied').length ?? 0,
+    rollback: {
+      attempted: false,
+      completed: false,
+    },
+    phases: [
+      { name: 'validate_tree', status: 'completed' },
+      { name: 'create_tree', status: created.status === 'dry_run' ? 'skipped' : 'completed' },
+      { name: 'apply_styles', status: stylePlan ? 'completed' : 'skipped' },
+      { name: 'verify_design', status: verification ? 'completed' : 'skipped' },
+      { name: 'rollback', status: 'skipped' },
+    ],
   };
 
-  if (idempotencyKey) {
+  if (!args.dryRun) {
     rememberPolishedTreeResult(idempotencyKey, result);
   }
 
@@ -2034,6 +2458,39 @@ function richTextHasSpanField(
   });
 }
 
+function fixSuggestionForMismatch(type: string): string {
+  switch (type) {
+    case 'headingLevel':
+      return 'Use apply_style_plan with a heading operation.';
+    case 'wholeRemHighlight':
+      return 'Use apply_style_plan with a whole_rem_highlight operation.';
+    case 'textColorSpan':
+      return 'Use apply_style_plan with a text_color_span operation.';
+    case 'textHighlightSpan':
+      return 'Use apply_style_plan with a text_highlight_span operation.';
+    case 'childOrder':
+      return 'Use reorder_children with the full ordered child ID list.';
+    case 'hideBullet':
+      return 'Use apply_remnote_command with hide_bullet/show_bullet or set_hide_bullet.';
+    case 'remType':
+      return 'Use set_rem_type or apply_remnote_command with make_concept/make_descriptor.';
+    case 'plainText':
+      return 'Use update_rem or replace_rem with expectedPlainText guard.';
+    default:
+      return 'Inspect the Rem and rerun the relevant specialized tool.';
+  }
+}
+
+function remTypeNameFromRem(rem: Rem): RemTypeName {
+  if (rem.type === RemType.CONCEPT) {
+    return 'concept';
+  }
+  if (rem.type === RemType.DESCRIPTOR) {
+    return 'descriptor';
+  }
+  return 'normal';
+}
+
 export async function verifyNoteDesign(
   plugin: RNPlugin,
   args: VerifyNoteDesignArgs
@@ -2055,6 +2512,7 @@ export async function verifyNoteDesign(
         expected: remId,
         actual: null,
         message: 'Expected Rem is missing.',
+        fixSuggestion: fixSuggestionForMismatch('missing_rem'),
       });
       continue;
     }
@@ -2068,6 +2526,7 @@ export async function verifyNoteDesign(
         expected: expected.plainText,
         actual: plainText,
         message: 'Plain text mismatch.',
+        fixSuggestion: fixSuggestionForMismatch('plainText'),
       });
     }
 
@@ -2080,6 +2539,35 @@ export async function verifyNoteDesign(
           expected: expected.headingLevel,
           actual,
           message: 'Heading level mismatch.',
+          fixSuggestion: fixSuggestionForMismatch('headingLevel'),
+        });
+      }
+    }
+
+    if (expected.hideBullet !== undefined) {
+      const actual = !(await rem.isListItem().catch(() => true));
+      if (actual !== expected.hideBullet) {
+        mismatches.push({
+          remId,
+          type: 'hideBullet',
+          expected: expected.hideBullet,
+          actual,
+          message: 'Hidden bullet state mismatch.',
+          fixSuggestion: fixSuggestionForMismatch('hideBullet'),
+        });
+      }
+    }
+
+    if (expected.remType) {
+      const actual = remTypeNameFromRem(rem);
+      if (actual !== expected.remType) {
+        mismatches.push({
+          remId,
+          type: 'remType',
+          expected: expected.remType,
+          actual,
+          message: 'Rem type mismatch.',
+          fixSuggestion: fixSuggestionForMismatch('remType'),
         });
       }
     }
@@ -2093,6 +2581,7 @@ export async function verifyNoteDesign(
           expected: expected.wholeRemHighlight,
           actual,
           message: 'Whole-Rem highlight mismatch.',
+          fixSuggestion: fixSuggestionForMismatch('wholeRemHighlight'),
         });
       }
     }
@@ -2104,6 +2593,7 @@ export async function verifyNoteDesign(
           type: 'textColorSpan',
           expected: span,
           message: 'Expected colored text span was not found in readable rich text fields.',
+          fixSuggestion: fixSuggestionForMismatch('textColorSpan'),
         });
       }
     }
@@ -2115,6 +2605,7 @@ export async function verifyNoteDesign(
           type: 'textHighlightSpan',
           expected: span,
           message: 'Expected highlighted text span was not found in raw rich text highlight field.',
+          fixSuggestion: fixSuggestionForMismatch('textHighlightSpan'),
         });
       }
     }
@@ -2129,6 +2620,7 @@ export async function verifyNoteDesign(
           expected: expected.childOrder,
           actual,
           message: 'Child order mismatch.',
+          fixSuggestion: fixSuggestionForMismatch('childOrder'),
         });
       }
     }
@@ -2177,12 +2669,23 @@ export async function applyStructuredNoteBatch(
       )
     : undefined;
   const childNodes = root?.children ?? noteChildren.map((child) => normalizeStyledNode(child, 1, validationState));
-  const idempotencyKey = args.idempotencyKey?.trim();
+  assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Structured note batch');
+  const batchStats = (root ? [root] : childNodes).reduce(
+    (acc, node) => {
+      const nodeStats = collectStyledTreePlan(node, 0, acc.previewOutline);
+      acc.styleOperationCount += nodeStats.styleOperationCount;
+      acc.mathNodeCount += nodeStats.mathNodeCount;
+      acc.cardNodeCount += nodeStats.cardNodeCount;
+      return acc;
+    },
+    { styleOperationCount: 0, mathNodeCount: 0, cardNodeCount: 0, previewOutline: [] as string[] }
+  );
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'structured-batch');
   const rollbackOnFailure = args.rollbackOnFailure ?? true;
   const verifyAfterWrite = args.verifyAfterWrite ?? false;
   const operationId = `structured-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-  if (idempotencyKey && !args.dryRun) {
+  if (!args.dryRun) {
     const cached = STRUCTURED_BATCH_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
       return {
@@ -2223,9 +2726,16 @@ export async function applyStructuredNoteBatch(
       updatedRemIds: [],
       deletedRemIds: [],
       dryRun: true,
-      ...(idempotencyKey ? { idempotencyKey } : {}),
+      idempotencyKey,
       rollbackOnFailure,
       verifyAfterWrite,
+      styleCount: batchStats.styleOperationCount,
+      mathCount: batchStats.mathNodeCount,
+      cardCount: batchStats.cardNodeCount,
+      rollback: {
+        attempted: false,
+        completed: false,
+      },
     };
   }
 
@@ -2326,15 +2836,20 @@ export async function applyStructuredNoteBatch(
       rootInsertIndex,
       rootInsertPosition,
       dryRun: false,
-      ...(idempotencyKey ? { idempotencyKey } : {}),
+      idempotencyKey,
       rollbackOnFailure,
       verifyAfterWrite,
+      styleCount: batchStats.styleOperationCount,
+      mathCount: batchStats.mathNodeCount,
+      cardCount: batchStats.cardNodeCount,
+      rollback: {
+        attempted: false,
+        completed: false,
+      },
       ...(verification ? { verification } : {}),
     };
 
-    if (idempotencyKey) {
-      rememberStructuredBatchResult(idempotencyKey, result);
-    }
+    rememberStructuredBatchResult(idempotencyKey, result);
 
     return result;
   } catch (error: unknown) {
@@ -2389,6 +2904,9 @@ export async function replaceRemMarkdown(
 
   return {
     remId: updated.updatedRemId,
+    status: updated.status === 'updated' ? 'replaced' : updated.status,
+    dryRun: updated.dryRun,
+    idempotencyKey: updated.idempotencyKey,
   };
 }
 
@@ -2495,8 +3013,8 @@ export async function deleteRemByIdSafe(
     throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id requires remId.');
   }
 
-  const idempotencyKey = args.idempotencyKey?.trim();
-  if (idempotencyKey) {
+  const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'delete-rem');
+  if (args.dryRun === false) {
     const cached = DELETE_BY_ID_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
       return {
@@ -2524,7 +3042,7 @@ export async function deleteRemByIdSafe(
       childCount: target.childCount,
       includesDescendants: target.childCount > 0,
     },
-    ...(idempotencyKey ? { idempotencyKey } : {}),
+    idempotencyKey,
     status: dryRun ? 'dry_run' : 'deleted',
   };
 
@@ -2584,80 +3102,7 @@ export async function deleteRemByIdSafe(
     });
   }
 
-  if (idempotencyKey) {
-    rememberDeleteByIdResult(idempotencyKey, result);
-  }
+  rememberDeleteByIdResult(idempotencyKey, result);
 
   return result;
-}
-
-async function deleteRemByIdLegacy(
-  plugin: RNPlugin,
-  remId: string,
-  args: Pick<DeleteRemArgs, 'recursive' | 'confirmText'>
-): Promise<DeleteRemResult> {
-  if (args.confirmText !== 'DELETE') {
-    throw new RemnoteWriteError('INVALID_ARGS', 'Delete requires confirmText "DELETE".');
-  }
-
-  const recursive = args.recursive ?? false;
-  const preview = await buildDeletePreview(plugin, remId, recursive);
-  const rem = await findRequiredRem(plugin, remId, 'Target');
-
-  if (preview.childCount > 0 && !recursive) {
-    throw new RemnoteWriteError('SDK_UNSUPPORTED', 'Non-recursive delete of a Rem with children is not supported safely.', {
-      remId: preview.targetRemId,
-      childCount: preview.childCount,
-    });
-  }
-
-  await runSdkOperation('rem.remove', () => rem.remove());
-
-  return {
-    deletedRemId: rem._id,
-    recursive,
-    preview,
-    status: 'deleted',
-  };
-}
-
-export async function deleteRem(plugin: RNPlugin, args: DeleteRemArgs): Promise<DeleteRemResult> {
-  return deleteRemByIdLegacy(plugin, args.remId, args);
-}
-
-export async function deleteFocusedRem(
-  plugin: RNPlugin,
-  args: DeleteFocusedRemArgs
-): Promise<DeleteRemResult> {
-  const focusedRem = await plugin.focus.getFocusedRem();
-  if (!focusedRem) {
-    throw new RemnoteWriteError('NO_FOCUSED_REM', 'No Rem is currently focused in RemNote.');
-  }
-
-  return deleteRemByIdLegacy(plugin, focusedRem._id, args);
-}
-
-export async function deleteSelectedRem(
-  plugin: RNPlugin,
-  args: DeleteSelectedRemArgs
-): Promise<DeleteRemResult> {
-  const selection = await plugin.editor.getSelection();
-  const selectedRemIds =
-    selection?.type === 'Rem'
-      ? selection.remIds
-      : selection?.type === 'Text'
-        ? [selection.remId]
-        : [];
-
-  if (selectedRemIds.length !== 1) {
-    throw new RemnoteWriteError(
-      'INVALID_ARGS',
-      'delete_selected_rem requires exactly one selected Rem.',
-      {
-        selectedRemCount: selectedRemIds.length,
-      }
-    );
-  }
-
-  return deleteRemByIdLegacy(plugin, selectedRemIds[0], args);
 }

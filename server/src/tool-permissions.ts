@@ -69,9 +69,6 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
 
   replace_rem: { toolName: 'replace_rem', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true },
   delete_rem_by_id: { toolName: 'delete_rem_by_id', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true },
-  delete_rem: { toolName: 'delete_rem', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true, disabled: true },
-  delete_focused_rem: { toolName: 'delete_focused_rem', category: 'destructive', requiredAccessScope: 'focused-rem-only', alwaysRequirePluginApproval: true, disabled: true },
-  delete_selected_rem: { toolName: 'delete_selected_rem', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true, disabled: true },
 };
 
 export function validateMcpToolPermission(
@@ -115,4 +112,3 @@ export function validateMcpToolPermission(
 
   return { ok: true };
 }
-

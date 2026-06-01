@@ -7,7 +7,7 @@ import { handlePairingRoute } from './auth/pairing-routes.js';
 import { buildOauthChallenge, handleOAuthRoute } from './auth/oauth-routes.js';
 import { rateLimitRequest } from './auth/rate-limit.js';
 import { authorizeHostedMcpRequest } from './auth/token-verifier.js';
-import type { AuthResult, ScopeGrant } from './auth/types.js';
+import type { AuthenticatedPrincipal, AuthResult, ScopeGrant } from './auth/types.js';
 import { BridgeHub } from './bridge-hub.js';
 import {
   getRuntimeInfo,
@@ -30,7 +30,7 @@ import type { AuditLogger } from './sessions/types.js';
 import { createStorageProvider, type StorageProvider } from './storage/index.js';
 import { getToolRegistrySummary, isPublicMcpToolName } from './tool-registry.js';
 import { validateMcpToolPermission } from './tool-permissions.js';
-import { getToolPolicyEntry } from './tool-policy.js';
+import { getToolPolicyEntry, normalizeToolProfile, type ToolProfile } from './tool-policy.js';
 import { renderDashboard } from './dashboard/templates.js';
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
@@ -49,11 +49,39 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
   const startedAt = new Date().toISOString();
   const toolCallAuthMode = getToolCallAuthMode(config);
 
-  function registrySummary(registeredToolNames?: readonly string[]) {
-    return getToolRegistrySummary(config.enableDeleteTool, config.toolProfile, registeredToolNames, {
+  function registrySummary(registeredToolNames?: readonly string[], toolProfile: ToolProfile = config.toolProfile) {
+    return getToolRegistrySummary(config.enableDeleteTool, toolProfile, registeredToolNames, {
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
     });
+  }
+
+  function requestedToolProfile(req: Parameters<typeof authorizeLocalMcpRequest>[0], body: unknown, url: URL): ToolProfile | undefined {
+    const header = req.headers['x-remnote-tool-tier'];
+    if (typeof header === 'string' && header.trim()) {
+      return normalizeToolProfile(header.trim());
+    }
+    const queryTier = url.searchParams.get('tool_tier') || url.searchParams.get('toolProfile');
+    if (queryTier) {
+      return normalizeToolProfile(queryTier);
+    }
+    if (typeof body === 'object' && body !== null && !Array.isArray(body)) {
+      const request = body as { params?: { _meta?: { toolTier?: unknown; toolProfile?: unknown } } };
+      const value = request.params?._meta?.toolTier ?? request.params?._meta?.toolProfile;
+      if (typeof value === 'string') {
+        return normalizeToolProfile(value);
+      }
+    }
+    return undefined;
+  }
+
+  function activeToolProfile(
+    principal: AuthenticatedPrincipal,
+    req: Parameters<typeof authorizeLocalMcpRequest>[0],
+    body: unknown,
+    url: URL
+  ): ToolProfile {
+    return requestedToolProfile(req, body, url) ?? principal.toolTier ?? config.toolProfile ?? 'core';
   }
 
   function isMcpDiscoveryRequest(body: unknown): boolean {
@@ -76,7 +104,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     });
   }
 
-  function writeUnknownToolCall(body: unknown, res: ServerResponse): boolean {
+  function writeUnknownToolCall(body: unknown, res: ServerResponse, toolProfile: ToolProfile): boolean {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return false;
     }
@@ -86,7 +114,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       return false;
     }
 
-    if (isPublicMcpToolName(request.params.name, config.enableDeleteTool, config.toolProfile)) {
+    if (isPublicMcpToolName(request.params.name, config.enableDeleteTool, toolProfile)) {
       return false;
     }
 
@@ -260,6 +288,9 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         deploymentMode: config.deploymentMode,
         mcpPath: config.mcpPath,
         bridgeConnected: hub.getStatus().connected,
+        toolTier: registry.toolTier,
+        activeToolTier: registry.activeToolTier,
+        toolSchemaVersion: registry.toolSchemaVersion,
         toolRegistryVersion: registry.toolRegistryVersion,
         publicToolCount: registry.publicToolCount,
         startedAt,
@@ -297,8 +328,12 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       const runtimeInfo = runtimeInfoForRequest(req);
       writeJson(res, 200, {
         ok: true,
+        ...runtimeInfo,
         deployment: runtimeInfo,
         bridge: hub.getStatus(),
+        activeToolTier: registry.activeToolTier,
+        toolTier: registry.toolTier,
+        toolSchemaVersion: registry.toolSchemaVersion,
         toolRegistryVersion: registry.toolRegistryVersion,
         publicToolCount: registry.publicToolCount,
         startedAt,
@@ -332,8 +367,10 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
           bridgePort: config.singlePort ? localPort : hub.bridgePort,
           singlePort: config.singlePort,
           toolProfile: config.toolProfile,
+          toolTier: config.toolProfile,
+          activeToolTier: config.toolProfile,
         },
-        registry: registrySummary(),
+        registry: registrySummary(undefined, config.toolProfile),
         bridge: hub.getDiagnostics(),
       });
       return;
@@ -439,11 +476,12 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     });
 
     applyCors(req, res, config);
+    const activeProfile = activeToolProfile(auth.principal, req, body, url);
 
     const requestAbortController = new AbortController();
     const mcpServer = createMcpServer(hub, {
       exposeDeleteTool: config.enableDeleteTool,
-      toolProfile: config.toolProfile,
+      toolProfile: activeProfile,
       requestSignal: requestAbortController.signal,
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
@@ -464,7 +502,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     });
 
     try {
-      if (writeUnknownToolCall(body, res)) {
+      if (writeUnknownToolCall(body, res, activeProfile)) {
         return;
       }
 

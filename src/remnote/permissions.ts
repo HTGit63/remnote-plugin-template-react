@@ -59,9 +59,6 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
 const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'replace_rem',
   'delete_rem_by_id',
-  'delete_focused_rem',
-  'delete_selected_rem',
-  'delete_rem',
 ]);
 
 export function normalizePermissionMode(value: string | undefined): PermissionMode {

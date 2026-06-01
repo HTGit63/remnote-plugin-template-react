@@ -9,6 +9,7 @@ import {
 import {
   bridgeToolNameForPublicMcpTool,
 } from './mcp-tool-map.js';
+import { DEFAULT_TOOL_PROFILE, type ToolProfile } from './tool-policy.js';
 import type {
   BridgeHealthCheckMode,
   BridgeHealthCheckResult,
@@ -25,6 +26,7 @@ export interface RunBridgeHealthCheckOptions {
   targetRemId?: string;
   timeoutMs?: number;
   signal?: AbortSignal;
+  toolProfile?: ToolProfile;
 }
 
 const DIRECT_SERVER_TOOLS = new Set<string>(SERVER_LOCAL_MCP_TOOLS);
@@ -78,7 +80,7 @@ const EXISTING_REM_MUTATION_TOOLS = new Set([
   'apply_style_plan',
 ]);
 
-const DESTRUCTIVE_TOOLS = new Set(['delete_rem_by_id', 'delete_focused_rem', 'delete_selected_rem', 'delete_rem']);
+const DESTRUCTIVE_TOOLS = new Set(['delete_rem_by_id']);
 
 function nowMs(): number {
   return Date.now();
@@ -486,10 +488,6 @@ function healthCheckArgsFor(
             idempotencyKey: `health-delete-${targetRemId}`,
           }
         : undefined;
-    case 'delete_focused_rem':
-    case 'delete_selected_rem':
-    case 'delete_rem':
-      return undefined;
     default:
       return undefined;
   }
@@ -529,7 +527,7 @@ export async function runBridgeHealthCheck(
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const connectedAtStart = hub.getStatus().connected;
-  const publicTools = getPublicMcpToolNames(Boolean(options.exposeDeleteTool));
+  const publicTools = getPublicMcpToolNames(Boolean(options.exposeDeleteTool), options.toolProfile ?? DEFAULT_TOOL_PROFILE);
   const results: BridgeHealthCheckToolResult[] = [];
   const mode = resolveMode(options);
   const includeWrites = modeIncludesWrites(mode);

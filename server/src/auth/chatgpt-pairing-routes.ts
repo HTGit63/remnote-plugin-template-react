@@ -13,6 +13,8 @@ import type {
   ChatGptTrustedWriteMode,
   StorageProvider,
 } from '../storage/types.js';
+import { TOOL_REGISTRY_VERSION } from '../tool-registry.js';
+import { normalizeToolProfile, TOOL_SCHEMA_VERSION } from '../tool-policy.js';
 import {
   generatePairingCode,
   getRememberedPairingCode,
@@ -105,6 +107,10 @@ function normalizeTrustedWriteMode(value: unknown): ChatGptTrustedWriteMode {
   return value === 'trusted-inside-scope' ? value : 'ask-every-write';
 }
 
+function normalizeRequestedToolTier(value: unknown, fallback: CompanionServerConfig['toolProfile']): CompanionServerConfig['toolProfile'] {
+  return typeof value === 'string' ? normalizeToolProfile(value) : fallback;
+}
+
 function clientIp(req: IncomingMessage): string {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.trim()) {
@@ -167,6 +173,10 @@ function publicSession(session: ChatGptPairingSession, includeRedirect = false) 
     approvedScopes: session.approvedScopes,
     accessScope: session.accessScope,
     trustedWriteMode: session.trustedWriteMode,
+    toolTier: session.toolTier,
+    toolTierVersion: session.toolTierVersion,
+    toolSchemaVersionAtApproval: session.toolSchemaVersionAtApproval,
+    requiresConnectorRefresh: Boolean(session.requiresConnectorRefresh),
     approvedAt: session.approvedAt,
     connectedAt: session.connectedAt,
     disconnectedAt: session.disconnectedAt,
@@ -336,6 +346,10 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       approvedScopes: [],
       accessScope: 'focused-rem-only',
       trustedWriteMode: 'ask-every-write',
+      toolTier: normalizeRequestedToolTier(body?.toolTier, config.toolProfile),
+      toolTierVersion: TOOL_REGISTRY_VERSION,
+      toolSchemaVersionAtApproval: TOOL_SCHEMA_VERSION,
+      requiresConnectorRefresh: false,
       redirectUri: typeof body?.redirectUri === 'string' ? body.redirectUri : undefined,
       resource: typeof body?.resource === 'string' ? body.resource : undefined,
       oauthSubject: pairingId,
@@ -378,6 +392,7 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
     const pluginConnectionId = String(body?.pluginConnectionId ?? '').trim() || randomUUID();
     const accessScope = normalizeAccessScope(body?.accessScope);
     const trustedWriteMode = normalizeTrustedWriteMode(body?.trustedWriteMode);
+    const toolTier = normalizeRequestedToolTier(body?.toolTier, current.toolTier ?? config.toolProfile);
     const updated = await storage.updateChatGptPairingSession(current.pairingId, {
       status: 'approved',
       approvedAt: now.toISOString(),
@@ -391,6 +406,11 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       approvedScopes: current.requestedScopes,
       accessScope,
       trustedWriteMode,
+      toolTier,
+      toolTierVersion: TOOL_REGISTRY_VERSION,
+      toolTierChangedAt: current.toolTier !== toolTier ? now.toISOString() : current.toolTierChangedAt,
+      toolSchemaVersionAtApproval: TOOL_SCHEMA_VERSION,
+      requiresConnectorRefresh: false,
       authorizationCodeHash: hashToken(authorizationCode),
       authorizationCodeExpiresAt,
       oauthSubject: current.oauthSubject || current.pairingId,
@@ -411,6 +431,10 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       connectionLabel: publicPairingLabel(updated),
       accessScope,
       trustedWriteMode,
+      toolTier,
+      toolTierVersion: TOOL_REGISTRY_VERSION,
+      toolSchemaVersionAtApproval: TOOL_SCHEMA_VERSION,
+      requiresConnectorRefresh: false,
       expiresAt: updated.expiresAt,
     });
     return true;
@@ -507,6 +531,10 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
         connectionLabel: publicPairingLabel(session),
         accessScope: session.accessScope,
         trustedWriteMode: session.trustedWriteMode,
+        toolTier: session.toolTier,
+        toolTierVersion: session.toolTierVersion,
+        toolSchemaVersionAtApproval: session.toolSchemaVersionAtApproval,
+        requiresConnectorRefresh: Boolean(session.requiresConnectorRefresh),
         createdAt: session.createdAt,
         expiresAt: session.expiresAt,
         approvedAt: session.approvedAt,

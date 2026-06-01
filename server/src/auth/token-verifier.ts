@@ -102,6 +102,8 @@ export async function authorizeHostedMcpRequest(
         pluginInstanceId: pairingSession.pluginInstanceId,
         accessScope: pairingSession.accessScope,
         trustedWriteMode: pairingSession.trustedWriteMode,
+        toolTier: pairingSession.toolTier,
+        requiresConnectorRefresh: pairingSession.requiresConnectorRefresh,
       },
     };
   }

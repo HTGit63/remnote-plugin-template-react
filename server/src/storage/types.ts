@@ -68,6 +68,12 @@ export type ChatGptTrustedWriteMode =
   | 'ask-every-write'
   | 'trusted-inside-scope';
 
+export type ChatGptToolTier =
+  | 'core'
+  | 'advanced_notes'
+  | 'developer_diagnostics'
+  | 'full';
+
 export interface ChatGptPairingSession {
   pairingId: string;
   pairingCodeHash: string;
@@ -98,6 +104,11 @@ export interface ChatGptPairingSession {
 
   accessScope: ChatGptAccessScope;
   trustedWriteMode: ChatGptTrustedWriteMode;
+  toolTier?: ChatGptToolTier;
+  toolTierVersion?: string;
+  toolTierChangedAt?: string;
+  toolSchemaVersionAtApproval?: string;
+  requiresConnectorRefresh?: boolean;
 
   authorizationCodeHash?: string;
   authorizationCodeExpiresAt?: string;
