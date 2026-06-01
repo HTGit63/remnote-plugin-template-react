@@ -51,7 +51,7 @@ function buildSetCookieHeader(
   config: CompanionServerConfig,
   maxAgeSeconds: number
 ): string {
-  const isHosted = config.deploymentMode !== 'local_dev';
+  const isHosted = config.deploymentMode === 'hosted';
   const parts = [
     `${name}=${encodeURIComponent(value)}`,
     `Path=/`,
@@ -81,7 +81,7 @@ export function generateCsrfToken(): string {
 // ─── CSRF Functions ──────────────────────────────────────────────────
 export function setCsrfCookie(res: ServerResponse, config: CompanionServerConfig): string {
   const csrf = generateCsrfToken();
-  const isHosted = config.deploymentMode !== 'local_dev';
+  const isHosted = config.deploymentMode === 'hosted';
   const parts = [
     `${CSRF_COOKIE_NAME}=${encodeURIComponent(csrf)}`,
     `Path=/`,

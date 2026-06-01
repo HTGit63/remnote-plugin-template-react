@@ -7,10 +7,10 @@
  *  - Maps userId → active PluginConnection
  *  - Enforces device conflict policy (one active device per user by default)
  *  - Routes MCP tool calls to the correct user's paired plugin
- *  - Falls back to legacy single-socket mode for local_dev / personal_hosted_token
+ *  - Falls back to single-socket mode for local
  *
  * Error codes:
- *  PLUGIN_NOT_PAIRED, PLUGIN_NOT_CONNECTED, DEVICE_CONFLICT,
+ *  NO_PAIRED_PLUGIN_SESSION, PLUGIN_NOT_CONNECTED, DEVICE_CONFLICT,
  *  PLUGIN_SESSION_EXPIRED, PLUGIN_SESSION_REVOKED, NO_ACTIVE_DEVICE
  */
 
@@ -24,7 +24,7 @@ import type { StorageProvider } from '../storage/types.js';
 // ─── Types ───────────────────────────────────────────────────────────
 
 export type SessionRouterErrorCode =
-  | 'PLUGIN_NOT_PAIRED'
+  | 'NO_PAIRED_PLUGIN_SESSION'
   | 'PLUGIN_NOT_CONNECTED'
   | 'DEVICE_CONFLICT'
   | 'PLUGIN_SESSION_EXPIRED'
@@ -57,7 +57,7 @@ interface HostedPluginHello {
   type: 'plugin_hello';
   protocolVersion: number;
   clientName: string;
-  deploymentMode: 'public_hosted_oauth' | 'personal_hosted_token' | 'local_dev';
+  deploymentMode: 'local' | 'hosted';
   deviceId: string;
   pluginSessionId: string;
   pluginSessionToken: string;
@@ -89,7 +89,7 @@ export class SessionRouter {
   }
 
   get isHostedMode(): boolean {
-    return this.config.deploymentMode === 'public_hosted_oauth';
+    return this.config.deploymentMode === 'hosted';
   }
 
   /**
@@ -100,7 +100,7 @@ export class SessionRouter {
     socket: WebSocket,
     hello: PluginRegistrationMessage
   ): Promise<{ ok: true; connection: PluginConnection } | { ok: false; error: SessionRouterErrorCode; message: string }> {
-    // ─── Legacy mode (local_dev / personal_hosted_token) ────────
+    // ─── Local mode ─────────────────────────────────────────────
     if (!this.isHostedMode) {
       const userId = '__local__';
       const deviceId = '__local_device__';
@@ -127,7 +127,7 @@ export class SessionRouter {
       if (!this.storage) {
         return {
           ok: false,
-          error: 'PLUGIN_NOT_PAIRED',
+          error: 'NO_PAIRED_PLUGIN_SESSION',
           message: 'Pairing storage is unavailable.',
         };
       }
@@ -146,7 +146,7 @@ export class SessionRouter {
       if (pairingSession.pluginInstanceId !== hello.pluginInstanceId) {
         return {
           ok: false,
-          error: 'PLUGIN_NOT_PAIRED',
+          error: 'NO_PAIRED_PLUGIN_SESSION',
           message: 'Plugin instance does not match the approved pairing.',
         };
       }
@@ -181,7 +181,7 @@ export class SessionRouter {
     if (!hosted.pluginSessionId || !hosted.pluginSessionToken || !hosted.deviceId) {
       return {
         ok: false,
-        error: 'PLUGIN_NOT_PAIRED',
+        error: 'NO_PAIRED_PLUGIN_SESSION',
         message: 'Missing pluginSessionId, pluginSessionToken, or deviceId in hello.',
       };
     }

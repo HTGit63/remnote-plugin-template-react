@@ -12,7 +12,7 @@
     "test:pairing": "tsx src/pairing-smoke.ts",
     "test:routing": "tsx src/routing-smoke.ts",
     "test:security": "tsx src/auth-smoke.ts",
-    "smoke": "tsx src/smoke.ts",
+    "smoke": "tsx src/local-mode-smoke.ts && tsx src/smoke.ts",
     "live-test": "tsx src/live-test.ts"
   },
   "dependencies": {

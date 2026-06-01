@@ -5,9 +5,23 @@ import {
 } from './tool-policy.js';
 
 export type BridgeDeploymentMode =
-  | 'local_dev'
-  | 'personal_hosted_token'
-  | 'public_hosted_oauth';
+  | 'local'
+  | 'hosted';
+
+export type ToolCallAuthMode =
+  | 'no_auth_allowed'
+  | 'local_bearer_required'
+  | 'hosted_oauth_required';
+
+export interface BridgeRuntimeInfo {
+  deploymentMode: BridgeDeploymentMode;
+  toolCallAuthMode: ToolCallAuthMode;
+  mcpEndpoint: string;
+  bridgeEndpoint: string;
+  hostedPairingEnabled: boolean;
+  localTokenRequired: boolean;
+  expectedPairingBehavior: string;
+}
 
 export interface CompanionServerConfig {
   deploymentMode: BridgeDeploymentMode;
@@ -72,6 +86,12 @@ const DEFAULT_AUTHORIZATION_CODE_TTL_SECONDS = 300;
 const DEFAULT_PLUGIN_HEARTBEAT_INTERVAL_SECONDS = 30;
 const DEFAULT_PLUGIN_HEARTBEAT_TIMEOUT_SECONDS = 90;
 
+export const HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE = [
+  'Hosted deployment mode is disabled for this local-token bridge.',
+  'Do not set REMNOTE_BRIDGE_HOSTED_MODE=1 or REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted/public_hosted_oauth/personal_hosted_token until real hosted pairing is implemented.',
+  'Future hosted mode must include OAuth user identity, pairing code/device registration, persistent user-session/device-session storage, MCP caller user to active RemNote plugin WebSocket routing, revocation and audit logging, and NO_PAIRED_PLUGIN_SESSION errors only in hosted mode.',
+].join(' ');
+
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) {
     return fallback;
@@ -92,62 +112,92 @@ function listFromEnv(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+function deploymentModeFromEnv(env: NodeJS.ProcessEnv): BridgeDeploymentMode {
+  const rawMode = env.REMNOTE_BRIDGE_DEPLOYMENT_MODE?.trim();
+  const hostedModeRequested = boolFromEnv(env.REMNOTE_BRIDGE_HOSTED_MODE);
+
+  if (hostedModeRequested) {
+    return 'hosted';
+  }
+
+  if (!rawMode) {
+    return 'local';
+  }
+
+  if (rawMode === 'local' || rawMode === 'local_dev') {
+    return 'local';
+  }
+
+  if (rawMode === 'hosted' || rawMode === 'personal_hosted_token' || rawMode === 'public_hosted_oauth') {
+    return 'hosted';
+  }
+
+  throw new Error(
+    `REMNOTE_BRIDGE_DEPLOYMENT_MODE must be "local" or "hosted". Received: ${rawMode}`
+  );
+}
+
+export function getToolCallAuthMode(config: CompanionServerConfig): ToolCallAuthMode {
+  if (config.deploymentMode === 'hosted') {
+    return 'hosted_oauth_required';
+  }
+
+  return config.bridgeToken && !config.allowNoToken
+    ? 'local_bearer_required'
+    : 'no_auth_allowed';
+}
+
+export function isLocalTokenRequired(config: CompanionServerConfig): boolean {
+  return config.deploymentMode === 'local' && Boolean(config.bridgeToken) && !config.allowNoToken;
+}
+
+export function isHostedPairingEnabled(_config: CompanionServerConfig): boolean {
+  return false;
+}
+
+export function getExpectedPairingBehavior(config: CompanionServerConfig): string {
+  if (config.deploymentMode === 'local') {
+    return 'local bridge token only; no hosted user pairing';
+  }
+
+  return 'hosted user pairing required; unavailable until hosted mode is implemented';
+}
+
+function endpointHost(config: CompanionServerConfig, hostOverride?: string): string {
+  if (hostOverride) {
+    return hostOverride;
+  }
+  if (config.bindHost === '0.0.0.0' || config.bindHost === '::') {
+    return '127.0.0.1';
+  }
+  return config.bindHost;
+}
+
+export function getRuntimeInfo(
+  config: CompanionServerConfig,
+  ports: { mcpPort: number; bridgePort: number },
+  hostOverride?: string
+): BridgeRuntimeInfo {
+  const host = endpointHost(config, hostOverride);
+  const httpProtocol = config.deploymentMode === 'hosted' || config.allowRemote ? 'https' : 'http';
+  const wsProtocol = config.deploymentMode === 'hosted' || config.allowRemote ? 'wss' : 'ws';
+  return {
+    deploymentMode: config.deploymentMode,
+    toolCallAuthMode: getToolCallAuthMode(config),
+    mcpEndpoint: `${httpProtocol}://${host}:${ports.mcpPort}${config.mcpPath}`,
+    bridgeEndpoint: `${wsProtocol}://${host}:${ports.bridgePort}${config.bridgePath}`,
+    hostedPairingEnabled: isHostedPairingEnabled(config),
+    localTokenRequired: isLocalTokenRequired(config),
+    expectedPairingBehavior: getExpectedPairingBehavior(config),
+  };
+}
+
 export function validateConfig(config: CompanionServerConfig): void {
-  if (config.deploymentMode === 'public_hosted_oauth') {
-    const publicBaseIsLoopback =
-      config.publicBaseUrl.startsWith('http://127.0.0.1') ||
-      config.publicBaseUrl.startsWith('http://localhost');
-    if (!config.publicBaseUrl) {
-      throw new Error('public_hosted_oauth mode requires REMNOTE_BRIDGE_PUBLIC_BASE_URL.');
-    }
-    if (!config.mcpResource) {
-      throw new Error('public_hosted_oauth mode requires REMNOTE_BRIDGE_MCP_RESOURCE.');
-    }
-    if (!config.publicBaseUrl.startsWith('https://') && !(config.allowNoToken && publicBaseIsLoopback)) {
-      throw new Error(
-        `public_hosted_oauth mode requires an HTTPS public base URL. Current: ${config.publicBaseUrl}`
-      );
-    }
-    if (config.storageMode !== 'postgres' && !(config.allowNoToken && publicBaseIsLoopback)) {
-      throw new Error(
-        'public_hosted_oauth mode requires REMNOTE_BRIDGE_STORAGE=postgres. Memory storage is allowed only for loopback smoke tests with REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1.'
-      );
-    }
-    if (config.storageMode === 'postgres' && !config.databaseUrl) {
-      throw new Error('public_hosted_oauth mode requires DATABASE_URL.');
-    }
-    if (config.bridgeToken) {
-      throw new Error('public_hosted_oauth mode must not use REMNOTE_BRIDGE_TOKEN as public MCP auth.');
-    }
-    if (!config.sessionSecret && !(config.allowNoToken && publicBaseIsLoopback)) {
-      throw new Error('public_hosted_oauth mode requires SESSION_SECRET or REMNOTE_BRIDGE_SESSION_SECRET.');
-    }
+  if (config.deploymentMode === 'hosted') {
+    throw new Error(HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE);
   }
 
-  if (config.deploymentMode === 'personal_hosted_token') {
-    if (config.bindHost !== '0.0.0.0') {
-      throw new Error(
-        `personal_hosted_token mode must bind to 0.0.0.0 to accept remote connections. Current bind: ${config.bindHost}`
-      );
-    }
-    if (!config.publicBaseUrl.startsWith('https://')) {
-      throw new Error(
-        `personal_hosted_token mode must use an HTTPS public base URL. Current: ${config.publicBaseUrl}`
-      );
-    }
-    if (!config.bridgeToken) {
-      throw new Error(
-        'personal_hosted_token mode requires a secure REMNOTE_BRIDGE_TOKEN.'
-      );
-    }
-    if (!config.allowCors || config.allowedOrigins.length === 0) {
-      throw new Error(
-        'personal_hosted_token mode must allow only configured CORS origins. Set REMNOTE_BRIDGE_ALLOW_CORS=1 and configure REMNOTE_BRIDGE_ALLOWED_ORIGINS.'
-      );
-    }
-  }
-
-  if (config.deploymentMode === 'local_dev') {
+  if (config.deploymentMode === 'local') {
     if (!config.bridgeToken && !config.allowNoToken) {
       throw new Error(
         'REMNOTE_BRIDGE_TOKEN is required. Set REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1 only for isolated local development.'
@@ -183,7 +233,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
   const port = numberFromEnv(env.PORT ?? env.REMNOTE_BRIDGE_PORT, DEFAULT_MCP_PORT);
 
-  const hostedMode = boolFromEnv(env.REMNOTE_BRIDGE_HOSTED_MODE);
   const storageMode: CompanionServerConfig['storageMode'] =
     env.REMNOTE_BRIDGE_STORAGE === 'postgres' || env.REMNOTE_BRIDGE_STORAGE === 'memory'
       ? env.REMNOTE_BRIDGE_STORAGE
@@ -191,14 +240,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
         ? 'postgres'
         : 'memory';
 
-  // Explicit deployment mode parsing
-  let deploymentMode: BridgeDeploymentMode = 'local_dev';
-  const rawMode = env.REMNOTE_BRIDGE_DEPLOYMENT_MODE?.trim();
-  if (rawMode === 'local_dev' || rawMode === 'personal_hosted_token' || rawMode === 'public_hosted_oauth') {
-    deploymentMode = rawMode;
-  } else if (hostedMode) {
-    deploymentMode = 'personal_hosted_token';
-  }
+  const deploymentMode = deploymentModeFromEnv(env);
 
   // Canonical URLs
   const publicBaseUrl = env.REMNOTE_BRIDGE_PUBLIC_BASE_URL?.trim() || env.PUBLIC_BASE_URL?.trim() || '';
@@ -256,7 +298,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     allowRemote,
     allowCors,
     enableDeleteTool: boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_DELETE_TOOL),
-    hostedMode,
+    hostedMode: deploymentMode === 'hosted',
     auditLog: env.REMNOTE_BRIDGE_AUDIT_LOG === undefined ? true : boolFromEnv(env.REMNOTE_BRIDGE_AUDIT_LOG),
     allowedOrigins: listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS ?? env.ALLOWED_ORIGINS),
     requestTimeoutMs: numberFromEnv(env.REMNOTE_BRIDGE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),

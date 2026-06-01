@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { BridgeToolArgs, BridgeToolName } from '../../src/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
+import type { BridgeRuntimeInfo } from './config.js';
 import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
@@ -28,6 +29,7 @@ export interface CreateMcpServerOptions {
   requestSignal?: AbortSignal;
   discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required' | 'hosted_oauth_required';
   toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'hosted_oauth_required';
+  runtimeInfo?: BridgeRuntimeInfo;
   principal?: AuthenticatedPrincipal;
 }
 
@@ -88,6 +90,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     currentRegistry,
     exposeDeleteTool: Boolean(options.exposeDeleteTool),
     requestSignal: options.requestSignal,
+    runtimeInfo: options.runtimeInfo,
   };
 
   registerStatusTools(context);

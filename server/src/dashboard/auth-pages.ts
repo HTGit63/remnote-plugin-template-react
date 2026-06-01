@@ -125,7 +125,7 @@ const COMMON_HEAD = `
 
 export function renderLoginPage(config: CompanionServerConfig, returnTo = '/dashboard'): string {
   const providerName = config.oauthProvider === 'google' ? 'Google' : config.oauthProvider || 'Identity Provider';
-  const isLocal = config.deploymentMode === 'local_dev';
+  const isLocal = config.deploymentMode === 'local';
   const loginParams = new URLSearchParams({ returnTo });
   if (isLocal) {
     loginParams.set('provider', 'local');

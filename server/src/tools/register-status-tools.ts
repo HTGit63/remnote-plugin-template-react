@@ -4,7 +4,7 @@ import {
 } from './schemas.js';
 import type { ToolRegistrationContext } from './tool-context.js';
 
-export function registerStatusTools({ hub, registerTool, currentRegistry }: ToolRegistrationContext): void {
+export function registerStatusTools({ hub, registerTool, currentRegistry, runtimeInfo }: ToolRegistrationContext): void {
   registerTool(
     'get_bridge_status',
     {
@@ -25,6 +25,7 @@ export function registerStatusTools({ hub, registerTool, currentRegistry }: Tool
         ok: true,
         result: {
           ...hub.getStatus(),
+          ...(runtimeInfo ?? {}),
           ...currentRegistry(),
           serverStartedAt: hub.getDiagnostics().startedAt,
           recentRequestCount: hub.getDiagnostics().recentRequests.length,

@@ -22,6 +22,7 @@ export function registerDiagnosticTools({
   currentRegistry,
   exposeDeleteTool,
   requestSignal,
+  runtimeInfo,
 }: ToolRegistrationContext): void {
   registerTool(
     'get_bridge_diagnostics',
@@ -90,6 +91,7 @@ export function registerDiagnosticTools({
           ok: true,
           result: {
             ...registry,
+            ...(runtimeInfo ?? {}),
             ...diagnostics,
             pendingRequests: diagnostics.status.pendingRequests,
             pendingApproval: diagnostics.pending[0] ?? null,

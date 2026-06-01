@@ -35,7 +35,7 @@ function requestBaseUrl(req: IncomingMessage, config: CompanionServerConfig): st
     return config.publicBaseUrl.replace(/\/+$/, '');
   }
   const host = req.headers.host ?? `127.0.0.1:${config.mcpPort}`;
-  const proto = config.allowRemote || config.deploymentMode !== 'local_dev' ? 'https' : 'http';
+  const proto = config.allowRemote || config.deploymentMode === 'hosted' ? 'https' : 'http';
   return `${proto}://${host}`.replace(/\/+$/, '');
 }
 
@@ -491,4 +491,3 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
 
   return false;
 }
-

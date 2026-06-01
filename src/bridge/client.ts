@@ -192,7 +192,7 @@ export class BrowserBridgeClient {
       clientName: 'remnote-plugin',
       ...(hostedSession
         ? {
-            deploymentMode: 'public_hosted_oauth' as const,
+            deploymentMode: 'hosted' as const,
             deviceId: hostedSession.deviceId,
             pluginSessionId: hostedSession.pluginSessionId,
             pluginSessionToken: hostedSession.pluginSessionToken,

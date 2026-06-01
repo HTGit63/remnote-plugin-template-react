@@ -8,6 +8,7 @@ import type {
 } from '../../../src/bridge/protocol.js';
 import { BRIDGE_TOOL_ANNOTATIONS } from '../../../src/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
+import type { BridgeRuntimeInfo } from '../config.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 
 export type McpToolResult = {
@@ -36,6 +37,7 @@ export interface ToolRegistrationContext {
   currentRegistry: () => ToolRegistrySnapshot;
   exposeDeleteTool: boolean;
   requestSignal?: AbortSignal;
+  runtimeInfo?: BridgeRuntimeInfo;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

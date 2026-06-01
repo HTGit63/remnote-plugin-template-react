@@ -1,22 +1,37 @@
 # AGENTS.md
 
-## Current Auth Flow - 2026-05-26
+## Current Auth Flow - 2026-06-01
 
-This project now uses **ChatGPT MCP OAuth + RemNote Plugin Pairing**.
+Default deployment mode is **local bridge token**.
 
-It is **not RemNote OAuth**. RemNote does not provide a public standalone OAuth/API that lets Render access notes directly. Render can route MCP tool calls only while the RemNote plugin is open, paired, and connected over WebSocket.
-
-Current user flow:
+Use these local endpoints:
 
 ```text
-ChatGPT connector auth
--> Render /oauth/authorize
--> Render /connect pairing page
--> user opens RemNote ChatGPT Bridge plugin
--> plugin approves pairing code with selected scope/write mode
--> Render redirects ChatGPT with OAuth authorization code
--> ChatGPT exchanges code for bearer token
--> MCP tools route only to that approved plugin instance
+RemNote plugin Bridge Server URL:
+  ws://127.0.0.1:47391/remnote-bridge
+
+ChatGPT/MCP endpoint:
+  http://127.0.0.1:47392/mcp
+
+Auth:
+  REMNOTE_BRIDGE_TOKEN must match the RemNote plugin Bridge Token.
+```
+
+Local ChatGPT/MCP tool calls use only the local bearer token. There is no hosted user pairing in local mode.
+
+`PLUGIN_NOT_PAIRED` means ChatGPT is hitting a hosted or stale connector path, not the local bridge. Reconfigure ChatGPT to `http://127.0.0.1:47392/mcp`, restart the local server, and refresh connector tools.
+
+Hosted mode is blocked at startup until real hosted pairing exists. Do not set `REMNOTE_BRIDGE_HOSTED_MODE=1` for local use.
+
+Future hosted mode must include:
+
+```text
+OAuth user identity
+pairing code/device registration
+persistent user-session/device-session store
+mapping from MCP caller user ID to active RemNote plugin WebSocket
+revocation and audit logging
+NO_PAIRED_PLUGIN_SESSION errors only in hosted mode
 ```
 
 Default safety:
@@ -29,15 +44,7 @@ Production no-auth: disabled
 Delete tools: hidden or approval-gated by safe delete-by-ID flow
 ```
 
-Primary docs:
-
-```text
-AUTH_FLOW.md
-DEPLOY_RENDER.md
-docs/oauth-setup.md
-docs/pairing-flow.md
-docs/render-deployment.md
-```
+Primary local setup uses this README first. Older hosted-auth docs are design history until hosted startup guard is removed.
 
 ## Purpose
 
@@ -59,23 +66,16 @@ The bridge must make RemNote usable for high-quality note generation, editing, r
 
 # 0.0 Hosted Auth Status - 2026-05-26
 
-`Agents.md` hosted-auth Phases 7-12 are complete at repo/local smoke level.
+Hosted-auth code artifacts exist from earlier repo-local smoke work, but hosted deployment is currently disabled by startup guard.
 
-Implemented:
+Current active implementation:
 
 ```text
-public_hosted_oauth config mode
-OAuth protected-resource and authorization-server metadata
-DCR client registration
-authorization-code + PKCE S256
-opaque hashed access/refresh tokens
-refresh-token rotation and revoke
-MCP bearer validation with 401 challenge and 403 scope rejection
-per-user hosted plugin routing through SessionRouter
-plugin pairing with token delivery only to plugin local storage
-trusted focused/selected write mode preserved
-rate limits, CSRF, security headers, body limits, revocation, idempotency records
-PostgreSQL storage support with pg dependency
+deploymentMode local by default
+local bearer token for real MCP tool calls
+unauthenticated MCP discovery
+single RemNote plugin WebSocket path for local tools
+hosted mode guard with explicit missing requirements
 ```
 
 Still required before public launch/submission wording:
@@ -1143,6 +1143,21 @@ Run Health Check.
 Refresh ChatGPT connector tools.
 ```
 
+Local endpoint checklist:
+
+```text
+RemNote plugin Bridge Server URL:
+  ws://127.0.0.1:47391/remnote-bridge
+
+ChatGPT/MCP endpoint:
+  http://127.0.0.1:47392/mcp
+
+Token:
+  REMNOTE_BRIDGE_TOKEN must equal the plugin Bridge Token.
+```
+
+If ChatGPT returns `PLUGIN_NOT_PAIRED`, it is not calling the local bridge path. It is using a hosted or stale connector configuration. Point ChatGPT at `http://127.0.0.1:47392/mcp`; do not change local mode to hosted.
+
 ---
 
 ## 4.3 Add Final Health Check button
@@ -1416,32 +1431,40 @@ Add script if missing:
 
 ---
 
-## 5.4 Plugin settings for hosted mode
+## 5.4 Plugin settings for local mode
 
-The plugin UI must support:
+Recommended local setup:
 
 ```text
 Bridge Server URL:
-  wss://your-service.onrender.com/remnote-bridge
+  ws://127.0.0.1:47391/remnote-bridge
 
 Bridge Token:
-  same token configured in Render
+  same value as REMNOTE_BRIDGE_TOKEN
 
 MCP endpoint for ChatGPT:
-  https://your-service.onrender.com/mcp
+  http://127.0.0.1:47392/mcp
 ```
 
 Do not store the MCP endpoint inside RemNote unless useful.
 
 The RemNote plugin needs the WebSocket URL.
 
-ChatGPT needs the MCP URL.
+ChatGPT needs the MCP URL and the matching bearer token.
 
 ---
 
 ## 5.5 Hosted mode security boundaries
 
-For personal hosted mode, static token is acceptable.
+Hosted mode is disabled until real hosted pairing is implemented.
+
+Do not set:
+
+```bash
+REMNOTE_BRIDGE_HOSTED_MODE=1
+```
+
+Do not create a dummy hosted user or bypass pairing checks. Future hosted mode needs OAuth identity, device pairing, persistent session storage, MCP caller to plugin routing, revocation, and audit logging.
 
 For public hosted mode, static token is not enough.
 

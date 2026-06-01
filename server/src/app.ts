@@ -9,7 +9,13 @@ import { rateLimitRequest } from './auth/rate-limit.js';
 import { authorizeHostedMcpRequest } from './auth/token-verifier.js';
 import type { AuthResult, ScopeGrant } from './auth/types.js';
 import { BridgeHub } from './bridge-hub.js';
-import { type CompanionServerConfig, loadConfig, validateConfig } from './config.js';
+import {
+  getRuntimeInfo,
+  getToolCallAuthMode,
+  type CompanionServerConfig,
+  loadConfig,
+  validateConfig,
+} from './config.js';
 import {
   applyCors,
   readJsonBody,
@@ -41,12 +47,7 @@ export interface RunningCompanionApp {
 function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, storage: StorageProvider): HttpServer {
   const auditLogger: AuditLogger | undefined = config.auditLog ? new ConsoleAuditLogger() : undefined;
   const startedAt = new Date().toISOString();
-  const toolCallAuthMode =
-    config.deploymentMode === 'public_hosted_oauth'
-      ? 'hosted_oauth_required'
-      : config.bridgeToken && !config.allowNoToken
-        ? 'local_bearer_required'
-        : 'no_auth_allowed';
+  const toolCallAuthMode = getToolCallAuthMode(config);
 
   function registrySummary(registeredToolNames?: readonly string[]) {
     return getToolRegistrySummary(config.enableDeleteTool, config.toolProfile, registeredToolNames, {
@@ -149,11 +150,26 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       };
     }
 
-    if (config.deploymentMode === 'public_hosted_oauth') {
+    if (config.deploymentMode === 'hosted') {
       return authorizeHostedMcpRequest(req, config, storage, requiredScopesForMcpRequest(body));
     }
 
     return authorizeLocalMcpRequest(req, config);
+  }
+
+  function localMcpPort(req: Parameters<typeof authorizeLocalMcpRequest>[0]): number {
+    if (typeof req.socket.localPort === 'number') {
+      return req.socket.localPort;
+    }
+    return config.singlePort ? config.port : config.mcpPort;
+  }
+
+  function runtimeInfoForRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]) {
+    const port = localMcpPort(req);
+    return getRuntimeInfo(config, {
+      mcpPort: port,
+      bridgePort: config.singlePort ? port : hub.bridgePort,
+    });
   }
 
   return createServer(async (req, res) => {
@@ -241,6 +257,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       writeJson(res, 200, {
         ok: true,
         name: 'remnote-chatgpt-bridge-server',
+        deploymentMode: config.deploymentMode,
         mcpPath: config.mcpPath,
         bridgeConnected: hub.getStatus().connected,
         toolRegistryVersion: registry.toolRegistryVersion,
@@ -277,8 +294,10 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
 
     if (url.pathname === '/health' && req.method === 'GET') {
       const registry = registrySummary();
+      const runtimeInfo = runtimeInfoForRequest(req);
       writeJson(res, 200, {
         ok: true,
+        deployment: runtimeInfo,
         bridge: hub.getStatus(),
         toolRegistryVersion: registry.toolRegistryVersion,
         publicToolCount: registry.publicToolCount,
@@ -296,24 +315,21 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         return;
       }
 
-      const localPort =
-        typeof req.socket.localPort === 'number'
-          ? req.socket.localPort
-          : config.singlePort
-            ? config.port
-            : config.mcpPort;
+      const localPort = localMcpPort(req);
+      const runtimeInfo = runtimeInfoForRequest(req);
 
       writeJson(res, 200, {
         ok: true,
         server: {
           name: 'remnote-chatgpt-bridge-server',
+          ...runtimeInfo,
           pid: process.pid,
           cwd: process.cwd(),
           startedAt,
           mcpPath: config.mcpPath,
           bridgePath: config.bridgePath,
-          mcpPort: config.singlePort ? localPort : config.mcpPort,
-          bridgePort: config.singlePort ? localPort : config.bridgePort,
+          mcpPort: localPort,
+          bridgePort: config.singlePort ? localPort : hub.bridgePort,
           singlePort: config.singlePort,
           toolProfile: config.toolProfile,
         },
@@ -383,7 +399,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         statusCode: auth.statusCode,
         reason: auth.auditReason,
       });
-      if (config.deploymentMode === 'public_hosted_oauth' && auth.statusCode === 401) {
+      if (config.deploymentMode === 'hosted' && auth.statusCode === 401) {
         res.setHeader(
           'WWW-Authenticate',
           buildOauthChallenge(req, config, requiredScopesForMcpRequest(body).join(' '))
@@ -431,6 +447,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       requestSignal: requestAbortController.signal,
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
+      runtimeInfo: runtimeInfoForRequest(req),
       principal: auth.principal,
     });
     const transport = new StreamableHTTPServerTransport({

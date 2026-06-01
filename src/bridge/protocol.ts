@@ -111,6 +111,7 @@ export type BridgeErrorCode =
   | 'PARENT_NOT_FOUND'
   | 'PLUGIN_NOT_CONNECTED'
   | 'PLUGIN_NOT_PAIRED'
+  | 'NO_PAIRED_PLUGIN_SESSION'
   | 'DEVICE_CONFLICT'
   | 'PLUGIN_SESSION_EXPIRED'
   | 'PLUGIN_SESSION_REVOKED'
@@ -1130,7 +1131,7 @@ export interface BridgePluginHello {
   type: 'plugin_hello';
   protocolVersion: 1;
   clientName: 'remnote-plugin';
-  deploymentMode?: 'public_hosted_oauth' | 'personal_hosted_token' | 'local_dev';
+  deploymentMode?: 'local' | 'hosted';
   deviceId?: string;
   pluginSessionId?: string;
   pluginSessionToken?: string;

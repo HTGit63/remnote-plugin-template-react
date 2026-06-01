@@ -103,7 +103,7 @@ export async function handleDashboardRoute(
       returnUrl: safeReturnTo(url.searchParams.get('returnTo')),
     });
 
-    const isLocal = config.deploymentMode === 'local_dev' || url.searchParams.get('provider') === 'local';
+    const isLocal = config.deploymentMode === 'local' || url.searchParams.get('provider') === 'local';
 
     if (isLocal) {
       // Local emulator: skip real OAuth, redirect directly to callback with a fake code
@@ -156,7 +156,7 @@ export async function handleDashboardRoute(
 
     let userEmail: string;
 
-    if (provider === 'local' || config.deploymentMode === 'local_dev') {
+    if (provider === 'local' || config.deploymentMode === 'local') {
       // Local emulator: generate a deterministic local user
       userEmail = 'local-dev@remnote-companion.local';
     } else {

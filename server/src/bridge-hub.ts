@@ -380,7 +380,7 @@ export class BridgeHub {
   }
 
   getStatus(): BridgeHubStatus {
-    if (this.config.deploymentMode === 'public_hosted_oauth') {
+    if (this.config.deploymentMode === 'hosted') {
       return {
         connected: this.sessionRouter.getStatus().activeConnections > 0,
         lastConnectedAt: this.lastConnectedAt,
@@ -721,13 +721,13 @@ export class BridgeHub {
   ):
     | { ok: true; socket: WebSocket; userId: string }
     | { ok: false; error: BridgeErrorCode; message: string } {
-    if (this.config.deploymentMode === 'public_hosted_oauth') {
+    if (this.config.deploymentMode === 'hosted') {
       const userId = principal?.userId;
       if (!userId) {
         return {
           ok: false,
-          error: 'PLUGIN_NOT_PAIRED',
-          message: 'MCP request has no paired hosted user.',
+          error: 'NO_PAIRED_PLUGIN_SESSION',
+          message: 'MCP request has no paired hosted plugin session.',
         };
       }
 
@@ -779,13 +779,13 @@ export class BridgeHub {
         socket.close(1008, 'Expected plugin registration.');
         return;
       }
-      if (this.config.deploymentMode !== 'public_hosted_oauth' && !this.isPluginHello(hello)) {
+      if (this.config.deploymentMode !== 'hosted' && !this.isPluginHello(hello)) {
         socket.close(1008, 'Expected plugin hello.');
         return;
       }
 
       if (
-        this.config.deploymentMode !== 'public_hosted_oauth' &&
+        this.config.deploymentMode !== 'hosted' &&
         this.config.bridgeToken &&
         !this.config.allowNoToken &&
         (hello as BridgePluginHello).token !== this.config.bridgeToken
@@ -794,7 +794,7 @@ export class BridgeHub {
         return;
       }
 
-      if (this.config.deploymentMode === 'public_hosted_oauth') {
+      if (this.config.deploymentMode === 'hosted') {
         const routed = await this.sessionRouter.authenticateAndRegister(socket, hello);
         if (!routed.ok) {
           socket.close(1008, `${routed.error}: ${routed.message}`);
@@ -813,7 +813,7 @@ export class BridgeHub {
       }
 
       const toolCallAuthMode =
-        this.config.deploymentMode === 'public_hosted_oauth'
+        this.config.deploymentMode === 'hosted'
           ? 'hosted_oauth_required'
           : this.config.bridgeToken && !this.config.allowNoToken
             ? 'local_bearer_required'
@@ -899,7 +899,7 @@ export class BridgeHub {
   }
 
   private handlePluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
-    if (this.config.deploymentMode !== 'public_hosted_oauth' && socket !== this.pluginSocket) {
+    if (this.config.deploymentMode !== 'hosted' && socket !== this.pluginSocket) {
       return;
     }
 
@@ -909,7 +909,7 @@ export class BridgeHub {
     }
 
     const pending = this.pending.get(message.id);
-    if (this.config.deploymentMode === 'public_hosted_oauth' && pending?.targetSocket !== socket) {
+    if (this.config.deploymentMode === 'hosted' && pending?.targetSocket !== socket) {
       return;
     }
 
@@ -1092,7 +1092,7 @@ export class BridgeHub {
   private startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      if (this.config.deploymentMode === 'public_hosted_oauth') {
+      if (this.config.deploymentMode === 'hosted') {
         for (const connection of this.sessionRouter.getActiveConnectionInfos()) {
           const liveConnection = this.sessionRouter.getConnectionForUser(connection.userId);
           if (!liveConnection) {
@@ -1259,7 +1259,7 @@ export class BridgeHub {
 
   private isAllowedWebSocketOrigin(req?: IncomingMessage): boolean {
     const origin = req?.headers.origin;
-    if (!origin || this.config.deploymentMode === 'local_dev') {
+    if (!origin || this.config.deploymentMode === 'local') {
       return true;
     }
     if (!this.config.allowedOrigins.length) {
