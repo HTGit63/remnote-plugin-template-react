@@ -25,6 +25,7 @@ export interface BridgeRuntimeInfo {
 
 export interface CompanionServerConfig {
   deploymentMode: BridgeDeploymentMode;
+  hostedPairingEnabled: boolean;
   storageMode: 'memory' | 'postgres';
   publicBaseUrl: string;
   mcpResource: string;
@@ -87,10 +88,12 @@ const DEFAULT_PLUGIN_HEARTBEAT_INTERVAL_SECONDS = 30;
 const DEFAULT_PLUGIN_HEARTBEAT_TIMEOUT_SECONDS = 90;
 
 export const HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE = [
-  'Hosted deployment mode is disabled for this local-token bridge.',
-  'Do not set REMNOTE_BRIDGE_HOSTED_MODE=1 or REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted/public_hosted_oauth/personal_hosted_token until real hosted pairing is implemented.',
-  'Future hosted mode must include OAuth user identity, pairing code/device registration, persistent user-session/device-session storage, MCP caller user to active RemNote plugin WebSocket routing, revocation and audit logging, and NO_PAIRED_PLUGIN_SESSION errors only in hosted mode.',
+  'Hosted deployment mode requires REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1.',
+  'Without this explicit flag, the server stays in local bridge-token mode and ChatGPT OAuth pairing is disabled.',
 ].join(' ');
+
+export const LOCAL_PAIRING_DISABLED_MESSAGE =
+  'Server is in local-token mode. ChatGPT pairing is disabled. Use hosted mode for ChatGPT connector access.';
 
 function numberFromEnv(value: string | undefined, fallback: number): number {
   if (!value) {
@@ -110,6 +113,45 @@ function listFromEnv(value: string | undefined): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function publicEndpoint(publicBaseUrl: string, protocol: 'http' | 'ws', pathname: string): string {
+  const url = new URL(publicBaseUrl);
+  url.protocol =
+    protocol === 'ws'
+      ? url.protocol === 'http:'
+        ? 'ws:'
+        : 'wss:'
+      : url.protocol === 'http:'
+        ? 'http:'
+        : 'https:';
+  url.pathname = pathname;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
+}
+
+function defaultHostedAllowedOrigins(publicBaseUrl: string): string[] {
+  const origins = new Set([
+    'https://chatgpt.com',
+    'https://chat.openai.com',
+    'https://remnote.com',
+    'https://www.remnote.com',
+  ]);
+
+  if (publicBaseUrl) {
+    try {
+      origins.add(new URL(publicBaseUrl).origin);
+    } catch {
+      // validateConfig reports invalid public URL in hosted mode.
+    }
+  }
+
+  return [...origins];
 }
 
 function deploymentModeFromEnv(env: NodeJS.ProcessEnv): BridgeDeploymentMode {
@@ -151,16 +193,16 @@ export function isLocalTokenRequired(config: CompanionServerConfig): boolean {
   return config.deploymentMode === 'local' && Boolean(config.bridgeToken) && !config.allowNoToken;
 }
 
-export function isHostedPairingEnabled(_config: CompanionServerConfig): boolean {
-  return false;
+export function isHostedPairingEnabled(config: CompanionServerConfig): boolean {
+  return config.deploymentMode === 'hosted' && config.hostedPairingEnabled;
 }
 
 export function getExpectedPairingBehavior(config: CompanionServerConfig): string {
   if (config.deploymentMode === 'local') {
-    return 'local bridge token only; no hosted user pairing';
+    return LOCAL_PAIRING_DISABLED_MESSAGE;
   }
 
-  return 'hosted user pairing required; unavailable until hosted mode is implemented';
+  return 'hosted ChatGPT OAuth/pairing token required; local bridge token is not used for MCP tool calls';
 }
 
 function endpointHost(config: CompanionServerConfig, hostOverride?: string): string {
@@ -178,6 +220,19 @@ export function getRuntimeInfo(
   ports: { mcpPort: number; bridgePort: number },
   hostOverride?: string
 ): BridgeRuntimeInfo {
+  if (config.publicBaseUrl) {
+    const publicBaseUrl = trimTrailingSlash(config.publicBaseUrl);
+    return {
+      deploymentMode: config.deploymentMode,
+      toolCallAuthMode: getToolCallAuthMode(config),
+      mcpEndpoint: publicEndpoint(publicBaseUrl, 'http', config.mcpPath),
+      bridgeEndpoint: publicEndpoint(publicBaseUrl, 'ws', config.bridgePath),
+      hostedPairingEnabled: isHostedPairingEnabled(config),
+      localTokenRequired: isLocalTokenRequired(config),
+      expectedPairingBehavior: getExpectedPairingBehavior(config),
+    };
+  }
+
   const host = endpointHost(config, hostOverride);
   const httpProtocol = config.deploymentMode === 'hosted' || config.allowRemote ? 'https' : 'http';
   const wsProtocol = config.deploymentMode === 'hosted' || config.allowRemote ? 'wss' : 'ws';
@@ -194,7 +249,22 @@ export function getRuntimeInfo(
 
 export function validateConfig(config: CompanionServerConfig): void {
   if (config.deploymentMode === 'hosted') {
-    throw new Error(HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE);
+    if (!config.hostedPairingEnabled) {
+      throw new Error(HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE);
+    }
+    if (!config.sessionSecret) {
+      throw new Error('SESSION_SECRET or REMNOTE_BRIDGE_SESSION_SECRET is required in hosted pairing mode.');
+    }
+    if (config.publicBaseUrl) {
+      try {
+        new URL(config.publicBaseUrl);
+      } catch {
+        throw new Error('REMNOTE_BRIDGE_PUBLIC_BASE_URL must be an absolute http(s) URL.');
+      }
+    }
+    if (config.allowedOrigins.length === 0) {
+      throw new Error('Hosted pairing mode requires at least one allowed browser origin.');
+    }
   }
 
   if (config.deploymentMode === 'local') {
@@ -223,8 +293,19 @@ export function validateConfig(config: CompanionServerConfig): void {
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServerConfig {
   const nodeEnv = env.NODE_ENV?.trim() || 'development';
-  const allowRemote = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_REMOTE);
-  const allowCors = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_CORS);
+  const deploymentMode = deploymentModeFromEnv(env);
+  const hostedPairingEnabled = boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING);
+  const publicBaseUrl = env.REMNOTE_BRIDGE_PUBLIC_BASE_URL?.trim() || env.PUBLIC_BASE_URL?.trim() || '';
+  const configuredAllowedOrigins = listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS ?? env.ALLOWED_ORIGINS);
+  const allowedOrigins =
+    configuredAllowedOrigins.length > 0
+      ? configuredAllowedOrigins
+      : deploymentMode === 'hosted'
+        ? defaultHostedAllowedOrigins(publicBaseUrl)
+        : [];
+  const allowRemote = boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_REMOTE) || deploymentMode === 'hosted';
+  const allowCors =
+    boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_CORS) || (deploymentMode === 'hosted' && allowedOrigins.length > 0);
   const allowNoToken =
     boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_NO_TOKEN) ||
     (nodeEnv === 'development' && boolFromEnv(env.ALLOW_DEV_NO_AUTH));
@@ -240,10 +321,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
         ? 'postgres'
         : 'memory';
 
-  const deploymentMode = deploymentModeFromEnv(env);
-
   // Canonical URLs
-  const publicBaseUrl = env.REMNOTE_BRIDGE_PUBLIC_BASE_URL?.trim() || env.PUBLIC_BASE_URL?.trim() || '';
   const mcpServerUrl = env.MCP_SERVER_URL?.trim() || '';
   const mcpResource = env.REMNOTE_BRIDGE_MCP_RESOURCE?.trim() || mcpServerUrl || publicBaseUrl;
   const dashboardUrl = env.REMNOTE_BRIDGE_DASHBOARD_URL?.trim() || (publicBaseUrl ? `${publicBaseUrl}/dashboard` : '');
@@ -270,6 +348,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
 
   const config = {
     deploymentMode,
+    hostedPairingEnabled,
     storageMode,
     publicBaseUrl,
     mcpResource,
@@ -300,7 +379,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     enableDeleteTool: boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_DELETE_TOOL),
     hostedMode: deploymentMode === 'hosted',
     auditLog: env.REMNOTE_BRIDGE_AUDIT_LOG === undefined ? true : boolFromEnv(env.REMNOTE_BRIDGE_AUDIT_LOG),
-    allowedOrigins: listFromEnv(env.REMNOTE_BRIDGE_ALLOWED_ORIGINS ?? env.ALLOWED_ORIGINS),
+    allowedOrigins,
     requestTimeoutMs: numberFromEnv(env.REMNOTE_BRIDGE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
     maxBodyBytes: numberFromEnv(env.REMNOTE_BRIDGE_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES),
     maxBridgeMessageBytes: numberFromEnv(

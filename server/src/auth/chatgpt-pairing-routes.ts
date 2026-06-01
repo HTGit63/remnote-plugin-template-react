@@ -1,6 +1,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import type { CompanionServerConfig } from '../config.js';
+import {
+  LOCAL_PAIRING_DISABLED_MESSAGE,
+  isHostedPairingEnabled,
+  type CompanionServerConfig,
+} from '../config.js';
 import { readJsonBody, writeJson, writeText } from '../http.js';
 import { hashToken } from '../storage/crypto-utils.js';
 import type {
@@ -187,6 +191,34 @@ export async function handleChatGptPairingRoute(
   deps: ChatGptPairingRouteDeps
 ): Promise<boolean> {
   const { config, storage } = deps;
+
+  if (!isHostedPairingEnabled(config)) {
+    const body = {
+      error: 'hosted_pairing_disabled',
+      message: LOCAL_PAIRING_DISABLED_MESSAGE,
+      deploymentMode: config.deploymentMode,
+      hostedPairingEnabled: false,
+    };
+    if (
+      req.method === 'GET' &&
+      (url.pathname === '/connect' ||
+        url.pathname === '/connected' ||
+        url.pathname === '/denied' ||
+        url.pathname === '/expired')
+    ) {
+      writeHtml(
+        res,
+        403,
+        pageShell(
+          'ChatGPT pairing disabled',
+          `<main><div class="header"><h1>ChatGPT pairing disabled</h1><p>${escapeHtml(LOCAL_PAIRING_DISABLED_MESSAGE)}</p></div></main>`
+        )
+      );
+      return true;
+    }
+    writeJson(res, 403, body);
+    return true;
+  }
 
   if (url.pathname === '/connect' && req.method === 'GET') {
     const pairingId = url.searchParams.get('pairing_id') ?? '';

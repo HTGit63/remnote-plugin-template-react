@@ -16,7 +16,7 @@ const legacyHostedConfig = loadConfig({
   ...process.env,
   REMNOTE_BRIDGE_HOSTED_MODE: '1',
   REMNOTE_BRIDGE_DEPLOYMENT_MODE: 'local',
-  REMNOTE_BRIDGE_TOKEN: 'hosted-guard-token',
+  SESSION_SECRET: 'auth-smoke-session-secret',
 });
 if (legacyHostedConfig.deploymentMode !== 'hosted') {
   throw new Error('REMNOTE_BRIDGE_HOSTED_MODE=1 did not derive deploymentMode=hosted.');
@@ -29,11 +29,25 @@ try {
   assertHostedGuard(error, 'validateConfig');
 }
 
+const enabledHostedConfig = loadConfig({
+  ...process.env,
+  REMNOTE_BRIDGE_DEPLOYMENT_MODE: 'hosted',
+  REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING: '1',
+  REMNOTE_BRIDGE_PUBLIC_BASE_URL: 'https://remnote-bridge.example.test',
+  SESSION_SECRET: 'auth-smoke-session-secret',
+});
+if (!enabledHostedConfig.hostedPairingEnabled) {
+  throw new Error('REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1 did not enable hosted pairing.');
+}
+validateConfig(enabledHostedConfig);
+
 try {
   await startCompanionApp({
     deploymentMode: 'hosted',
+    hostedPairingEnabled: false,
     bridgeToken: '',
     allowNoToken: true,
+    sessionSecret: 'auth-smoke-session-secret',
     bridgePort: 0,
     mcpPort: 0,
   });

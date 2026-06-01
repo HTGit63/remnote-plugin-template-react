@@ -24,7 +24,7 @@ export function isLoopbackHost(hostHeader: string | undefined): boolean {
 }
 
 export function validateRequestHost(req: IncomingMessage, config: CompanionServerConfig): boolean {
-  return config.allowRemote || isLoopbackHost(req.headers.host);
+  return config.deploymentMode === 'hosted' || config.allowRemote || isLoopbackHost(req.headers.host);
 }
 
 export function hasValidBearerToken(req: IncomingMessage, token: string): boolean {

@@ -1,6 +1,10 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { CompanionServerConfig } from '../config.js';
+import {
+  LOCAL_PAIRING_DISABLED_MESSAGE,
+  isHostedPairingEnabled,
+  type CompanionServerConfig,
+} from '../config.js';
 import { readJsonBody, writeJson, writeText } from '../http.js';
 import { hashToken } from '../storage/crypto-utils.js';
 import type { ChatGptPairingSession } from '../storage/types.js';
@@ -166,6 +170,14 @@ export async function handleOAuthRoute(
   const { config, storage } = deps;
   const baseUrl = getRequestBaseUrl(req, config);
   const resource = getExpectedMcpResource(req, config);
+
+  if (!isHostedPairingEnabled(config)) {
+    writeJson(res, 403, {
+      error: 'hosted_pairing_disabled',
+      error_description: LOCAL_PAIRING_DISABLED_MESSAGE,
+    });
+    return true;
+  }
 
   if (url.pathname === '/.well-known/oauth-protected-resource' && req.method === 'GET') {
     writeJson(res, 200, {

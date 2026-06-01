@@ -97,6 +97,9 @@ const permissionModeOptions: Array<{ value: PermissionMode; label: string }> = [
   { value: 'danger_zone', label: 'Danger zone' },
 ];
 
+const LOCAL_PAIRING_DISABLED_MESSAGE =
+  'Server is in local-token mode. ChatGPT pairing is disabled. Use hosted mode for ChatGPT connector access.';
+
 function formatToolName(tool: BridgeToolName): string {
   return tool.replace(/_/g, ' ');
 }
@@ -188,6 +191,46 @@ function getFriendlyPairingError(error: unknown): string {
     return 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
   }
   return message || 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
+}
+
+function runtimeDeploymentMode(report: Record<string, unknown> | null): 'local' | 'hosted' | null {
+  const deployment = report?.deployment;
+  if (typeof deployment === 'object' && deployment !== null) {
+    const mode = (deployment as { deploymentMode?: unknown }).deploymentMode;
+    if (mode === 'local' || mode === 'hosted') {
+      return mode;
+    }
+  }
+
+  const server = report?.server;
+  if (typeof server === 'object' && server !== null) {
+    const mode = (server as { deploymentMode?: unknown }).deploymentMode;
+    if (mode === 'local' || mode === 'hosted') {
+      return mode;
+    }
+  }
+
+  return null;
+}
+
+function runtimeHostedPairingEnabled(report: Record<string, unknown> | null): boolean | null {
+  const deployment = report?.deployment;
+  if (typeof deployment === 'object' && deployment !== null) {
+    const enabled = (deployment as { hostedPairingEnabled?: unknown }).hostedPairingEnabled;
+    if (typeof enabled === 'boolean') {
+      return enabled;
+    }
+  }
+
+  const server = report?.server;
+  if (typeof server === 'object' && server !== null) {
+    const enabled = (server as { hostedPairingEnabled?: unknown }).hostedPairingEnabled;
+    if (typeof enabled === 'boolean') {
+      return enabled;
+    }
+  }
+
+  return null;
 }
 
 function DetailRow({
@@ -344,6 +387,15 @@ export function BridgeStatusWidget() {
       : [];
   const lastSuccessfulRequest = lastRequests.find((request) => request.ok === true);
   const lastFailedRequest = lastRequests.find((request) => request.ok === false);
+  const reportedDeploymentMode =
+    runtimeDeploymentMode(lastHealthCheck) ?? runtimeDeploymentMode(lastServerDiagnostics);
+  const reportedHostedPairingEnabled =
+    runtimeHostedPairingEnabled(lastHealthCheck) ?? runtimeHostedPairingEnabled(lastServerDiagnostics);
+  const chatGptPairingDisabled =
+    !isHostedBridgeUrl(serverUrl) ||
+    reportedDeploymentMode === 'local' ||
+    reportedHostedPairingEnabled === false;
+  const effectiveHostedSession = chatGptPairingDisabled ? null : hostedSession;
 
   useEffect(() => {
     permissionModeRef.current = permissionMode;
@@ -439,7 +491,19 @@ export function BridgeStatusWidget() {
       return undefined;
     }
 
-    if (isHostedBridgeUrl(serverUrl) && !hostedSession?.sessionSecret) {
+    if (chatGptPairingDisabled && isHostedBridgeUrl(serverUrl)) {
+      clientRef.current?.disconnect();
+      clientRef.current = null;
+      setBridgeStatus({
+        ...INITIAL_BRIDGE_STATUS,
+        serverUrl,
+        state: 'disconnected',
+        lastEvent: LOCAL_PAIRING_DISABLED_MESSAGE,
+      });
+      return undefined;
+    }
+
+    if (isHostedBridgeUrl(serverUrl) && !effectiveHostedSession?.sessionSecret) {
       clientRef.current?.disconnect();
       clientRef.current = null;
       setBridgeStatus({
@@ -455,7 +519,7 @@ export function BridgeStatusWidget() {
       plugin,
       serverUrl,
       token: bridgeToken,
-      hostedSession,
+      hostedSession: effectiveHostedSession,
       getPermissionMode: () => permissionModeRef.current,
       getPermissionScope: () => permissionScopeRef.current,
       getApprovedRootRemId: () => approvedRootRemIdRef.current,
@@ -476,7 +540,16 @@ export function BridgeStatusWidget() {
       }
       setPendingRequest(null);
     };
-  }, [plugin, serverUrl, bridgeToken, hostedSession, requestApproval, cancelApproval, bridgeEnabled]);
+  }, [
+    plugin,
+    serverUrl,
+    bridgeToken,
+    effectiveHostedSession,
+    requestApproval,
+    cancelApproval,
+    bridgeEnabled,
+    chatGptPairingDisabled,
+  ]);
 
   const handleApprove = async () => {
     if (!pendingRequest) {
@@ -569,6 +642,12 @@ export function BridgeStatusWidget() {
   };
 
   const handleApproveChatGptPairing = async () => {
+    if (chatGptPairingDisabled) {
+      setPairingEvent(LOCAL_PAIRING_DISABLED_MESSAGE);
+      await plugin.app.toast('ChatGPT pairing disabled in local-token mode.');
+      return;
+    }
+
     try {
       const session = await approveChatGptPairing(plugin, serverUrl, {
         pairingCode: chatGptPairingCode,
@@ -599,6 +678,12 @@ export function BridgeStatusWidget() {
   };
 
   const handleLookupChatGptPairing = async () => {
+    if (chatGptPairingDisabled) {
+      setPairingEvent(LOCAL_PAIRING_DISABLED_MESSAGE);
+      await plugin.app.toast('ChatGPT pairing disabled in local-token mode.');
+      return;
+    }
+
     try {
       const preview = await lookupChatGptPairing(serverUrl, chatGptPairingCode);
       setChatGptPairingPreview(preview);
@@ -612,6 +697,12 @@ export function BridgeStatusWidget() {
   };
 
   const handleDenyChatGptPairing = async () => {
+    if (chatGptPairingDisabled) {
+      setPairingEvent(LOCAL_PAIRING_DISABLED_MESSAGE);
+      await plugin.app.toast('ChatGPT pairing disabled in local-token mode.');
+      return;
+    }
+
     try {
       await denyChatGptPairing(serverUrl, chatGptPairingCode);
       setPairingEvent('Connection denied.');
@@ -743,6 +834,7 @@ export function BridgeStatusWidget() {
       : waitingForPairing
         ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
         : 'Start the companion server or check the token.';
+  const chatGptPairingConnected = Boolean(hostedSession && !chatGptPairingDisabled);
 
   const pendingSection = (
     <section
@@ -858,26 +950,54 @@ export function BridgeStatusWidget() {
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
               <h3>ChatGPT Bridge</h3>
-              <p>Enter the Render pairing code. RemNote plugin must approve before ChatGPT gets access.</p>
+              <p>
+                {chatGptPairingDisabled
+                  ? LOCAL_PAIRING_DISABLED_MESSAGE
+                  : 'Enter the Render pairing code. RemNote plugin must approve before ChatGPT gets access.'}
+              </p>
             </div>
-            <span className={hostedSession ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
-              {hostedSession ? 'Connected' : 'Not connected'}
+            <span
+              className={
+                chatGptPairingDisabled
+                  ? 'bridge-pill bridge-pill-muted'
+                  : chatGptPairingConnected
+                    ? 'bridge-pill bridge-pill-success'
+                    : 'bridge-pill bridge-pill-warning'
+              }
+            >
+              {chatGptPairingDisabled ? 'Disabled' : chatGptPairingConnected ? 'Connected' : 'Not connected'}
             </span>
           </div>
           <dl className="bridge-detail-list">
-            <DetailRow label="Status" value={hostedSession ? 'Connected to ChatGPT' : 'Not connected'} />
-            <DetailRow label="Connection" value={hostedSession?.connectedLabel ?? (localConnectionLabel || 'ChatGPT session')} />
+            <DetailRow
+              label="Status"
+              value={
+                chatGptPairingDisabled
+                  ? 'ChatGPT pairing disabled in local-token mode'
+                  : chatGptPairingConnected
+                    ? 'Connected to ChatGPT'
+                    : 'Not connected'
+              }
+            />
+            <DetailRow
+              label="Connection"
+              value={
+                chatGptPairingDisabled
+                  ? (localConnectionLabel || 'ChatGPT pairing disabled')
+                  : hostedSession?.connectedLabel ?? (localConnectionLabel || 'ChatGPT session')
+              }
+            />
             <DetailRow label="Access Scope" value={getPermissionScopeLabel(permissionScope)} />
             <DetailRow label="Write Mode" value={getPermissionModeLabel(permissionMode)} />
-            <DetailRow label="Pairing Status" value={pairingEvent} />
-            {chatGptPairingPreview && !hostedSession && (
+            <DetailRow label="Pairing Status" value={chatGptPairingDisabled ? LOCAL_PAIRING_DISABLED_MESSAGE : pairingEvent} />
+            {chatGptPairingPreview && !chatGptPairingConnected && !chatGptPairingDisabled && (
               <>
                 <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
                 <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
               </>
             )}
           </dl>
-          {!hostedSession && (
+          {!chatGptPairingConnected && !chatGptPairingDisabled && (
             <div className="bridge-access-editor">
               <label className="bridge-field">
                 Pairing code
@@ -905,7 +1025,7 @@ export function BridgeStatusWidget() {
             </div>
           )}
           <div className="bridge-actions">
-            {!hostedSession && (
+            {!chatGptPairingConnected && !chatGptPairingDisabled && (
               <>
                 <button type="button" className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
                   Check Code
@@ -919,7 +1039,7 @@ export function BridgeStatusWidget() {
               </>
             )}
             <button type="button" className="bridge-button bridge-button-reject" onClick={handleClearPairing}>
-              Disconnect ChatGPT
+              {chatGptPairingDisabled ? 'Clear Stored Pairing' : 'Disconnect ChatGPT'}
             </button>
           </div>
         </section>

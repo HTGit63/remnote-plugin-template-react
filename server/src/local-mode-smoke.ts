@@ -10,6 +10,8 @@ import type {
 import { startCompanionApp } from './app.js';
 
 const token = 'local-mode-smoke-token';
+const localPairingDisabledMessage =
+  'Server is in local-token mode. ChatGPT pairing is disabled. Use hosted mode for ChatGPT connector access.';
 let nextId = 1;
 
 const fakeRem: SerializedRem = {
@@ -46,6 +48,21 @@ async function mcpRequest(
     status: response.status,
     text,
     json: text ? JSON.parse(text) : null,
+  };
+}
+
+async function postJson(url: string, body: unknown): Promise<{ status: number; text: string }> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  return {
+    status: response.status,
+    text: await response.text(),
   };
 }
 
@@ -167,9 +184,10 @@ async function runLocalBearerMode(): Promise<void> {
     allowRemote: false,
     allowCors: false,
   });
-  const mcpUrl = `http://127.0.0.1:${app.mcpPort}${app.config.mcpPath}`;
-  const healthUrl = `http://127.0.0.1:${app.mcpPort}/health`;
-  const diagnosticsUrl = `http://127.0.0.1:${app.mcpPort}/diagnostics`;
+  const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
+  const mcpUrl = `${baseUrl}${app.config.mcpPath}`;
+  const healthUrl = `${baseUrl}/health`;
+  const diagnosticsUrl = `${baseUrl}/diagnostics`;
   const seenTools: BridgeToolName[] = [];
   const texts: string[] = [];
   let ws: WebSocket | undefined;
@@ -186,6 +204,18 @@ async function runLocalBearerMode(): Promise<void> {
     texts.push(healthText);
     if (health.status !== 200 || !healthText.includes('"bridge"') || !healthText.includes('"deploymentMode":"local"')) {
       throw new Error(`/health missed local bridge status: ${health.status} ${healthText}`);
+    }
+
+    const localPairing = await postJson(`${baseUrl}/pairing/create`, {
+      clientName: 'Local mode should not pair ChatGPT',
+    });
+    texts.push(localPairing.text);
+    if (
+      localPairing.status !== 403 ||
+      !localPairing.text.includes(localPairingDisabledMessage) ||
+      localPairing.text.includes('"status":"connected"')
+    ) {
+      throw new Error(`Local mode claimed ChatGPT pairing was usable: ${localPairing.status} ${localPairing.text}`);
     }
 
     const unauthCall = await mcpToolCall(mcpUrl, 'get_plugin_status', {}, undefined);
@@ -217,7 +247,7 @@ async function runLocalBearerMode(): Promise<void> {
       !diagnosticsText.includes('"deploymentMode":"local"') ||
       !diagnosticsText.includes('"localTokenRequired":true') ||
       !diagnosticsText.includes('"hostedPairingEnabled":false') ||
-      !diagnosticsText.includes('local bridge token only; no hosted user pairing')
+      !diagnosticsText.includes(localPairingDisabledMessage)
     ) {
       throw new Error(`/diagnostics missed local mode proof: ${authedDiagnostics.status} ${diagnosticsText}`);
     }
