@@ -263,6 +263,103 @@ async function runFormattingHealthSections(
   return sections;
 }
 
+async function runReorderChildrenHealthSection(
+  hub: BridgeHub,
+  parentRemId: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+  principal?: AuthenticatedPrincipal
+): Promise<BridgeHealthCheckToolResult[]> {
+  const results: BridgeHealthCheckToolResult[] = [];
+  const createdChildIds: string[] = [];
+
+  for (const label of ['Reorder A', 'Reorder B', 'Reorder C']) {
+    const startedAt = nowMs();
+    const response = await hub.callPlugin(
+      'create_rem',
+      {
+        parentId: parentRemId,
+        markdown: label,
+        idempotencyKey: `health-reorder-${parentRemId}-${label}`,
+      },
+      timeoutMs,
+      signal,
+      principal
+    );
+    results.push(resultFromResponse(`reorder_children_setup_${label.replace(/\s+/g, '_').toLowerCase()}`, 'create_rem', response, startedAt));
+    const childId = createdRemIdFromResponse(response);
+    if (childId) {
+      createdChildIds.push(childId);
+    }
+  }
+
+  if (createdChildIds.length !== 3) {
+    results.push({
+      tool: 'reorder_children_live_order',
+      bridgeTool: 'reorder_children',
+      status: 'failed',
+      durationMs: 0,
+      errorCode: 'PARTIAL_FAILURE',
+      errorMessage: 'Could not create all disposable reorder children.',
+      reason: `Expected 3 disposable children, got ${createdChildIds.length}.`,
+    });
+    return results;
+  }
+
+  const desiredOrder = [createdChildIds[2], createdChildIds[0], createdChildIds[1]];
+  const reorderStartedAt = nowMs();
+  const reorderResponse = await hub.callPlugin(
+    'reorder_children',
+    {
+      parentRemId,
+      orderedChildRemIds: desiredOrder,
+      dryRun: false,
+      allowPartial: true,
+      idempotencyKey: `health-reorder-apply-${parentRemId}`,
+    },
+    timeoutMs,
+    signal,
+    principal
+  );
+  results.push(resultFromResponse('reorder_children_apply', 'reorder_children', reorderResponse, reorderStartedAt));
+  if (!reorderResponse.ok) {
+    return results;
+  }
+
+  const readStartedAt = nowMs();
+  const readResponse = await hub.callPlugin(
+    'get_children',
+    {
+      parentRemId,
+      maxChildren: 10,
+    },
+    timeoutMs,
+    signal,
+    principal
+  );
+  const base = resultFromResponse('reorder_children_live_order', 'get_children', readResponse, readStartedAt);
+  if (!readResponse.ok || base.status !== 'passed') {
+    results.push(base);
+    return results;
+  }
+
+  const children = (readResponse.result as { children?: Array<{ remId?: string }> }).children ?? [];
+  const actualOrder = children.map((child) => child.remId).filter((id): id is string => typeof id === 'string');
+  const desiredSequence = desiredOrder.join('|');
+  const actualSequence = actualOrder.filter((id) => desiredOrder.includes(id)).join('|');
+  results.push({
+    ...base,
+    status: actualSequence === desiredSequence ? 'passed' : 'failed',
+    reason:
+      actualSequence === desiredSequence
+        ? 'Disposable reorder children read back in requested order: Reorder C, Reorder A, Reorder B.'
+        : `Disposable reorder readback mismatch. Expected ${desiredSequence}; got ${actualSequence || 'none'}.`,
+    errorCode: actualSequence === desiredSequence ? undefined : 'SDK_ERROR',
+    errorMessage: actualSequence === desiredSequence ? undefined : 'reorder_children readback order mismatch.',
+  });
+  return results;
+}
+
 function healthCheckArgsFor(
   bridgeTool: BridgeToolName,
   options: RunBridgeHealthCheckOptions
@@ -608,6 +705,13 @@ export async function runBridgeHealthCheck(
 
   if (connectedAtStart && mode === 'mutation_on_disposable_rem' && disposableSandboxRemId) {
     results.push(...(await runFormattingHealthSections(
+      hub,
+      disposableSandboxRemId,
+      timeoutMs,
+      options.signal,
+      options.principal
+    )));
+    results.push(...(await runReorderChildrenHealthSection(
       hub,
       disposableSandboxRemId,
       timeoutMs,

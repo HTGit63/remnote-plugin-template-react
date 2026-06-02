@@ -4,11 +4,11 @@ Generated: 2026-06-02
 
 ## Executive Summary
 
-The root and server builds currently pass, but the server build is not deploy-boundary safe. `server/tsconfig.json` still compiles plugin-side `src/bridge/**`, which pulls in plugin handlers and RemNote SDK read/write code into `server/dist/src/**`. Tool registry and docs also drift: `delete_rem_by_id` is in the default core profile, `getHiddenMcpTools()` returns no entries, `exposeDeleteTool` is ignored, `create_folder` remains protocol/call-map/registration code, and docs hard-code stale `47 public tools` claims.
+The prior architecture split is mostly in place: root build, server build, typecheck, and plugin validation pass; server build now emits only `server/**` and `shared/**`; server/shared no longer import the RemNote SDK.
 
-Security is improved from earlier local/hosted work but not production-ready. Hosted dashboard/root routes can expose PID/cwd and live diagnostics, `/diagnostics` is not hosted-admin protected, hosted permission validation enforces scope but not trusted write/delete intent, and diagnostics can still overclaim registry-only callability.
+The current task-specific failures are still real. Direct hosted MCP writes can be blocked in `server/src/tool-permissions.ts` before reaching the same plugin trusted-write route used by health checks. The error is generic `TRUSTED_WRITE_REQUIRED` and does not identify the blocking layer. Diagnostics do not expose a direct-write decision trace. The Nuclear Physics note style preset is absent from protocol schemas, Markdown import options, high-level write tools, and `verify_note_design`.
 
-Markdown importer exists and is wired, but parser/fidelity still need stronger structure/count/pollution verification. Write code split files exist, but they are thin re-export shells, so `src/remnote/write/index.ts` remains a 3454-line god file.
+Additional safety drift remains: `replace_rem` is public while dangerous, direct write tool schemas omit `bridge:trusted_write` from OAuth metadata, `create_folder` is still protocol-callable internally though not public, and the existing Audit Turn 2 doc overclaims readiness.
 
 Codebase map: `docs/audits/codebase-map.md`.
 
@@ -21,127 +21,105 @@ npm run server:build
 PASS - tsc -p server/tsconfig.json completed.
 
 npm run build
-PASS - plugin webpack build completed, with 3 webpack size warnings.
+PASS - plugin webpack build completed with 3 size warnings.
+
+npm run check-types
+PASS - root TypeScript check completed.
+
+npm run validate
+PASS - RemNote manifest validation completed.
 ```
 
-Important caveat:
+Server dist boundary check:
 
 ```text
-server/dist/src/bridge/client.js
-server/dist/src/bridge/handlers.js
-server/dist/src/bridge/pairing.js
-server/dist/src/remnote/read.js
-server/dist/src/remnote/write/index.js
+server/dist/server/src/**
+server/dist/shared/bridge/**
 ```
 
-These outputs prove the server build still compiles plugin-side runtime files despite passing.
+No emitted plugin runtime files were found in server dist.
 
 ## Architecture Boundary Findings
 
-- `server/tsconfig.json` includes `../src/bridge/**/*.ts`.
-- Server files import `../../src/bridge/protocol.js` and `../../src/bridge/markdown-importer.js`.
-- Because `src/bridge/client.ts` imports `handlers.ts`, and `handlers.ts` imports RemNote write/read modules, the server build emits RemNote SDK-dependent plugin runtime files.
-- No `shared/**` directory exists yet.
-- Server package does not list `@remnote/plugin-sdk`, which is correct, but current server build still relies on root-side plugin source availability.
-- `src/remnote/write/*.ts` split modules are not real implementation modules; they re-export from `index.ts`.
-
-## Dependency Graph
-
-Current risk path:
-
-```text
-server/tsconfig include ../src/bridge/**
-  -> src/bridge/client.ts
-  -> src/bridge/handlers.ts
-  -> src/remnote/write/index.ts
-  -> @remnote/plugin-sdk
-```
-
-Required path:
-
-```text
-server/src/** -> shared/bridge/**
-src/** plugin -> shared/bridge/** + @remnote/plugin-sdk
-shared/** -> no SDK, no React, no server internals
-```
-
-## Server/Plugin/Shared Import Violations
-
-Violations found:
-
-```text
-server/src/mcp-server.ts -> ../../src/bridge/protocol.js
-server/src/mcp-tool-map.ts -> ../../src/bridge/protocol.js
-server/src/health-check.ts -> ../../src/bridge/protocol.js
-server/src/bridge-hub.ts -> ../../src/bridge/protocol.js
-server/src/tools/tool-context.ts -> ../../../src/bridge/protocol.js
-server/src/area1-smoke.ts -> ../../src/bridge/markdown-importer.js
-server/src/*smoke.ts and area certs -> ../../src/bridge/protocol.js
-```
-
-No direct `@remnote/plugin-sdk` import was found in `server/src`, but compiled output still contains plugin SDK-dependent files because server build includes plugin bridge source.
+- `server/tsconfig.json` includes `server/src/**/*.ts` and `../shared/**/*.ts`; it excludes plugin runtime paths.
+- `src/bridge/protocol.ts` is now a re-export of `shared/bridge/protocol`.
+- `server/src/**` imports shared protocol/parser from `../../shared/bridge/**`.
+- `shared/**` imports no `@remnote/plugin-sdk`, React, or server internals in the current search.
+- Remaining dense files are maintainability risks but not direct blockers for this task: `server/src/bridge-hub.ts`, `server/src/server/create-http-server.ts`, `src/widgets/bridge-status.tsx`, `server/src/smoke.ts`.
 
 ## Tool Registry Findings
 
-- `delete_rem_by_id` is in `CORE_TIER_TOOLS`; default/core exposes a dangerous delete tool.
-- `getAllPublicMcpToolNames(exposeDeleteTool)` ignores `exposeDeleteTool`.
-- `getHiddenMcpTools()` always returns `[]`.
-- `replace_rem` has `policy: dangerous` but metadata category is `write`, creating a classification mismatch.
-- `create_folder` remains in bridge protocol, map, handler, and MCP registration code; metadata marks unsupported, but registration still exists.
-- `callabilitySource: "registry_only_not_live_execution"` appears in registry summaries and tests expect it, which can sound like callability proof.
-- Docs hard-code old tool counts (`47 public MCP tools`) instead of generating counts from source.
-- `debug_get_raw_rich_text` is in developer diagnostics tier, but full profile also exposes it; normal profile currently excludes it.
+- `create_folder` is not in `MCP_TOOL_REGISTRY`, and metadata marks it unsupported. Compatibility protocol/handler paths still exist.
+- `delete_rem_by_id` is gated, not public by default.
+- Legacy delete tools `delete_rem`, `delete_focused_rem`, and `delete_selected_rem` are absent.
+- `replace_rem` remains public under `advanced_notes` and `full` despite dangerous classification. It should be hidden/gated until stronger guards and verification are complete.
+- `requiredOAuthScopesForTool()` returns only `bridge:read` and `bridge:write` for safe writes, while `validateMcpToolPermission()` later demands `bridge:trusted_write`; ChatGPT discovery metadata can therefore understate requirements.
+- `create_or_replace_note_from_markdown` is public and preferred, but live task evidence says it can partially fail. Current importer has rollback through structured batch but source-fidelity failure still reports rollback not attempted.
+- `getHiddenMcpTools()` reports gated delete and unsupported static tools, but does not explain public-dangerous `replace_rem` as hidden because it is not hidden yet.
+
+## Direct Write Approval Findings
+
+Observed likely mismatch:
+
+```text
+direct MCP call
+  -> hosted auth principal
+  -> validateMcpToolPermission()
+  -> requires bridge:trusted_write and trustedWriteMode=trusted-inside-scope
+  -> blocks with TRUSTED_WRITE_REQUIRED
+  -> plugin trusted-write/scope route is never reached
+```
+
+Health-check write path calls `hub.callPlugin(...)` from an already registered tool and can exercise plugin write permissions directly. Direct MCP tools are blocked earlier by server policy if OAuth scope metadata/session data are stale or incomplete.
+
+Needed fix:
+
+- Treat paired session trusted mode as the source for safe direct writes inside scope, without bypassing scope checks.
+- Keep hosted destructive tools guarded by delete scope and plugin approval.
+- Add structured direct-write decision diagnostics and layer-specific error codes.
 
 ## Markdown Importer Findings
 
-- `create_or_replace_note_from_markdown` is wired through registry, MCP registration, bridge protocol, plugin handler, write executor, and smoke tests.
 - Parser supports H1-H4, paragraphs, blank lines, bullets, numbered lists, inline math, block math, code blocks, and tables-as-text.
-- Fidelity check is still snippet-based: it checks that source snippets appear in output text.
-- Fidelity output lacks required counts for headings/paragraphs/bullets/math/code/table in `verifyMarkdownSourceFidelity`.
-- Pollution Rem detection is handled later in `verifyNoteDesign`, not integrated in parser/source-fidelity report.
-- Rollback exists in structured batch path; Markdown verification failure currently reports `rollbackStatus: "not_attempted"` for source-fidelity failure.
-- Parser tests are local-only and do not require live RemNote, but stronger structural tests are needed.
+- Default Markdown mapping already uses H1 root and H3 section/subsection headings.
+- Parser inserts spacer nodes between headings, but spacer text defaults to a regular space. Nuclear preset requires zero-width-space spacer Rems as root-level siblings between H3 sections.
+- Parser can accidentally insert a spacer before the first section heading; Nuclear preset should avoid leading spacer and ensure spacers are root-level siblings between sections.
+- Style preset fields are absent from schemas and protocol args.
+- `verify_note_design` currently checks explicit `expectedStyleMap`; it does not accept a preset expectation object or compute H1/H3/spacer/math structure automatically.
 
 ## Security Findings
 
-- Hosted OAuth token verifier checks expiry, audience/issuer, pairing approval, and OAuth scopes.
-- `validateMcpToolPermission` checks access scope only. It does not enforce:
-  - `bridge:trusted_write` for `requiresTrustedWrite`
-  - `trustedWriteMode: "trusted-inside-scope"` or approval path
-  - `bridge:delete` plus guard fields for destructive tools
-- `/` renders dashboard with PID, cwd, uptime, recent tool data, and live status without hosted admin protection.
-- `/diagnostics` uses local bearer authorization path; hosted mode needs admin session/secret or local-only restriction.
-- `/health` returns `bridge` and pairing summary; hosted public health should be more minimal.
-- Redaction helper exists, but diagnostics route can expose internal bridge/session data.
-- `render.yaml` requests hosted mode but lacks `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
-- `render.yaml` allowed origins include `https://www.remnote.com` but not `https://remnote.com`.
+- Hosted auth validates bearer presence, expiry, audience/issuer, pairing approval, scope grants, and trusted write mode.
+- Server safe-write policy blocks before plugin route when trusted write grant is absent, but error lacks layer/source context.
+- Destructive tools require `bridge:delete`; `delete_rem_by_id` checks dry-run/guards for real delete.
+- `replace_rem` real writes require only `expectedPlainText` at server layer; pasted task requires stronger parent/ancestor/title guard or hiding. Hiding is safer for this iteration.
+- Diagnostics expose recent requests and pending approval information through MCP diagnostic tool, which is authenticated through MCP flow. Route-level hosted diagnostics still need to remain protected by current server config/tests.
 
 ## Bloat and Dead-Code Findings
 
-Oversized implementation files:
+Oversized source hotspots:
 
 ```text
-3454 src/remnote/write/index.ts
-2348 src/bridge/handlers.ts
-1743 src/bridge/protocol.ts
+1842 server/src/smoke.ts
 1625 src/widgets/bridge-status.tsx
-1295 server/src/bridge-hub.ts
-969 server/src/app.ts
+980 server/src/bridge-hub.ts
+955 server/src/server/create-http-server.ts
+821 server/src/area3-certification.ts
+739 server/src/storage/postgres-store.ts
+723 server/src/health-check.ts
+702 src/bridge/handlers/validation.ts
+700 server/src/dashboard/templates.ts
+684 src/remnote/write/remnoteSdkHelpers.ts
+684 shared/bridge/markdown-importer.ts
 ```
 
-Dead/empty/placeholder:
+Empty files: none found.
 
-```text
-src/services/                    empty directory
-dev-server.err.log               empty log
-watch8090.err.log                empty log
-src/remnote/write/*.ts           barrel placeholders, not true split modules
-docs/final-polish-*.md           stale phase docs
-```
+Stale docs: `docs/audits/audit-turn-2-post-repair.md` currently claims `READY_TO_DEPLOY`; must be replaced after actual post-repair verification.
 
 ## Tests Currently Present/Missing
 
-Present scripts include most requested root commands:
+Present scripts:
 
 ```text
 check-types
@@ -157,86 +135,67 @@ server:test:markdown-importer
 server:test:source-fidelity
 server:test:performance
 server:test:security
-```
-
-Missing:
-
-```text
 server:test:boundaries
 ```
 
-Existing tests assert some registry/importer/profile behavior but do not fail on:
+Missing task-specific coverage:
 
-- server dist emitting plugin runtime files
-- `server/src` importing plugin tree
-- `shared` importing SDK/React/server internals
-- docs tool-count drift
+- `direct-write-trusted-mode-regression`
+- direct server permission decisions for `create_rem`, `apply_structured_note_batch`, `create_polished_note_tree`, `apply_style_plan`, `apply_remnote_command`
+- Nuclear Physics generic style preset dry-run/parser/schema/verification regression
+- `replace_rem` hidden/gated assertion
+- `create_or_replace_note_from_markdown` preset schema support
 
 ## Deployment Config Risks
 
-- Render build command uses `npm install && npm run build`; deterministic `npm ci` is available because `server/package-lock.json` exists.
-- Hosted mode validation requires `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`; `render.yaml` omits it.
-- `REMNOTE_BRIDGE_TOOL_PROFILE` is set to `simple`, which normalizes to `core`; docs should use canonical `core`.
-- Hosted CORS origin list misses bare `https://remnote.com`.
-- Server start command currently matches emitted path `node dist/server/src/index.js`, but build output layout is polluted by `rootDir: ".."`.
+- `render.yaml` uses hosted env vars and includes `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
+- Allowed origins include both `https://chatgpt.com` and RemNote domains.
+- `REMNOTE_BRIDGE_DEPLOYMENT_MODE` is `public_hosted_oauth`; config must normalize this legacy value to hosted.
+- Build command is deterministic (`npm ci && npm run build`) because `server/package-lock.json` exists.
+- Deployment is not ready until direct-write trusted route and style preset tests pass and Audit Turn 2 is updated honestly.
 
 ## Prioritized Fix List
 
-1. Create `shared/bridge/**`, move SDK-free protocol and Markdown importer there, and update imports.
-2. Fix `server/tsconfig.json` include/exclude and add `server:test:boundaries`.
-3. Add boundary script checking imports and `server/dist` output.
-4. Fix registry/profile behavior: remove delete from core, make `exposeDeleteTool` meaningful, make hidden-tool reporting honest, align `replace_rem`, keep `create_folder` unsupported/non-public.
-5. Harden hosted diagnostics/dashboard/health output and hosted write/delete permission checks.
-6. Improve Markdown source-fidelity report counts/structure/pollution checks and tests.
-7. Split `src/remnote/write/index.ts` into real modules or at least move substantial sections out.
-8. Update Render config and deployment docs.
-9. Remove empty placeholder files/directories and stale phase docs, with changelog.
-10. Run all required gates and write Audit Turn 2.
+1. Fix server trusted-write permission routing for safe direct tools so paired trusted mode can reach plugin route.
+2. Add layer-specific direct-write errors and diagnostics fields.
+3. Add `bridge:trusted_write` to safe write OAuth metadata.
+4. Hide/gate `replace_rem` from public tools until stronger guards are implemented.
+5. Add `nuclear_physics_h1_h3_spacer_math` preset types, schemas, Markdown option normalization, and high-level tool fields.
+6. Make Markdown parser insert zero-width spacer siblings between H3 sections for the preset and avoid leading spacer.
+7. Extend `verify_note_design` for preset structure checks.
+8. Add regression tests in existing smoke/certification suites.
+9. Update `LIVE_TOOL_QA_REPORT.md`, `NUCLEAR_NOTE_STYLE_PRESET.md`, and Audit Turn 2.
+10. Run required validation commands and report live-test availability honestly.
 
 ## Files Likely to Modify
 
 ```text
-server/tsconfig.json
-package.json
-server/package.json
-render.yaml
-server/src/*
-server/src/tools/*
-server/src/tool-registry.ts
-server/src/tool-policy.ts
+shared/bridge/protocol-write-args.ts
+shared/bridge/protocol-write-results.ts
+shared/bridge/markdown-importer.ts
 server/src/tool-permissions.ts
-server/src/mcp-tool-map.ts
 server/src/mcp-server.ts
-src/bridge/*
-src/remnote/*
-src/remnote/write/*
-shared/bridge/*
-README.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-DEPLOY_RENDER.md
-docs/development/*
-docs/deployment/*
-docs/security/*
+server/src/tool-policy.ts
+server/src/tool-registry.ts
+server/src/tools/schemas.ts
+server/src/tools/register-write-tools.ts
+server/src/tools/register-formatting-tools.ts
+server/src/tools/register-diagnostic-tools.ts
+server/src/area1-smoke.ts
+server/src/area3-certification.ts
+src/remnote/write/verification.ts
 docs/audits/*
+LIVE_TOOL_QA_REPORT.md
+NUCLEAR_NOTE_STYLE_PRESET.md
 ```
 
 ## Files Likely to Remove
 
-```text
-dev-server.err.log
-watch8090.err.log
-src/services/ if no longer needed
-stale docs/final-polish-*.md if retained information is superseded
-```
-
-Generated build artifacts under `dist/` and `server/dist/` are ignored by git and should not be treated as source removals.
+No source files are planned for removal. Safer path is to hide/gate unsafe public tools instead of deleting compatibility protocol paths.
 
 ## Risks
 
-- Full real split of `src/remnote/write/index.ts` is large and can cause regressions if rushed.
-- Moving protocol imports affects server, plugin, and tests simultaneously.
-- Hosted security route changes may break older dashboard assumptions; tests must pin safe behavior.
-- Manual golden test requires live RemNote plugin access and must not be faked.
-- Docs are very stale; update must avoid claiming production readiness if live hosted/manual proof remains missing.
+- Live RemNote bridge access may be unavailable in this headless environment; live test must not be faked.
+- ChatGPT connector may require reconnect/refresh if OAuth scope metadata changes.
+- Hiding `replace_rem` changes public tool list and may require docs/test updates.
+- Nuclear preset verification depends on RemNote SDK readback for real H1/H3/math/spacer proof; local tests can prove parser/schema only.

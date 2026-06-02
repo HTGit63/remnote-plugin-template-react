@@ -9,6 +9,7 @@ import {
   SERVER_LOCAL_MCP_TOOLS,
   STATIC_SDK_UNSUPPORTED_TOOLS,
 } from '../tool-registry.js';
+import { getDirectWritePolicySnapshot } from '../tool-permissions.js';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
   REM_ID_SCHEMA,
@@ -44,6 +45,7 @@ export function registerDiagnosticTools({
     async () => {
       const diagnostics = hub.getDiagnostics();
       const registry = currentRegistry();
+      const directWrite = getDirectWritePolicySnapshot(principal);
       const serverLocalTools = SERVER_LOCAL_MCP_TOOLS.filter((tool) => registry.publicTools.includes(tool));
       const successfulPluginTools = Array.from(
         new Set(
@@ -93,6 +95,7 @@ export function registerDiagnosticTools({
           ok: true,
           result: {
             ...registry,
+            ...directWrite,
             ...(runtimeInfo ?? {}),
             ...diagnostics,
             pendingRequests: diagnostics.status.pendingRequests,

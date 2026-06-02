@@ -65,6 +65,7 @@ import type {
   VerifyNoteDesignArgs,
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
+import { applyStylePresetToTree } from '../../../shared/bridge/style-presets';
 import {
   RichTextFormattingError,
   applyClozeToRange,
@@ -102,7 +103,7 @@ export async function structuredWriteEngine(
 
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const validationState: TreeValidationState = { nodeCount: 0 };
-  const tree = normalizeStyledNode(args.tree, 1, validationState);
+  const tree = normalizeStyledNode(applyStylePresetToTree(args.tree, args), 1, validationState);
   assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Styled tree');
   const plan = collectStyledTreePlan(tree);
   const createdRemIds: string[] = [];
@@ -407,8 +408,8 @@ export async function applyStructuredNoteBatch(
   }
 
   const validationState: TreeValidationState = { nodeCount: 0 };
-  const root = noteRoot
-    ? normalizeStyledNode(
+  const presetRootInput = noteRoot
+    ? applyStylePresetToTree(
         {
           ...noteRoot,
           children: [
@@ -416,11 +417,20 @@ export async function applyStructuredNoteBatch(
             ...noteChildren,
           ],
         },
+        args
+      )
+    : undefined;
+  const presetChildren = !noteRoot && args.stylePreset
+    ? applyStylePresetToTree({ type: 'rem', text: 'Preset root', children: noteChildren }, args).children ?? []
+    : noteChildren;
+  const root = presetRootInput
+    ? normalizeStyledNode(
+        presetRootInput,
         1,
         validationState
       )
     : undefined;
-  const childNodes = root?.children ?? noteChildren.map((child) => normalizeStyledNode(child, 1, validationState));
+  const childNodes = root?.children ?? presetChildren.map((child) => normalizeStyledNode(child, 1, validationState));
   assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Structured note batch');
   const batchStats = (root ? [root] : childNodes).reduce(
     (acc, node) => {
@@ -647,4 +657,3 @@ export async function applyStructuredNoteBatch(
     });
   }
 }
-

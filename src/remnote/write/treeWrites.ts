@@ -65,6 +65,7 @@ import type {
   VerifyNoteDesignArgs,
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
+import { applyStylePresetToTree } from '../../../shared/bridge/style-presets';
 import { RemnoteWriteError, getPartialExecutionDetails, getSdkErrorMessage } from './writeErrors';
 import { CREATE_TREE_RESULT_CACHE, POLISHED_TREE_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
@@ -162,13 +163,13 @@ export async function createPolishedNoteTree(
     }
   }
 
-  const created = await createStyledRemTree(plugin, {
-    parentId: args.parentId,
-    position: 'end',
-    tree: args.tree,
-    dryRun: args.dryRun,
-    idempotencyKey,
-    maxDepth: args.maxDepth,
+    const created = await createStyledRemTree(plugin, {
+      parentId: args.parentId,
+      position: 'end',
+      tree: applyStylePresetToTree(args.tree, args),
+      dryRun: args.dryRun,
+      idempotencyKey,
+      maxDepth: args.maxDepth,
     maxNodeCount: args.maxNodeCount,
   });
   const stylePlan = args.stylingPlan?.operations?.length
@@ -210,4 +211,3 @@ export async function createPolishedNoteTree(
 
   return result;
 }
-

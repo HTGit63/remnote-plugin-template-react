@@ -11,6 +11,7 @@ import {
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
   MAX_TREE_NODE_COUNT_SCHEMA,
+  NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
   POSITION_SCHEMA,
   PRACTICE_DIRECTION_SCHEMA,
@@ -297,6 +298,7 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       description:
         'Preferred atomic batch writer for approved RemNote note changes. Supports dry-run previews, idempotency, rollback, styled hierarchy, math, and optional verification.',
       inputSchema: z.object({
+        ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
         target: STRUCTURED_NOTE_TARGET_SCHEMA.optional().describe('Preferred target object. Use focused_rem + create_child_tree for normal note writing.'),
         operation: STRUCTURED_NOTE_OPERATION_SCHEMA.describe('Batch operation. create_child_tree is safest for new notes.'),
         parentId: REM_ID_SCHEMA.optional().describe('Legacy parent Rem ID for create_child_tree.'),
@@ -313,10 +315,17 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_structured_note_batch'),
     },
-    async ({ target, operation, parentId, position, root, note, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite, maxDepth, maxNodeCount }) =>
+    async ({ target, operation, parentId, position, root, note, dryRun, idempotencyKey, rollbackOnFailure, verifyAfterWrite, maxDepth, maxNodeCount, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }) =>
       bridgeToolResult(
         () =>
           callPlugin('apply_structured_note_batch', {
+            stylePreset,
+            course,
+            rootHeadingLevel,
+            sectionHeadingLevel,
+            insertSiblingSpacers,
+            spacerText,
+            majorFormulaMode,
             target,
             operation,
             parentId,
@@ -341,6 +350,7 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       description:
         'Preferred tool for creating complete polished RemNote notes with hierarchy, rich styling, math, flashcards, idempotency, and optional post-write verification.',
       inputSchema: z.object({
+        ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
         parentId: REM_ID_SCHEMA.describe('Parent Rem ID for the created polished tree.'),
         tree: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled Rem tree.'),
         stylingPlan: STYLING_PLAN_SCHEMA.optional().describe('Optional post-create style operations with explicit Rem IDs.'),
@@ -353,9 +363,9 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_polished_note_tree'),
     },
-    async ({ parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount }) =>
+    async ({ parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }) =>
       bridgeToolResult(
-        () => callPlugin('create_polished_note_tree', { parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount }),
+        () => callPlugin('create_polished_note_tree', { parentId, tree, stylingPlan, dryRun, verifyAfterWrite, idempotencyKey, maxDepth, maxNodeCount, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }),
         'Create polished note tree request processed.'
       )
   );

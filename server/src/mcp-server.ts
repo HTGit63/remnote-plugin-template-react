@@ -126,7 +126,7 @@ function requiredOAuthScopesForTool(name: string): string[] {
     name.startsWith('clear_') ||
     name.startsWith('apply_')
   ) {
-    return ['bridge:read', 'bridge:write'];
+    return ['bridge:read', 'bridge:write', 'bridge:trusted_write'];
   }
 
   return ['bridge:read'];

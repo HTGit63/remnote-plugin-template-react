@@ -4,10 +4,13 @@ import type {
   MarkdownImportHeadingMapping,
   MarkdownImportLimits,
   MarkdownImportRemnoteLayout,
+  MarkdownImportSafetyOptions,
   MarkdownMathOptions,
+  NoteStylePresetFields,
   RemHeadingLevel,
   StyledRemTreeNode,
 } from './protocol.js';
+import { applyStylePresetToMarkdownArgs, isNuclearPhysicsSpacerNode } from './style-presets.js';
 
 export const DEFAULT_MARKDOWN_IMPORT_LIMITS: Required<MarkdownImportLimits> = {
   maxMarkdownChars: 120000,
@@ -50,7 +53,7 @@ const DEFAULT_FIDELITY_OPTIONS = {
   failOnContentLoss: true,
 } as const;
 
-export interface MarkdownImportParseOptions {
+export interface MarkdownImportParseOptions extends NoteStylePresetFields {
   headingMapping?: MarkdownImportHeadingMapping;
   remnoteLayout?: MarkdownImportRemnoteLayout;
   mathOptions?: MarkdownMathOptions;
@@ -102,6 +105,20 @@ export interface MarkdownSourceFidelityReport {
   pollutionRems: string[];
 }
 
+export interface NormalizedMarkdownImportArgs extends NoteStylePresetFields {
+  parentRemId: string;
+  targetRemId: string;
+  markdownText: string;
+  mode: NonNullable<CreateOrReplaceNoteFromMarkdownArgs['mode']>;
+  duplicatePolicy: NonNullable<CreateOrReplaceNoteFromMarkdownArgs['duplicatePolicy']>;
+  headingMapping: Required<MarkdownImportHeadingMapping>;
+  remnoteLayout: Required<MarkdownImportRemnoteLayout>;
+  mathOptions: Required<MarkdownMathOptions>;
+  fidelityOptions: Required<MarkdownImportFidelityOptions>;
+  safetyOptions: Required<MarkdownImportSafetyOptions>;
+  limits: Required<MarkdownImportLimits>;
+}
+
 type HeadingStackEntry = {
   markdownLevel: number;
   node: StyledRemTreeNode;
@@ -142,53 +159,54 @@ function clampLimit(value: number | undefined, fallback: number, hardMax: number
 }
 
 function normalizeOptions(options: MarkdownImportParseOptions = {}): MarkdownImportPlan['options'] {
+  const presetOptions = applyStylePresetToMarkdownArgs(options as CreateOrReplaceNoteFromMarkdownArgs);
   return {
     headingMapping: {
       ...DEFAULT_HEADING_MAPPING,
-      explicitTitle: options.headingMapping?.explicitTitle?.trim() || '',
-      ...options.headingMapping,
-      rootHeading: options.headingMapping?.rootHeading ?? DEFAULT_HEADING_MAPPING.rootHeading,
-      rootHeadingLevel: options.headingMapping?.rootHeadingLevel ?? DEFAULT_HEADING_MAPPING.rootHeadingLevel,
-      sectionHeadingLevel: options.headingMapping?.sectionHeadingLevel ?? DEFAULT_HEADING_MAPPING.sectionHeadingLevel,
-      subsectionHeadingLevel: options.headingMapping?.subsectionHeadingLevel ?? DEFAULT_HEADING_MAPPING.subsectionHeadingLevel,
+      explicitTitle: presetOptions.headingMapping?.explicitTitle?.trim() || '',
+      ...presetOptions.headingMapping,
+      rootHeading: presetOptions.headingMapping?.rootHeading ?? DEFAULT_HEADING_MAPPING.rootHeading,
+      rootHeadingLevel: presetOptions.headingMapping?.rootHeadingLevel ?? DEFAULT_HEADING_MAPPING.rootHeadingLevel,
+      sectionHeadingLevel: presetOptions.headingMapping?.sectionHeadingLevel ?? DEFAULT_HEADING_MAPPING.sectionHeadingLevel,
+      subsectionHeadingLevel: presetOptions.headingMapping?.subsectionHeadingLevel ?? DEFAULT_HEADING_MAPPING.subsectionHeadingLevel,
     },
     remnoteLayout: {
       ...DEFAULT_LAYOUT,
-      ...options.remnoteLayout,
-      spacerText: options.remnoteLayout?.spacerText ?? DEFAULT_LAYOUT.spacerText,
-      paragraphMode: options.remnoteLayout?.paragraphMode ?? DEFAULT_LAYOUT.paragraphMode,
-      bulletMode: options.remnoteLayout?.bulletMode ?? DEFAULT_LAYOUT.bulletMode,
+      ...presetOptions.remnoteLayout,
+      spacerText: presetOptions.remnoteLayout?.spacerText ?? DEFAULT_LAYOUT.spacerText,
+      paragraphMode: presetOptions.remnoteLayout?.paragraphMode ?? DEFAULT_LAYOUT.paragraphMode,
+      bulletMode: presetOptions.remnoteLayout?.bulletMode ?? DEFAULT_LAYOUT.bulletMode,
     },
     mathOptions: {
       ...DEFAULT_MATH_OPTIONS,
-      ...options.mathOptions,
-      inlineMathDelimiters: options.mathOptions?.inlineMathDelimiters ?? DEFAULT_MATH_OPTIONS.inlineMathDelimiters,
-      blockMathDelimiters: options.mathOptions?.blockMathDelimiters ?? DEFAULT_MATH_OPTIONS.blockMathDelimiters,
-      formulaMode: options.mathOptions?.formulaMode ?? DEFAULT_MATH_OPTIONS.formulaMode,
-      rejectMalformedMath: options.mathOptions?.rejectMalformedMath ?? DEFAULT_MATH_OPTIONS.rejectMalformedMath,
+      ...presetOptions.mathOptions,
+      inlineMathDelimiters: presetOptions.mathOptions?.inlineMathDelimiters ?? DEFAULT_MATH_OPTIONS.inlineMathDelimiters,
+      blockMathDelimiters: presetOptions.mathOptions?.blockMathDelimiters ?? DEFAULT_MATH_OPTIONS.blockMathDelimiters,
+      formulaMode: presetOptions.mathOptions?.formulaMode ?? DEFAULT_MATH_OPTIONS.formulaMode,
+      rejectMalformedMath: presetOptions.mathOptions?.rejectMalformedMath ?? DEFAULT_MATH_OPTIONS.rejectMalformedMath,
     },
     fidelityOptions: {
       ...DEFAULT_FIDELITY_OPTIONS,
-      ...options.fidelityOptions,
-      requireExactText: options.fidelityOptions?.requireExactText ?? DEFAULT_FIDELITY_OPTIONS.requireExactText,
+      ...presetOptions.fidelityOptions,
+      requireExactText: presetOptions.fidelityOptions?.requireExactText ?? DEFAULT_FIDELITY_OPTIONS.requireExactText,
       allowWhitespaceNormalization:
-        options.fidelityOptions?.allowWhitespaceNormalization ?? DEFAULT_FIDELITY_OPTIONS.allowWhitespaceNormalization,
-      preserveSourceOrder: options.fidelityOptions?.preserveSourceOrder ?? DEFAULT_FIDELITY_OPTIONS.preserveSourceOrder,
-      failOnContentLoss: options.fidelityOptions?.failOnContentLoss ?? DEFAULT_FIDELITY_OPTIONS.failOnContentLoss,
+        presetOptions.fidelityOptions?.allowWhitespaceNormalization ?? DEFAULT_FIDELITY_OPTIONS.allowWhitespaceNormalization,
+      preserveSourceOrder: presetOptions.fidelityOptions?.preserveSourceOrder ?? DEFAULT_FIDELITY_OPTIONS.preserveSourceOrder,
+      failOnContentLoss: presetOptions.fidelityOptions?.failOnContentLoss ?? DEFAULT_FIDELITY_OPTIONS.failOnContentLoss,
     },
     limits: {
       maxMarkdownChars: clampLimit(
-        options.limits?.maxMarkdownChars,
+        presetOptions.limits?.maxMarkdownChars,
         DEFAULT_MARKDOWN_IMPORT_LIMITS.maxMarkdownChars,
         HARD_MARKDOWN_IMPORT_LIMITS.maxMarkdownChars
       ),
       maxDepth: clampLimit(
-        options.limits?.maxDepth,
+        presetOptions.limits?.maxDepth,
         DEFAULT_MARKDOWN_IMPORT_LIMITS.maxDepth,
         HARD_MARKDOWN_IMPORT_LIMITS.maxDepth
       ),
       maxNodes: clampLimit(
-        options.limits?.maxNodes,
+        presetOptions.limits?.maxNodes,
         DEFAULT_MARKDOWN_IMPORT_LIMITS.maxNodes,
         HARD_MARKDOWN_IMPORT_LIMITS.maxNodes
       ),
@@ -225,6 +243,17 @@ function spacerNode(index: number, text: string): StyledRemTreeNode {
     type: 'rem',
     text: text || ' ',
   };
+}
+
+function hasPriorHeadingSibling(parent: StyledRemTreeNode): boolean {
+  return Boolean(
+    parent.children?.some(
+      (child) =>
+        !isNuclearPhysicsSpacerNode(child) &&
+        child.style?.headingLevel &&
+        child.style.headingLevel !== 'normal'
+    )
+  );
 }
 
 function addSnippet(snippets: string[], value: string) {
@@ -432,7 +461,11 @@ export function parseMarkdownImportPlan(
       while (stack.length > 1 && stack[stack.length - 1].markdownLevel >= heading.level) {
         stack.pop();
       }
-      if (normalizedOptions.remnoteLayout.insertSpacerBetweenSections && heading.level <= 3) {
+      if (
+        normalizedOptions.remnoteLayout.insertSpacerBetweenSections &&
+        heading.level <= 3 &&
+        hasPriorHeadingSibling(currentParent())
+      ) {
         pushChild(currentParent(), spacerNode(spacerCount += 1, normalizedOptions.remnoteLayout.spacerText));
       }
       const node = pushChild(currentParent(), {
@@ -657,23 +690,32 @@ function normalizeMarkdownImportDuplicatePolicy(
   }
 }
 
-export function normalizeMarkdownImportArgs(args: CreateOrReplaceNoteFromMarkdownArgs): Required<CreateOrReplaceNoteFromMarkdownArgs> {
-  const options = normalizeOptions(args);
+export function normalizeMarkdownImportArgs(args: CreateOrReplaceNoteFromMarkdownArgs): NormalizedMarkdownImportArgs {
+  const presetArgs = applyStylePresetToMarkdownArgs(args);
+  const options = normalizeOptions(presetArgs);
   return {
-    parentRemId: args.parentRemId ?? '',
-    targetRemId: args.targetRemId ?? '',
-    markdownText: args.markdownText,
-    mode: normalizeMarkdownImportMode(args.mode),
-    duplicatePolicy: normalizeMarkdownImportDuplicatePolicy(args.duplicatePolicy),
+    parentRemId: presetArgs.parentRemId ?? '',
+    targetRemId: presetArgs.targetRemId ?? '',
+    markdownText: presetArgs.markdownText,
+    mode: normalizeMarkdownImportMode(presetArgs.mode),
+    duplicatePolicy: normalizeMarkdownImportDuplicatePolicy(presetArgs.duplicatePolicy),
+    stylePreset: presetArgs.stylePreset ?? undefined,
+    course: presetArgs.course ?? '',
+    rootHeadingLevel: presetArgs.rootHeadingLevel ?? 'H1',
+    sectionHeadingLevel: presetArgs.sectionHeadingLevel ?? 'H3',
+    insertSiblingSpacers: presetArgs.insertSiblingSpacers ?? false,
+    spacerText: presetArgs.spacerText ?? '',
+    majorFormulaMode: presetArgs.majorFormulaMode ?? 'mathBlockRem',
+    verifyAfterWrite: presetArgs.verifyAfterWrite ?? true,
     headingMapping: options.headingMapping,
     remnoteLayout: options.remnoteLayout,
     mathOptions: options.mathOptions,
     fidelityOptions: options.fidelityOptions,
     safetyOptions: {
-      dryRun: args.safetyOptions?.dryRun ?? false,
-      verifyAfterWrite: args.safetyOptions?.verifyAfterWrite ?? true,
-      rollbackOnFailure: args.safetyOptions?.rollbackOnFailure ?? true,
-      idempotencyKey: args.safetyOptions?.idempotencyKey ?? '',
+      dryRun: presetArgs.safetyOptions?.dryRun ?? false,
+      verifyAfterWrite: presetArgs.safetyOptions?.verifyAfterWrite ?? true,
+      rollbackOnFailure: presetArgs.safetyOptions?.rollbackOnFailure ?? true,
+      idempotencyKey: presetArgs.safetyOptions?.idempotencyKey ?? '',
     },
     limits: options.limits,
   };

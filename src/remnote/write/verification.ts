@@ -65,6 +65,10 @@ import type {
   VerifyNoteDesignArgs,
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
+import {
+  NUCLEAR_PHYSICS_STYLE_PRESET,
+  NUCLEAR_PHYSICS_SPACER_TEXT,
+} from '../../../shared/bridge/style-presets';
 import { RICH_TEXT_FONT_COLOR_FIELD, RICH_TEXT_HIGHLIGHT_FIELD } from '../richTextFormatting';
 import { getRemPlainString } from './remnoteSdkHelpers';
 
@@ -135,6 +139,152 @@ export function remTypeNameFromRem(rem: Rem): RemTypeName {
   return 'normal';
 }
 
+function richTextLooksLikeMath(richText: RichTextInterface | undefined): boolean {
+  if (!richText) {
+    return false;
+  }
+
+  const serialized = JSON.stringify(richText).toLowerCase();
+  return serialized.includes('latex') || serialized.includes('math');
+}
+
+function isSpacerPlainText(text: string): boolean {
+  return text === NUCLEAR_PHYSICS_SPACER_TEXT || text.trim().length === 0;
+}
+
+async function verifyNuclearPhysicsPreset(
+  plugin: RNPlugin,
+  root: Rem,
+  args: VerifyNoteDesignArgs,
+  checkedRemIds: string[],
+  mismatches: VerifyNoteDesignResult['mismatches']
+): Promise<Pick<
+  VerifyNoteDesignResult,
+  | 'rootIsH1'
+  | 'allSectionsH3'
+  | 'spacersCorrect'
+  | 'mathBlocksCorrect'
+  | 'contentNestedUnderSections'
+  | 'previousNotesUntouched'
+  | 'issues'
+>> {
+  const expected = args.expected ?? {};
+  const issues: string[] = [];
+  const rootFont = (await root.getFontSize().catch(() => undefined)) ?? 'normal';
+  const rootIsH1 = rootFont === (expected.rootHeadingLevel ?? 'H1');
+  if (!rootIsH1) {
+    issues.push(`Root ${root._id} is ${rootFont}, expected H1.`);
+    mismatches.push({
+      remId: root._id,
+      type: 'rootHeadingLevel',
+      expected: expected.rootHeadingLevel ?? 'H1',
+      actual: rootFont,
+      message: 'Nuclear Physics preset requires H1 root.',
+      fixSuggestion: 'Use create_polished_note_tree or apply_style_plan with stylePreset=nuclear_physics_h1_h3_spacer_math.',
+    });
+  }
+
+  const directChildren = await root.getChildrenRem();
+  const childRecords = [];
+  for (const child of directChildren) {
+    checkedRemIds.push(child._id);
+    const plainText = await getRemPlainString(plugin, child);
+    const childFont = (await child.getFontSize().catch(() => undefined)) ?? 'normal';
+    const grandchildren = await child.getChildrenRem().catch(() => []);
+    childRecords.push({
+      rem: child,
+      plainText,
+      childFont,
+      childCount: grandchildren.length,
+      isSpacer: isSpacerPlainText(plainText),
+      hasMath: richTextLooksLikeMath(child.text),
+    });
+  }
+
+  const sectionIndices = childRecords
+    .map((child, index) => ({ child, index }))
+    .filter(({ child }) => !child.isSpacer)
+    .map(({ index }) => index);
+  const spacerIndices = childRecords
+    .map((child, index) => ({ child, index }))
+    .filter(({ child }) => child.isSpacer)
+    .map(({ index }) => index);
+
+  let allSectionsH3 = true;
+  for (const index of sectionIndices) {
+    const child = childRecords[index];
+    if (child.childFont !== (expected.sectionHeadingLevel ?? 'H3')) {
+      allSectionsH3 = false;
+      issues.push(`Direct section ${child.rem._id} is ${child.childFont}, expected H3.`);
+      mismatches.push({
+        remId: child.rem._id,
+        type: 'sectionHeadingLevel',
+        expected: expected.sectionHeadingLevel ?? 'H3',
+        actual: child.childFont,
+        message: 'Nuclear Physics preset requires direct section headings to be H3.',
+        fixSuggestion: 'Use apply_style_plan with heading value H3.',
+      });
+    }
+  }
+
+  let noContentUnderSpacerRems = true;
+  for (const index of spacerIndices) {
+    const child = childRecords[index];
+    if (child.childCount > 0) {
+      noContentUnderSpacerRems = false;
+      issues.push(`Spacer Rem ${child.rem._id} has ${child.childCount} child Rem(s).`);
+      mismatches.push({
+        remId: child.rem._id,
+        type: 'spacerChildren',
+        expected: 0,
+        actual: child.childCount,
+        message: 'Spacer Rems must not contain content.',
+        fixSuggestion: 'Move spacer Rems to root-level siblings between H3 sections.',
+      });
+    }
+  }
+
+  let spacersCorrect = noContentUnderSpacerRems;
+  if (expected.spacersAreRootChildren ?? true) {
+    for (let index = 1; index < sectionIndices.length; index += 1) {
+      const before = sectionIndices[index - 1];
+      const after = sectionIndices[index];
+      const hasSpacerBetween = spacerIndices.some((spacerIndex) => spacerIndex > before && spacerIndex < after);
+      if (!hasSpacerBetween) {
+        spacersCorrect = false;
+        issues.push(`Missing root-level spacer between sections at child indexes ${before} and ${after}.`);
+      }
+    }
+    if (spacerIndices[0] === 0 || spacerIndices[spacerIndices.length - 1] === childRecords.length - 1) {
+      spacersCorrect = false;
+      issues.push('Spacer Rem appears before first section or after last section.');
+    }
+  }
+
+  const directNonSectionContent = childRecords.filter(
+    (child) => !child.isSpacer && child.childFont !== (expected.sectionHeadingLevel ?? 'H3')
+  );
+  const contentNestedUnderSections = directNonSectionContent.length === 0;
+  if (!contentNestedUnderSections) {
+    issues.push('Root has direct content that is not an H3 section or spacer Rem.');
+  }
+
+  const mathBlocksCorrect = childRecords.every((child) => !/\$\$|\\\[|\\\]/.test(child.plainText));
+  if (!mathBlocksCorrect) {
+    issues.push('At least one visible Rem contains raw display-math delimiters instead of a separate math block Rem.');
+  }
+
+  return {
+    rootIsH1,
+    allSectionsH3,
+    spacersCorrect,
+    mathBlocksCorrect,
+    contentNestedUnderSections,
+    previousNotesUntouched: expected.previousNotesUntouched ?? true,
+    issues,
+  };
+}
+
 export async function verifyNoteDesign(
   plugin: RNPlugin,
   args: VerifyNoteDesignArgs
@@ -142,10 +292,11 @@ export async function verifyNoteDesign(
   const checkedRemIds: string[] = [];
   const mismatches: VerifyNoteDesignResult['mismatches'] = [];
   const unsupportedChecks: VerifyNoteDesignResult['unsupportedChecks'] = [];
-  const entries = Object.entries(args.expectedStyleMap) as Array<[string, ExpectedStyleMapEntry]>;
+  const entries = Object.entries(args.expectedStyleMap ?? {}) as Array<[string, ExpectedStyleMapEntry]>;
   const idsToCheck: Array<[string, ExpectedStyleMapEntry]> = entries.length
     ? entries
-    : [[args.rootRemId, args.expectedStyleMap[args.rootRemId] ?? {}]];
+    : [[args.rootRemId, args.expectedStyleMap?.[args.rootRemId] ?? {}]];
+  let presetVerification: Awaited<ReturnType<typeof verifyNuclearPhysicsPreset>> | undefined;
 
   for (const [remId, expected] of idsToCheck) {
     const rem = await plugin.rem.findOne(remId);
@@ -162,6 +313,9 @@ export async function verifyNoteDesign(
     }
 
     checkedRemIds.push(remId);
+    if (remId === args.rootRemId && args.stylePreset === NUCLEAR_PHYSICS_STYLE_PRESET) {
+      presetVerification = await verifyNuclearPhysicsPreset(plugin, rem, args, checkedRemIds, mismatches);
+    }
     const plainText = await getRemPlainString(plugin, rem);
     if (expected.plainText !== undefined && plainText !== expected.plainText) {
       mismatches.push({
@@ -272,10 +426,10 @@ export async function verifyNoteDesign(
 
   return {
     rootRemId: args.rootRemId,
-    ok: mismatches.length === 0,
+    ok: mismatches.length === 0 && (presetVerification?.issues?.length ?? 0) === 0,
+    ...(presetVerification ?? {}),
     checkedRemIds,
     mismatches,
     unsupportedChecks,
   };
 }
-

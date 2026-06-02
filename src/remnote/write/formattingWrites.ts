@@ -443,6 +443,12 @@ async function applyOneStyleOperation(
     operation.color;
   switch (operation.type) {
     case 'heading':
+      if (operation.value && operation.headingLevel && headingLevelFromString(operation.value) !== operation.headingLevel) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'heading operation value conflicts with headingLevel.', {
+          value: operation.value,
+          headingLevel: operation.headingLevel,
+        });
+      }
       if (!operationValue) {
         throw new RemnoteWriteError('INVALID_ARGS', 'heading operation requires headingLevel.');
       }
@@ -603,4 +609,3 @@ export async function applyStylePlan(
   }
   return result;
 }
-

@@ -207,7 +207,7 @@ export function getStaticScopeTargetIds(request: BridgeRequest): string[] {
     case 'verify_note_design':
       return uniqueRemIds([
         (request.args as VerifyNoteDesignArgs).rootRemId,
-        ...Object.keys((request.args as VerifyNoteDesignArgs).expectedStyleMap),
+        ...Object.keys((request.args as VerifyNoteDesignArgs).expectedStyleMap ?? {}),
       ]);
     case 'apply_remnote_command':
       return getCommandStaticScopeTargetIds(request.args as ApplyRemnoteCommandArgs);

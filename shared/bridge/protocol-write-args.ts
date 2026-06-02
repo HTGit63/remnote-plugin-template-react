@@ -22,6 +22,19 @@ export interface CreateFolderArgs {
   markdown: string;
 }
 
+export type NoteStylePreset = 'nuclear_physics_h1_h3_spacer_math';
+
+export interface NoteStylePresetFields {
+  stylePreset?: NoteStylePreset;
+  course?: string;
+  rootHeadingLevel?: 'H1';
+  sectionHeadingLevel?: 'H3';
+  insertSiblingSpacers?: boolean;
+  spacerText?: string;
+  majorFormulaMode?: 'mathBlockRem';
+  verifyAfterWrite?: boolean;
+}
+
 export interface UpdateRemArgs {
   remId: string;
   markdown: string;
@@ -213,7 +226,7 @@ export interface ClearRemFormattingArgs {
   remId: string;
 }
 
-export interface CreateStyledRemTreeArgs {
+export interface CreateStyledRemTreeArgs extends NoteStylePresetFields {
   parentId: string;
   position?: 'start' | 'end';
   tree: StyledRemTreeNode;
@@ -274,7 +287,7 @@ export interface StructuredNotePayload {
   children?: StyledRemTreeNode[];
 }
 
-export interface ApplyStructuredNoteBatchArgs {
+export interface ApplyStructuredNoteBatchArgs extends NoteStylePresetFields {
   target?: StructuredNoteTarget;
   operation?: StructuredNoteOperation;
   parentId?: string;
@@ -315,7 +328,7 @@ export interface StylingPlan {
   idempotencyKey?: string;
 }
 
-export interface CreatePolishedNoteTreeArgs {
+export interface CreatePolishedNoteTreeArgs extends NoteStylePresetFields {
   parentId: string;
   tree: StyledRemTreeNode;
   stylingPlan?: StylingPlan;
@@ -380,7 +393,7 @@ export interface MarkdownImportLimits {
   maxNodes?: number;
 }
 
-export interface CreateOrReplaceNoteFromMarkdownArgs {
+export interface CreateOrReplaceNoteFromMarkdownArgs extends NoteStylePresetFields {
   parentRemId?: string;
   targetRemId?: string;
   markdownText: string;
@@ -394,7 +407,7 @@ export interface CreateOrReplaceNoteFromMarkdownArgs {
   limits?: MarkdownImportLimits;
 }
 
-export interface ApplyStylePlanArgs {
+export interface ApplyStylePlanArgs extends NoteStylePresetFields {
   operations: StylingPlanOperation[];
   continueOnError?: boolean;
   verifyAfterWrite?: boolean;
@@ -425,14 +438,25 @@ export interface ExpectedStyleMapEntry {
 
 export type ExpectedStyleMap = Record<string, ExpectedStyleMapEntry>;
 
-export interface VerifyNoteDesignArgs {
+export interface NuclearPhysicsStyleExpected {
+  rootHeadingLevel?: 'H1';
+  sectionHeadingLevel?: 'H3';
+  spacersAreRootChildren?: boolean;
+  mathBlocksAreSeparateRems?: boolean;
+  noContentUnderSpacerRems?: boolean;
+  contentNestedUnderSections?: boolean;
+  previousNotesUntouched?: boolean;
+}
+
+export interface VerifyNoteDesignArgs extends NoteStylePresetFields {
   rootRemId: string;
-  expectedStyleMap: ExpectedStyleMap;
+  expectedStyleMap?: ExpectedStyleMap;
   expectations?: Array<{ remId: string } & ExpectedStyleMapEntry>;
   expectedStyles?: Array<{
     remId: string;
     expected: ExpectedStyleMapEntry;
   }>;
+  expected?: NuclearPhysicsStyleExpected;
 }
 
 export interface CreateFlashcardArgs {
@@ -467,4 +491,3 @@ export interface CreateListAnswerCardArgs {
   direction?: PracticeDirection;
   idempotencyKey?: string;
 }
-

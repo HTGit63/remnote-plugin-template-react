@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import {
+  NUCLEAR_PHYSICS_SPACER_TEXT,
+  NUCLEAR_PHYSICS_STYLE_PRESET,
+} from '../../../shared/bridge/protocol.js';
 
 export const REM_ID_SCHEMA = z.string().trim().min(1).max(256);
 export const MARKDOWN_SCHEMA = z.string().trim().min(1).max(20000);
@@ -34,6 +38,17 @@ export const COLOR_SCHEMA = z.enum([
   'Pink',
 ]);
 export const HEADING_LEVEL_SCHEMA = z.enum(['H1', 'H2', 'H3', 'normal']);
+export const NOTE_STYLE_PRESET_SCHEMA = z.literal(NUCLEAR_PHYSICS_STYLE_PRESET);
+export const NOTE_STYLE_PRESET_FIELDS_SCHEMA = {
+  stylePreset: NOTE_STYLE_PRESET_SCHEMA.optional().describe('Reusable note style preset.'),
+  course: z.string().trim().min(1).max(120).default('Nuclear Physics I').optional(),
+  rootHeadingLevel: z.literal('H1').default('H1').optional(),
+  sectionHeadingLevel: z.literal('H3').default('H3').optional(),
+  insertSiblingSpacers: z.boolean().default(true).optional(),
+  spacerText: z.string().max(10).default(NUCLEAR_PHYSICS_SPACER_TEXT).optional(),
+  majorFormulaMode: z.literal('mathBlockRem').default('mathBlockRem').optional(),
+  verifyAfterWrite: z.boolean().default(true).optional(),
+};
 export const REM_TYPE_SCHEMA = z.enum(['normal', 'concept', 'descriptor']);
 export const REM_STYLE_SCHEMA = z
   .object({
@@ -313,6 +328,7 @@ export const MARKDOWN_IMPORT_LIMITS_SCHEMA = z.object({
 });
 
 export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
+  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   parentRemId: REM_ID_SCHEMA.optional().describe('Parent Rem ID for mode=create_child.'),
   targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for append/replace/update modes.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved; no summarization or compression.'),
@@ -346,13 +362,42 @@ const STYLE_SPAN_SELECTOR_SCHEMA = {
   occurrence: z.number().int().min(1).max(100).default(1).optional(),
 };
 
-export const STYLE_PLAN_OPERATION_SCHEMA = z.discriminatedUnion('type', [
-  z.object({
+const HEADING_STYLE_PLAN_OPERATION_SCHEMA = z
+  .object({
     ...STYLE_OPERATION_BASE_SCHEMA,
     type: z.literal('heading'),
-    headingLevel: HEADING_LEVEL_SCHEMA.describe('Heading level to apply.'),
+    headingLevel: HEADING_LEVEL_SCHEMA.optional().describe('Heading level to apply.'),
     value: z.string().trim().min(1).max(1000).optional().describe('Legacy alias for headingLevel.'),
-  }),
+  })
+  .superRefine((value, ctx) => {
+    const valueHeading = value.value as z.infer<typeof HEADING_LEVEL_SCHEMA> | undefined;
+    if (!value.headingLevel && !value.value) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'heading operation requires headingLevel or value.',
+        path: ['headingLevel'],
+      });
+      return;
+    }
+    if (value.value && !HEADING_LEVEL_SCHEMA.safeParse(value.value).success) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'heading value must be H1, H2, H3, or normal.',
+        path: ['value'],
+      });
+      return;
+    }
+    if (value.headingLevel && valueHeading && value.headingLevel !== valueHeading) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'headingLevel and value conflict.',
+        path: ['value'],
+      });
+    }
+  });
+
+export const STYLE_PLAN_OPERATION_SCHEMA = z.union([
+  HEADING_STYLE_PLAN_OPERATION_SCHEMA,
   z.object({
     ...STYLE_OPERATION_BASE_SCHEMA,
     type: z.literal('whole_rem_highlight'),
@@ -395,6 +440,7 @@ export const STYLE_PLAN_OPERATION_SCHEMA = z.discriminatedUnion('type', [
 ]);
 
 export const STYLING_PLAN_SCHEMA = z.object({
+  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).max(100).optional(),
   dryRun: DRY_RUN_SCHEMA.describe('Validate styling operations without writing.'),
   idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate post-create styling plans.'),
@@ -438,4 +484,14 @@ export const EXPECTED_STYLE_EXPECTATION_SCHEMA = z.object({
 
 export const EXPECTED_STYLE_PUBLIC_EXPECTATION_SCHEMA = EXPECTED_STYLE_MAP_ENTRY_SCHEMA.extend({
   remId: REM_ID_SCHEMA.describe('Rem ID whose design should match this expectation.'),
+});
+
+export const NUCLEAR_PHYSICS_STYLE_EXPECTED_SCHEMA = z.object({
+  rootHeadingLevel: z.literal('H1').default('H1').optional(),
+  sectionHeadingLevel: z.literal('H3').default('H3').optional(),
+  spacersAreRootChildren: z.boolean().default(true).optional(),
+  mathBlocksAreSeparateRems: z.boolean().default(true).optional(),
+  noContentUnderSpacerRems: z.boolean().default(true).optional(),
+  contentNestedUnderSections: z.boolean().default(true).optional(),
+  previousNotesUntouched: z.boolean().default(true).optional(),
 });

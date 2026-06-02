@@ -1,5 +1,6 @@
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { ChatGptAccessScope } from './storage/types.js';
+import type { PermissionMode, PermissionScope } from '../../shared/bridge/protocol.js';
 
 export type ToolPermissionCategory = 'read' | 'write' | 'destructive' | 'status';
 
@@ -11,6 +12,31 @@ export interface ToolPermission {
   alwaysRequirePluginApproval?: boolean;
   disabled?: boolean;
 }
+
+export type DirectWritePolicy = 'allowed' | 'blocked';
+export type DirectWriteLayer =
+  | 'direct_mcp_tool'
+  | 'server_policy'
+  | 'plugin_permission'
+  | 'health_check_internal';
+
+export interface TrustedWriteDecision {
+  tool: string;
+  allowed: boolean;
+  policy: DirectWritePolicy;
+  code: string | null;
+  layer: DirectWriteLayer;
+  reason: string;
+  permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
+  trustedWriteModeEffective: boolean;
+  oauthWriteScope: boolean;
+  oauthTrustedWriteScope: boolean;
+  writeRoutingSource: 'direct_mcp_tool';
+  decidedAt: string;
+}
+
+let lastTrustedWriteDecision: TrustedWriteDecision | null = null;
 
 const scopeRank: Record<ChatGptAccessScope, number> = {
   'focused-rem-only': 0,
@@ -72,10 +98,58 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   delete_rem_by_id: { toolName: 'delete_rem_by_id', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true },
 };
 
+function permissionModeForPrincipal(principal: AuthenticatedPrincipal): PermissionMode {
+  return principal.trustedWriteMode === 'trusted-inside-scope' ? 'trusted_writes' : 'confirm_writes';
+}
+
+function permissionScopeForPrincipal(principal: AuthenticatedPrincipal): PermissionScope {
+  switch (principal.accessScope) {
+    case 'focused-rem-only':
+      return 'focused_rem_only';
+    case 'current-rem-tree':
+      return 'focused_rem_and_descendants';
+    case 'full-kb':
+      return 'workspace_allowed';
+    default:
+      return 'focused_rem_only';
+  }
+}
+
+function recordTrustedWriteDecision(decision: Omit<TrustedWriteDecision, 'decidedAt'>): TrustedWriteDecision {
+  lastTrustedWriteDecision = {
+    ...decision,
+    decidedAt: new Date().toISOString(),
+  };
+  return lastTrustedWriteDecision;
+}
+
+export function getLastTrustedWriteDecision(): TrustedWriteDecision | null {
+  return lastTrustedWriteDecision;
+}
+
+export function getDirectWritePolicySnapshot(principal?: AuthenticatedPrincipal) {
+  const permissionMode = principal ? permissionModeForPrincipal(principal) : 'confirm_writes';
+  const permissionScope = principal ? permissionScopeForPrincipal(principal) : 'focused_rem_only';
+  const scopeGrants = new Set(principal?.scopeGrants ?? []);
+  const trustedWriteModeEffective = principal?.trustedWriteMode === 'trusted-inside-scope';
+  return {
+    directWritePolicy: trustedWriteModeEffective || scopeGrants.has('bridge:write') ? 'allowed' : 'blocked',
+    directWriteBlockReason:
+      trustedWriteModeEffective || scopeGrants.has('bridge:write')
+        ? null
+        : 'No authenticated principal with bridge:write scope is available for direct MCP writes.',
+    trustedWriteModeEffective,
+    permissionMode,
+    permissionScope,
+    writeRoutingSource: 'direct_mcp_tool',
+    lastTrustedWriteDecision,
+  };
+}
+
 export function validateMcpToolPermission(
   body: unknown,
   principal: AuthenticatedPrincipal
-): { ok: true } | { ok: false; error: string; auditReason: string } {
+): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; decision?: TrustedWriteDecision } {
   if (principal.authMode !== 'hosted_oauth') {
     return { ok: true };
   }
@@ -99,6 +173,8 @@ export function validateMcpToolPermission(
       ok: false,
       error: 'This RemNote tool is disabled for safety.',
       auditReason: 'tool_disabled',
+      code: 'TOOL_HIDDEN_BY_PROFILE',
+      layer: 'server_policy',
     };
   }
 
@@ -108,6 +184,8 @@ export function validateMcpToolPermission(
       ok: false,
       error: 'This tool requires a broader RemNote access scope. Reconnect and approve the required scope.',
       auditReason: 'insufficient_remnote_access_scope',
+      code: 'OUT_OF_SCOPE',
+      layer: 'server_policy',
     };
   }
 
@@ -118,11 +196,38 @@ export function validateMcpToolPermission(
       : {};
 
   if (permission.requiresTrustedWrite) {
-    if (!scopeGrants.has('bridge:trusted_write') || principal.trustedWriteMode !== 'trusted-inside-scope') {
+    const trustedWriteModeEffective = principal.trustedWriteMode === 'trusted-inside-scope';
+    const hasWriteScope = scopeGrants.has('bridge:write');
+    const hasTrustedWriteScope = scopeGrants.has('bridge:trusted_write');
+    const allowed = hasWriteScope;
+    const decision = recordTrustedWriteDecision({
+      tool: request.params.name,
+      allowed,
+      policy: allowed ? 'allowed' : 'blocked',
+      code: allowed ? null : 'INSUFFICIENT_SCOPE',
+      layer: allowed ? 'direct_mcp_tool' : 'server_policy',
+      reason: allowed
+        ? trustedWriteModeEffective
+          ? hasTrustedWriteScope
+            ? 'trusted_writes permits safe write inside approved scope'
+            : 'paired plugin trusted_writes permits safe write inside approved scope; connector should refresh to request bridge:trusted_write scope'
+          : 'confirm_writes direct route allowed; RemNote plugin approval may be required'
+        : 'SERVER_POLICY_BLOCKED: Direct safe write requires bridge:write scope.',
+      permissionMode: permissionModeForPrincipal(principal),
+      permissionScope: permissionScopeForPrincipal(principal),
+      trustedWriteModeEffective,
+      oauthWriteScope: hasWriteScope,
+      oauthTrustedWriteScope: hasTrustedWriteScope,
+      writeRoutingSource: 'direct_mcp_tool',
+    });
+    if (!allowed) {
       return {
         ok: false,
-        error: 'TRUSTED_WRITE_REQUIRED: This write requires trusted write approval for the approved RemNote scope.',
-        auditReason: 'trusted_write_required',
+        error: 'SERVER_POLICY_BLOCKED: INSUFFICIENT_SCOPE: Direct safe write requires bridge:write scope.',
+        auditReason: 'missing_write_scope',
+        code: 'INSUFFICIENT_SCOPE',
+        layer: 'server_policy',
+        decision,
       };
     }
   }
@@ -133,6 +238,8 @@ export function validateMcpToolPermission(
         ok: false,
         error: 'INSUFFICIENT_SCOPE: This destructive tool requires bridge:delete.',
         auditReason: 'missing_delete_scope',
+        code: 'INSUFFICIENT_SCOPE',
+        layer: 'server_policy',
       };
     }
 
@@ -145,6 +252,8 @@ export function validateMcpToolPermission(
           error:
             'INVALID_ARGS: Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId.',
           auditReason: 'missing_delete_guard',
+          code: 'INVALID_ARGS',
+          layer: 'server_policy',
         };
       }
     }
@@ -156,6 +265,8 @@ export function validateMcpToolPermission(
           ok: false,
           error: 'INVALID_ARGS: Real replace_rem requires expectedPlainText guard.',
           auditReason: 'missing_replace_guard',
+          code: 'INVALID_ARGS',
+          layer: 'server_policy',
         };
       }
     }

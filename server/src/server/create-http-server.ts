@@ -887,7 +887,12 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         statusCode: 403,
         reason: toolPermission.auditReason,
       });
-      writeJson(res, 403, { error: toolPermission.error });
+      writeJson(res, 403, {
+        error: toolPermission.error,
+        code: toolPermission.code,
+        layer: toolPermission.layer,
+        directWriteDecision: toolPermission.decision,
+      });
       return;
     }
 

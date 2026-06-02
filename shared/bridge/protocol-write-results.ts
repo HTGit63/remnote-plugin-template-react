@@ -301,6 +301,13 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
 export interface VerifyNoteDesignResult {
   rootRemId: string;
   ok: boolean;
+  rootIsH1?: boolean;
+  allSectionsH3?: boolean;
+  spacersCorrect?: boolean;
+  mathBlocksCorrect?: boolean;
+  contentNestedUnderSections?: boolean;
+  previousNotesUntouched?: boolean;
+  issues?: string[];
   checkedRemIds: string[];
   mismatches: Array<{
     remId: string;

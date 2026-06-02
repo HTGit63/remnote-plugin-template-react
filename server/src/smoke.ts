@@ -21,6 +21,19 @@ const fakeRem: SerializedRem = {
   hasChildren: false,
 };
 
+interface MockChildRem {
+  remId: string;
+  title: string;
+  frontText: string;
+  plainText: string;
+  breadcrumbs: string[];
+  index: number;
+  hasChildren: boolean;
+  type: string;
+}
+
+const mockChildrenByParent = new Map<string, MockChildRem[]>();
+
 type MockBridgeResponder = (request: BridgeRequest, socket: WebSocket) => BridgeResponse | undefined;
 type MockCancelHandler = (request: BridgeCancelRequest) => void;
 
@@ -147,7 +160,8 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           hasChildren: false,
           type: 'rem',
         },
-      ];
+        ...(mockChildrenByParent.get(request.args.parentRemId) ?? []),
+      ].map((child, index) => ({ ...child, index }));
       const maxChildren =
         typeof request.args.maxChildren === 'number' ? request.args.maxChildren : allChildren.length;
       const children = allChildren.slice(0, maxChildren);
@@ -278,17 +292,44 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     case 'create_rem':
+    {
+      const parentId = typeof request.args.parentId === 'string' ? request.args.parentId : null;
+      const markdown = typeof request.args.markdown === 'string' ? request.args.markdown : 'Created Rem';
+      const idempotencyKey = typeof request.args.idempotencyKey === 'string' ? request.args.idempotencyKey : '';
+      const isReorderHealthChild = idempotencyKey.startsWith('health-reorder-');
+      const createdRemId = isReorderHealthChild
+        ? `rem-${markdown.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`
+        : 'rem-created-1';
+      if (parentId && isReorderHealthChild) {
+        const siblings = mockChildrenByParent.get(parentId) ?? [];
+        if (!siblings.some((child) => child.remId === createdRemId)) {
+          mockChildrenByParent.set(parentId, [
+            ...siblings,
+            {
+              remId: createdRemId,
+              title: markdown,
+              frontText: markdown,
+              plainText: markdown,
+              breadcrumbs: [fakeRem.frontText, markdown],
+              index: siblings.length,
+              hasChildren: false,
+              type: 'rem',
+            },
+          ]);
+        }
+      }
       return {
         id: request.id,
         ok: true,
         result: {
-          createdRemId: 'rem-created-1',
-          parentId: request.args.parentId ?? null,
-          insertIndex: request.args.parentId ? 2 : undefined,
-          insertPosition: request.args.parentId ? 'end' : undefined,
+          createdRemId,
+          parentId,
+          insertIndex: parentId ? 2 : undefined,
+          insertPosition: parentId ? 'end' : undefined,
           status: 'created',
         },
       };
+    }
     case 'create_document':
       return {
         id: request.id,
@@ -340,6 +381,18 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     case 'reorder_children':
+    {
+      const siblings = mockChildrenByParent.get(request.args.parentRemId) ?? [];
+      const byId = new Map(siblings.map((child) => [child.remId, child]));
+      const orderedIds = request.args.orderedChildRemIds.filter((id: unknown): id is string => typeof id === 'string');
+      const ordered = orderedIds.map((id) => byId.get(id)).filter((child): child is MockChildRem => Boolean(child));
+      const remaining = siblings.filter((child) => !orderedIds.includes(child.remId));
+      if (ordered.length > 0) {
+        mockChildrenByParent.set(
+          request.args.parentRemId,
+          [...ordered, ...remaining].map((child, index) => ({ ...child, index }))
+        );
+      }
       return {
         id: request.id,
         ok: true,
@@ -351,6 +404,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           status: 'reordered',
         },
       };
+    }
     case 'replace_rem':
       return {
         id: request.id,
@@ -661,7 +715,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         result: {
           rootRemId: request.args.rootRemId,
           ok: true,
-          checkedRemIds: Object.keys(request.args.expectedStyleMap),
+          checkedRemIds: Object.keys(request.args.expectedStyleMap ?? { [request.args.rootRemId]: {} }),
           mismatches: [],
           unsupportedChecks: [],
         },
@@ -1400,8 +1454,8 @@ try {
       markdown: 'Replaced smoke Rem',
     })
   );
-  if (!replace.includes(fakeRem.remId)) {
-    throw new Error('replace_rem did not return replaced Rem ID.');
+  if (!replace.includes('UNKNOWN_TOOL')) {
+    throw new Error('replace_rem must stay off the normal MCP callable surface.');
   }
 
   const move = JSON.stringify(

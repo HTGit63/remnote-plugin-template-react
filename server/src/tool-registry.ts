@@ -57,7 +57,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'create_document', exposure: 'public' },
   { name: 'append_to_rem', exposure: 'public' },
   { name: 'update_rem', exposure: 'public' },
-  { name: 'replace_rem', exposure: 'public' },
+  { name: 'replace_rem', exposure: 'gated', hiddenReason: 'replace_rem is hidden until replacement guards and readback verification are proven safe.' },
   { name: 'move_rem', exposure: 'public' },
   { name: 'reorder_children', exposure: 'public' },
   { name: 'create_rem_tree', exposure: 'public' },
@@ -94,6 +94,7 @@ export function getAllPublicMcpToolNames(exposeDeleteTool = false): string[] {
   }
   const names = MCP_TOOL_REGISTRY.filter((tool) => {
     if (tool.exposure === 'public') return true;
+    if (tool.name === 'replace_rem') return false;
     return exposeDeleteTool && tool.name === 'delete_rem_by_id';
   }).map((tool) => tool.name);
   allPublicToolCache.set(cacheKey, names);

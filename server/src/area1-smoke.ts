@@ -28,7 +28,17 @@ import {
   parseMarkdownImportPlan,
   verifyMarkdownSourceFidelity,
 } from '../../shared/bridge/markdown-importer.js';
-import type { CreateOrReplaceNoteFromMarkdownArgs } from '../../shared/bridge/protocol.js';
+import {
+  applyStylePresetToTree,
+  NUCLEAR_PHYSICS_SPACER_TEXT,
+  NUCLEAR_PHYSICS_STYLE_PRESET,
+  type CreateOrReplaceNoteFromMarkdownArgs,
+} from '../../shared/bridge/protocol.js';
+import {
+  getLastTrustedWriteDecision,
+  validateMcpToolPermission,
+} from './tool-permissions.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 
 const mode = process.argv[2] ?? 'all';
 const removedDeleteTools = [
@@ -103,6 +113,8 @@ function checkFullAndMetadata() {
 
 function checkSchemas() {
   assert(STYLE_PLAN_OPERATION_SCHEMA.safeParse({ remId: 'r1', type: 'heading', headingLevel: 'H2' }).success, 'heading style op schema should use headingLevel.');
+  assert(STYLE_PLAN_OPERATION_SCHEMA.safeParse({ remId: 'r1', type: 'heading', value: 'H3' }).success, 'heading style op schema should accept value-only alias.');
+  assert(!STYLE_PLAN_OPERATION_SCHEMA.safeParse({ remId: 'r1', type: 'heading', headingLevel: 'H2', value: 'H3' }).success, 'heading style op schema should reject conflicting value and headingLevel.');
   assert(STYLE_PLAN_OPERATION_SCHEMA.safeParse({ remId: 'r1', type: 'text_color_span', text: 'Bridge', color: 'Blue' }).success, 'text color style op schema should use color.');
   assert(STYLE_PLAN_OPERATION_SCHEMA.safeParse({ remId: 'r1', type: 'whole_rem_highlight', highlightColor: 'Yellow' }).success, 'highlight style op schema should use highlightColor.');
   assert(STYLED_REM_TREE_NODE_SCHEMA.safeParse({ clientNodeId: 'n1', text: 'Root', children: [{ clientNodeId: 'n2', text: 'Child' }] }).success, 'styled tree schema should accept clientNodeId.');
@@ -111,6 +123,7 @@ function checkSchemas() {
   assert(REM_STYLE_SCHEMA.safeParse({ headingLevel: 'H1', textColor: 'blue', highlightColor: 'yellow', remType: 'concept' }).success, 'canonical style schema should accept textColor/highlightColor/remType.');
   assert(REM_STYLE_SCHEMA.safeParse({ headingLevel: 'H3', color: 'blue', highlight: 'yellow', type: 'descriptor' }).success, 'style schema should accept legacy aliases for internal normalization.');
   assert(CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA.safeParse(markdownImportArgs(true)).success, 'markdown importer schema should accept required bulk note shape.');
+  assert(CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA.safeParse({ ...markdownImportArgs(true), stylePreset: NUCLEAR_PHYSICS_STYLE_PRESET }).success, 'markdown importer schema should accept nuclear physics preset.');
   assert(TREE_DEPTH_SCHEMA.parse(undefined) === 8, 'tree maxDepth default should be 8.');
   assert(MAX_TREE_NODE_COUNT_SCHEMA.parse(undefined) === 200, 'tree maxNodeCount default should be 200.');
 }
@@ -192,6 +205,133 @@ function checkMarkdownImporter() {
     rejectedBadMode = true;
   }
   assert(rejectedBadMode, 'markdown importer should reject unknown import modes before execution.');
+}
+
+function nuclearStyleSample(): string {
+  return [
+    '# X.Y - MCP Nuclear Physics Style Regression',
+    '',
+    '### Physical Basis',
+    '',
+    'This disposable note verifies that the MCP can create a Nuclear Physics note with correct structure.',
+    '',
+    '### Definitions and Core Quantities',
+    '',
+    'Let \\(A\\) represent mass number and \\(Z\\) represent atomic number.',
+    '',
+    '\\[',
+    'A = Z + N',
+    '\\]',
+    '',
+    '### Mathematical Setup',
+    '',
+    'For a simple nonrelativistic kinetic-energy expression,',
+    '',
+    '$$',
+    'E_k = \\frac{1}{2}mv^2',
+    '$$',
+    '',
+    '### Interpretation',
+    '',
+    'The formula shows that kinetic energy depends quadratically on speed.',
+    '',
+    '### Common Error Patterns',
+    '',
+    'Students often confuse mass number \\(A\\) with atomic number \\(Z\\).',
+  ].join('\n');
+}
+
+function checkNuclearPhysicsStylePreset() {
+  const plan = parseMarkdownImportPlan(nuclearStyleSample(), {
+    stylePreset: NUCLEAR_PHYSICS_STYLE_PRESET,
+  });
+  assert(plan.tree.style?.headingLevel === 'H1', 'nuclear preset root must be H1.');
+  const children = plan.tree.children ?? [];
+  const sectionChildren = children.filter((child) => child.text !== NUCLEAR_PHYSICS_SPACER_TEXT);
+  const spacerChildren = children.filter((child) => child.text === NUCLEAR_PHYSICS_SPACER_TEXT);
+  assert(sectionChildren.length === 5, 'nuclear preset should preserve five H3 sections.');
+  assert(spacerChildren.length === 4, 'nuclear preset should insert spacer siblings between five sections.');
+  assert(children[0].text !== NUCLEAR_PHYSICS_SPACER_TEXT, 'nuclear preset must not insert leading spacer.');
+  assert(children[children.length - 1].text !== NUCLEAR_PHYSICS_SPACER_TEXT, 'nuclear preset must not insert trailing spacer.');
+  for (const child of sectionChildren) {
+    assert(child.style?.headingLevel === 'H3', `nuclear section ${child.text ?? child.title} must be H3.`);
+    assert((child.children ?? []).every((grandchild) => grandchild.text !== NUCLEAR_PHYSICS_SPACER_TEXT), 'spacers must not be nested inside H3 sections.');
+  }
+  assert(plan.stats.mathBlockCount >= 2, 'nuclear preset sample should preserve at least two math block Rems.');
+  assert(markdownImportOutputTextFromTree(plan.tree).includes('\\(A\\)'), 'nuclear preset should preserve inline math text.');
+
+  const transformed = applyStylePresetToTree(
+    {
+      text: 'X.Y - Structured Preset',
+      children: [
+        { text: 'Physical Basis', children: [{ text: 'Content.' }] },
+        { text: 'Interpretation', children: [{ text: 'Meaning.' }] },
+      ],
+    },
+    { stylePreset: NUCLEAR_PHYSICS_STYLE_PRESET }
+  );
+  assert(transformed.style?.headingLevel === 'H1', 'structured nuclear preset root must be H1.');
+  assert(transformed.children?.[0]?.style?.headingLevel === 'H3', 'structured nuclear preset section must be H3.');
+  assert(transformed.children?.[1]?.text === NUCLEAR_PHYSICS_SPACER_TEXT, 'structured nuclear preset must insert sibling spacer.');
+  assert(transformed.children?.[2]?.style?.headingLevel === 'H3', 'structured nuclear preset second section must be H3.');
+}
+
+function mcpBody(tool: string, args: Record<string, unknown>) {
+  return {
+    method: 'tools/call',
+    params: {
+      name: tool,
+      arguments: args,
+    },
+  };
+}
+
+function hostedPrincipal(overrides: Partial<AuthenticatedPrincipal> = {}): AuthenticatedPrincipal {
+  return {
+    subject: 'pairing:area1',
+    userId: 'area1-user',
+    authMode: 'hosted_oauth',
+    scopeGrants: ['bridge:read', 'bridge:write'],
+    accessScope: 'current-rem-tree',
+    trustedWriteMode: 'trusted-inside-scope',
+    ...overrides,
+  };
+}
+
+function checkDirectWriteTrustedModeRegression() {
+  const directSafeWriteTools = [
+    ['create_rem', { parentId: 'parent-1', markdown: 'direct create' }],
+    ['apply_structured_note_batch', { target: { mode: 'parent_child', parentId: 'parent-1' }, operation: 'create_child_tree', root: { text: 'Batch root' }, dryRun: false }],
+    ['create_polished_note_tree', { parentId: 'parent-1', tree: { text: 'Polished root' }, dryRun: false }],
+    ['apply_style_plan', { operations: [{ remId: 'child-1', type: 'heading', value: 'H3' }], dryRun: false }],
+    ['apply_remnote_command', { target: { mode: 'rem_id', remId: 'child-1' }, command: 'heading_3', dryRun: false }],
+  ] as const;
+
+  for (const [tool, args] of directSafeWriteTools) {
+    const result = validateMcpToolPermission(mcpBody(tool, args), hostedPrincipal());
+    assert(result.ok, `direct-write-trusted-mode-regression: ${tool} should route to plugin in trusted mode.`);
+  }
+  const last = getLastTrustedWriteDecision();
+  assert(last?.allowed === true, 'direct-write-trusted-mode-regression should record allowed trusted write decision.');
+  assert(last?.trustedWriteModeEffective === true, 'direct-write-trusted-mode-regression should report trustedWriteModeEffective=true.');
+
+  const confirmResult = validateMcpToolPermission(
+    mcpBody('create_rem', { parentId: 'parent-1', markdown: 'confirm create' }),
+    hostedPrincipal({ trustedWriteMode: 'ask-every-write' })
+  );
+  assert(confirmResult.ok, 'confirm_writes direct route should reach plugin so RemNote approval can be requested.');
+
+  const outOfScope = validateMcpToolPermission(
+    mcpBody('create_rem', { parentId: 'parent-1', markdown: 'out of scope' }),
+    hostedPrincipal({ accessScope: 'focused-rem-only' })
+  );
+  assert(!outOfScope.ok && outOfScope.code === 'OUT_OF_SCOPE', 'out-of-scope direct write should be blocked by server scope policy.');
+
+  const noWrite = validateMcpToolPermission(
+    mcpBody('create_rem', { parentId: 'parent-1', markdown: 'no write' }),
+    hostedPrincipal({ scopeGrants: ['bridge:read'] })
+  );
+  assert(!noWrite.ok && noWrite.code === 'INSUFFICIENT_SCOPE', 'direct write without bridge:write should be blocked cleanly.');
 }
 
 function checkSourceFidelity() {
@@ -311,6 +451,8 @@ const checks: Record<string, () => void> = {
     checkDiagnostics();
     checkFullAndMetadata();
     checkSchemas();
+    checkNuclearPhysicsStylePreset();
+    checkDirectWriteTrustedModeRegression();
     checkHostedDiagnostics();
     checkTierSwitching();
     checkIdempotency();
@@ -323,6 +465,8 @@ const checks: Record<string, () => void> = {
   'tool-profile': checkFullAndMetadata,
   'structured-depth': checkStructuredDepth,
   'style-schema': checkStyleSchema,
+  'nuclear-physics-style-preset': checkNuclearPhysicsStylePreset,
+  'direct-write-trusted-mode-regression': checkDirectWriteTrustedModeRegression,
   'markdown-importer': checkMarkdownImporter,
   'source-fidelity': checkSourceFidelity,
   hosted: checkHostedDiagnostics,

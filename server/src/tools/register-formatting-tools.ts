@@ -11,6 +11,8 @@ import {
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
   MAX_TREE_NODE_COUNT_SCHEMA,
+  NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  NUCLEAR_PHYSICS_STYLE_EXPECTED_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
   POSITION_SCHEMA,
   PRACTICE_DIRECTION_SCHEMA,
@@ -175,6 +177,7 @@ export function registerFormattingTools({ registerTool, callPlugin }: ToolRegist
       description:
         'Fallback/developer tool for directly creating a nested styled RemNote tree. Prefer create_polished_note_tree or apply_structured_note_batch for normal ChatGPT note creation.',
       inputSchema: z.object({
+        ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
         parentId: REM_ID_SCHEMA.describe('The parent Rem ID for the created tree root.'),
         position: POSITION_SCHEMA.describe('Where to place the tree root under the parent Rem.'),
         tree: STYLED_REM_TREE_NODE_SCHEMA.describe('Structured styled Rem tree.'),
@@ -186,9 +189,9 @@ export function registerFormattingTools({ registerTool, callPlugin }: ToolRegist
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_styled_rem_tree'),
     },
-    async ({ parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount }) =>
+    async ({ parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }) =>
       bridgeToolResult(
-        () => callPlugin('create_styled_rem_tree', { parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount }),
+        () => callPlugin('create_styled_rem_tree', { parentId, position, tree, dryRun, idempotencyKey, maxDepth, maxNodeCount, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }),
         'Create styled Rem tree request processed.'
       )
   );
@@ -203,6 +206,7 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
       description:
         'Preferred tool for applying multiple formatting operations to existing Rems with per-operation status and optional verification evidence.',
       inputSchema: z.object({
+        ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
         operations: z.array(STYLE_PLAN_OPERATION_SCHEMA).min(1).max(100).describe('Ordered style operations.'),
         continueOnError: z.boolean().default(true).describe('True returns per-operation failures and keeps going.'),
         verifyAfterWrite: z.boolean().default(false).describe('Return verification evidence when available.'),
@@ -212,9 +216,9 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('apply_style_plan'),
     },
-    async ({ operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey }) =>
+    async ({ operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }) =>
       bridgeToolResult(
-        () => callPlugin('apply_style_plan', { operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey }),
+        () => callPlugin('apply_style_plan', { operations, continueOnError, verifyAfterWrite, dryRun, idempotencyKey, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode }),
         'Apply style plan request processed.'
       )
   );
@@ -226,7 +230,9 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
       description:
         'Preferred verification tool after note creation or styling. Compares headings, highlights, colored spans, plain text, and child order against an expected style map.',
       inputSchema: z.object({
+        ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
         rootRemId: REM_ID_SCHEMA.describe('Root Rem ID for the design verification.'),
+        expected: NUCLEAR_PHYSICS_STYLE_EXPECTED_SCHEMA.optional().describe('Preset structure expectations for H1/H3/spacer/math Nuclear Physics notes.'),
         expectations: z.array(EXPECTED_STYLE_PUBLIC_EXPECTATION_SCHEMA).min(1).max(200).optional().describe('Preferred public array of Rem IDs with expected text, style, math, and child order fields.'),
         expectedStyles: z.array(EXPECTED_STYLE_EXPECTATION_SCHEMA).min(1).max(200).optional().describe('Internal explicit list of Rem IDs and expected style entries.'),
         expectedStyleMap: z.record(REM_ID_SCHEMA, EXPECTED_STYLE_MAP_ENTRY_SCHEMA).optional().describe('Legacy expected styles keyed by Rem ID.'),
@@ -234,10 +240,19 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('verify_note_design'),
     },
-    async ({ rootRemId, expectedStyleMap, expectedStyles, expectations }) =>
+    async ({ rootRemId, expectedStyleMap, expectedStyles, expectations, expected, stylePreset, course, rootHeadingLevel, sectionHeadingLevel, insertSiblingSpacers, spacerText, majorFormulaMode, verifyAfterWrite }) =>
       bridgeToolResult(
         () => callPlugin('verify_note_design', {
           rootRemId,
+          stylePreset,
+          course,
+          rootHeadingLevel,
+          sectionHeadingLevel,
+          insertSiblingSpacers,
+          spacerText,
+          majorFormulaMode,
+          verifyAfterWrite,
+          expected,
           expectedStyleMap: expectedStyleMap ?? (expectations?.length
             ? Object.fromEntries(expectations.map((entry) => {
               const { remId, ...expected } = entry;

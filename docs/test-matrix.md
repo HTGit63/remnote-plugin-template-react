@@ -22,8 +22,10 @@ Status: Areas 1-3 repo/local checks added. Hosted public launch still needs live
 | `npm run server:test:health-check-routing` | local/direct health-check routing certification |
 | `npm run server:test:structured-depth` | 5-level study tree and safe extreme-depth rejection |
 | `npm run server:test:style-schema` | canonical style schema and no style-control Rem pollution |
+| `npm run server:test:nuclear-physics-style-preset` | global Nuclear Physics note style preset parser/schema regression |
 | `npm run server:test:markdown-importer` | one-call Markdown importer parser/schema/MCP certification |
 | `npm run server:test:source-fidelity` | source-fidelity failure detection |
+| `npm run server:test:direct-write-trusted-mode-regression` | direct safe writes do not get server-blocked by stale trusted-write scope |
 | `npm run server:test:tool-schemas` | schema quality, metadata, unsupported-tool exposure checks |
 | `npm run server:test:hosted-diagnostics` | hosted plugin API diagnostics/health/tier smoke |
 | `npm run server:test:tier-switching` | hosted plugin tier switch and stale-session smoke |
@@ -50,8 +52,10 @@ npm run server:test:tool-profile
 npm run server:test:health-check-routing
 npm run server:test:structured-depth
 npm run server:test:style-schema
+npm run server:test:nuclear-physics-style-preset
 npm run server:test:markdown-importer
 npm run server:test:source-fidelity
+npm run server:test:direct-write-trusted-mode-regression
 npm run server:test:tools-core
 npm run server:test:tools-advanced
 npm run server:test:tools-diagnostics
