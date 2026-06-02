@@ -87,7 +87,7 @@ export function applyCors(req: IncomingMessage, res: ServerResponse, config: Com
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'content-type, mcp-session-id, authorization, x-remnote-bridge-token'
+    'content-type, mcp-session-id, authorization, x-remnote-bridge-token, x-remnote-plugin-session-secret'
   );
   res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
   return true;

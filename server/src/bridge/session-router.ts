@@ -102,7 +102,15 @@ export class SessionRouter {
   async authenticateAndRegister(
     socket: WebSocket,
     hello: PluginRegistrationMessage
-  ): Promise<{ ok: true; connection: PluginConnection } | { ok: false; error: SessionRouterErrorCode; message: string }> {
+  ): Promise<
+    | {
+        ok: true;
+        connection: PluginConnection;
+        toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+        requiresConnectorRefresh?: boolean;
+      }
+    | { ok: false; error: SessionRouterErrorCode; message: string }
+  > {
     // ─── Local mode ─────────────────────────────────────────────
     if (!this.isHostedMode) {
       const userId = '__local__';
@@ -184,7 +192,11 @@ export class SessionRouter {
           Boolean(pairingSession.requiresConnectorRefresh) ||
           Boolean(hello.toolTier && pairingSession.toolTier && normalizeToolProfile(hello.toolTier) !== pairingSession.toolTier),
       });
-      return { ok: true, connection: conn };
+      const toolTier = hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier;
+      const requiresConnectorRefresh =
+        Boolean(pairingSession.requiresConnectorRefresh) ||
+        Boolean(hello.toolTier && pairingSession.toolTier && normalizeToolProfile(hello.toolTier) !== pairingSession.toolTier);
+      return { ok: true, connection: conn, toolTier, requiresConnectorRefresh };
     }
 
     // ─── Hosted mode: validate plugin session credentials ───────

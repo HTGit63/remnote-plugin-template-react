@@ -39,14 +39,18 @@ POST /pairing/disconnect
 
 ```bash
 PUBLIC_BASE_URL=https://your-service.onrender.com
+REMNOTE_BRIDGE_PUBLIC_BASE_URL=https://your-service.onrender.com
 MCP_SERVER_URL=https://your-service.onrender.com/mcp
 OAUTH_ISSUER=https://your-service.onrender.com
 SESSION_SECRET=...
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
+REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
 REMNOTE_BRIDGE_STORAGE=postgres
 DATABASE_URL=postgresql://...
 ALLOW_DEV_NO_AUTH=false
 ```
+
+Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. If hosted mode is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, startup must fail.
 
 ## Smoke
 

@@ -4,6 +4,7 @@ import '../style.css';
 import '../index.css';
 import {
   type ApprovalResolution,
+  type BridgeToolProfile,
   type BridgeToolName,
   type PendingApprovalRequest,
   type PermissionMode,
@@ -24,13 +25,20 @@ import {
   approveChatGptPairing,
   denyChatGptPairing,
   disconnectChatGptPairing,
+  fetchHostedPluginDiagnostics,
+  fetchPluginToolTier,
   lookupChatGptPairing,
-  finishHostedPairing,
   loadHostedPairingSession,
-  startHostedPairing,
+  normalizeBridgeToolTier,
+  runHostedPluginHealthCheck,
+  saveHostedPairingSession,
+  updatePluginToolTier,
+  TOOL_TIER_STORAGE_KEY,
   type HostedPairingSession,
+  type PluginToolTierState,
   type ChatGptPairingPreview,
-  type PendingPairingChallenge,
+  accessScopeForPermissionScope,
+  writeModeForPermissionMode,
 } from '../bridge/pairing';
 import {
   BridgeTaskBanner,
@@ -95,6 +103,38 @@ const permissionModeOptions: Array<{ value: PermissionMode; label: string }> = [
   { value: 'confirm_writes', label: 'Ask for existing notes' },
   { value: 'trusted_writes', label: 'Trusted writes' },
   { value: 'danger_zone', label: 'Danger zone' },
+];
+
+const toolTierOptions: Array<{
+  value: BridgeToolProfile;
+  label: string;
+  risk: string;
+  description: string;
+}> = [
+  {
+    value: 'core',
+    label: 'Core',
+    risk: 'Lowest risk',
+    description: 'Status, reads, search, simple cards, guarded delete preview.',
+  },
+  {
+    value: 'advanced_notes',
+    label: 'Advanced Notes',
+    risk: 'Writes inside scope',
+    description: 'Structured writing, styling, moving, replacing, batch workflows.',
+  },
+  {
+    value: 'developer_diagnostics',
+    label: 'Developer / Diagnostics',
+    risk: 'Debug only',
+    description: 'Bridge diagnostics, health checks, raw rich-text inspection.',
+  },
+  {
+    value: 'full',
+    label: 'Full',
+    risk: 'All supported tools',
+    description: 'Everything non-removed and SDK-supported.',
+  },
 ];
 
 const LOCAL_PAIRING_DISABLED_MESSAGE =
@@ -233,6 +273,42 @@ function runtimeHostedPairingEnabled(report: Record<string, unknown> | null): bo
   return null;
 }
 
+function toolCountForTier(summary: Record<string, unknown> | undefined, tier: BridgeToolProfile): number {
+  const tiers = summary?.tiers;
+  if (typeof tiers !== 'object' || tiers === null || Array.isArray(tiers)) {
+    return 0;
+  }
+  const tools = (tiers as Record<string, unknown>)[tier];
+  return Array.isArray(tools) ? tools.length : 0;
+}
+
+function runtimeVerificationMatrixFrom(report: Record<string, unknown> | null, bridgeStatus: { runtimeVerificationMatrix?: Array<Record<string, unknown>> }) {
+  const direct = report?.runtimeVerificationMatrix;
+  if (Array.isArray(direct)) {
+    return direct;
+  }
+  const registry = report?.registry;
+  if (typeof registry === 'object' && registry !== null) {
+    const matrix = (registry as { runtimeVerificationMatrix?: unknown }).runtimeVerificationMatrix;
+    if (Array.isArray(matrix)) {
+      return matrix as Array<Record<string, unknown>>;
+    }
+  }
+  return bridgeStatus.runtimeVerificationMatrix ?? [];
+}
+
+function lastRequestsFrom(report: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  const bridge = report?.bridge;
+  if (
+    typeof bridge === 'object' &&
+    bridge !== null &&
+    Array.isArray((bridge as { recentRequests?: unknown }).recentRequests)
+  ) {
+    return (bridge as { recentRequests: Array<Record<string, unknown>> }).recentRequests;
+  }
+  return [];
+}
+
 function DetailRow({
   label,
   value,
@@ -284,7 +360,8 @@ export function BridgeStatusWidget() {
   const [lastServerDiagnostics, setLastServerDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [debugCopyStatus, setDebugCopyStatus] = useState('No debug copy yet.');
   const [hostedSession, setHostedSession] = useState<HostedPairingSession | null>(null);
-  const [pendingPairing, setPendingPairing] = useState<PendingPairingChallenge | null>(null);
+  const [selectedToolTier, setSelectedToolTier] = useState<BridgeToolProfile>('core');
+  const [toolTierState, setToolTierState] = useState<PluginToolTierState | null>(null);
   const [pairingEvent, setPairingEvent] = useState('Open ChatGPT connector auth, then enter the Render pairing code here.');
   const [chatGptPairingCode, setChatGptPairingCode] = useState('');
   const [localConnectionLabel, setLocalConnectionLabel] = useState('');
@@ -300,10 +377,14 @@ export function BridgeStatusWidget() {
 
   useEffect(() => {
     let alive = true;
-    loadHostedPairingSession(plugin)
-      .then((session) => {
+    Promise.all([
+      loadHostedPairingSession(plugin),
+      plugin.storage.getLocal<BridgeToolProfile>(TOOL_TIER_STORAGE_KEY),
+    ])
+      .then(([session, storedTier]) => {
         if (alive) {
           setHostedSession(session);
+          setSelectedToolTier(normalizeBridgeToolTier(storedTier ?? session?.toolTier));
         }
       })
       .catch((error: unknown) => {
@@ -379,12 +460,7 @@ export function BridgeStatusWidget() {
   const toolAvailability = summarizeToolAvailability(bridgeStatus.publicTools, permissionMode);
   const hiddenToolCount = bridgeStatus.hiddenTools?.length ?? 1;
   const profileHiddenToolCount = bridgeStatus.profileHiddenTools?.length ?? 0;
-  const lastRequests =
-    typeof lastServerDiagnostics?.bridge === 'object' &&
-    lastServerDiagnostics.bridge !== null &&
-    Array.isArray((lastServerDiagnostics.bridge as { recentRequests?: unknown }).recentRequests)
-      ? ((lastServerDiagnostics.bridge as { recentRequests: Array<Record<string, unknown>> }).recentRequests)
-      : [];
+  const lastRequests = lastRequestsFrom(lastServerDiagnostics);
   const lastSuccessfulRequest = lastRequests.find((request) => request.ok === true);
   const lastFailedRequest = lastRequests.find((request) => request.ok === false);
   const reportedDeploymentMode =
@@ -396,6 +472,35 @@ export function BridgeStatusWidget() {
     reportedDeploymentMode === 'local' ||
     reportedHostedPairingEnabled === false;
   const effectiveHostedSession = chatGptPairingDisabled ? null : hostedSession;
+  const selectedAccessScope = accessScopeForPermissionScope(permissionScope);
+  const selectedWriteMode = writeModeForPermissionMode(permissionMode);
+  const storedSessionStale =
+    Boolean(effectiveHostedSession?.requiresConnectorRefresh) ||
+    Boolean(bridgeStatus.requiresConnectorRefresh) ||
+    Boolean(toolTierState?.requiresConnectorRefresh);
+  const localScopeChanged =
+    Boolean(effectiveHostedSession?.sessionSecret) &&
+    (effectiveHostedSession?.accessScope !== selectedAccessScope ||
+      effectiveHostedSession?.trustedWriteMode !== selectedWriteMode);
+  const localTierChanged =
+    Boolean(effectiveHostedSession?.sessionSecret) &&
+    normalizeBridgeToolTier(effectiveHostedSession?.toolTier) !== selectedToolTier;
+  const sessionStale = storedSessionStale || localScopeChanged || localTierChanged;
+  const activeServerToolTier =
+    toolTierState?.activeToolTier ??
+    bridgeStatus.activeToolTier ??
+    bridgeStatus.toolTier ??
+    bridgeStatus.toolProfile ??
+    selectedToolTier;
+  const visibleTierSummary =
+    toolTierState?.toolTierSummary ??
+    bridgeStatus.toolTierSummary;
+  const verificationMatrix = runtimeVerificationMatrixFrom(lastServerDiagnostics, bridgeStatus);
+  const runtimeVerifiedCount = verificationMatrix.filter((tool) => tool.runtimeVerified === true || tool.serverLocalVerified === true).length;
+  const runtimeUnverifiedCount =
+    (toolTierState?.registry?.runtimeUnverifiedToolCount as number | undefined) ??
+    bridgeStatus.runtimeUnverifiedTools?.length ??
+    verificationMatrix.filter((tool) => tool.runtimeVerified !== true && tool.serverLocalVerified !== true).length;
 
   useEffect(() => {
     permissionModeRef.current = permissionMode;
@@ -412,6 +517,37 @@ export function BridgeStatusWidget() {
   useEffect(() => {
     pendingRequestRef.current = pendingRequest;
   }, [pendingRequest]);
+
+  useEffect(() => {
+    if (!effectiveHostedSession?.sessionSecret || chatGptPairingDisabled) {
+      setToolTierState(null);
+      return;
+    }
+    let alive = true;
+    fetchPluginToolTier(serverUrl, effectiveHostedSession)
+      .then(async (state) => {
+        if (!alive) {
+          return;
+        }
+        setToolTierState(state);
+        setSelectedToolTier(state.toolTier);
+        const nextSession: HostedPairingSession = {
+          ...effectiveHostedSession,
+          toolTier: state.toolTier,
+          accessScope: state.accessScope,
+          trustedWriteMode: state.trustedWriteMode,
+          requiresConnectorRefresh: state.requiresConnectorRefresh,
+        };
+        setHostedSession(nextSession);
+        await saveHostedPairingSession(plugin, nextSession);
+      })
+      .catch((error: unknown) => {
+        console.warn('BridgeStatusWidget: hosted tool tier sync failed', error);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [plugin, serverUrl, effectiveHostedSession?.sessionSecret, chatGptPairingDisabled]);
 
   useEffect(() => {
     setDeleteConfirmText('');
@@ -572,14 +708,73 @@ export function BridgeStatusWidget() {
     await resolveApproval('APPROVAL_REJECTED');
   };
 
+  const pushHostedToolConfig = async (
+    nextTier: BridgeToolProfile,
+    nextScope: PermissionScope,
+    nextMode: PermissionMode
+  ) => {
+    if (!effectiveHostedSession?.sessionSecret || chatGptPairingDisabled) {
+      return;
+    }
+    const state = await updatePluginToolTier(serverUrl, effectiveHostedSession, {
+      toolTier: nextTier,
+      permissionScope: nextScope,
+      permissionMode: nextMode,
+    });
+    setToolTierState(state);
+    const nextSession: HostedPairingSession = {
+      ...effectiveHostedSession,
+      toolTier: state.toolTier,
+      accessScope: state.accessScope,
+      trustedWriteMode: state.trustedWriteMode,
+      requiresConnectorRefresh: state.requiresConnectorRefresh,
+    };
+    setHostedSession(nextSession);
+    await saveHostedPairingSession(plugin, nextSession);
+    if (state.requiresConnectorRefresh) {
+      setPairingEvent('Reconnect required: ChatGPT was approved with an older permission scope or tool tier.');
+    }
+  };
+
   const handleScopeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setRuntimePermissionScope(event.target.value as PermissionScope);
-    await plugin.app.toast(`Bridge access changed to ${getPermissionScopeLabel(event.target.value as PermissionScope)}.`);
+    const nextScope = event.target.value as PermissionScope;
+    setRuntimePermissionScope(nextScope);
+    try {
+      await pushHostedToolConfig(selectedToolTier, nextScope, permissionMode);
+      await plugin.app.toast(`Bridge access changed to ${getPermissionScopeLabel(nextScope)}.`);
+    } catch (error: unknown) {
+      setPairingEvent(error instanceof Error ? error.message : String(error));
+      await plugin.app.toast('Access changed locally. Server sync failed.');
+    }
   };
 
   const handleModeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    setRuntimePermissionMode(event.target.value as PermissionMode);
-    await plugin.app.toast(`Write mode changed to ${getPermissionModeLabel(event.target.value as PermissionMode)}.`);
+    const nextMode = event.target.value as PermissionMode;
+    setRuntimePermissionMode(nextMode);
+    try {
+      await pushHostedToolConfig(selectedToolTier, permissionScope, nextMode);
+      await plugin.app.toast(`Write mode changed to ${getPermissionModeLabel(nextMode)}.`);
+    } catch (error: unknown) {
+      setPairingEvent(error instanceof Error ? error.message : String(error));
+      await plugin.app.toast('Write mode changed locally. Server sync failed.');
+    }
+  };
+
+  const handleToolTierChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextTier = normalizeBridgeToolTier(event.target.value);
+    setSelectedToolTier(nextTier);
+    await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, nextTier);
+    try {
+      await pushHostedToolConfig(nextTier, permissionScope, permissionMode);
+      await plugin.app.toast(
+        effectiveHostedSession?.sessionSecret
+          ? 'Tool tier updated. Reconnect ChatGPT if requested.'
+          : 'Tool tier stored. It will apply when ChatGPT is paired.'
+      );
+    } catch (error: unknown) {
+      setPairingEvent(error instanceof Error ? error.message : String(error));
+      await plugin.app.toast('Tool tier saved locally. Server sync failed.');
+    }
   };
 
   const handleUseFocusedAsApprovedRoot = async () => {
@@ -593,40 +788,16 @@ export function BridgeStatusWidget() {
   };
 
   const handleUseRecommendedNoteMode = async () => {
-    setRuntimePermissionScope('focused_rem_and_descendants');
-    setRuntimePermissionMode('trusted_writes');
-    await plugin.app.toast('Recommended note mode enabled.');
-  };
-
-  const handleStartPairing = async () => {
+    const nextScope: PermissionScope = 'focused_rem_and_descendants';
+    const nextMode: PermissionMode = 'trusted_writes';
+    setRuntimePermissionScope(nextScope);
+    setRuntimePermissionMode(nextMode);
     try {
-      const challenge = await startHostedPairing(plugin, serverUrl);
-      setPendingPairing(challenge);
-      setPairingEvent(`Pairing code ${challenge.pairingCode} created. Confirm it in the dashboard.`);
-      await plugin.app.toast('Pairing code created.');
+      await pushHostedToolConfig(selectedToolTier, nextScope, nextMode);
+      await plugin.app.toast('Recommended note mode enabled.');
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      setPairingEvent(message);
-      await plugin.app.toast('Pairing failed to start.');
-    }
-  };
-
-  const handleFinishPairing = async () => {
-    if (!pendingPairing) {
-      await plugin.app.toast('Start pairing first.');
-      return;
-    }
-
-    try {
-      const session = await finishHostedPairing(plugin, serverUrl, pendingPairing);
-      setHostedSession(session);
-      setPendingPairing(null);
-      setPairingEvent('Pairing complete. Hosted session token stored in RemNote local storage.');
-      await plugin.app.toast('RemNote paired.');
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      setPairingEvent(message);
-      await plugin.app.toast('Pairing not complete yet.');
+      setPairingEvent(error instanceof Error ? error.message : String(error));
+      await plugin.app.toast('Recommended mode set locally. Server sync failed.');
     }
   };
 
@@ -636,7 +807,6 @@ export function BridgeStatusWidget() {
     }
     await clearHostedPairingSession(plugin);
     setHostedSession(null);
-    setPendingPairing(null);
     setPairingEvent('Hosted pairing cleared on this device.');
     await plugin.app.toast('Pairing cleared.');
   };
@@ -655,8 +825,10 @@ export function BridgeStatusWidget() {
         permissionScope,
         localConnectionLabel,
         workspaceLabel: 'Active RemNote workspace',
+        toolTier: selectedToolTier,
       });
       setHostedSession(session);
+      setToolTierState(null);
       setRuntimePermissionScope(
         session.accessScope === 'full-kb'
           ? 'workspace_allowed'
@@ -667,6 +839,8 @@ export function BridgeStatusWidget() {
       setRuntimePermissionMode(
         session.trustedWriteMode === 'trusted-inside-scope' ? 'trusted_writes' : 'confirm_writes'
       );
+      setSelectedToolTier(normalizeBridgeToolTier(session.toolTier));
+      await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, normalizeBridgeToolTier(session.toolTier));
       setPairingEvent(`Connected to ${session.connectedLabel || 'ChatGPT session'}.`);
       setChatGptPairingCode('');
       setChatGptPairingPreview(null);
@@ -715,7 +889,7 @@ export function BridgeStatusWidget() {
     }
   };
 
-  const handleHealthCheck = async () => {
+  const handleHealthCheck = async (level: 'quick' | 'standard' | 'full' = 'quick') => {
     try {
       const healthResponse = await fetch(companionHttpUrl(serverUrl, '/health'), {
         headers: { accept: 'application/json' },
@@ -723,15 +897,24 @@ export function BridgeStatusWidget() {
       const health = await healthResponse.json();
       setLastHealthCheck(health);
 
-      const headers: Record<string, string> = { accept: 'application/json' };
-      if (bridgeToken) {
-        headers.authorization = `Bearer ${bridgeToken}`;
+      if (effectiveHostedSession?.sessionSecret && !chatGptPairingDisabled) {
+        const report = await runHostedPluginHealthCheck(serverUrl, effectiveHostedSession, {
+          level,
+          parentId: focusedRemStatus?.remId,
+          targetRemId: focusedRemStatus?.remId,
+        });
+        setLastServerDiagnostics(report);
+      } else {
+        const headers: Record<string, string> = { accept: 'application/json' };
+        if (bridgeToken) {
+          headers.authorization = `Bearer ${bridgeToken}`;
+        }
+        const diagnosticsResponse = await fetch(companionHttpUrl(serverUrl, '/diagnostics'), { headers });
+        if (diagnosticsResponse.ok) {
+          setLastServerDiagnostics(await diagnosticsResponse.json());
+        }
       }
-      const diagnosticsResponse = await fetch(companionHttpUrl(serverUrl, '/diagnostics'), { headers });
-      if (diagnosticsResponse.ok) {
-        setLastServerDiagnostics(await diagnosticsResponse.json());
-      }
-      await plugin.app.toast(healthResponse.ok ? 'Bridge health checked.' : 'Bridge health failed.');
+      await plugin.app.toast(healthResponse.ok ? `${level} health checked.` : `${level} health failed.`);
     } catch (error: unknown) {
       setLastHealthCheck({
         ok: false,
@@ -753,6 +936,16 @@ export function BridgeStatusWidget() {
   };
 
   const handleCopyDiagnostics = async () => {
+    let hostedDiagnostics = lastServerDiagnostics;
+    if (effectiveHostedSession?.sessionSecret && !chatGptPairingDisabled) {
+      try {
+        hostedDiagnostics = await fetchHostedPluginDiagnostics(serverUrl, effectiveHostedSession);
+        setLastServerDiagnostics(hostedDiagnostics);
+      } catch (error: unknown) {
+        setDebugCopyStatus(error instanceof Error ? error.message : String(error));
+      }
+    }
+
     const diagnostics = {
       bridge: bridgeStatus,
       permission: {
@@ -773,7 +966,7 @@ export function BridgeStatusWidget() {
         : null,
       lastApprovalEvent,
       lastHealthCheck,
-      lastServerDiagnostics,
+      lastServerDiagnostics: hostedDiagnostics,
     };
 
     try {
@@ -808,6 +1001,17 @@ export function BridgeStatusWidget() {
     }
   };
 
+  const handleCopyToolVerificationMatrix = async () => {
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(verificationMatrix, null, 2));
+      setDebugCopyStatus('Tool verification matrix copied.');
+      await plugin.app.toast('Tool verification matrix copied.');
+    } catch {
+      setDebugCopyStatus('Tool verification matrix copy failed.');
+      await plugin.app.toast('Could not copy tool verification matrix.');
+    }
+  };
+
   const approveLabel = pendingDecision?.destructive
     ? 'Approve Destructive Write'
     : pendingRequest
@@ -817,24 +1021,38 @@ export function BridgeStatusWidget() {
     !pendingDecision?.allowed ||
     Boolean(pendingRequest?.confirmTextRequired && deleteConfirmText !== pendingRequest.confirmTextRequired);
 
-  const ready = bridgeStatus.state === 'connected' && !pendingRequest;
+  const ready = bridgeStatus.state === 'connected' && !pendingRequest && !sessionStale;
   const needsAction = Boolean(pendingRequest);
   const waitingForPairing =
     bridgeStatus.state === 'not_paired' || isWaitingForChatGptPairing(bridgeStatus.lastEvent);
-  const taskVariant = needsAction ? 'warning' : ready ? 'ready' : waitingForPairing ? 'warning' : 'offline';
+  const taskVariant = needsAction || sessionStale ? 'warning' : ready ? 'ready' : waitingForPairing ? 'warning' : 'offline';
   const bridgeNextAction = waitingForPairing
     ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
+    : sessionStale
+      ? 'Reconnect ChatGPT connector to refresh the selected permission scope or tool tier.'
     : getBridgeNextAction(bridgeStatus);
-  const statusLabel = waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
-  const taskTitle = needsAction ? 'Action Needed' : ready ? 'Ready' : waitingForPairing ? 'Waiting for ChatGPT pairing' : 'Bridge Offline';
+  const statusLabel = sessionStale ? 'Reconnect Required' : waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
+  const taskTitle = needsAction
+    ? 'Action Needed'
+    : sessionStale
+      ? 'Reconnect Required'
+      : ready
+        ? 'Ready'
+        : waitingForPairing
+          ? 'Waiting for ChatGPT pairing'
+          : 'Bridge Offline';
   const taskCopy = needsAction
     ? 'Review this write before RemNote changes.'
+    : sessionStale
+      ? 'Reconnect required: ChatGPT was approved with an older permission scope or tool tier.'
     : ready
       ? 'ChatGPT can use the connected RemNote tools.'
       : waitingForPairing
         ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
-        : 'Start the companion server or check the token.';
-  const chatGptPairingConnected = Boolean(hostedSession && !chatGptPairingDisabled);
+        : isHostedBridgeUrl(serverUrl)
+          ? 'Check Render URL, hosted pairing, and RemNote plugin WebSocket connection.'
+          : 'Start the local companion server or check the local bridge token.';
+  const chatGptPairingConnected = Boolean(effectiveHostedSession && !chatGptPairingDisabled);
 
   const pendingSection = (
     <section
@@ -931,7 +1149,7 @@ export function BridgeStatusWidget() {
     <div className="bridge-shell plugin-root">
       <BridgeWidgetHeader
         status={bridgeStatus}
-        statusClassName={statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}
+        statusClassName={sessionStale ? statusToneClass.stale_connection : statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}
         statusLabel={statusLabel}
         nextAction={bridgeNextAction}
       />
@@ -989,7 +1207,18 @@ export function BridgeStatusWidget() {
             />
             <DetailRow label="Access Scope" value={getPermissionScopeLabel(permissionScope)} />
             <DetailRow label="Write Mode" value={getPermissionModeLabel(permissionMode)} />
-            <DetailRow label="Pairing Status" value={chatGptPairingDisabled ? LOCAL_PAIRING_DISABLED_MESSAGE : pairingEvent} />
+            <DetailRow label="Tool Tier" value={toolTierOptions.find((tier) => tier.value === selectedToolTier)?.label ?? selectedToolTier} />
+            <DetailRow label="Session Stale" value={sessionStale ? 'Yes - reconnect ChatGPT connector' : 'No'} />
+            <DetailRow
+              label="Pairing Status"
+              value={
+                chatGptPairingDisabled
+                  ? LOCAL_PAIRING_DISABLED_MESSAGE
+                  : sessionStale
+                    ? 'Reconnect required: ChatGPT was approved with an older permission scope or tool tier.'
+                    : pairingEvent
+              }
+            />
             {chatGptPairingPreview && !chatGptPairingConnected && !chatGptPairingDisabled && (
               <>
                 <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
@@ -1044,6 +1273,58 @@ export function BridgeStatusWidget() {
           </div>
         </section>
 
+        <section className="bridge-panel bridge-tool-tier-panel">
+          <div className="bridge-section-head">
+            <div className="bridge-heading-copy">
+              <h3>Tool Tier</h3>
+              <p>Choose available ChatGPT tools. Reconnect ChatGPT when schema scope changes.</p>
+            </div>
+            <span className={sessionStale ? 'bridge-pill bridge-pill-warning' : 'bridge-pill bridge-pill-success'}>
+              {sessionStale ? 'Reconnect needed' : 'Current'}
+            </span>
+          </div>
+          <label className="bridge-field">
+            Active tool tier
+            <select value={selectedToolTier} onChange={handleToolTierChange}>
+              {toolTierOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="bridge-mode-grid bridge-tool-tier-grid">
+            {toolTierOptions.map((option) => {
+              const selected = selectedToolTier === option.value;
+              const activeOnServer = activeServerToolTier === option.value;
+              const count =
+                toolTierState?.toolCountsByTier?.[option.value] ??
+                toolCountForTier(visibleTierSummary, option.value);
+              return (
+                <div
+                  key={option.value}
+                  className={[
+                    'bridge-mode-card',
+                    selected ? 'bridge-mode-card--success' : 'bridge-mode-card--warning',
+                    selected ? 'bridge-tool-tier-card--selected' : '',
+                  ].join(' ')}
+                >
+                  <span className={['bridge-pill', activeOnServer ? 'bridge-pill-success' : 'bridge-pill-muted'].join(' ')}>
+                    {activeOnServer ? 'Active on server' : 'Not active'}
+                  </span>
+                  <strong>{option.label}</strong>
+                  <p>{count || 0} tools. {option.risk}. {option.description}</p>
+                  {selected && sessionStale && (
+                    <p className="bridge-tier-warning">
+                      Reconnect required: ChatGPT was approved with an older permission scope or tool tier.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
         <section className="bridge-panel bridge-recommendation-panel">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
@@ -1053,9 +1334,9 @@ export function BridgeStatusWidget() {
             <span className="bridge-pill bridge-pill-success">Recommended</span>
           </div>
           <ToolProfileSummary
-            toolProfile={bridgeStatus.toolProfile}
-            publicToolCount={bridgeStatus.publicToolCount}
-            allPublicToolCount={bridgeStatus.allPublicToolCount}
+            toolProfile={activeServerToolTier}
+            publicToolCount={toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount}
+            allPublicToolCount={toolTierState?.allPublicToolCount ?? bridgeStatus.allPublicToolCount}
             preferredToolCount={bridgeStatus.preferredTools?.length ?? 0}
             hiddenByProfileCount={profileHiddenToolCount}
           />
@@ -1161,18 +1442,18 @@ export function BridgeStatusWidget() {
               <section className="bridge-metrics" aria-label="Bridge summary">
                 <StatusMetric
                   label="Exposed"
-                  value={bridgeStatus.publicToolCount ? `${bridgeStatus.publicToolCount} tools` : 'Unknown'}
-                  tone={bridgeStatus.publicToolCount && bridgeStatus.publicToolCount < 20 ? 'warning' : 'success'}
+                  value={(toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount) ? `${toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount} tools` : 'Unknown'}
+                  tone={(toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount) && (toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount ?? 0) < 20 ? 'warning' : 'success'}
                 />
                 <StatusMetric
-                  label="Profile"
-                  value={bridgeStatus.activeToolTier ?? bridgeStatus.toolTier ?? bridgeStatus.toolProfile ?? 'core'}
+                  label="Tier"
+                  value={activeServerToolTier}
                   tone={profileHiddenToolCount ? 'warning' : 'success'}
                 />
                 <StatusMetric
                   label="Verified"
-                  value={`${bridgeStatus.realPluginVerifiedTools?.length ?? 0} live`}
-                  tone={bridgeStatus.realPluginVerifiedTools?.length ? 'success' : 'warning'}
+                  value={`${runtimeVerifiedCount} tools`}
+                  tone={runtimeVerifiedCount ? 'success' : 'warning'}
                 />
                 <StatusMetric
                   label="Registry"
@@ -1181,8 +1462,8 @@ export function BridgeStatusWidget() {
                 />
                 <StatusMetric
                   label="Unverified"
-                  value={bridgeStatus.runtimeUnverifiedTools?.length ?? 0}
-                  tone={bridgeStatus.runtimeUnverifiedTools?.length ? 'warning' : 'success'}
+                  value={runtimeUnverifiedCount}
+                  tone={runtimeUnverifiedCount ? 'warning' : 'success'}
                 />
                 <StatusMetric
                   label="Unsupported"
@@ -1199,9 +1480,26 @@ export function BridgeStatusWidget() {
                   value={getPermissionScopeLabel(permissionScope)}
                   tone={permissionScope === 'workspace_allowed' ? 'warning' : 'neutral'}
                 />
+                <StatusMetric
+                  label="Stale"
+                  value={sessionStale ? 'Yes' : 'No'}
+                  tone={sessionStale ? 'warning' : 'success'}
+                />
               </section>
               <dl className="bridge-detail-list">
-                <DetailRow label="Local Server" value={bridgeStatus.serverUrl} mono />
+                <DetailRow label="Server URL" value={bridgeStatus.serverUrl} mono />
+                <DetailRow label="Deployment Mode" value={reportedDeploymentMode ?? (isHostedBridgeUrl(serverUrl) ? 'hosted' : 'local')} />
+                <DetailRow
+                  label="Auth Mode"
+                  value={
+                    reportedDeploymentMode === 'hosted' || effectiveHostedSession?.sessionSecret
+                      ? 'hosted_oauth_required'
+                      : bridgeToken
+                        ? 'local_bearer_required'
+                        : 'no_auth_allowed'
+                  }
+                />
+                <DetailRow label="Active Tier" value={activeServerToolTier} />
                 {bridgeStatus.serverStartedAt && (
                   <DetailRow label="Server Started" value={new Date(bridgeStatus.serverStartedAt).toLocaleTimeString()} />
                 )}
@@ -1217,6 +1515,10 @@ export function BridgeStatusWidget() {
                 <DetailRow
                   label="Blocked In Current Mode"
                   value={toolAvailability.blocked}
+                />
+                <DetailRow
+                  label="Tool Verification Matrix"
+                  value={`${verificationMatrix.length} rows; ${runtimeVerifiedCount} verified`}
                 />
                 <DetailRow
                   label="Preferred Tools"
@@ -1253,8 +1555,14 @@ export function BridgeStatusWidget() {
                 )}
               </dl>
               <div className="bridge-inline-actions">
-                <button type="button" onClick={handleHealthCheck} className="bridge-button bridge-button-secondary">
-                  Run Final Health Check
+                <button type="button" onClick={() => handleHealthCheck('quick')} className="bridge-button bridge-button-secondary">
+                  Run Quick Health Check
+                </button>
+                <button type="button" onClick={() => handleHealthCheck('standard')} className="bridge-button bridge-button-secondary">
+                  Run Standard Health Check
+                </button>
+                <button type="button" onClick={() => handleHealthCheck('full')} className="bridge-button bridge-button-secondary">
+                  Run Full Health Check
                 </button>
                 <button type="button" onClick={handleCopyRecentRequestLogs} className="bridge-button bridge-button-secondary">
                   Copy Logs
@@ -1265,6 +1573,9 @@ export function BridgeStatusWidget() {
               </button>
               <button type="button" onClick={handleCopyFailedRequest} className="bridge-button bridge-button-secondary bridge-button-full">
                 Copy Failed Request
+              </button>
+              <button type="button" onClick={handleCopyToolVerificationMatrix} className="bridge-button bridge-button-secondary bridge-button-full">
+                Copy Tool Verification Matrix
               </button>
               <div className="bridge-footnote">{debugCopyStatus}</div>
             </div>

@@ -21,7 +21,9 @@ export function BridgeWidgetHeader({
         <h2 className="bridge-title">RemNote Bridge</h2>
         <p className="bridge-subtitle">
           {nextAction}
-          {status.toolProfile ? ` Tool profile: ${status.toolProfile}.` : ''}
+          {status.activeToolTier || status.toolTier || status.toolProfile
+            ? ` Tool tier: ${status.activeToolTier ?? status.toolTier ?? status.toolProfile}.`
+            : ''}
         </p>
       </div>
       <span className={statusClassName}>{statusLabel}</span>

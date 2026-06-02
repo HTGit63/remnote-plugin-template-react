@@ -50,7 +50,6 @@ Safe write tools are:
 - `create_rem`
 - `append_to_rem`
 - `create_document`
-- `create_folder`
 - `update_rem`
 - `move_rem`
 - `reorder_children`
@@ -77,12 +76,12 @@ Approval policy:
 
 - read-only tools do not require approval;
 - `apply_structured_note_batch` dry runs do not require approval;
-- workspace-level `create_rem`, `create_document`, and `create_folder` can run without approval only when scope allows workspace creation;
+- workspace-level `create_rem` and `create_document` can run without approval only when scope allows workspace creation;
 - creating inside an existing parent Rem requires approval because it changes that existing parent;
 - updating, formatting, moving, or reordering existing Rems requires approval;
 - deleting and replacing always require approval.
 
-`create_folder` currently returns `SDK_UNSUPPORTED` because the installed RemNote SDK typings expose document creation through `setIsDocument(true)` but do not expose folder creation.
+`create_folder` is not public. It remains diagnostics-only as `SDK_UNSUPPORTED` because the installed RemNote SDK typings expose document creation through `setIsDocument(true)` but do not expose folder creation.
 
 ## Dangerous Operations
 
@@ -90,7 +89,6 @@ Dangerous tools are:
 
 - `replace_rem`
 - `delete_rem_by_id`
-- `delete_rem`
 
 These always require explicit approval in the internal bridge protocol, even in trusted modes. `replace_rem` is exposed with destructive hints. `delete_rem_by_id` is the only public delete tool and defaults to dry-run with ID guards. Focus/selection delete and legacy `delete_rem` are hidden by default.
 
@@ -130,12 +128,12 @@ The local server is constrained by default:
 - records recent request outcomes and health-check results without note bodies or markdown;
 - keeps only one active plugin WebSocket connection in local/personal mode.
 - routes public-hosted MCP calls only to the authenticated user's paired plugin session.
-- supports personal hosted single-port mode only when remote access, CORS allowlist, and `REMNOTE_BRIDGE_TOKEN` are explicitly configured.
-- supports public-hosted OAuth mode only with HTTPS public URL, MCP resource, PostgreSQL storage, `DATABASE_URL`, and no static `REMNOTE_BRIDGE_TOKEN`.
+- supports hosted single-port mode only with HTTPS public URL, MCP resource, PostgreSQL storage, `DATABASE_URL`, `SESSION_SECRET`, and `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
+- routes hosted MCP calls with ChatGPT OAuth/pairing bearer tokens, not the local bridge token.
 
-Use a generated `REMNOTE_BRIDGE_TOKEN` and enter the same value in the plugin's `Bridge Token` setting for real use.
+Use a generated `REMNOTE_BRIDGE_TOKEN` and enter the same value in the plugin's `Local Bridge Token` setting for local mode.
 
-Personal Render hosting may use a static token for one user. Public multi-user hosting now has repo/local OAuth, pairing, per-user routing, revocation, and rate limiting. Public launch still requires real provider credentials, hosted PostgreSQL, Render proof, live RemNote proof, privacy policy, support contact, and screenshots.
+Hosted Render mode must use OAuth, pairing, per-user routing, revocation, and rate limiting. Public launch still requires real provider credentials, hosted PostgreSQL, Render proof, live RemNote proof, privacy policy, support contact, and screenshots.
 
 ## Hosted-Auth Release Readiness Status
 
@@ -150,6 +148,16 @@ Repo/local automated gates for hosted-auth Phases 7-12 include:
 - `npm run server:test:pairing`
 - `npm run server:test:routing`
 - `npm run server:test:security`
+- `npm run server:test:tools-core`
+- `npm run server:test:tools-advanced`
+- `npm run server:test:tools-diagnostics`
+- `npm run server:test:tool-schemas`
+- `npm run server:test:hosted-diagnostics`
+- `npm run server:test:tier-switching`
+- `npm run server:test:idempotency`
+- `npm run server:test:performance`
+- `npm run server:test:e2e-hosted-smoke`
+- `npm run server:test:area3`
 - `npm audit`
 - `npm audit --omit=dev`
 - `git diff --check`

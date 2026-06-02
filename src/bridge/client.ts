@@ -68,6 +68,7 @@ export class BrowserBridgeClient {
     | 'toolTierSummary'
     | 'runtimeVerificationMatrix'
     | 'hiddenTools'
+    | 'requiresConnectorRefresh'
     | 'serverStartedAt'
   > = {};
 
@@ -122,6 +123,7 @@ export class BrowserBridgeClient {
       | 'toolTierSummary'
       | 'runtimeVerificationMatrix'
       | 'hiddenTools'
+      | 'requiresConnectorRefresh'
       | 'serverStartedAt'
     > = this.serverInfo
   ) {
@@ -195,6 +197,7 @@ export class BrowserBridgeClient {
         supportedTools: [...BRIDGE_TOOL_NAMES],
         accessScope: hostedSession.accessScope,
         trustedWriteMode: hostedSession.trustedWriteMode,
+        toolTier: hostedSession.toolTier,
       };
       this.send(register);
       return;
@@ -268,6 +271,7 @@ export class BrowserBridgeClient {
         toolTierSummary: parsed.toolTierSummary,
         runtimeVerificationMatrix: parsed.runtimeVerificationMatrix,
         hiddenTools: parsed.hiddenTools,
+        requiresConnectorRefresh: parsed.requiresConnectorRefresh,
         serverStartedAt: parsed.serverStartedAt,
       };
       this.updateStatus('connected', 'Connected to companion server.');

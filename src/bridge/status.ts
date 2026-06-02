@@ -52,6 +52,7 @@ export interface BridgeStatusSnapshot {
   toolTierSummary?: Record<string, unknown>;
   runtimeVerificationMatrix?: Array<Record<string, unknown>>;
   hiddenTools?: Array<{ name: string; reason: string }>;
+  requiresConnectorRefresh?: boolean;
   serverStartedAt?: string;
 }
 
@@ -97,7 +98,9 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
 
 export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
   if (status.lastError) {
-    return 'Check the companion server URL and bridge token, then reconnect.';
+    return status.serverUrl.startsWith('wss://')
+      ? 'Check Render URL, hosted pairing, and RemNote plugin connection, then reconnect.'
+      : 'Check the local companion server URL and bridge token, then reconnect.';
   }
 
   switch (status.state) {
@@ -124,7 +127,9 @@ export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
     case 'stale_connection':
       return 'Stale connection detected. Reconnect.';
     case 'error':
-      return 'Check the companion server and bridge token.';
+      return status.serverUrl.startsWith('wss://')
+        ? 'Check Render server, hosted pairing, and plugin WebSocket.'
+        : 'Check the local companion server and bridge token.';
     case 'disconnected':
     default:
       return 'Start the companion server, then keep this widget open.';

@@ -2,6 +2,7 @@ import {
   DEFAULT_TOOL_PROFILE,
   filterToolsForProfile,
   getProfileHiddenTools,
+  getToolPolicyEntry,
   getToolMetadata,
   groupToolsByPolicy,
   getToolTierSummary,
@@ -225,12 +226,30 @@ export function getToolRegistrySummary(
     toolTierSummary: getToolTierSummary(profile),
     runtimeVerificationMatrix: publicTools.map((tool) => {
       const metadata = getToolMetadata(tool);
+      const policy = getToolPolicyEntry(tool);
+      const registered = registeredTools.includes(tool);
+      const serverLocalVerified = serverLocalVerifiedTools.includes(tool);
+      const sdkUnsupported = sdkUnsupportedTools.includes(tool);
       return {
         ...metadata,
+        toolName: tool,
         listed: true,
-        registered: registeredTools.includes(tool),
-        serverLocalVerified: serverLocalVerifiedTools.includes(tool),
-        sdkUnsupported: sdkUnsupportedTools.includes(tool),
+        registered,
+        exposed: publicTools.includes(tool),
+        runtimeVerified: serverLocalVerified || Boolean(metadata.runtimeVerified),
+        runtimeVerifiedSource: serverLocalVerified ? 'server_local' : metadata.runtimeVerifiedSource,
+        lastSuccessTimestamp: null as string | null,
+        lastFailureTimestamp: null as string | null,
+        lastErrorCode: null as string | null,
+        averageLatencyMs: null as number | null,
+        p95LatencyMs: null as number | null,
+        serverLocalVerified,
+        sdkUnsupported,
+        recommendedFallback: policy.replacement ?? null,
+        schemaWarningStatus: sdkUnsupported || !metadata.sdkSupported ? 'sdk_unsupported' : 'ok',
+        schemaWarnings: sdkUnsupported || !metadata.sdkSupported
+          ? ['Tool is not exposed because the installed RemNote SDK cannot support it safely.']
+          : [],
       };
     }),
     registryCache: {

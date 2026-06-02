@@ -1,11 +1,10 @@
 # Render Deployment
 
-Status: repo config and local smoke tests exist; real hosted ChatGPT + RemNote proof still required.
+Status: hosted pairing is enabled only when `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted` and `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1` are both set. Real hosted ChatGPT + RemNote proof is still required before public launch.
 
 ## Public Hosted Env
 
 ```bash
-PUBLIC_BASE_URL=https://your-service.onrender.com
 REMNOTE_BRIDGE_PUBLIC_BASE_URL=https://your-service.onrender.com
 MCP_SERVER_URL=https://your-service.onrender.com/mcp
 OAUTH_ISSUER=https://your-service.onrender.com
@@ -15,7 +14,7 @@ PAIRING_CODE_TTL_SECONDS=600
 AUTHORIZATION_CODE_TTL_SECONDS=300
 ACCESS_TOKEN_TTL_SECONDS=3600
 REFRESH_TOKEN_TTL_SECONDS=2592000
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
 REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
 REMNOTE_BRIDGE_STORAGE=postgres
 DATABASE_URL=postgresql://...
@@ -32,7 +31,9 @@ NODE_ENV=production
 ALLOW_DEV_NO_AUTH=false
 ```
 
-Do not set `REMNOTE_BRIDGE_TOKEN` in public-hosted OAuth mode.
+Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. Hosted MCP tool calls use ChatGPT OAuth/pairing bearer tokens. Local bridge tokens are local mode only.
+
+If `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted` is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, startup must fail.
 
 ## Build/Start
 
@@ -55,6 +56,18 @@ POST /mcp
 WSS /remnote
 ```
 
+Expected `/health` facts:
+
+```json
+{
+  "deploymentMode": "hosted",
+  "toolCallAuthMode": "hosted_oauth_required",
+  "hostedPairingEnabled": true,
+  "mcpEndpoint": "https://your-service.onrender.com/mcp",
+  "bridgeEndpoint": "wss://your-service.onrender.com/remnote"
+}
+```
+
 Expected unauthenticated `/mcp` tool call:
 
 ```text
@@ -71,5 +84,7 @@ WWW-Authenticate: Bearer resource_metadata="https://.../.well-known/oauth-protec
 5. Plugin connects over WSS `/remnote`.
 6. ChatGPT calls `get_bridge_status`.
 7. ChatGPT calls a read tool with plugin open.
-8. Plugin disconnect revokes access.
-9. Offline plugin returns reconnect error.
+8. Dashboard WSS Plugin Connection changes from OFFLINE to CONNECTED.
+9. Runtime matrix marks called tools runtime verified.
+10. Plugin disconnect returns reconnect error without local-token 401.
+11. Revocation blocks future calls.

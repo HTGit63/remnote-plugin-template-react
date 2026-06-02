@@ -1281,6 +1281,7 @@ export interface BridgeServerHello {
   toolTierSummary?: Record<string, unknown>;
   runtimeVerificationMatrix?: Array<Record<string, unknown>>;
   hiddenTools?: Array<{ name: string; reason: string }>;
+  requiresConnectorRefresh?: boolean;
   serverStartedAt?: string;
 }
 

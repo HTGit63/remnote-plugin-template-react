@@ -12,6 +12,16 @@ export interface DashboardViewData {
   activeClientName?: string;
   lastHeartbeatAt?: string;
   mismatchCount: number;
+  toolCallAuthMode?: string;
+  activeToolTier?: string;
+  toolCountsByTier?: Record<string, number>;
+  verifiedToolCount?: number;
+  runtimeUnverifiedToolCount?: number;
+  lastSuccessfulTool?: string;
+  lastFailedTool?: string;
+  averageLatencyMs?: number | null;
+  chatGptPairingStatus?: string;
+  sessionStale?: boolean;
 }
 
 export function renderDashboard(data: DashboardViewData): string {
@@ -27,6 +37,16 @@ export function renderDashboard(data: DashboardViewData): string {
     activeClientName = 'None',
     lastHeartbeatAt = 'N/A',
     mismatchCount,
+    toolCallAuthMode,
+    activeToolTier = config.toolProfile,
+    toolCountsByTier = {},
+    verifiedToolCount = 0,
+    runtimeUnverifiedToolCount = 0,
+    lastSuccessfulTool = 'None',
+    lastFailedTool = 'None',
+    averageLatencyMs = null,
+    chatGptPairingStatus = 'none',
+    sessionStale = false,
   } = data;
 
   const uptimeFormatted = formatUptime(uptimeSeconds);
@@ -35,7 +55,14 @@ export function renderDashboard(data: DashboardViewData): string {
   const modeLabel = config.deploymentMode.toUpperCase().replace(/_/g, ' ');
 
   // Dynamic values depending on mode
-  const authModeDesc = config.bridgeToken ? 'Local Secure Bearer Token' : 'Unauthenticated (Development)';
+  const authModeDesc = toolCallAuthMode
+    ? toolCallAuthMode.toUpperCase().replace(/_/g, ' ')
+    : config.bridgeToken
+      ? 'LOCAL SECURE BEARER TOKEN'
+      : 'UNAUTHENTICATED DEVELOPMENT';
+  const tierCountsText = ['core', 'advanced_notes', 'developer_diagnostics', 'full']
+    .map((tier) => `${tier}: ${toolCountsByTier[tier] ?? 0}`)
+    .join(' / ');
   
   return `<!DOCTYPE html>
 <html lang="en">
@@ -478,6 +505,14 @@ export function renderDashboard(data: DashboardViewData): string {
           <div class="data-val">${uptimeFormatted}</div>
         </div>
         <div class="data-row">
+          <div class="data-label">Auth Mode</div>
+          <div class="data-val mono">${authModeDesc}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Session Stale</div>
+          <div class="data-val tag ${sessionStale ? 'tag-purple' : 'tag-green'}">${sessionStale ? 'YES' : 'NO'}</div>
+        </div>
+        <div class="data-row">
           <div class="data-label">Working Dir</div>
           <div class="data-val mono" style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${cwd}">${cwd}</div>
         </div>
@@ -504,6 +539,10 @@ export function renderDashboard(data: DashboardViewData): string {
           <div class="data-val mono">${lastHeartbeatAt}</div>
         </div>
         <div class="data-row">
+          <div class="data-label">ChatGPT Pairing</div>
+          <div class="data-val tag ${chatGptPairingStatus === 'connected' ? 'tag-green' : 'tag-blue'}">${chatGptPairingStatus.toUpperCase()}</div>
+        </div>
+        <div class="data-row">
           <div class="data-label">Message Stream</div>
           <div class="data-val mono">${config.bridgePath}</div>
         </div>
@@ -527,7 +566,11 @@ export function renderDashboard(data: DashboardViewData): string {
         </div>
         <div class="data-row">
           <div class="data-label">Active Profile</div>
-          <div class="data-val mono">${config.toolProfile}</div>
+          <div class="data-val mono">${activeToolTier}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Tool Counts By Tier</div>
+          <div class="data-val mono">${tierCountsText}</div>
         </div>
         <div class="data-row">
           <div class="data-label">Schema Version</div>
@@ -548,6 +591,14 @@ export function renderDashboard(data: DashboardViewData): string {
           <div class="data-val" style="font-size: 0.82rem; font-weight: 600;">${authModeDesc}</div>
         </div>
         <div class="data-row">
+          <div class="data-label">Verified Tools</div>
+          <div class="data-val tag tag-green">${verifiedToolCount}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Runtime Unverified</div>
+          <div class="data-val tag ${runtimeUnverifiedToolCount ? 'tag-purple' : 'tag-green'}">${runtimeUnverifiedToolCount}</div>
+        </div>
+        <div class="data-row">
           <div class="data-label">CORS Strict Origins</div>
           <div class="data-val tag tag-blue">${config.allowCors ? 'ACTIVE' : 'DISABLED'}</div>
         </div>
@@ -558,6 +609,18 @@ export function renderDashboard(data: DashboardViewData): string {
         <div class="data-row">
           <div class="data-label">Delete Tool Allowed</div>
           <div class="data-val tag ${config.enableDeleteTool ? 'tag-green' : 'tag-purple'}">${config.enableDeleteTool ? 'YES' : 'NO'}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Last Successful Tool</div>
+          <div class="data-val mono">${lastSuccessfulTool}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Last Failed Tool</div>
+          <div class="data-val mono">${lastFailedTool}</div>
+        </div>
+        <div class="data-row">
+          <div class="data-label">Average Latency</div>
+          <div class="data-val mono">${averageLatencyMs === null ? 'N/A' : `${averageLatencyMs} ms`}</div>
         </div>
       </div>
     </div>

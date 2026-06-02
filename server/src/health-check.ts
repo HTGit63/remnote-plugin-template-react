@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../../src/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 import {
   getPublicMcpToolNames,
   SERVER_LOCAL_MCP_TOOLS,
@@ -27,6 +28,7 @@ export interface RunBridgeHealthCheckOptions {
   timeoutMs?: number;
   signal?: AbortSignal;
   toolProfile?: ToolProfile;
+  principal?: AuthenticatedPrincipal;
 }
 
 const DIRECT_SERVER_TOOLS = new Set<string>(SERVER_LOCAL_MCP_TOOLS);
@@ -205,7 +207,8 @@ async function runFormattingHealthSections(
   hub: BridgeHub,
   targetRemId: string,
   timeoutMs: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  principal?: AuthenticatedPrincipal
 ): Promise<BridgeHealthCheckToolResult[]> {
   const sections: BridgeHealthCheckToolResult[] = [];
 
@@ -216,7 +219,7 @@ async function runFormattingHealthSections(
     inspect?: (response: BridgeResponse, startedAt: number) => BridgeHealthCheckToolResult
   ) {
     const sectionStartedAt = nowMs();
-    const response = await hub.callPlugin(bridgeTool, args as never, timeoutMs, signal);
+    const response = await hub.callPlugin(bridgeTool, args as never, timeoutMs, signal, principal);
     sections.push(
       inspect
         ? inspect(response, sectionStartedAt)
@@ -550,7 +553,8 @@ export async function runBridgeHealthCheck(
         markdown: title,
       },
       timeoutMs,
-      options.signal
+      options.signal,
+      options.principal
     );
     results.push(resultFromResponse('health_disposable_sandbox', 'create_rem', response, toolStartedAt));
     disposableSandboxRemId = createdRemIdFromResponse(response);
@@ -577,7 +581,8 @@ export async function runBridgeHealthCheck(
       hub,
       disposableSandboxRemId,
       timeoutMs,
-      options.signal
+      options.signal,
+      options.principal
     )));
   }
 
@@ -652,7 +657,8 @@ export async function runBridgeHealthCheck(
       bridgeTool,
       args as never,
       timeoutMs,
-      options.signal
+      options.signal,
+      options.principal
     );
     results.push(resultFromResponse(tool, bridgeTool, response, toolStartedAt));
   }

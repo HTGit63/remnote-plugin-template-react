@@ -25,12 +25,15 @@ import {
   writeText,
 } from './http.js';
 import { createMcpServer } from './mcp-server.js';
+import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
 import { ConsoleAuditLogger } from './sessions/audit-log.js';
 import type { AuditLogger } from './sessions/types.js';
-import { createStorageProvider, type StorageProvider } from './storage/index.js';
-import { getToolRegistrySummary, isPublicMcpToolName } from './tool-registry.js';
+import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from './storage/index.js';
+import { getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from './tool-registry.js';
 import { validateMcpToolPermission } from './tool-permissions.js';
-import { getToolPolicyEntry, normalizeToolProfile, type ToolProfile } from './tool-policy.js';
+import { getToolPolicyEntry, normalizeToolProfile, TOOL_SCHEMA_VERSION, type ToolProfile } from './tool-policy.js';
+import { runBridgeHealthCheck } from './health-check.js';
+import type { BridgeHealthCheckMode } from './health-check-types.js';
 import { renderDashboard } from './dashboard/templates.js';
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
@@ -54,6 +57,223 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
     });
+  }
+
+  function bearerToken(req: Parameters<typeof authorizeLocalMcpRequest>[0]): string | null {
+    const authorization = req.headers.authorization;
+    if (typeof authorization !== 'string') {
+      return null;
+    }
+    const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
+    return match?.[1] ?? null;
+  }
+
+  function pluginSessionSecret(req: Parameters<typeof authorizeLocalMcpRequest>[0]): string | null {
+    const header = req.headers['x-remnote-plugin-session-secret'];
+    if (typeof header === 'string' && header.trim()) {
+      return header.trim();
+    }
+    return bearerToken(req);
+  }
+
+  function normalizePluginAccessScope(
+    value: unknown,
+    fallback: ChatGptPairingSession['accessScope']
+  ): ChatGptPairingSession['accessScope'] {
+    return value === 'current-rem-tree' || value === 'full-kb' || value === 'focused-rem-only'
+      ? value
+      : fallback;
+  }
+
+  function normalizePluginTrustedWriteMode(
+    value: unknown,
+    fallback: ChatGptPairingSession['trustedWriteMode']
+  ): ChatGptPairingSession['trustedWriteMode'] {
+    return value === 'trusted-inside-scope' || value === 'ask-every-write'
+      ? value
+      : fallback;
+  }
+
+  function pairingPrincipal(session: ChatGptPairingSession): AuthenticatedPrincipal {
+    const scopeGrants = session.approvedScopes.filter((scope): scope is ScopeGrant =>
+      [
+        'bridge:read',
+        'bridge:write',
+        'bridge:trusted_write',
+        'bridge:delete',
+        'bridge:pair',
+        'bridge:admin',
+      ].includes(scope)
+    );
+    return {
+      subject: `pairing:${session.pairingId}`,
+      userId: session.oauthSubject || session.pairingId,
+      authMode: 'hosted_oauth',
+      scopeGrants: scopeGrants.length ? scopeGrants : ['bridge:read'],
+      sessionId: session.pairingId,
+      deviceId: session.pluginConnectionId,
+      pairingId: session.pairingId,
+      pluginInstanceId: session.pluginInstanceId,
+      accessScope: session.accessScope,
+      trustedWriteMode: session.trustedWriteMode,
+      toolTier: session.toolTier,
+      requiresConnectorRefresh: session.requiresConnectorRefresh,
+    };
+  }
+
+  async function authorizeHostedPluginApiRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]): Promise<
+    | { ok: true; session: ChatGptPairingSession; principal: AuthenticatedPrincipal }
+    | { ok: false; statusCode: 401 | 403; error: string }
+  > {
+    if (config.deploymentMode !== 'hosted' || !config.hostedPairingEnabled) {
+      return {
+        ok: false,
+        statusCode: 403,
+        error: 'Hosted plugin API is disabled because the server is in local-token mode.',
+      };
+    }
+
+    const secret = pluginSessionSecret(req);
+    if (!secret) {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Missing plugin session secret.',
+      };
+    }
+
+    const session = await storage.getChatGptPairingSessionByPluginSessionSecret(secret);
+    if (
+      !session ||
+      session.revokedAt ||
+      (session.status !== 'approved' && session.status !== 'connected')
+    ) {
+      return {
+        ok: false,
+        statusCode: 401,
+        error: 'Invalid, expired, or revoked plugin session.',
+      };
+    }
+
+    return { ok: true, session, principal: pairingPrincipal(session) };
+  }
+
+  function toolCountsByTier(summary: ReturnType<typeof registrySummary>) {
+    const tiers = summary.toolTierSummary.tiers as Record<string, string[]>;
+    return Object.fromEntries(Object.entries(tiers).map(([tier, tools]) => [tier, tools.length]));
+  }
+
+  function averageLatencyMs(requests: Array<{ durationMs?: number }>): number | null {
+    const durations = requests
+      .map((request) => request.durationMs)
+      .filter((duration): duration is number => typeof duration === 'number' && Number.isFinite(duration));
+    if (!durations.length) {
+      return null;
+    }
+    return Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length);
+  }
+
+  function p95LatencyMs(requests: Array<{ durationMs?: number }>): number | null {
+    const durations = requests
+      .map((request) => request.durationMs)
+      .filter((duration): duration is number => typeof duration === 'number' && Number.isFinite(duration))
+      .sort((a, b) => a - b);
+    if (!durations.length) {
+      return null;
+    }
+    const index = Math.max(0, Math.ceil(durations.length * 0.95) - 1);
+    return Math.round(durations[index]);
+  }
+
+  function runtimeVerificationMatrix(summary: ReturnType<typeof registrySummary>, diagnostics: ReturnType<BridgeHub['getDiagnostics']>) {
+    return summary.runtimeVerificationMatrix.map((tool) => {
+      const recent = diagnostics.recentRequests.filter((request) => publicMcpToolNameForBridgeTool(request.tool) === tool.name);
+      const lastSuccess = recent.find((request) => request.ok);
+      const lastFailure = recent.find((request) => !request.ok);
+      return {
+        ...tool,
+        exposed: summary.publicTools.includes(tool.name),
+        runtimeVerified: Boolean(lastSuccess) || Boolean(tool.serverLocalVerified),
+        runtimeVerifiedSource: lastSuccess
+          ? 'recent_plugin_call'
+          : tool.serverLocalVerified
+            ? 'server_local'
+            : tool.runtimeVerifiedSource,
+        lastSuccessTimestamp: lastSuccess?.finishedAt ?? null,
+        lastFailureTimestamp: lastFailure?.finishedAt ?? null,
+        lastErrorCode: lastFailure?.errorCode ?? null,
+        averageLatencyMs: averageLatencyMs(recent),
+        p95LatencyMs: p95LatencyMs(recent),
+        schemaWarningStatus:
+          lastFailure?.errorCode === 'SDK_UNSUPPORTED' || tool.sdkUnsupported
+            ? 'sdk_unsupported'
+            : tool.schemaWarningStatus,
+      };
+    });
+  }
+
+  function diagnosticsSummary(summary: ReturnType<typeof registrySummary>, diagnostics: ReturnType<BridgeHub['getDiagnostics']>) {
+    const lastSuccessfulTool = diagnostics.recentRequests.find((request) => request.ok);
+    const lastFailedTool = diagnostics.recentRequests.find((request) => !request.ok);
+    return {
+      activeToolTier: summary.activeToolTier,
+      toolCountsByTier: toolCountsByTier(summary),
+      verifiedToolCount: summary.verifiedToolCount,
+      runtimeUnverifiedToolCount: summary.runtimeUnverifiedToolCount,
+      lastSuccessfulTool,
+      lastFailedTool,
+      averageLatencyMs: averageLatencyMs(diagnostics.recentRequests),
+      pluginConnectionStatus: diagnostics.status.connected ? 'connected' : 'offline',
+    };
+  }
+
+  function pluginSessionTierResponse(session: ChatGptPairingSession) {
+    const activeTier = session.toolTier ?? config.toolProfile ?? 'core';
+    const summary = registrySummary(undefined, activeTier);
+    return {
+      ok: true,
+      toolTier: activeTier,
+      activeToolTier: summary.activeToolTier,
+      serverDefaultTier: config.toolProfile,
+      hostedPairingEnabled: true,
+      accessScope: session.accessScope,
+      trustedWriteMode: session.trustedWriteMode,
+      approvedAccessScope: session.accessScope,
+      approvedTrustedWriteMode: session.trustedWriteMode,
+      toolTierVersion: session.toolTierVersion ?? TOOL_REGISTRY_VERSION,
+      toolSchemaVersionAtApproval: session.toolSchemaVersionAtApproval ?? TOOL_SCHEMA_VERSION,
+      toolSchemaVersion: TOOL_SCHEMA_VERSION,
+      toolRegistryVersion: TOOL_REGISTRY_VERSION,
+      requiresConnectorRefresh: Boolean(session.requiresConnectorRefresh),
+      sessionStale: Boolean(session.requiresConnectorRefresh),
+      publicToolCount: summary.publicToolCount,
+      allPublicToolCount: summary.allPublicToolCount,
+      toolCountsByTier: toolCountsByTier(summary),
+      toolTierSummary: summary.toolTierSummary,
+      registry: summary,
+    };
+  }
+
+  async function latestPairingSummary() {
+    if (config.deploymentMode !== 'hosted') {
+      return {
+        status: 'disabled',
+        connected: false,
+        stale: false,
+        reason: 'local_token_mode',
+      };
+    }
+    const sessions = await storage.listChatGptPairingSessions(25);
+    const current = sessions.find((session) => ['connected', 'approved', 'pending'].includes(session.status));
+    return {
+      status: current?.status ?? 'none',
+      connected: current?.status === 'connected',
+      stale: Boolean(current?.requiresConnectorRefresh),
+      toolTier: current?.toolTier,
+      accessScope: current?.accessScope,
+      trustedWriteMode: current?.trustedWriteMode,
+      requiresConnectorRefresh: Boolean(current?.requiresConnectorRefresh),
+    };
   }
 
   function requestedToolProfile(req: Parameters<typeof authorizeLocalMcpRequest>[0], body: unknown, url: URL): ToolProfile | undefined {
@@ -249,10 +469,13 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     }
 
     if (url.pathname === '/' && req.method === 'GET') {
-      const registry = registrySummary();
+      const pairing = await latestPairingSummary();
+      const registry = registrySummary(undefined, pairing.toolTier ?? config.toolProfile);
       const status = hub.getStatus();
+      const diagnostics = hub.getDiagnostics();
+      const summary = diagnosticsSummary(registry, diagnostics);
       const activeClientName = status.connected ? 'RemNote Plugin' : 'None';
-      const lastHeartbeatAt = 'N/A';
+      const lastHeartbeatAt = diagnostics.activePluginConnections?.[0]?.lastPongAt ?? 'N/A';
 
       const html = renderDashboard({
         config,
@@ -266,6 +489,16 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         activeClientName,
         lastHeartbeatAt,
         mismatchCount: registry.registryMismatch.missing.length + registry.registryMismatch.unexpected.length,
+        toolCallAuthMode,
+        activeToolTier: registry.activeToolTier,
+        toolCountsByTier: summary.toolCountsByTier,
+        verifiedToolCount: summary.verifiedToolCount,
+        runtimeUnverifiedToolCount: summary.runtimeUnverifiedToolCount,
+        lastSuccessfulTool: summary.lastSuccessfulTool?.tool,
+        lastFailedTool: summary.lastFailedTool?.tool,
+        averageLatencyMs: summary.averageLatencyMs,
+        chatGptPairingStatus: pairing.status,
+        sessionStale: pairing.stale,
       });
 
       res.writeHead(200, {
@@ -281,7 +514,8 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     }
 
     if ((url.pathname === '/api/status' || url.pathname === '/status') && req.method === 'GET') {
-      const registry = registrySummary();
+      const pairing = await latestPairingSummary();
+      const registry = registrySummary(undefined, pairing.toolTier ?? config.toolProfile);
       writeJson(res, 200, {
         ok: true,
         name: 'remnote-chatgpt-bridge-server',
@@ -293,6 +527,7 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
         toolSchemaVersion: registry.toolSchemaVersion,
         toolRegistryVersion: registry.toolRegistryVersion,
         publicToolCount: registry.publicToolCount,
+        sessionStale: pairing.stale,
         startedAt,
       });
       return;
@@ -324,13 +559,16 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
     }
 
     if (url.pathname === '/health' && req.method === 'GET') {
-      const registry = registrySummary();
       const runtimeInfo = runtimeInfoForRequest(req);
+      const chatGptPairing = await latestPairingSummary();
+      const registry = registrySummary(undefined, chatGptPairing.toolTier ?? config.toolProfile);
       writeJson(res, 200, {
         ok: true,
         ...runtimeInfo,
         deployment: runtimeInfo,
         bridge: hub.getStatus(),
+        chatGptPairing,
+        sessionStale: chatGptPairing.stale,
         activeToolTier: registry.activeToolTier,
         toolTier: registry.toolTier,
         toolSchemaVersion: registry.toolSchemaVersion,
@@ -352,6 +590,9 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
 
       const localPort = localMcpPort(req);
       const runtimeInfo = runtimeInfoForRequest(req);
+      const registry = registrySummary(undefined, config.toolProfile);
+      const bridge = hub.getDiagnostics();
+      const pairing = await latestPairingSummary();
 
       writeJson(res, 200, {
         ok: true,
@@ -370,9 +611,158 @@ function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, stor
           toolTier: config.toolProfile,
           activeToolTier: config.toolProfile,
         },
-        registry: registrySummary(undefined, config.toolProfile),
-        bridge: hub.getDiagnostics(),
+        registry,
+        bridge,
+        chatGptPairing: pairing,
+        summary: diagnosticsSummary(registry, bridge),
+        runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
       });
+      return;
+    }
+
+    if (url.pathname.startsWith('/api/plugin/')) {
+      if (req.method === 'OPTIONS') {
+        const corsAllowed = applyCors(req, res, config);
+        setSecurityHeaders(res);
+        res.writeHead(corsAllowed ? 204 : 403);
+        res.end();
+        return;
+      }
+
+      applyCors(req, res, config);
+      if (!rateLimitRequest(req, res, config, 'plugin')) {
+        return;
+      }
+
+      const auth = await authorizeHostedPluginApiRequest(req);
+      if (!auth.ok) {
+        writeJson(res, auth.statusCode, { error: auth.error });
+        return;
+      }
+
+      let body: Record<string, unknown> = {};
+      if (req.method === 'POST') {
+        try {
+          const parsed = await readJsonBody(req, config.maxBodyBytes);
+          body = typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+            ? parsed as Record<string, unknown>
+            : {};
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          writeJson(res, /body too large/i.test(message) ? 413 : 400, {
+            error: error instanceof SyntaxError ? 'Invalid JSON request body.' : message || 'Invalid request body.',
+          });
+          return;
+        }
+      }
+
+      if (url.pathname === '/api/plugin/tool-tier' && req.method === 'GET') {
+        writeJson(res, 200, pluginSessionTierResponse(auth.session));
+        return;
+      }
+
+      if (url.pathname === '/api/plugin/tool-tier' && req.method === 'POST') {
+        const nextTier = normalizeToolProfile(
+          typeof body.toolTier === 'string' ? body.toolTier : auth.session.toolTier ?? config.toolProfile
+        );
+        const nextAccessScope = normalizePluginAccessScope(body.accessScope, auth.session.accessScope);
+        const nextTrustedWriteMode = normalizePluginTrustedWriteMode(body.trustedWriteMode, auth.session.trustedWriteMode);
+        const previousTier = auth.session.toolTier ?? config.toolProfile;
+        const tierChanged = previousTier !== nextTier;
+        const accessChanged =
+          auth.session.accessScope !== nextAccessScope ||
+          auth.session.trustedWriteMode !== nextTrustedWriteMode;
+        const updated = await storage.updateChatGptPairingSession(auth.session.pairingId, {
+          toolTier: nextTier,
+          toolTierVersion: TOOL_REGISTRY_VERSION,
+          toolTierChangedAt: tierChanged ? new Date().toISOString() : auth.session.toolTierChangedAt,
+          accessScope: nextAccessScope,
+          trustedWriteMode: nextTrustedWriteMode,
+          requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh || tierChanged || accessChanged),
+          lastSeenAt: new Date().toISOString(),
+        });
+        writeJson(res, 200, pluginSessionTierResponse(updated));
+        return;
+      }
+
+      if (url.pathname === '/api/plugin/diagnostics' && req.method === 'POST') {
+        const activeTier = auth.session.toolTier ?? config.toolProfile ?? 'core';
+        const registry = registrySummary(undefined, activeTier);
+        const bridge = hub.getDiagnostics();
+        const runtimeInfo = runtimeInfoForRequest(req);
+        writeJson(res, 200, {
+          ok: true,
+          level: 'standard',
+          server: {
+            name: 'remnote-chatgpt-bridge-server',
+            ...runtimeInfo,
+            startedAt,
+            mcpPath: config.mcpPath,
+            bridgePath: config.bridgePath,
+            toolProfile: activeTier,
+            toolTier: activeTier,
+            activeToolTier: activeTier,
+          },
+          session: {
+            pairingId: auth.session.pairingId,
+            status: auth.session.status,
+            accessScope: auth.session.accessScope,
+            trustedWriteMode: auth.session.trustedWriteMode,
+            toolTier: activeTier,
+            requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh),
+          },
+          registry,
+          bridge,
+          summary: diagnosticsSummary(registry, bridge),
+          runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
+        });
+        return;
+      }
+
+      if (url.pathname === '/api/plugin/health-check' && req.method === 'POST') {
+        const level = body.level === 'quick' || body.level === 'standard' || body.level === 'full'
+          ? body.level
+          : 'quick';
+        const activeTier = auth.session.toolTier ?? config.toolProfile ?? 'core';
+        const modeByLevel: Record<typeof level, BridgeHealthCheckMode> = {
+          quick: 'read_only',
+          standard: 'read_only',
+          full: 'read_only',
+        };
+        const timeoutByLevel: Record<typeof level, number> = {
+          quick: 4000,
+          standard: 9000,
+          full: 15000,
+        };
+        const result = await runBridgeHealthCheck(hub, {
+          mode: modeByLevel[level],
+          toolProfile: activeTier,
+          timeoutMs: timeoutByLevel[level],
+          parentId: typeof body.parentId === 'string' ? body.parentId : undefined,
+          targetRemId: typeof body.targetRemId === 'string' ? body.targetRemId : undefined,
+          principal: auth.principal,
+        });
+        const registry = registrySummary(undefined, activeTier);
+        const bridge = hub.getDiagnostics();
+        writeJson(res, 200, {
+          ok: true,
+          level,
+          result,
+          session: {
+            pairingId: auth.session.pairingId,
+            status: auth.session.status,
+            toolTier: activeTier,
+            requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh),
+          },
+          registry,
+          bridge,
+          summary: diagnosticsSummary(registry, bridge),
+          runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
+        });
+        return;
+      }
+
+      writeText(res, 404, 'Not Found');
       return;
     }
 

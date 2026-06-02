@@ -1,6 +1,6 @@
 # AGENTS.md
 
-## Current Auth Flow - 2026-06-01
+## Current Auth Flow - 2026-06-02
 
 Default deployment mode is **local bridge token**.
 
@@ -21,9 +21,16 @@ Local ChatGPT/MCP tool calls use only the local bearer token. There is no hosted
 
 `PLUGIN_NOT_PAIRED` means ChatGPT is hitting a hosted or stale connector path, not the local bridge. Reconfigure ChatGPT to `http://127.0.0.1:47392/mcp`, restart the local server, and refresh connector tools.
 
-Hosted mode is blocked at startup until real hosted pairing exists. Do not set `REMNOTE_BRIDGE_HOSTED_MODE=1` for local use.
+Hosted mode is available only when explicitly enabled:
 
-Future hosted mode must include:
+```text
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
+REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
+```
+
+Do not set hosted mode for local development. Hosted mode uses ChatGPT OAuth/pairing bearer tokens for MCP calls and `plugin_register` plus a plugin session secret for the RemNote WebSocket. It does not require `REMNOTE_BRIDGE_TOKEN` for MCP tool calls.
+
+Hosted mode must include:
 
 ```text
 OAuth user identity
@@ -44,7 +51,14 @@ Production no-auth: disabled
 Delete tools: hidden or approval-gated by safe delete-by-ID flow
 ```
 
-Primary local setup uses this README first. Older hosted-auth docs are design history until hosted startup guard is removed.
+Primary setup docs:
+
+```text
+Local development: this README local endpoint section
+Hosted Render: docs/render-deployment.md
+Release hardening: docs/release-hardening.md
+Test matrix: docs/test-matrix.md
+```
 
 ## Purpose
 
@@ -64,9 +78,9 @@ The bridge must make RemNote usable for high-quality note generation, editing, r
 
 ---
 
-# 0.0 Hosted Auth Status - 2026-05-26
+# 0.0 Hosted Auth Status - 2026-06-02
 
-Hosted-auth code artifacts exist from earlier repo-local smoke work, but hosted deployment is currently disabled by startup guard.
+Hosted deployment is enabled only by explicit startup guard:
 
 Current active implementation:
 
@@ -75,7 +89,9 @@ deploymentMode local by default
 local bearer token for real MCP tool calls
 unauthenticated MCP discovery
 single RemNote plugin WebSocket path for local tools
-hosted mode guard with explicit missing requirements
+hosted mode requires REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
+hosted MCP uses OAuth/pairing bearer tokens
+hosted plugin WebSocket uses plugin_register and session routing
 ```
 
 Still required before public launch/submission wording:
@@ -150,17 +166,18 @@ The plugin must only expose controlled RemNote operations through the bridge.
 The latest known working state has:
 
 ```text
-47 public MCP tools
-3 hidden gated legacy delete tools:
+46 public MCP tools
+unsupported create_folder is diagnostics-only, not public
+legacy delete tools are removed:
   delete_rem
   delete_focused_rem
   delete_selected_rem
 
 toolRegistryVersion:
-  2026-05-15.2
+  2026-06-01.1
 
 mcpDiscoveryVersion:
-  mcp-discovery-2026-05-15.2
+  mcp-discovery-2026-06-01.1
 ```
 
 The working tests showed that the bridge is now functionally strong.
@@ -555,7 +572,7 @@ create_list_answer_card
 
 ### Full profile
 
-Expose all 47 public tools for development, debugging, and regression testing.
+Expose all 46 public supported tools for development, debugging, and regression testing.
 
 The full profile must keep hidden legacy delete tools hidden by default.
 
@@ -599,7 +616,7 @@ git tag pre-final-polish-working-tools
 
 2. Record current tool count and registry version.
 
-3. Confirm the current 47 public tools are still discoverable.
+3. Confirm the current full-tier public supported tools are still discoverable.
 
 4. Confirm hidden delete tools remain hidden.
 
@@ -1456,24 +1473,23 @@ ChatGPT needs the MCP URL and the matching bearer token.
 
 ## 5.5 Hosted mode security boundaries
 
-Hosted mode is disabled until real hosted pairing is implemented.
-
-Do not set:
+Hosted mode is enabled only with:
 
 ```bash
-REMNOTE_BRIDGE_HOSTED_MODE=1
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
+REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
 ```
 
-Do not create a dummy hosted user or bypass pairing checks. Future hosted mode needs OAuth identity, device pairing, persistent session storage, MCP caller to plugin routing, revocation, and audit logging.
+Do not create a dummy hosted user or bypass pairing checks. Hosted mode needs OAuth identity, device pairing, persistent session storage, MCP caller to plugin routing, revocation, and audit logging.
 
-For public hosted mode, static token is not enough.
+For hosted MCP access, static local bridge token auth is not enough and must not be used.
 
-Public hosted mode requires:
+Hosted mode requires:
 
 ```text
-OAuth or account login
-device pairing
-per-user bridge token
+ChatGPT OAuth or pairing bearer token
+plugin_register WebSocket registration
+plugin session secret
 persistent session store
 session revocation UI
 multi-user routing

@@ -134,6 +134,7 @@ const TRANSIENT_BRIDGE_ERRORS = new Set<BridgeErrorCode>([
   'TIMEOUT',
   'CLIENT_DISCONNECTED',
 ]);
+const MAX_RECENT_REQUEST_OUTCOMES = 200;
 const RECONNECT_RETRY_WINDOW_MS = 1200;
 const RECONNECT_RETRY_INTERVAL_MS = 50;
 
@@ -794,6 +795,8 @@ export class BridgeHub {
         return;
       }
 
+      let registeredToolTier = this.config.toolProfile;
+      let requiresConnectorRefresh = false;
       if (this.config.deploymentMode === 'hosted') {
         const routed = await this.sessionRouter.authenticateAndRegister(socket, hello);
         if (!routed.ok) {
@@ -801,6 +804,8 @@ export class BridgeHub {
           this.lastDisconnectedAt = new Date().toISOString();
           return;
         }
+        registeredToolTier = routed.toolTier ?? this.config.toolProfile;
+        requiresConnectorRefresh = Boolean(routed.requiresConnectorRefresh);
         this.socketUsers.set(socket, routed.connection.userId);
         this.pluginReady = this.sessionRouter.getStatus().activeConnections > 0;
         this.lastConnectedAt = new Date().toISOString();
@@ -822,10 +827,11 @@ export class BridgeHub {
         type: 'server_hello',
         protocolVersion: 1,
         serverName: 'remnote-companion',
-        ...getToolRegistrySummary(this.config.enableDeleteTool, this.config.toolProfile, undefined, {
+        ...getToolRegistrySummary(this.config.enableDeleteTool, registeredToolTier, undefined, {
           discoveryAuthMode: 'no_auth_required',
           toolCallAuthMode,
         }),
+        requiresConnectorRefresh,
         serverStartedAt: this.startedAt,
       };
       socket.send(JSON.stringify(serverHello));
@@ -1010,8 +1016,8 @@ export class BridgeHub {
         });
     }
 
-    if (this.recentRequests.length > 25) {
-      this.recentRequests.length = 25;
+    if (this.recentRequests.length > MAX_RECENT_REQUEST_OUTCOMES) {
+      this.recentRequests.length = MAX_RECENT_REQUEST_OUTCOMES;
     }
   }
 
@@ -1037,8 +1043,8 @@ export class BridgeHub {
       ...this.getExecutionEvidence(response),
     });
 
-    if (this.recentRequests.length > 25) {
-      this.recentRequests.length = 25;
+    if (this.recentRequests.length > MAX_RECENT_REQUEST_OUTCOMES) {
+      this.recentRequests.length = MAX_RECENT_REQUEST_OUTCOMES;
     }
   }
 

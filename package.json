@@ -23,6 +23,8 @@
     "server:test:tool-schemas": "npm run test:tool-schemas --prefix server",
     "server:test:hosted-diagnostics": "npm run test:hosted-diagnostics --prefix server",
     "server:test:tier-switching": "npm run test:tier-switching --prefix server",
+    "server:test:area2": "npm run test:area2 --prefix server",
+    "server:test:area3": "npm run test:area3 --prefix server",
     "server:test:idempotency": "npm run test:idempotency --prefix server",
     "server:test:performance": "npm run test:performance --prefix server",
     "server:test:e2e-hosted-smoke": "npm run test:e2e-hosted-smoke --prefix server",

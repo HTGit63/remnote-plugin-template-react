@@ -19,8 +19,8 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   await plugin.settings.registerStringSetting({
     id: 'bridge-token',
-    title: 'Bridge Token',
-    description: 'Optional shared token. Must match REMNOTE_BRIDGE_TOKEN when the companion server requires one.',
+    title: 'Local Bridge Token',
+    description: 'Local developer mode only. Hosted Render/ChatGPT pairing does not use this token.',
     defaultValue: '',
   });
 

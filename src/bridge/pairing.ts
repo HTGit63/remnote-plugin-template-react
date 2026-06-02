@@ -1,5 +1,5 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
-import type { PermissionMode, PermissionScope } from './protocol';
+import type { BridgeToolProfile, PermissionMode, PermissionScope } from './protocol';
 
 export interface HostedPairingSession {
   pairingId?: string;
@@ -13,12 +13,10 @@ export interface HostedPairingSession {
   connectedLabel?: string;
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
-  expiresAt: string;
-}
-
-export interface PendingPairingChallenge {
-  pairingCode: string;
-  deviceId: string;
+  toolTier?: BridgeToolProfile;
+  toolTierVersion?: string;
+  toolSchemaVersionAtApproval?: string;
+  requiresConnectorRefresh?: boolean;
   expiresAt: string;
 }
 
@@ -31,10 +29,19 @@ export interface ChatGptPairingPreview {
   requestedScopes: string[];
   accessScope: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode: 'ask-every-write' | 'trusted-inside-scope';
+  toolTier?: BridgeToolProfile;
+  requiresConnectorRefresh?: boolean;
 }
 
 const DEVICE_ID_KEY = 'bridge-hosted-device-id';
 const SESSION_KEY = 'bridge-hosted-session';
+export const TOOL_TIER_STORAGE_KEY = 'bridge-tool-tier';
+
+export function normalizeBridgeToolTier(value: unknown): BridgeToolProfile {
+  return value === 'advanced_notes' || value === 'developer_diagnostics' || value === 'full'
+    ? value
+    : 'core';
+}
 
 export async function getOrCreateDeviceId(plugin: RNPlugin): Promise<string> {
   const existing = await plugin.storage.getLocal<string>(DEVICE_ID_KEY);
@@ -57,7 +64,7 @@ export async function loadHostedPairingSession(plugin: RNPlugin): Promise<Hosted
   if (!hasLegacySession && !hasChatGptPairing) {
     return null;
   }
-  if (new Date(stored.expiresAt) <= new Date()) {
+  if (!hasChatGptPairing && new Date(stored.expiresAt) <= new Date()) {
     await clearHostedPairingSession(plugin);
     return null;
   }
@@ -92,67 +99,6 @@ export function companionHttpBaseUrl(serverUrl: string): string {
   return url.toString().replace(/\/+$/, '');
 }
 
-export async function startHostedPairing(
-  plugin: RNPlugin,
-  serverUrl: string
-): Promise<PendingPairingChallenge> {
-  const deviceId = await getOrCreateDeviceId(plugin);
-  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/pair/start`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      deviceId,
-      deviceName: 'RemNote plugin',
-    }),
-  });
-  const data = await response.json();
-  if (!response.ok || !data.ok) {
-    throw new Error(data.error || 'Pairing start failed.');
-  }
-  return {
-    pairingCode: data.pairingCode,
-    deviceId,
-    expiresAt: data.expiresAt,
-  };
-}
-
-export async function finishHostedPairing(
-  plugin: RNPlugin,
-  serverUrl: string,
-  challenge: PendingPairingChallenge
-): Promise<HostedPairingSession> {
-  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/pair/status`, {
-    method: 'POST',
-    headers: {
-      accept: 'application/json',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      pairingCode: challenge.pairingCode,
-      deviceId: challenge.deviceId,
-    }),
-  });
-  const data = await response.json();
-  if (response.status === 202) {
-    throw new Error('Pairing still pending in dashboard.');
-  }
-  if (!response.ok || !data.ok) {
-    throw new Error(data.error || 'Pairing status check failed.');
-  }
-  const session: HostedPairingSession = {
-    deviceId: data.deviceId,
-    deviceName: data.deviceName,
-    pluginSessionId: data.pluginSessionId,
-    pluginSessionToken: data.pluginSessionToken,
-    expiresAt: data.expiresAt,
-  };
-  await saveHostedPairingSession(plugin, session);
-  return session;
-}
-
 export function accessScopeForPermissionScope(
   scope: PermissionScope
 ): 'focused-rem-only' | 'current-rem-tree' | 'full-kb' {
@@ -182,6 +128,7 @@ export async function approveChatGptPairing(
     permissionMode: PermissionMode;
     localConnectionLabel?: string;
     workspaceLabel?: string;
+    toolTier?: BridgeToolProfile;
   }
 ): Promise<HostedPairingSession> {
   const pluginInstanceId = await getOrCreateDeviceId(plugin);
@@ -202,6 +149,7 @@ export async function approveChatGptPairing(
       localConnectionLabel: options.localConnectionLabel,
       accessScope,
       trustedWriteMode,
+      toolTier: normalizeBridgeToolTier(options.toolTier),
       supportedTools: [],
     }),
   });
@@ -218,6 +166,10 @@ export async function approveChatGptPairing(
     connectedLabel: data.connectionLabel,
     accessScope: data.accessScope,
     trustedWriteMode: data.trustedWriteMode,
+    toolTier: normalizeBridgeToolTier(data.toolTier),
+    toolTierVersion: data.toolTierVersion,
+    toolSchemaVersionAtApproval: data.toolSchemaVersionAtApproval,
+    requiresConnectorRefresh: Boolean(data.requiresConnectorRefresh),
     expiresAt: data.expiresAt,
   };
   await saveHostedPairingSession(plugin, session);
@@ -247,7 +199,131 @@ export async function lookupChatGptPairing(
     requestedScopes: Array.isArray(data.requestedScopes) ? data.requestedScopes : [],
     accessScope: data.accessScope || 'focused-rem-only',
     trustedWriteMode: data.trustedWriteMode || 'ask-every-write',
+    toolTier: normalizeBridgeToolTier(data.toolTier),
+    requiresConnectorRefresh: Boolean(data.requiresConnectorRefresh),
   };
+}
+
+function hostedPluginHeaders(session: HostedPairingSession): Record<string, string> {
+  if (!session.sessionSecret) {
+    throw new Error('Missing hosted plugin session secret. Reconnect ChatGPT pairing.');
+  }
+  return {
+    accept: 'application/json',
+    'content-type': 'application/json',
+    'x-remnote-plugin-session-secret': session.sessionSecret,
+  };
+}
+
+export interface PluginToolTierState {
+  ok: boolean;
+  toolTier: BridgeToolProfile;
+  activeToolTier: BridgeToolProfile;
+  serverDefaultTier: BridgeToolProfile;
+  hostedPairingEnabled: boolean;
+  accessScope: HostedPairingSession['accessScope'];
+  trustedWriteMode: HostedPairingSession['trustedWriteMode'];
+  requiresConnectorRefresh: boolean;
+  sessionStale: boolean;
+  publicToolCount: number;
+  allPublicToolCount: number;
+  toolCountsByTier: Record<BridgeToolProfile, number>;
+  toolTierSummary?: Record<string, unknown>;
+  registry?: Record<string, unknown>;
+}
+
+export async function fetchPluginToolTier(
+  serverUrl: string,
+  session: HostedPairingSession
+): Promise<PluginToolTierState> {
+  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/plugin/tool-tier`, {
+    headers: hostedPluginHeaders(session),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'Tool tier sync failed.');
+  }
+  return {
+    ...data,
+    toolTier: normalizeBridgeToolTier(data.toolTier),
+    activeToolTier: normalizeBridgeToolTier(data.activeToolTier),
+    serverDefaultTier: normalizeBridgeToolTier(data.serverDefaultTier),
+    requiresConnectorRefresh: Boolean(data.requiresConnectorRefresh),
+    sessionStale: Boolean(data.sessionStale),
+  };
+}
+
+export async function updatePluginToolTier(
+  serverUrl: string,
+  session: HostedPairingSession,
+  options: {
+    toolTier: BridgeToolProfile;
+    permissionScope: PermissionScope;
+    permissionMode: PermissionMode;
+  }
+): Promise<PluginToolTierState> {
+  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/plugin/tool-tier`, {
+    method: 'POST',
+    headers: hostedPluginHeaders(session),
+    body: JSON.stringify({
+      toolTier: normalizeBridgeToolTier(options.toolTier),
+      accessScope: accessScopeForPermissionScope(options.permissionScope),
+      trustedWriteMode: writeModeForPermissionMode(options.permissionMode),
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'Tool tier update failed.');
+  }
+  return {
+    ...data,
+    toolTier: normalizeBridgeToolTier(data.toolTier),
+    activeToolTier: normalizeBridgeToolTier(data.activeToolTier),
+    serverDefaultTier: normalizeBridgeToolTier(data.serverDefaultTier),
+    requiresConnectorRefresh: Boolean(data.requiresConnectorRefresh),
+    sessionStale: Boolean(data.sessionStale),
+  };
+}
+
+export async function fetchHostedPluginDiagnostics(
+  serverUrl: string,
+  session: HostedPairingSession
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/plugin/diagnostics`, {
+    method: 'POST',
+    headers: hostedPluginHeaders(session),
+    body: JSON.stringify({ level: 'standard' }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || 'Hosted diagnostics failed.');
+  }
+  return data;
+}
+
+export async function runHostedPluginHealthCheck(
+  serverUrl: string,
+  session: HostedPairingSession,
+  options: {
+    level: 'quick' | 'standard' | 'full';
+    parentId?: string | null;
+    targetRemId?: string | null;
+  }
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${companionHttpBaseUrl(serverUrl)}/api/plugin/health-check`, {
+    method: 'POST',
+    headers: hostedPluginHeaders(session),
+    body: JSON.stringify({
+      level: options.level,
+      parentId: options.parentId || undefined,
+      targetRemId: options.targetRemId || undefined,
+    }),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || `${options.level} hosted health check failed.`);
+  }
+  return data;
 }
 
 export async function denyChatGptPairing(

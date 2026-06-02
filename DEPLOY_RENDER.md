@@ -16,7 +16,7 @@ REFRESH_TOKEN_TTL_SECONDS=2592000
 DATABASE_URL=postgresql://...
 NODE_ENV=production
 ALLOW_DEV_NO_AUTH=false
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
 REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
 REMNOTE_BRIDGE_STORAGE=postgres
 REMNOTE_BRIDGE_SINGLE_PORT=1
@@ -32,7 +32,9 @@ LOG_LEVEL=info
 REDACT_SECRETS_IN_LOGS=true
 ```
 
-Do not set `REMNOTE_BRIDGE_TOKEN` in `public_hosted_oauth` production mode.
+Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. Hosted MCP uses ChatGPT OAuth/pairing bearer tokens; the local bridge token is local mode only.
+
+Startup must fail if `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted` is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
 
 ## Commands
 
@@ -62,6 +64,16 @@ curl https://your-render-service.onrender.com/.well-known/oauth-protected-resour
 curl https://your-render-service.onrender.com/.well-known/oauth-authorization-server
 ```
 
+`/health` must report:
+
+```text
+deploymentMode: hosted
+toolCallAuthMode: hosted_oauth_required
+hostedPairingEnabled: true
+mcpEndpoint: https://your-render-service.onrender.com/mcp
+bridgeEndpoint: wss://your-render-service.onrender.com/remnote
+```
+
 Then run manual flow:
 
 ```text
@@ -77,7 +89,7 @@ Return to ChatGPT
 Call get_bridge_status
 Call get_focused_rem with plugin open
 Disconnect from plugin
-Verify tool calls fail
+Verify tool calls return hosted reconnect/session errors, not local bridge-token 401
 ```
 
 If Render restarts while using memory storage, pending pairings disappear. Production must use PostgreSQL through `DATABASE_URL`.
