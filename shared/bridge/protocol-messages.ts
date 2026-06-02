@@ -6,7 +6,7 @@ import type {
   BridgeToolName,
   PermissionMode,
   PermissionScope,
-} from './protocol-core';
+} from './protocol-core.js';
 import type {
   AppendToRemArgs,
   ApplyRemnoteCommandArgs,
@@ -38,7 +38,7 @@ import type {
   UpdateRemArgs,
   UpdateRemRichArgs,
   VerifyNoteDesignArgs,
-} from './protocol-write-args';
+} from './protocol-write-args.js';
 import type {
   DebugGetRawRichTextArgs,
   DebugGetRawRichTextResult,
@@ -62,7 +62,7 @@ import type {
   BridgePluginStatus,
   GetStatusArgs,
   SerializedRem,
-} from './protocol-read';
+} from './protocol-read.js';
 import type {
   AppendToRemResult,
   ApplyRemnoteCommandResult,
@@ -84,7 +84,7 @@ import type {
   ReorderChildrenResult,
   UpdateRemResult,
   VerifyNoteDesignResult,
-} from './protocol-write-results';
+} from './protocol-write-results.js';
 
 export interface BridgeToolArgs {
   ping: PingArgs;

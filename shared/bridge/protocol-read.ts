@@ -1,10 +1,10 @@
-import type { PermissionMode, PermissionScope } from './protocol-core';
+import type { PermissionMode, PermissionScope } from './protocol-core.js';
 import type {
   RemColorName,
   RemHeadingLevel,
   RemTypeName,
   RichTextSpanInput,
-} from './protocol-write-args';
+} from './protocol-write-args.js';
 
 export interface SerializedRem {
   remId: string;

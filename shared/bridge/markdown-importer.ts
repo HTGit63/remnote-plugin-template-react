@@ -7,7 +7,7 @@ import type {
   MarkdownMathOptions,
   RemHeadingLevel,
   StyledRemTreeNode,
-} from './protocol';
+} from './protocol.js';
 
 export const DEFAULT_MARKDOWN_IMPORT_LIMITS: Required<MarkdownImportLimits> = {
   maxMarkdownChars: 120000,
@@ -315,8 +315,8 @@ function analyzeTree(node: StyledRemTreeNode, depth = 1, stats?: MarkdownTreeSta
   next.nodeCount += 1;
   next.maxDepth = Math.max(next.maxDepth, depth);
   if (node.style?.headingLevel && node.style.headingLevel !== 'normal') next.headingCount += 1;
-  if (node.type === 'mathBlock' || node.richText?.some((span) => span.type === 'mathBlock')) next.mathBlockCount += 1;
-  if (node.richText?.some((span) => span.type === 'inlineMath') || /\$[^$\n]+?\$|\\\(.+?\\\)/.test(nodeText(node))) {
+  if (node.type === 'mathBlock' || node.richText?.some((span: any) => span.type === 'mathBlock')) next.mathBlockCount += 1;
+  if (node.richText?.some((span: any) => span.type === 'inlineMath') || /\$[^$\n]+?\$|\\\(.+?\\\)/.test(nodeText(node))) {
     next.inlineMathCount += 1;
   }
   if ((node.clientNodeId ?? '').startsWith('code-')) next.codeBlockCount += 1;
@@ -335,9 +335,9 @@ export function getMarkdownStyledTreeStats(tree: StyledRemTreeNode): MarkdownTre
 
 function treeOutputText(node: StyledRemTreeNode): string {
   const self = node.richText?.length
-    ? node.richText.map((span) => span.latex ?? span.text ?? '').join('')
+    ? node.richText.map((span: any) => span.latex ?? span.text ?? '').join('')
     : nodeText(node);
-  return [self, ...(node.children ?? []).map((child) => treeOutputText(child))].join('\n');
+  return [self, ...(node.children ?? []).map((child: StyledRemTreeNode) => treeOutputText(child))].join('\n');
 }
 
 function previewOutline(node: StyledRemTreeNode, depth = 0, output: string[] = []): string[] {

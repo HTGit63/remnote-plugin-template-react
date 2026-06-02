@@ -12,8 +12,8 @@ import type {
   StyledRemTreeNode,
   StyledRemTreeNodeType,
   StylingPlanOperation,
-} from './protocol-write-args';
-import type { BridgeErrorCode } from './protocol-core';
+} from './protocol-write-args.js';
+import type { BridgeErrorCode } from './protocol-core.js';
 
 export interface CreateRemResult {
   createdRemId: string;

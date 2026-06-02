@@ -116,8 +116,34 @@ function distViolations() {
     );
 }
 
+function localEsmImportViolations() {
+  const distRoot = join(repoRoot, 'server/dist');
+  if (!existsSync(distRoot)) return [];
+  const violations: string[] = [];
+  
+  const coreJs = join(distRoot, 'shared/bridge/protocol-core.js');
+  if (!existsSync(coreJs)) {
+    violations.push('server/dist/shared/bridge/protocol-core.js is missing');
+  }
+
+  const files = walk(distRoot).filter((f) => f.endsWith('.js'));
+  for (const file of files) {
+    const content = read(file);
+    const specs = importSpecifiers(content);
+    for (const spec of specs) {
+      if (spec.startsWith('.')) {
+        if (!spec.endsWith('.js') && !spec.endsWith('.json')) {
+          violations.push(`${rel(file)} has extensionless local ESM import: "${spec}"`);
+        }
+      }
+    }
+  }
+  return violations;
+}
+
 failIf(sourceImportViolations(), 'Boundary source import violations:');
 failIf(distViolations(), 'Boundary server/dist plugin runtime violations:');
+failIf(localEsmImportViolations(), 'ESM runtime import violations:');
 
 if (!process.exitCode) {
   console.log('Boundary smoke passed.');

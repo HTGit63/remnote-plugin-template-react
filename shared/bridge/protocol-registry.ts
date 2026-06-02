@@ -1,11 +1,11 @@
-import type { BridgeErrorCode, BridgeLifecycleEvent, BridgeToolName } from './protocol-core';
+import type { BridgeErrorCode, BridgeLifecycleEvent, BridgeToolName } from './protocol-core.js';
 import type {
   BridgeFailure,
   BridgeRequest,
   BridgeResponse,
   BridgeSuccess,
   BridgeToolResults,
-} from './protocol-messages';
+} from './protocol-messages.js';
 
 export interface BridgeToolAnnotations {
   readOnlyHint: boolean;

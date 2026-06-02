@@ -5,9 +5,9 @@ import type {
   BridgeResponse,
   BridgeToolName,
   BridgeErrorCode,
-} from '../../../shared/bridge/protocol';
-import type { BridgeHealthCheckResult } from '../health-check-types';
-import type { SessionRouter } from './session-router';
+} from '../../../shared/bridge/protocol.js';
+import type { BridgeHealthCheckResult } from '../health-check-types.js';
+import type { SessionRouter } from './session-router.js';
 
 export interface PendingRequest {
   resolve: (response: BridgeResponse) => void;

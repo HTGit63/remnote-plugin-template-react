@@ -5,15 +5,15 @@ import type {
   BridgeLifecycleEvent,
   BridgeLifecyclePhase,
   BridgeToolName,
-} from '../../../shared/bridge/protocol';
+} from '../../../shared/bridge/protocol.js';
 import {
   BRIDGE_TOOL_ANNOTATIONS,
   createBridgeFailure,
-} from '../../../shared/bridge/protocol';
+} from '../../../shared/bridge/protocol.js';
 import {
   TRANSIENT_BRIDGE_ERRORS,
   isRecord,
-} from './bridge-hub-types';
+} from './bridge-hub-types.js';
 
 export function isTransientFailure(response: BridgeResponse): boolean {
   return !response.ok && TRANSIENT_BRIDGE_ERRORS.has(response.error.code);
