@@ -1,4 +1,4 @@
-import type { BridgeToolName } from '../../src/bridge/protocol.js';
+import type { BridgeToolName } from '../../shared/bridge/protocol.js';
 
 export function publicMcpToolNameForBridgeTool(tool: BridgeToolName): string {
   switch (tool) {

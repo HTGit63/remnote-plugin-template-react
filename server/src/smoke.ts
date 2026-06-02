@@ -5,7 +5,7 @@ import {
   type BridgeResponse,
   type BridgeServerHello,
   type SerializedRem,
-} from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 import { callMcpTool, initializeMcp, listMcpTools } from './mcp-client.js';
 import { getPublicMcpToolNames } from './tool-registry.js';
@@ -308,7 +308,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: false,
         error: {
           code: 'SDK_UNSUPPORTED',
-          message: 'Folder creation is not exposed by the installed @remnote/plugin-sdk typings.',
+          message: 'Folder creation is not exposed by the installed RemNote plugin SDK typings.',
         },
       };
     case 'update_rem':
@@ -813,6 +813,7 @@ async function runReliabilitySmoke() {
     allowCors: false,
     requestTimeoutMs: 5000,
     toolProfile: 'full',
+    enableDeleteTool: true,
   });
   const disconnectWs = await connectMockPlugin(
     `ws://127.0.0.1:${disconnectApp.bridgePort}${disconnectApp.config.bridgePath}`,
@@ -946,6 +947,7 @@ async function runReliabilitySmoke() {
     allowCors: false,
     requestTimeoutMs: 5000,
     toolProfile: 'full',
+    enableDeleteTool: true,
   });
   const unknownDeleteWs = await connectMockPlugin(
     `ws://127.0.0.1:${unknownDeleteApp.bridgePort}${unknownDeleteApp.config.bridgePath}`,
@@ -974,7 +976,7 @@ async function runReliabilitySmoke() {
       !unknownDeleteResult.includes('"retryable":true') ||
       unknownDeleteResult.includes('"deletedRemId"')
     ) {
-      throw new Error('Disconnected real delete did not return retryable unknown delete status without claiming deletion.');
+      throw new Error(`Disconnected real delete did not return retryable unknown delete status without claiming deletion: ${unknownDeleteResult}`);
     }
     const diagnostics = unknownDeleteApp.hub.getDiagnostics();
     if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode !== 'RETRYABLE_UNKNOWN_DELETE_STATUS') {
@@ -1071,14 +1073,13 @@ async function runProfileAndSinglePortSmoke() {
       'get_bridge_status',
       'get_plugin_status',
       'get_focused_rem',
-      'delete_rem_by_id',
     ]) {
       if (!toolNames.includes(preferredTool)) {
         throw new Error(`Core tier must expose ${preferredTool}.`);
       }
     }
 
-    for (const hiddenTool of ['append_to_rem', 'debug_get_raw_rich_text', 'create_styled_rem_tree']) {
+    for (const hiddenTool of ['append_to_rem', 'debug_get_raw_rich_text', 'create_styled_rem_tree', 'delete_rem_by_id']) {
       if (toolNames.includes(hiddenTool)) {
         throw new Error(`Core tier must hide ${hiddenTool}.`);
       }
@@ -1102,7 +1103,6 @@ async function runProfileAndSinglePortSmoke() {
       statusResult.publicToolCount !== expectedToolNames.length ||
       !statusResult.allPublicToolCount ||
       statusResult.allPublicToolCount <= statusResult.publicToolCount ||
-      !statusResult.preferredTools?.includes('delete_rem_by_id') ||
       !statusResult.profileHiddenTools?.some((tool) => tool.name === 'append_to_rem')
     ) {
       throw new Error('Core tier status did not expose policy and hidden-tool metadata.');
@@ -1126,6 +1126,7 @@ const app = await startCompanionApp({
   mcpPort: 0,
   bridgeToken: token,
   toolProfile: 'full',
+  enableDeleteTool: true,
   allowRemote: false,
   allowCors: false,
 });
@@ -1140,7 +1141,7 @@ try {
   await initializeMcp(mcp);
   const toolListResponse = await listMcpTools(mcp);
   const toolNames = getToolNamesFromList(toolListResponse);
-  const expectedToolNames = getPublicMcpToolNames(false, app.config.toolProfile);
+  const expectedToolNames = getPublicMcpToolNames(app.config.enableDeleteTool, app.config.toolProfile);
   const tools = JSON.stringify(toolListResponse);
   if (!sameStringSet(toolNames, expectedToolNames)) {
     throw new Error(
@@ -1233,7 +1234,7 @@ try {
     !diagnostics.includes(`"publicToolCount":${expectedToolNames.length}`) ||
     !diagnostics.includes('toolRegistryVersion') ||
     !diagnostics.includes('"discoveryAuthMode":"no_auth_required"') ||
-    !diagnostics.includes('"callabilitySource":"registry_only_not_live_execution"')
+    !diagnostics.includes('"callabilitySource":"runtime_matrix_not_live_execution"')
   ) {
     throw new Error('get_bridge_diagnostics did not report the live registry, discovery auth mode, and callability source.');
   }
@@ -1243,7 +1244,7 @@ try {
     !diagnosticsResult.callableTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.callableTools?.includes('run_bridge_health_check') ||
     !diagnosticsResult.actualMcpCallableTools?.includes('get_bridge_status') ||
-    diagnosticsResult.callabilitySource !== 'registry_only_not_live_execution' ||
+    diagnosticsResult.callabilitySource !== 'runtime_matrix_not_live_execution' ||
     !diagnosticsResult.realPluginVerifiedTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.runtimeUnverifiedTools?.includes('create_rem') ||
     !diagnosticsResult.staticSdkUnsupportedTools?.includes('create_folder') ||

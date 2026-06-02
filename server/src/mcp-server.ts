@@ -1,5 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { BridgeToolArgs, BridgeToolName } from '../../src/bridge/protocol.js';
+import type { BridgeToolArgs, BridgeToolName } from '../../shared/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { BridgeRuntimeInfo } from './config.js';

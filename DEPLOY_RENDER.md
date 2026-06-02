@@ -1,95 +1,64 @@
-# Deploy On Render
+# Deploy on Render
 
-## Required Environment
+Render config source:
 
-```env
-PUBLIC_BASE_URL=https://your-render-service.onrender.com
-REMNOTE_BRIDGE_PUBLIC_BASE_URL=https://your-render-service.onrender.com
-MCP_SERVER_URL=https://your-render-service.onrender.com/mcp
-OAUTH_ISSUER=https://your-render-service.onrender.com
-SESSION_SECRET=replace-with-strong-random-secret
-ADMIN_DEBUG_SECRET=replace-with-admin-secret
-PAIRING_CODE_TTL_SECONDS=600
-AUTHORIZATION_CODE_TTL_SECONDS=300
-ACCESS_TOKEN_TTL_SECONDS=3600
-REFRESH_TOKEN_TTL_SECONDS=2592000
-DATABASE_URL=postgresql://...
-NODE_ENV=production
-ALLOW_DEV_NO_AUTH=false
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
-REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
-REMNOTE_BRIDGE_STORAGE=postgres
+```text
+render.yaml
+```
+
+Current Render strategy:
+
+```text
+rootDir: server
+buildCommand: npm ci && npm run build
+startCommand: npm start
+```
+
+Server package has its own `package-lock.json`. Use `npm ci` for deterministic hosted installs.
+
+## Required Environment Variables
+
+```text
 REMNOTE_BRIDGE_SINGLE_PORT=1
 REMNOTE_BRIDGE_HOST=0.0.0.0
-PORT=47392
-ALLOWED_ORIGINS=https://chatgpt.com,https://chat.openai.com,https://www.remnote.com,https://your-render-service.onrender.com
+REMNOTE_BRIDGE_ALLOW_REMOTE=1
 REMNOTE_BRIDGE_ALLOW_CORS=1
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
+REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
+REMNOTE_BRIDGE_STORAGE=postgres
 PLUGIN_WS_PATH=/remnote
-REMNOTE_BRIDGE_WS_PATH=/remnote
 REMNOTE_BRIDGE_MCP_PATH=/mcp
+REMNOTE_BRIDGE_TOOL_PROFILE=core
 REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=0
-LOG_LEVEL=info
-REDACT_SECRETS_IN_LOGS=true
+REMNOTE_BRIDGE_AUDIT_LOG=1
+ALLOWED_ORIGINS=https://chatgpt.com,https://chat.openai.com,https://remnote.com,https://www.remnote.com
+SESSION_SECRET
+ADMIN_DEBUG_SECRET
+DATABASE_URL
+PUBLIC_BASE_URL
+MCP_SERVER_URL
+OAUTH_ISSUER
 ```
 
-Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. Hosted MCP uses ChatGPT OAuth/pairing bearer tokens; the local bridge token is local mode only.
+## Build Verification
 
-Startup must fail if `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted` is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
-
-## Commands
+Before deploying:
 
 ```bash
-npm install
-npm run server:install
-npm run build
 npm run server:build
-npm run server:start
+npm run server:test:boundaries
+cd server
+npm install
+npm run build
 ```
 
-## URLs
+The server build must emit only `server/dist/server/**` and `server/dist/shared/**`. It must not emit plugin runtime files under `server/dist/src/remnote/**`, `server/dist/src/widgets/**`, or plugin bridge handler/client/pairing files.
 
-```text
-ChatGPT MCP connector URL:
-https://your-render-service.onrender.com/mcp
+## Troubleshooting
 
-RemNote plugin WebSocket URL:
-wss://your-render-service.onrender.com/remnote
-```
-
-## Required Checks
-
-```bash
-curl https://your-render-service.onrender.com/health
-curl https://your-render-service.onrender.com/.well-known/oauth-protected-resource
-curl https://your-render-service.onrender.com/.well-known/oauth-authorization-server
-```
-
-`/health` must report:
-
-```text
-deploymentMode: hosted
-toolCallAuthMode: hosted_oauth_required
-hostedPairingEnabled: true
-mcpEndpoint: https://your-render-service.onrender.com/mcp
-bridgeEndpoint: wss://your-render-service.onrender.com/remnote
-```
-
-Then run manual flow:
-
-```text
-Add MCP connector in ChatGPT
-Authorize connector
-Open Render /connect page
-Copy pairing code
-Open RemNote plugin
-Enter code
-Choose focused scope + ask-every-write
-Approve
-Return to ChatGPT
-Call get_bridge_status
-Call get_focused_rem with plugin open
-Disconnect from plugin
-Verify tool calls return hosted reconnect/session errors, not local bridge-token 401
-```
-
-If Render restarts while using memory storage, pending pairings disappear. Production must use PostgreSQL through `DATABASE_URL`.
+- Hosted startup fails with hosted pairing guard: set `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1` intentionally.
+- `PLUGIN_NOT_PAIRED`: ChatGPT is using hosted/stale connector path; local mode should use `http://127.0.0.1:47392/mcp`.
+- `PLUGIN_NOT_CONNECTED`: MCP server is reachable but local plugin WebSocket is absent.
+- `TRUSTED_WRITE_REQUIRED`: approve trusted write mode and `bridge:trusted_write`.
+- `INSUFFICIENT_SCOPE`: reconnect with broader scope.
+- Markdown import partial failure: inspect `rootRemId`, `createdRemIds`, `rollbackStatus`, and `verification`.

@@ -10,5 +10,15 @@
     "outDir": "dist",
     "resolveJsonModule": true
   },
-  "include": ["src/**/*.ts", "../src/bridge/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "../shared/**/*.ts"
+  ],
+  "exclude": [
+    "../src/remnote/**",
+    "../src/widgets/**",
+    "../src/bridge/client.ts",
+    "../src/bridge/handlers.ts",
+    "../src/bridge/pairing.ts"
+  ]
 }

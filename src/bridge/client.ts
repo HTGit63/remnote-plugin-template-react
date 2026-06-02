@@ -12,7 +12,7 @@ import {
   type ApprovalResolution,
   createBridgeFailure,
   BRIDGE_TOOL_NAMES,
-} from './protocol';
+} from '../../shared/bridge/protocol';
 import { type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
 import type { HostedPairingSession } from './pairing';

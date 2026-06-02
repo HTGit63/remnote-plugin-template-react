@@ -1,4 +1,4 @@
-import type { BridgeToolName, PermissionMode, PermissionScope } from '../bridge/protocol';
+import type { BridgeToolName, PermissionMode, PermissionScope } from '../../shared/bridge/protocol';
 
 export const DEFAULT_PERMISSION_MODE: PermissionMode = 'confirm_writes';
 export const DEFAULT_PERMISSION_SCOPE: PermissionScope = 'focused_rem_only';

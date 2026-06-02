@@ -6,7 +6,7 @@ import type {
   BridgeServerHello,
   BridgeToolName,
   SerializedRem,
-} from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 
 let nextId = 1;

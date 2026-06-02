@@ -282,3 +282,9 @@ This log tracks all changes, structural enhancements, and tests performed for th
 - Final command list recorded in this session output.
 
 ---
+# 2026-06-02 stabilization cleanup
+
+- Removed tracked empty log placeholders `dev-server.err.log` and `watch8090.err.log`.
+- Removed empty `src/services/` directory.
+- Removed stale `docs/final-polish-*` phase notes superseded by `docs/audits/*` and current development/deployment docs.
+- Kept unsupported `create_folder` as SDK-unsupported protocol capability only; not public/callable.

@@ -1,152 +1,35 @@
 # Next Steps
 
-## Completed Milestones
+## Required Before Public Production
 
-1. Documentation and product direction updated.
-2. OpenAI runtime dependency removed from the active plugin path.
-3. RemNote SDK logic refactored into service files.
-4. AI sidebar replaced with bridge-status widget.
-5. Typed bridge protocol added.
-6. WebSocket bridge client added inside the plugin.
-7. Local companion server skeleton added.
-8. Read-only tool flow implemented through MCP and the bridge.
-9. Safe create/append write flow implemented with RemNote-side approval.
-10. MCP/ChatGPT tool layer added.
-11. Phase 1 safety freeze complete: public MCP descriptors do not expose legacy direct delete paths.
-12. Phase 2 ordering complete: create, append, and tree root creation append at the end by default, with explicit insert indexes returned for verification.
-13. Phase 3 structure awareness complete: MCP exposes bounded selection, children, breadcrumbs, search, rich Rem, and document/folder tree tools.
-14. Phase 4 safe create complete: create Rem/document/tree paths are bounded and folder creation returns `SDK_UNSUPPORTED` because the installed RemNote SDK typings do not expose folders.
-15. Phase 5 scope control complete: plugin settings now enforce focused, focused-descendant, selected, selected-descendant, approved-root, or workspace scopes inside the plugin handler.
-16. Phase 6 edit/reorder complete: `replace_rem` and `reorder_children` are exposed with approval and deterministic full-list validation.
-17. Phase 7 secure delete complete: public delete is limited to explicit guarded ID deletion with preview and approval; legacy direct delete paths are removed.
-18. Phase 8 reliability complete: request timeout, plugin disconnect, approval timeout, rejection, and duplicate approval paths return structured errors instead of hanging.
-19. Phase 9 secure readiness complete: local auth/session/audit interfaces exist, local token auth still protects `/mcp`, and hosted mode was documented as blocked until real OAuth/pairing. Superseded by 2026-05-26 hosted-auth Phase 7-12 completion below.
-20. Phase 10 release-readiness docs complete: README, architecture, safety, manual QA, and test matrix now match implemented code.
-21. Follow-up reliability complete: live diagnostics, tool registry stamp, 24-tool default registry, client-disconnect cancellation, request outcome ledger, and task-focused plugin UI are implemented and smoke-tested.
-22. 2026-05-09 closeout complete: MCP `tools/list` is asserted against the shared public registry, unknown MCP tool calls return structured `UNKNOWN_TOOL`, alias inputs match manual-test prompts, focused-descendant scope is wired, and the styled-tool SDK surface was audited without exposing fake tools.
-23. 2026-05-10 rich-note closeout complete: MCP discovery now exposes 40 public tools, no-auth `initialize`/`tools/list` works for ChatGPT refresh, Simple/Advanced plugin UI landed, and SDK-backed rich text, heading, color, styled tree, math, and flashcard tools are public and smoke-tested.
-24. 2026-05-14 milestone 1 complete and verified: diagnostics now distinguish listed tools from real plugin-verified tools, runtime-unverified tools, and SDK-unsupported tools.
-25. 2026-05-14 milestone 2 complete and verified: bridge responses and diagnostics include lifecycle evidence, request IDs are visible in approval UI, timeout cleanup is fixed, and cancellation is recorded.
-26. 2026-05-14 milestone 3 complete and verified: focused-descendant and approved-root scope enforcement remains active, while created Rem IDs and partial execution details are reported for same-operation write failures.
-27. 2026-05-14 milestone 4 complete and verified: SDK formatting calls use supported color names and return `SDK_UNSUPPORTED` for unsupported whole-Rem highlight clearing or normal type reset paths.
-28. 2026-05-14 milestone 5 complete and verified: rich text paths parse inline and display LaTeX delimiters into RemNote math nodes, with MCP smoke coverage.
-29. 2026-05-14 milestone 6 complete and verified: `apply_structured_note_batch` is public and supports dry run, idempotency keys, rollback-on-failure details, verification, styles, nested children, flashcards, and math.
-30. 2026-05-14 milestone 7 complete and verified: `create_rem_tree` now routes through the styled structured write engine, while `create_styled_rem_tree` remains the shared engine used by `apply_structured_note_batch`.
-31. 2026-05-14 milestone 8 complete and verified: `run_bridge_health_check` records pass/fail/skipped/unsupported results and `get_bridge_diagnostics` surfaces the last health check.
-32. 2026-05-14 milestone 9 repo QA complete: safe/read smoke checks, structured note dry-run/apply checks, failure survival, timeout, disconnect, and cancellation checks pass in `server:smoke`.
-33. 2026-05-14 RemNote knowledge pool complete: `get_remnote_capability_guide` exposes Rems, documents/folders/top-level Rems, formatting, flashcards, references/tags/portals, and bridge workflow guidance from RemNote help/forum sources.
-34. 2026-05-17 final-polish Phase 3 complete: tool policy metadata, simple/full profiles, profile-aware MCP registration/listing, preferred-tool diagnostics, and high-level-tool guidance are implemented and smoke-tested.
-35. 2026-05-17 final-polish Phase 4 complete: the widget default view is calmer, approval remains fixed and explicit, advanced diagnostics stay hidden, and profile/health-check controls are visible.
-36. 2026-05-17 final-polish Phase 5 complete for personal hosted readiness: single-port mode, `render.yaml`, root `server:start`, and local smoke coverage for shared WebSocket/MCP serving are done.
-37. 2026-05-17 final-polish Phase 6 complete: MCP registration was split into `server/src/tools/*`, `src/remnote/write.ts` became a category barrel, public tool order is preserved, and hidden legacy deletes remain hidden by default.
-38. 2026-05-17 final-polish Phase 7 local QA/docs complete: automated local gates pass, `bridge:live-test` reaches MCP but still requires a connected RemNote plugin for live tool execution, and `docs/final-polish-phase-6-7.md` records the proof.
-39. 2026-05-26 hosted-auth Phase 7 complete: public-hosted OAuth metadata, DCR, PKCE auth-code, refresh rotation, revoke, bearer verification, audience/resource checks, and scope rejection are implemented and smoke-tested.
-40. 2026-05-26 hosted-auth Phase 8 complete: trusted focused/selected write mode remains plugin-enforced and visible; destructive tools still require approval.
-41. 2026-05-26 hosted-auth Phase 9 complete: hosted calls route by authenticated user to the paired plugin session, status states are expanded, and high-level write idempotency records avoid note content.
-42. 2026-05-26 hosted-auth Phase 10 complete: rate limits, CSRF, security headers, token/session revocation, public-mode config guards, and PostgreSQL storage dependency are wired.
-43. 2026-05-26 hosted-auth Phase 11 complete: plugin pairing delivers session credentials only to plugin local storage, not the dashboard; dashboard pairing/revoke remains session + CSRF gated.
-44. 2026-05-26 hosted-auth Phase 12 complete at repo/local level: auth, pairing, routing, smoke, build, type, validation, diff, and audit gates were added or run.
+1. Run full automated release gates from `README.md`.
+2. Run server-only clean install/build from `server/`.
+3. Run live RemNote manual golden test with `create_or_replace_note_from_markdown`.
+4. Verify Render deployment with real hosted PostgreSQL and OAuth/provider secrets.
+5. Monitor and maintain codebase split guidelines (no files over 1000 lines) during future feature work.
 
-## Current Phase
+## Manual Golden Test
 
-Milestones 1-9, final-polish Phases 3-7, and hosted-auth Phases 7-12 are complete at repo/local validation level. The public registry exposes 47 MCP tools by default in the full profile, while `REMNOTE_BRIDGE_TOOL_PROFILE=simple` exposes the reduced normal-use surface. A real RemNote sandbox health check, hosted Render run, and ChatGPT Developer Mode run are still required before public hosted production/submission wording.
-
-## Next Phase
-
-External launch closeout:
-
-- run `run_bridge_health_check` against a disposable RemNote sandbox parent with `mode=safe_write`;
-- run `npm run bridge:live-test` with RemNote open, plugin connected, and `REMNOTE_LIVE_TEST_PARENT_ID` set to a disposable Rem;
-- record the health-check result from `get_bridge_diagnostics.lastHealthCheck`;
-- deploy stable HTTPS `/mcp` and WSS `/remnote-bridge` with PostgreSQL;
-- verify dashboard login with real OAuth provider credentials;
-- run ChatGPT Developer Mode through the hosted endpoint;
-- collect app submission assets.
-
-## Blocked Items
-
-- `create_folder` remains blocked by installed `@remnote/plugin-sdk` folder API support.
-- `create_styled_rem_tree` and `apply_structured_note_batch` are now public and smoke-tested. They use SDK rich text, font size, highlight, LaTeX, Rem type, card, and child creation helpers. Folder creation remains blocked by installed SDK support.
-- Public hosted repo code is no longer blocked by missing OAuth/pairing/routing. External launch remains blocked by hosted PostgreSQL URL, provider credentials, Render deployment, ChatGPT Developer Mode proof, privacy policy URL, support contact, screenshots, hosted HTTPS MCP URL, and one recorded live RemNote sandbox health-check pass.
-
-## Shipping Verification
-
-Run these before release:
-
-```bash
-npm run check-types
-npm run validate
-npm run build
-npm run server:build
-npm run server:smoke
-npm run bridge:live-test
-npm audit
-npm audit --omit=dev
-git diff --check
-```
-
-## Manual RemNote QA
-
-Use a sandbox document first:
+Focus Rem:
 
 ```text
-Test KB Space / ChatGPT Bridge Sandbox
+Plugin Test
 ```
 
-Manual checks:
+Use:
 
-- start plugin dev server with `npm run dev`;
-- start companion server with a generated `REMNOTE_BRIDGE_TOKEN`;
-- enter the same token in the plugin setting;
-- confirm the bridge-status widget shows connected;
-- confirm the widget shows the live tool count and registry stamp;
-- if ChatGPT shows stale tools, restart the companion server and refresh the ChatGPT app/connector;
-- call MCP `tools/list` and verify it matches `get_bridge_status.publicTools`;
-- focus a test Rem and call `get_focused_rem`;
-- call `get_bridge_diagnostics` and verify it reports 47 public tools, zero pending requests, no-auth discovery mode, the recent request ledger, and `lastHealthCheck`;
-- call `get_remnote_capability_guide` and verify it returns Rems, documents/folders, formatting, flashcards, and bridge workflow guidance;
-- call `run_bridge_health_check` with a sandbox `parentId`, first with `mode=read_only`, then with `mode=safe_write`, and record pass/fail/skipped/unsupported results;
-- call `get_children` and verify direct child order;
-- call `get_rem_breadcrumbs` and verify parent chain IDs/titles;
-- call `search_rems` with a narrow query and verify bounded results;
-- set `Bridge Permission Scope` to `focused_rem_only` and verify out-of-scope Rem IDs are rejected;
-- set `Bridge Permission Scope` to `focused_rem_and_descendants` and verify a child created under the focused Rem can be read back while outside Rem IDs remain rejected;
-- set `Approved Document or Folder` scope with a sandbox root Rem ID and verify writes outside that root are rejected;
-- call `append_to_rem`, approve in RemNote, and verify child creation;
-- call `append_to_rem`, reject in RemNote, and verify no child is created.
-- call `create_document` inside the sandbox and verify the created Rem opens as a document;
-- call `create_folder` and verify it returns `SDK_UNSUPPORTED`;
-- call `reorder_children` with a full ordered direct-child ID list and verify order changes exactly;
-- call `delete_rem_by_id` on a disposable sandbox child with `dryRun: true`, verify preview, then retry with `dryRun: false` and `expectedParentId`;
-- call `delete_rem_by_id` with a mismatched `expectedParentId` and verify no Rem is deleted.
-- leave an approval pending until timeout and verify `APPROVAL_TIMEOUT`;
-- open two write requests while one approval is pending and verify the second returns `APPROVAL_PENDING`;
-- stop the plugin while a request is pending and verify `PLUGIN_NOT_CONNECTED`.
-- interrupt/disconnect an MCP caller while approval is pending and verify the server records `CLIENT_DISCONNECTED` and the plugin approval is cancelled.
+```text
+create_or_replace_note_from_markdown
+```
 
-## Test Matrix
+Sample must include H1 title, at least 8 H3 sections, blank spacers, multiple paragraphs, nested bullets, numbered list, inline math, block math, code block, table, and formula-heavy section.
 
-| Area | Test | Expected |
-|---|---|---|
-| Connection | plugin connects to server | connected status |
-| Read | get focused Rem | returns selected content |
-| Order | append child | appears after existing children |
-| Tree | create ordered tree | order preserved and bounded |
-| Approval | reject write | no write, `APPROVAL_REJECTED` |
-| Timeout | ignore approval | `APPROVAL_TIMEOUT` |
-| Duplicate approval | send second write while first is pending | `APPROVAL_PENDING` |
-| Scope | write outside scope | `OUT_OF_SCOPE` |
-| Delete | missing `DELETE` | blocked before approval |
-| Disconnect | plugin disconnect during request | `PLUGIN_NOT_CONNECTED` |
-| Client disconnect | MCP caller disconnects during approval | `CLIENT_DISCONNECTED` recorded and plugin approval cancelled |
-| Server timeout | plugin does not respond | `TIMEOUT` |
-| Diagnostics | call `get_bridge_diagnostics` | reports registry version, 47 tools, pending count, recent outcomes, and last health check |
-| Health check | call `run_bridge_health_check` | records pass/fail/skipped/unsupported tools using only disposable `delete_rem_by_id` in destructive mode |
-| Knowledge pool | call `get_remnote_capability_guide` | returns RemNote hierarchy/design/flashcard guidance |
-| Invalid input | malformed bridge request | `INVALID_ARGS` |
-| Auth | missing MCP bearer token | `401` |
-| Hosted mode | `REMNOTE_BRIDGE_HOSTED_MODE=1` | startup fails intentionally |
+Do not mark manual proof complete without live plugin access and actual returned `rootRemId`, `createdRemIds`, and passing verification.
 
-## Release Notes
+## Known Limitations
 
-The MCP layer intentionally exposes bounded read tools, scoped safe writes, destructive-hinted replace, and guarded ID delete. Legacy direct delete paths stay absent.
+- Live RemNote manual golden test is environment-dependent.
+- Hosted Render proof needs real secrets and deployment logs.
+- `create_folder` remains SDK-unsupported.
+- All primary code files successfully comply with size limits under Goal 2.
+

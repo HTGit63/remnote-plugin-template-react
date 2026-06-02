@@ -1,5 +1,5 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
-import type { BridgeToolProfile, PermissionMode, PermissionScope } from './protocol';
+import type { BridgeToolProfile, PermissionMode, PermissionScope } from '../../shared/bridge/protocol';
 
 export interface HostedPairingSession {
   pairingId?: string;

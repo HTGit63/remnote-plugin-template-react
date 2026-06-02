@@ -1,5 +1,5 @@
 import type { RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import type { BridgeErrorCode } from '../bridge/protocol';
+import type { BridgeErrorCode } from '../../shared/bridge/protocol';
 
 export const TEXT_COLOR_FORMATS = {
   red: 'Red',

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../../src/bridge/protocol.js';
+import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../../shared/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import {

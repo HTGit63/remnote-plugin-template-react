@@ -5,8 +5,8 @@ import type {
   BridgeToolAnnotations,
   BridgeToolArgs,
   BridgeToolName,
-} from '../../../src/bridge/protocol.js';
-import { BRIDGE_TOOL_ANNOTATIONS } from '../../../src/bridge/protocol.js';
+} from '../../../shared/bridge/protocol.js';
+import { BRIDGE_TOOL_ANNOTATIONS } from '../../../shared/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
 import type { AuthenticatedPrincipal } from '../auth/types.js';
 import type { BridgeRuntimeInfo } from '../config.js';

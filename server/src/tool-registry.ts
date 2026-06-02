@@ -48,7 +48,7 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'create_cloze_card', exposure: 'public' },
   { name: 'create_multiple_choice_card', exposure: 'public' },
   { name: 'create_list_answer_card', exposure: 'public' },
-  { name: 'delete_rem_by_id', exposure: 'public' },
+  { name: 'delete_rem_by_id', exposure: 'gated', hiddenReason: 'Delete tool is gated by REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 and the full profile.' },
   { name: 'get_rem_rich', exposure: 'public' },
   { name: 'debug_get_raw_rich_text', exposure: 'public' },
   { name: 'get_current_selection', exposure: 'public' },
@@ -87,13 +87,15 @@ const allPublicToolCache = new Map<string, string[]>();
 const publicToolProfileCache = new Map<string, string[]>();
 
 export function getAllPublicMcpToolNames(exposeDeleteTool = false): string[] {
-  void exposeDeleteTool;
-  const cacheKey = `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:all-public`;
+  const cacheKey = `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:all-public:${exposeDeleteTool ? 'delete-on' : 'delete-off'}`;
   const cached = allPublicToolCache.get(cacheKey);
   if (cached) {
     return [...cached];
   }
-  const names = MCP_TOOL_REGISTRY.filter((tool) => tool.exposure === 'public').map((tool) => tool.name);
+  const names = MCP_TOOL_REGISTRY.filter((tool) => {
+    if (tool.exposure === 'public') return true;
+    return exposeDeleteTool && tool.name === 'delete_rem_by_id';
+  }).map((tool) => tool.name);
   allPublicToolCache.set(cacheKey, names);
   return [...names];
 }
@@ -121,8 +123,22 @@ export function isPublicMcpToolName(
 }
 
 export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: string; reason: string }> {
-  void exposeDeleteTool;
-  return [];
+  const hidden: Array<{ name: string; reason: string }> = [];
+  for (const tool of MCP_TOOL_REGISTRY) {
+    if (tool.exposure === 'gated' && !(exposeDeleteTool && tool.name === 'delete_rem_by_id')) {
+      hidden.push({
+        name: tool.name,
+        reason: tool.hiddenReason ?? 'Tool is gated by server configuration.',
+      });
+    }
+  }
+  for (const tool of STATIC_SDK_UNSUPPORTED_TOOLS) {
+    hidden.push({
+      name: tool,
+      reason: 'Tool is unsupported by the installed RemNote SDK and is not public or callable.',
+    });
+  }
+  return hidden;
 }
 
 export function getRegistryMismatch(
@@ -203,7 +219,9 @@ export function getToolRegistrySummary(
     registryDeclaredTools: [...publicTools],
     mcpRegisteredTools: [...registeredTools],
     mcpListedTools: [...publicTools],
-    callabilitySource: 'registry_only_not_live_execution' as const,
+    callabilitySource: 'runtime_matrix_not_live_execution' as const,
+    callabilitySourceExplanation:
+      'Registry lists discoverable tools. Runtime verification requires a recent successful server or plugin execution.',
     serverLocalVerifiedTools,
     serverLocalVerifiedToolCount: serverLocalVerifiedTools.length,
     callableTools: [...serverLocalVerifiedTools],
@@ -224,7 +242,7 @@ export function getToolRegistrySummary(
     unsupportedToolsAvailableOnlyAsDiagnostics: [...STATIC_SDK_UNSUPPORTED_TOOLS],
     toolMetadata: Object.fromEntries(publicTools.map((tool) => [tool, getToolMetadata(tool)])),
     allToolMetadata: Object.fromEntries(TOOL_METADATA.map((tool) => [tool.name, tool])),
-    toolTierSummary: getToolTierSummary(profile),
+    toolTierSummary: getToolTierSummary(profile, exposeDeleteTool),
     runtimeVerificationMatrix: publicTools.map((tool) => {
       const metadata = getToolMetadata(tool);
       const policy = getToolPolicyEntry(tool);
@@ -271,7 +289,7 @@ export function getToolRegistrySummary(
     hiddenTools,
     hiddenReasons,
     registryMismatch: mismatch,
-    deleteToolExposed: false,
+    deleteToolExposed: publicTools.includes('delete_rem_by_id'),
     legacyDeleteToolsRemoved: true,
     requiresConnectorRefresh: false,
     discoveryAuthMode: auth?.discoveryAuthMode ?? 'no_auth_required',

@@ -1,5 +1,5 @@
 import type { Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import type { SerializedRem } from '../bridge/protocol';
+import type { SerializedRem } from '../../shared/bridge/protocol';
 
 const DEFAULT_TREE_DEPTH = 0;
 const HARD_MAX_TREE_DEPTH = 3;

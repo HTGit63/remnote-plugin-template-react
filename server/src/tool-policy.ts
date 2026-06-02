@@ -61,7 +61,6 @@ export const CORE_TIER_TOOLS = [
   'create_cloze_card',
   'create_multiple_choice_card',
   'create_list_answer_card',
-  'delete_rem_by_id',
 ] as const;
 
 export const ADVANCED_NOTES_TIER_TOOLS = [
@@ -136,8 +135,8 @@ export const TOOL_POLICY_ENTRIES = [
   },
   {
     name: 'delete_rem_by_id',
-    policy: 'preferred',
-    preferredFor: ['guarded delete dry-run and disposable-child deletion'],
+    policy: 'dangerous',
+    avoidWhen: ['normal note writing', 'uncertain target identity'],
   },
   { name: 'get_bridge_status', policy: 'debug' },
   { name: 'get_bridge_diagnostics', policy: 'debug' },
@@ -281,7 +280,7 @@ export const TOOL_METADATA = [
     requiresDelete: true,
     supportsDryRun: true,
     supportsIdempotency: true,
-    recommendedForNormalUse: true,
+    recommendedForNormalUse: false,
   }),
   meta('get_current_selection', 'read', 'low'),
   meta('get_rem_rich', 'read', 'low'),
@@ -290,7 +289,12 @@ export const TOOL_METADATA = [
   meta('create_document', 'write', 'medium', { supportsIdempotency: true }),
   meta('append_to_rem', 'write', 'medium', { supportsIdempotency: true }),
   meta('update_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('replace_rem', 'write', 'dangerous', { supportsDryRun: true, supportsIdempotency: true, recommendedForNormalUse: false }),
+  meta('replace_rem', 'delete', 'dangerous', {
+    requiresDelete: true,
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    recommendedForNormalUse: false,
+  }),
   meta('move_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
   meta('reorder_children', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_rem_tree', 'write', 'medium', { supportsIdempotency: true }),
@@ -410,7 +414,7 @@ export function getProfileHiddenTools(allPublicTools: readonly string[], profile
     }));
 }
 
-export function getToolTierSummary(profile: ToolProfile) {
+export function getToolTierSummary(profile: ToolProfile, exposeDeleteTool = false) {
   return {
     activeTier: profile,
     aliases: {
@@ -421,7 +425,7 @@ export function getToolTierSummary(profile: ToolProfile) {
       core: [...CORE_TIER_TOOLS],
       advanced_notes: [...ADVANCED_NOTES_TIER_TOOLS],
       developer_diagnostics: [...DEVELOPER_DIAGNOSTICS_TIER_TOOLS],
-      full: TOOL_METADATA.filter((tool) => tool.exposedNormally).map((tool) => tool.name),
+      full: TOOL_METADATA.filter((tool) => tool.exposedNormally && (exposeDeleteTool || tool.name !== 'delete_rem_by_id')).map((tool) => tool.name),
     },
   };
 }

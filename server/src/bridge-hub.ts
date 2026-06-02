@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { WebSocket, WebSocketServer } from 'ws';
 import {
   type BridgeClientMessage,
@@ -17,7 +17,7 @@ import {
   BRIDGE_TOOL_ANNOTATIONS,
   type BridgeErrorCode,
   createBridgeFailure,
-} from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/protocol.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { CompanionServerConfig } from './config.js';
 import type { BridgeHealthCheckResult } from './health-check-types.js';
@@ -25,252 +25,36 @@ import { SessionRouter } from './bridge/session-router.js';
 import type { StorageProvider } from './storage/types.js';
 import { getToolRegistrySummary } from './tool-registry.js';
 
-interface PendingRequest {
-  resolve: (response: BridgeResponse) => void;
-  timeout: NodeJS.Timeout;
-  tool: BridgeToolName;
-  status: 'pending' | 'waiting_for_remnote_approval';
-  startedAt: number;
-  timeoutMs: number;
-  lifecycle: BridgeLifecycleEvent[];
-  cleanupAbortListener?: () => void;
-  targetSocket?: WebSocket;
-  targetUserId?: string;
-  idempotency?: {
-    userId: string;
-    tool: BridgeToolName;
-    idempotencyKey: string;
-    targetRoot?: string;
-    requestHash: string;
-    startedAt: string;
-  };
-}
+import {
+  type PendingRequest,
+  type BridgeHubStatus,
+  type BridgeHubRequestSnapshot,
+  type BridgeHubRequestOutcome,
+  type BridgeHubDiagnostics,
+  createLifecycleEvent,
+  hashDiagnosticId,
+  isRecord,
+  stringArrayFrom,
+  getUniqueStrings,
+  MAX_RECENT_REQUEST_OUTCOMES,
+  RECONNECT_RETRY_WINDOW_MS,
+  RECONNECT_RETRY_INTERVAL_MS,
+} from './bridge/bridge-hub-types.js';
 
-export interface BridgeHubStatus {
-  connected: boolean;
-  lastConnectedAt?: string;
-  lastDisconnectedAt?: string;
-  pendingRequests: number;
-}
-
-export interface BridgeHubRequestSnapshot {
-  id: string;
-  tool: BridgeToolName;
-  startedAt: string;
-  ageMs: number;
-  timeoutMs: number;
-  status: 'pending' | 'waiting_for_remnote_approval';
-}
-
-export interface BridgeHubRequestOutcome {
-  id: string;
-  tool: BridgeToolName;
-  startedAt: string;
-  finishedAt: string;
-  durationMs: number;
-  timeoutMs: number;
-  status: 'completed' | 'failed' | 'timed_out' | 'cancelled';
-  ok: boolean;
-  errorCode?: string;
-  lifecycle: BridgeLifecycleEvent[];
-  pluginLifecycle?: BridgeLifecycleEvent[];
-  partialExecution?: unknown;
-  createdRemIds?: string[];
-  updatedRemIds?: string[];
-  deletedRemIds?: string[];
-  sdkUnsupported?: boolean;
-}
-
-export interface BridgeHubDiagnostics {
-  startedAt: string;
-  status: BridgeHubStatus;
-  pending: BridgeHubRequestSnapshot[];
-  recentRequests: BridgeHubRequestOutcome[];
-  lastHealthCheck: BridgeHealthCheckResult | null;
-  sessionRouter?: ReturnType<SessionRouter['getStatus']>;
-  activePluginConnections?: Array<{
-    connectionId: string;
-    userId: string;
-    deviceId: string;
-    pluginSessionId: string;
-    connectedAt: string;
-    lastPongAt: string;
-    alive: boolean;
-  }>;
-}
-
-function createLifecycleEvent(phase: BridgeLifecyclePhase, message?: string): BridgeLifecycleEvent {
-  return {
-    phase,
-    at: new Date().toISOString(),
-    ...(message ? { message } : {}),
-  };
-}
-
-function hashDiagnosticId(value: string): string {
-  let hash = 0;
-  for (let i = 0; i < value.length; i += 1) {
-    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
-  }
-  return `hash_${hash.toString(16)}`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringArrayFrom(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string' && item.length > 0)
-    : [];
-}
-
-function getUniqueStrings(values: string[]): string[] {
-  return Array.from(new Set(values));
-}
-
-const TRANSIENT_BRIDGE_ERRORS = new Set<BridgeErrorCode>([
-  'PLUGIN_NOT_CONNECTED',
-  'TIMEOUT',
-  'CLIENT_DISCONNECTED',
-]);
-const MAX_RECENT_REQUEST_OUTCOMES = 200;
-const RECONNECT_RETRY_WINDOW_MS = 1200;
-const RECONNECT_RETRY_INTERVAL_MS = 50;
-
-function isTransientFailure(response: BridgeResponse): boolean {
-  return !response.ok && TRANSIENT_BRIDGE_ERRORS.has(response.error.code);
-}
-
-function hasLifecyclePhase(lifecycle: readonly BridgeLifecycleEvent[] | undefined, phase: BridgeLifecyclePhase): boolean {
-  return Boolean(lifecycle?.some((event) => event.phase === phase));
-}
-
-function requestReachedPlugin(response: BridgeResponse): boolean {
-  return hasLifecyclePhase(response.lifecycle, 'executing') || hasLifecyclePhase(response.lifecycle, 'waiting_for_remnote_approval');
-}
-
-function hasIdempotencyKey(args: unknown): boolean {
-  return Boolean(getIdempotencyKey(args));
-}
-
-function getIdempotencyKey(args: unknown): string | undefined {
-  if (!isRecord(args)) {
-    return undefined;
-  }
-  if (typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim()) {
-    return args.idempotencyKey.trim();
-  }
-  if (isRecord(args.safetyOptions) && typeof args.safetyOptions.idempotencyKey === 'string') {
-    return args.safetyOptions.idempotencyKey.trim() || undefined;
-  }
-  return undefined;
-}
-
-function isHighLevelIdempotentWrite(tool: BridgeToolName): boolean {
-  return [
-    'apply_structured_note_batch',
-    'create_polished_note_tree',
-    'create_styled_rem_tree',
-    'create_or_replace_note_from_markdown',
-    'apply_style_plan',
-    'apply_remnote_command',
-    'delete_rem_by_id',
-  ].includes(tool);
-}
-
-function targetRootFromArgs(args: unknown): string | undefined {
-  if (!isRecord(args)) {
-    return undefined;
-  }
-  for (const key of ['parentId', 'rootRemId', 'remId', 'targetRoot', 'expectedAncestorId', 'expectedParentId']) {
-    const value = args[key];
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return undefined;
-}
-
-function requestHash(tool: BridgeToolName, args: unknown): string {
-  return createHash('sha256').update(JSON.stringify({ tool, args })).digest('hex');
-}
-
-function isDeleteTool(tool: BridgeToolName): boolean {
-  return tool === 'delete_rem_by_id';
-}
-
-function isRealDeleteAttempt(tool: BridgeToolName, args: unknown): boolean {
-  if (tool === 'delete_rem_by_id') {
-    return isRecord(args) && args.dryRun === false;
-  }
-
-  return false;
-}
-
-function retryableFailure(
-  tool: BridgeToolName,
-  response: BridgeResponse,
-  code: BridgeErrorCode,
-  message: string,
-  recommendation: string
-): BridgeResponse {
-  if (response.ok) {
-    return response;
-  }
-
-  const lifecycle = response.lifecycle ?? [];
-  return createBridgeFailure(
-    response.id,
-    code,
-    message,
-    {
-      retryable: true,
-      errorCode: code,
-      originalErrorCode: response.error.code,
-      requestId: response.id,
-      tool,
-      lifecycle,
-      recommendation,
-      originalError: response.error,
-    },
-    lifecycle
-  );
-}
-
-function retryableOriginalFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
-  if (response.ok) {
-    return response;
-  }
-
-  const retryKind = BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint
-    ? 'Retry the read after the RemNote plugin reconnects.'
-    : isDeleteTool(tool)
-      ? 'Run a fresh dry-run preview, then re-check the target before any real delete retry.'
-      : 'Reconnect the RemNote plugin and retry only when the operation is idempotent or you verified no write occurred.';
-
-  return retryableFailure(tool, response, response.error.code, response.error.message, retryKind);
-}
-
-function retryableUnknownWriteFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
-  return retryableFailure(
-    tool,
-    response,
-    'RETRYABLE_UNKNOWN_WRITE_STATUS',
-    'The write may have reached RemNote before the bridge connection ended.',
-    'Re-check the target Rem state before retrying; retry only with the same idempotencyKey when one was supplied.'
-  );
-}
-
-function retryableUnknownDeleteFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
-  return retryableFailure(
-    tool,
-    response,
-    'RETRYABLE_UNKNOWN_DELETE_STATUS',
-    'The delete status is unknown because the bridge connection ended during the request.',
-    'Run a fresh dry-run preview or get_rem on the target ID before attempting any real delete again.'
-  );
-}
+import {
+  isTransientFailure,
+  requestReachedPlugin,
+  getIdempotencyKey,
+  isHighLevelIdempotentWrite,
+  targetRootFromArgs,
+  requestHash,
+  isDeleteTool,
+  isRealDeleteAttempt,
+  retryableOriginalFailure,
+  retryableUnknownWriteFailure,
+  retryableUnknownDeleteFailure,
+} from './bridge/bridge-hub-retry.js';
+import { getExecutionEvidence } from './bridge/bridge-hub-evidence.js';
 
 export class BridgeHub {
   private server: HttpServer | undefined;
@@ -682,7 +466,7 @@ export class BridgeHub {
       return 'retry';
     }
 
-    if (allowRetry && !BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint && hasIdempotencyKey(args)) {
+    if (allowRetry && !BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint && getIdempotencyKey(args)) {
       return 'retry';
     }
 
@@ -952,7 +736,7 @@ export class BridgeHub {
       lifecycle,
     } as BridgeResponse;
     this.recordRequestOutcome(id, pending, responseWithLifecycle, lifecycle, pluginLifecycle);
-    console.info('Bridge hub request completed', {
+    console.info('Bridge request completed', {
       requestId: id,
       tool: pending.tool,
       errorCode: response.ok ? undefined : response.error.code,
@@ -988,7 +772,7 @@ export class BridgeHub {
     lifecycle: BridgeLifecycleEvent[],
     pluginLifecycle?: BridgeLifecycleEvent[]
   ) {
-    const evidence = this.getExecutionEvidence(response);
+    const evidence = getExecutionEvidence(response);
     this.recentRequests.unshift({
       id,
       tool: pending.tool,
@@ -1050,7 +834,7 @@ export class BridgeHub {
       ok: response.ok,
       errorCode: response.ok ? undefined : response.error.code,
       lifecycle,
-      ...this.getExecutionEvidence(response),
+      ...getExecutionEvidence(response),
     });
 
     if (this.recentRequests.length > MAX_RECENT_REQUEST_OUTCOMES) {
@@ -1151,106 +935,7 @@ export class BridgeHub {
     this.pluginSocketAlive = false;
   }
 
-  private getExecutionEvidence(response: BridgeResponse) {
-    const createdRemIds = this.extractCreatedRemIds(response);
-    const partialExecution = this.extractPartialExecution(response, createdRemIds);
-    return {
-      ...(createdRemIds.length ? { createdRemIds } : {}),
-      ...this.getUpdatedDeletedEvidence(response),
-      ...(partialExecution ? { partialExecution } : {}),
-      ...(!response.ok && response.error.code === 'SDK_UNSUPPORTED' ? { sdkUnsupported: true } : {}),
-    };
-  }
 
-  private getUpdatedDeletedEvidence(response: BridgeResponse) {
-    const payload = response.ok ? response.result : response.error.details;
-    if (!isRecord(payload)) {
-      return {};
-    }
-
-    const updatedRemIds = getUniqueStrings([
-      ...stringArrayFrom(payload.updatedRemIds),
-      ...(typeof payload.updatedRemId === 'string' ? [payload.updatedRemId] : []),
-      ...(typeof payload.remId === 'string' ? [payload.remId] : []),
-    ]);
-    const deletedRemIds = getUniqueStrings([
-      ...stringArrayFrom(payload.deletedRemIds),
-      ...(typeof payload.deletedRemId === 'string' ? [payload.deletedRemId] : []),
-    ]);
-    return {
-      ...(updatedRemIds.length ? { updatedRemIds } : {}),
-      ...(deletedRemIds.length ? { deletedRemIds } : {}),
-    };
-  }
-
-  private extractCreatedRemIds(response: BridgeResponse): string[] {
-    const ids: string[] = [];
-    const payload = response.ok ? response.result : response.error.details;
-
-    if (isRecord(payload)) {
-      if (typeof payload.createdRemId === 'string') {
-        ids.push(payload.createdRemId);
-      }
-      if (typeof payload.rootCreatedRemId === 'string') {
-        ids.push(payload.rootCreatedRemId);
-      }
-      ids.push(...stringArrayFrom(payload.createdRemIds));
-      ids.push(...stringArrayFrom(payload.createdChildRemIds));
-
-      const partialExecution = isRecord(payload.partialExecution)
-        ? payload.partialExecution
-        : undefined;
-      if (partialExecution) {
-        if (typeof partialExecution.createdRemId === 'string') {
-          ids.push(partialExecution.createdRemId);
-        }
-        if (typeof partialExecution.rootCreatedRemId === 'string') {
-          ids.push(partialExecution.rootCreatedRemId);
-        }
-        ids.push(...stringArrayFrom(partialExecution.createdRemIds));
-        ids.push(...stringArrayFrom(partialExecution.createdChildRemIds));
-      }
-
-      const originalDetails = isRecord(payload.originalDetails)
-        ? payload.originalDetails
-        : undefined;
-      const nestedPartial = originalDetails && isRecord(originalDetails.partialExecution)
-        ? originalDetails.partialExecution
-        : undefined;
-      if (nestedPartial) {
-        ids.push(...stringArrayFrom(nestedPartial.createdRemIds));
-      }
-    }
-
-    return getUniqueStrings(ids);
-  }
-
-  private extractPartialExecution(
-    response: BridgeResponse,
-    createdRemIds: string[]
-  ): unknown | undefined {
-    if (response.ok) {
-      return undefined;
-    }
-
-    const details = isRecord(response.error.details) ? response.error.details : undefined;
-    if (!details) {
-      return createdRemIds.length ? { createdRemIds } : undefined;
-    }
-
-    if (isRecord(details.partialExecution)) {
-      return details.partialExecution;
-    }
-
-    if (createdRemIds.length) {
-      return {
-        createdRemIds,
-        rollbackStatus: 'not_attempted',
-      };
-    }
-
-    return undefined;
-  }
 
   private isPluginHello(message: BridgeClientMessage | undefined): message is BridgePluginHello {
     return (

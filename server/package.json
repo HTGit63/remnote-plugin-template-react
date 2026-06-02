@@ -3,15 +3,19 @@
   "name": "remnote-chatgpt-bridge-server",
   "version": "0.0.1",
   "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "start": "node dist/server/src/index.js",
     "test-client": "tsx src/test-client.ts",
     "test:auth": "tsx src/auth-smoke.ts",
     "test:pairing": "tsx src/pairing-smoke.ts",
     "test:routing": "tsx src/routing-smoke.ts",
     "test:security": "tsx src/auth-smoke.ts",
+    "test:boundaries": "tsx src/boundary-smoke.ts",
     "test:tools-core": "tsx src/area1-smoke.ts core && tsx src/area3-certification.ts core",
     "test:tools-advanced": "tsx src/area1-smoke.ts advanced && tsx src/area3-certification.ts advanced",
     "test:tools-diagnostics": "tsx src/area1-smoke.ts diagnostics && tsx src/area3-certification.ts diagnostics",

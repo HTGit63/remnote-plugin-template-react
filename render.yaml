@@ -3,7 +3,7 @@ services:
     name: remnote-chatgpt-bridge
     runtime: node
     rootDir: server
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /health
     envVars:
@@ -18,9 +18,11 @@ services:
       - key: REMNOTE_BRIDGE_ALLOW_CORS
         value: "1"
       - key: ALLOWED_ORIGINS
-        value: "https://chatgpt.com,https://chat.openai.com,https://www.remnote.com"
+        value: "https://chatgpt.com,https://chat.openai.com,https://remnote.com,https://www.remnote.com"
       - key: REMNOTE_BRIDGE_DEPLOYMENT_MODE
         value: "public_hosted_oauth"
+      - key: REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING
+        value: "1"
       - key: REMNOTE_BRIDGE_STORAGE
         value: "postgres"
       - key: PLUGIN_WS_PATH
@@ -28,7 +30,7 @@ services:
       - key: REMNOTE_BRIDGE_MCP_PATH
         value: "/mcp"
       - key: REMNOTE_BRIDGE_TOOL_PROFILE
-        value: "simple"
+        value: "core"
       - key: REMNOTE_BRIDGE_ENABLE_DELETE_TOOL
         value: "0"
       - key: REMNOTE_BRIDGE_AUDIT_LOG

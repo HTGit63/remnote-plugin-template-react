@@ -24,7 +24,7 @@ import type {
   SearchRemsArgs,
   SearchRemsResult,
   SerializedRem,
-} from '../bridge/protocol';
+} from '../../shared/bridge/protocol';
 import { buildRemBreadcrumbs, getRemPlainText, serializeRem } from './serialize';
 
 const MAX_RICH_ARRAY_ITEMS = 200;

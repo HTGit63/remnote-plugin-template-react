@@ -84,7 +84,7 @@ export function validateMcpToolPermission(
     return { ok: true };
   }
 
-  const request = body as { method?: unknown; params?: { name?: unknown } };
+  const request = body as { method?: unknown; params?: { name?: unknown; arguments?: unknown } };
   if (request.method !== 'tools/call' || typeof request.params?.name !== 'string') {
     return { ok: true };
   }
@@ -109,6 +109,56 @@ export function validateMcpToolPermission(
       error: 'This tool requires a broader RemNote access scope. Reconnect and approve the required scope.',
       auditReason: 'insufficient_remnote_access_scope',
     };
+  }
+
+  const scopeGrants = new Set(principal.scopeGrants);
+  const args =
+    typeof request.params.arguments === 'object' && request.params.arguments !== null && !Array.isArray(request.params.arguments)
+      ? request.params.arguments as Record<string, unknown>
+      : {};
+
+  if (permission.requiresTrustedWrite) {
+    if (!scopeGrants.has('bridge:trusted_write') || principal.trustedWriteMode !== 'trusted-inside-scope') {
+      return {
+        ok: false,
+        error: 'TRUSTED_WRITE_REQUIRED: This write requires trusted write approval for the approved RemNote scope.',
+        auditReason: 'trusted_write_required',
+      };
+    }
+  }
+
+  if (permission.category === 'destructive') {
+    if (!scopeGrants.has('bridge:delete')) {
+      return {
+        ok: false,
+        error: 'INSUFFICIENT_SCOPE: This destructive tool requires bridge:delete.',
+        auditReason: 'missing_delete_scope',
+      };
+    }
+
+    if (request.params.name === 'delete_rem_by_id' && args.dryRun === false) {
+      const hasScopeGuard = typeof args.expectedParentId === 'string' || typeof args.expectedAncestorId === 'string';
+      const hasTitleGuard = typeof args.confirmTitle === 'string' && args.confirmTitle.trim().length > 0;
+      if (!hasScopeGuard || !hasTitleGuard) {
+        return {
+          ok: false,
+          error:
+            'INVALID_ARGS: Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId.',
+          auditReason: 'missing_delete_guard',
+        };
+      }
+    }
+
+    if (request.params.name === 'replace_rem' && args.dryRun !== true) {
+      const hasTextGuard = typeof args.expectedPlainText === 'string' && args.expectedPlainText.trim().length > 0;
+      if (!hasTextGuard) {
+        return {
+          ok: false,
+          error: 'INVALID_ARGS: Real replace_rem requires expectedPlainText guard.',
+          auditReason: 'missing_replace_guard',
+        };
+      }
+    }
   }
 
   return { ok: true };

@@ -17,6 +17,7 @@
     "server:test:pairing": "npm run test:pairing --prefix server",
     "server:test:routing": "npm run test:routing --prefix server",
     "server:test:security": "npm run test:security --prefix server",
+    "server:test:boundaries": "npm run test:boundaries --prefix server",
     "server:test:tools-core": "npm run test:tools-core --prefix server",
     "server:test:tools-advanced": "npm run test:tools-advanced --prefix server",
     "server:test:tools-diagnostics": "npm run test:tools-diagnostics --prefix server",

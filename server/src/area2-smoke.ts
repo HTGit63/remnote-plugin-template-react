@@ -5,7 +5,7 @@ import type {
   BridgeResponse,
   BridgeServerHello,
   SerializedRem,
-} from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 
 const publicBaseUrl = 'https://remnote-plugin-template-react.onrender.com';
@@ -118,6 +118,7 @@ const app = await startCompanionApp({
   allowCors: true,
   allowedOrigins: ['https://www.remnote.com', 'https://chatgpt.com', publicBaseUrl],
   sessionSecret: 'area2-smoke-session-secret',
+  adminDebugSecret: 'area2-admin-secret',
   bridgePath: '/remnote',
   mcpPath: '/mcp',
   singlePort: true,
@@ -211,8 +212,8 @@ try {
   const connectedHealth = await getJson(`${baseUrl}/health`);
   if (
     connectedHealth.response.status !== 200 ||
-    connectedHealth.json?.bridge?.connected !== true ||
-    connectedHealth.json?.chatGptPairing?.stale !== true
+    connectedHealth.json?.pluginConnectionStatus !== 'connected' ||
+    connectedHealth.json?.sessionStale !== true
   ) {
     throw new Error(`health missed connected stale plugin state: ${connectedHealth.response.status} ${connectedHealth.text}`);
   }
@@ -236,11 +237,31 @@ try {
   const dashboardText = await dashboard.text();
   if (
     dashboard.status !== 200 ||
-    !dashboardText.includes('HOSTED OAUTH REQUIRED') ||
-    !dashboardText.includes('advanced_notes') ||
-    !dashboardText.includes('Session Stale')
+    !dashboardText.includes('"deploymentMode":"hosted"') ||
+    !dashboardText.includes('"publicToolCount":41') ||
+    dashboardText.includes('"pid"') ||
+    dashboardText.includes('"cwd"') ||
+    dashboardText.includes('Session Stale')
   ) {
-    throw new Error(`dashboard missed Area 2 facts: ${dashboard.status} ${dashboardText.slice(0, 500)}`);
+    throw new Error(`hosted root leaked internals or missed safe facts: ${dashboard.status} ${dashboardText.slice(0, 500)}`);
+  }
+
+  const publicDiagnostics = await fetch(`${baseUrl}/diagnostics`);
+  if (publicDiagnostics.status !== 403) {
+    throw new Error(`hosted diagnostics without admin auth should be 403: ${publicDiagnostics.status}`);
+  }
+
+  const adminDiagnostics = await fetch(`${baseUrl}/diagnostics`, {
+    headers: { 'x-admin-debug-secret': 'area2-admin-secret' },
+  });
+  const adminDiagnosticsText = await adminDiagnostics.text();
+  if (
+    adminDiagnostics.status !== 200 ||
+    !adminDiagnosticsText.includes('"deploymentMode":"hosted"') ||
+    adminDiagnosticsText.includes('area2-smoke-session-secret') ||
+    adminDiagnosticsText.includes('area2-admin-secret')
+  ) {
+    throw new Error(`hosted diagnostics admin route failed/redaction failed: ${adminDiagnostics.status} ${adminDiagnosticsText.slice(0, 500)}`);
   }
 
   console.log('Area 2 hosted UI/API smoke passed.');

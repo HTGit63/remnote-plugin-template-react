@@ -6,7 +6,7 @@ import type {
   BridgeServerHello,
   BridgeToolName,
   SerializedRem,
-} from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 import { bridgeToolNameForPublicMcpTool } from './mcp-tool-map.js';
 import {
@@ -687,10 +687,12 @@ function assertSchemaQuality(profile: ToolProfile = 'full') {
   assertMatrixShape(summary.runtimeVerificationMatrix as Array<Record<string, unknown>>, publicTools);
 }
 
-function assertIdempotencyAndDryRun(seen: readonly SeenBridgeRequest[]) {
+function assertIdempotencyAndDryRun(publicTools: readonly string[], seen: readonly SeenBridgeRequest[]) {
   const deleteRequest = seen.find((request) => request.tool === 'delete_rem_by_id');
-  assert(deleteRequest, 'Area 3 certification did not reach delete_rem_by_id.');
-  assert(deleteRequest.args.dryRun === true, 'delete_rem_by_id certification must stay dryRun=true.');
+  if (publicTools.includes('delete_rem_by_id')) {
+    assert(deleteRequest, 'Area 3 certification did not reach delete_rem_by_id.');
+    assert(deleteRequest.args.dryRun === true, 'delete_rem_by_id certification must stay dryRun=true.');
+  }
 
   for (const request of seen) {
     const publicName = request.tool === 'ping'
@@ -733,6 +735,7 @@ async function certifyProfile(profile: ToolProfile) {
     rateLimitMaxRequests: 2000,
     requestTimeoutMs: 8000,
     auditLog: false,
+    enableDeleteTool: true,
   });
   const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
   const seen: SeenBridgeRequest[] = [];
@@ -741,7 +744,7 @@ async function certifyProfile(profile: ToolProfile) {
 
   try {
     ws = await connectMockPlugin(`ws://127.0.0.1:${app.mcpPort}${app.config.bridgePath}`, seen);
-    const tools = getPublicMcpToolNames(false, profile);
+    const tools = getPublicMcpToolNames(app.config.enableDeleteTool, profile);
     await assertToolsList(baseUrl, tools);
 
     for (const tool of tools) {
@@ -761,7 +764,7 @@ async function certifyProfile(profile: ToolProfile) {
       .map((entry) => entry.name);
     assert(unverified.length === 0, `Runtime certification left unverified tools: ${unverified.join(', ')}.`);
 
-    assertIdempotencyAndDryRun(seen);
+    assertIdempotencyAndDryRun(tools, seen);
 
     const p95Ms = p95(durations);
     if (p95Ms !== null && p95Ms > 5000) {

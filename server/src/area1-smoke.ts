@@ -27,8 +27,8 @@ import {
   normalizeMarkdownImportArgs,
   parseMarkdownImportPlan,
   verifyMarkdownSourceFidelity,
-} from '../../src/bridge/markdown-importer.js';
-import type { CreateOrReplaceNoteFromMarkdownArgs } from '../../src/bridge/protocol.js';
+} from '../../shared/bridge/markdown-importer.js';
+import type { CreateOrReplaceNoteFromMarkdownArgs } from '../../shared/bridge/protocol.js';
 
 const mode = process.argv[2] ?? 'all';
 const removedDeleteTools = [
@@ -181,8 +181,10 @@ function checkMarkdownImporter() {
   for (const forbidden of ['Size', 'H1', 'H2', 'H3']) {
     assert(!output.split('\n').some((line) => line.trim() === forbidden), `markdown importer created style-control Rem ${forbidden}.`);
   }
-  const fidelity = verifyMarkdownSourceFidelity(plan.sourceSnippets, output);
+  const fidelity = verifyMarkdownSourceFidelity(plan.sourceSnippets, output, {}, plan.stats);
   assert(fidelity.passed, `markdown importer fidelity failed: ${JSON.stringify(fidelity.missingTextSnippets)}`);
+  assert(fidelity.headingCount === plan.stats.headingCount, 'fidelity report should include heading count.');
+  assert(fidelity.tableCount === plan.stats.tableCount, 'fidelity report should include table count.');
   let rejectedBadMode = false;
   try {
     normalizeMarkdownImportArgs({ ...markdownImportArgs(true), mode: 'bad_mode' as never });
@@ -195,12 +197,15 @@ function checkMarkdownImporter() {
 function checkSourceFidelity() {
   const plan = parseMarkdownImportPlan(markdownSample());
   const brokenOutput = markdownImportOutputTextFromTree(plan.tree).replace('Two positively charged nuclei repel each other', '');
-  const fidelity = verifyMarkdownSourceFidelity(plan.sourceSnippets, brokenOutput);
+  const fidelity = verifyMarkdownSourceFidelity(plan.sourceSnippets, brokenOutput, {}, plan.stats);
   assert(!fidelity.passed, 'source fidelity should fail when a source paragraph is removed.');
   assert(
     fidelity.missingTextSnippets.some((snippet) => snippet.includes('Two positively charged nuclei')),
     'source fidelity should report missing source paragraph snippet.'
   );
+  const polluted = verifyMarkdownSourceFidelity(plan.sourceSnippets, `${markdownImportOutputTextFromTree(plan.tree)}\nH1\nSize`, {}, plan.stats);
+  assert(!polluted.passed, 'source fidelity should fail when style pollution Rems appear.');
+  assert(polluted.pollutionRems.includes('H1') && polluted.pollutionRems.includes('Size'), 'source fidelity should report pollution Rems.');
 }
 
 function fiveLevelTree(depth = 5): Record<string, unknown> {

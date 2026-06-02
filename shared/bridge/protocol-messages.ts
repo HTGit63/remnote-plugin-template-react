@@ -1,0 +1,324 @@
+import type {
+  ApprovalResolution,
+  ApprovalRiskLevel,
+  BridgeErrorCode,
+  BridgeLifecycleEvent,
+  BridgeToolName,
+  PermissionMode,
+  PermissionScope,
+} from './protocol-core';
+import type {
+  AppendToRemArgs,
+  ApplyRemnoteCommandArgs,
+  ApplyStructuredNoteBatchArgs,
+  ApplyStylePlanArgs,
+  ClearRemFormattingArgs,
+  CreateClozeCardArgs,
+  CreateDocumentArgs,
+  CreateFlashcardArgs,
+  CreateFolderArgs,
+  CreateListAnswerCardArgs,
+  CreateMultipleChoiceCardArgs,
+  CreateOrReplaceNoteFromMarkdownArgs,
+  CreatePolishedNoteTreeArgs,
+  CreateRemArgs,
+  CreateRemTreeArgs,
+  CreateStyledRemTreeArgs,
+  DeleteRemByIdArgs,
+  MoveRemArgs,
+  ReplaceRemArgs,
+  ReorderChildrenArgs,
+  SetHideBulletArgs,
+  SetRemHeadingLevelArgs,
+  SetRemHighlightColorArgs,
+  SetRemTextColorArgs,
+  SetRemTypeArgs,
+  SetTextSpanColorArgs,
+  SetTextSpanHighlightArgs,
+  UpdateRemArgs,
+  UpdateRemRichArgs,
+  VerifyNoteDesignArgs,
+} from './protocol-write-args';
+import type {
+  DebugGetRawRichTextArgs,
+  DebugGetRawRichTextResult,
+  GetChildrenArgs,
+  GetChildrenResult,
+  GetCurrentSelectionArgs,
+  GetCurrentSelectionResult,
+  GetDocumentOrFolderTreeArgs,
+  GetDocumentOrFolderTreeResult,
+  GetFocusedRemArgs,
+  GetRemArgs,
+  GetRemBreadcrumbsArgs,
+  GetRemBreadcrumbsResult,
+  GetRemRichArgs,
+  GetRemRichResult,
+  GetRemTreeArgs,
+  PingArgs,
+  PingResult,
+  SearchRemsArgs,
+  SearchRemsResult,
+  BridgePluginStatus,
+  GetStatusArgs,
+  SerializedRem,
+} from './protocol-read';
+import type {
+  AppendToRemResult,
+  ApplyRemnoteCommandResult,
+  ApplyStructuredNoteBatchResult,
+  ApplyStylePlanResult,
+  CreateDocumentResult,
+  CreateFlashcardResult,
+  CreateFolderResult,
+  CreateOrReplaceNoteFromMarkdownResult,
+  CreatePolishedNoteTreeResult,
+  CreateRemResult,
+  CreateRemTreeResult,
+  CreateStyledRemTreeResult,
+  DeletePreview,
+  DeleteRemByIdResult,
+  FormatRemResult,
+  MoveRemResult,
+  ReplaceRemResult,
+  ReorderChildrenResult,
+  UpdateRemResult,
+  VerifyNoteDesignResult,
+} from './protocol-write-results';
+
+export interface BridgeToolArgs {
+  ping: PingArgs;
+  get_status: GetStatusArgs;
+  get_focused_rem: GetFocusedRemArgs;
+  get_rem: GetRemArgs;
+  get_rem_tree: GetRemTreeArgs;
+  get_rem_rich: GetRemRichArgs;
+  debug_get_raw_rich_text: DebugGetRawRichTextArgs;
+  get_current_selection: GetCurrentSelectionArgs;
+  get_children: GetChildrenArgs;
+  get_rem_breadcrumbs: GetRemBreadcrumbsArgs;
+  search_rems: SearchRemsArgs;
+  get_document_or_folder_tree: GetDocumentOrFolderTreeArgs;
+  create_rem: CreateRemArgs;
+  append_to_rem: AppendToRemArgs;
+  create_document: CreateDocumentArgs;
+  create_folder: CreateFolderArgs;
+  update_rem: UpdateRemArgs;
+  move_rem: MoveRemArgs;
+  reorder_children: ReorderChildrenArgs;
+  create_rem_tree: CreateRemTreeArgs;
+  update_rem_rich: UpdateRemRichArgs;
+  set_rem_heading_level: SetRemHeadingLevelArgs;
+  set_rem_text_color: SetRemTextColorArgs;
+  set_rem_highlight_color: SetRemHighlightColorArgs;
+  set_text_span_color: SetTextSpanColorArgs;
+  set_text_span_highlight: SetTextSpanHighlightArgs;
+  set_rem_type: SetRemTypeArgs;
+  set_hide_bullet: SetHideBulletArgs;
+  clear_rem_formatting: ClearRemFormattingArgs;
+  create_styled_rem_tree: CreateStyledRemTreeArgs;
+  apply_remnote_command: ApplyRemnoteCommandArgs;
+  apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
+  create_polished_note_tree: CreatePolishedNoteTreeArgs;
+  create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownArgs;
+  apply_style_plan: ApplyStylePlanArgs;
+  verify_note_design: VerifyNoteDesignArgs;
+  create_basic_flashcard: CreateFlashcardArgs;
+  create_concept_card: CreateFlashcardArgs;
+  create_descriptor_card: CreateFlashcardArgs;
+  create_cloze_card: CreateClozeCardArgs;
+  create_multiple_choice_card: CreateMultipleChoiceCardArgs;
+  create_list_answer_card: CreateListAnswerCardArgs;
+  replace_rem: ReplaceRemArgs;
+  delete_rem_by_id: DeleteRemByIdArgs;
+}
+
+export interface BridgeToolResults {
+  ping: PingResult;
+  get_status: BridgePluginStatus;
+  get_focused_rem: SerializedRem;
+  get_rem: SerializedRem;
+  get_rem_tree: SerializedRem;
+  get_rem_rich: GetRemRichResult;
+  debug_get_raw_rich_text: DebugGetRawRichTextResult;
+  get_current_selection: GetCurrentSelectionResult;
+  get_children: GetChildrenResult;
+  get_rem_breadcrumbs: GetRemBreadcrumbsResult;
+  search_rems: SearchRemsResult;
+  get_document_or_folder_tree: GetDocumentOrFolderTreeResult;
+  create_rem: CreateRemResult;
+  append_to_rem: AppendToRemResult;
+  create_document: CreateDocumentResult;
+  create_folder: CreateFolderResult;
+  update_rem: UpdateRemResult;
+  move_rem: MoveRemResult;
+  reorder_children: ReorderChildrenResult;
+  create_rem_tree: CreateRemTreeResult;
+  update_rem_rich: FormatRemResult;
+  set_rem_heading_level: FormatRemResult;
+  set_rem_text_color: FormatRemResult;
+  set_rem_highlight_color: FormatRemResult;
+  set_text_span_color: FormatRemResult;
+  set_text_span_highlight: FormatRemResult;
+  set_rem_type: FormatRemResult;
+  set_hide_bullet: FormatRemResult;
+  clear_rem_formatting: FormatRemResult;
+  create_styled_rem_tree: CreateStyledRemTreeResult;
+  apply_remnote_command: ApplyRemnoteCommandResult;
+  apply_structured_note_batch: ApplyStructuredNoteBatchResult;
+  create_polished_note_tree: CreatePolishedNoteTreeResult;
+  create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownResult;
+  apply_style_plan: ApplyStylePlanResult;
+  verify_note_design: VerifyNoteDesignResult;
+  create_basic_flashcard: CreateFlashcardResult;
+  create_concept_card: CreateFlashcardResult;
+  create_descriptor_card: CreateFlashcardResult;
+  create_cloze_card: CreateFlashcardResult;
+  create_multiple_choice_card: CreateFlashcardResult;
+  create_list_answer_card: CreateFlashcardResult;
+  replace_rem: ReplaceRemResult;
+  delete_rem_by_id: DeleteRemByIdResult;
+}
+
+export type BridgeRequest<TTool extends BridgeToolName = BridgeToolName> = {
+  [TName in TTool]: {
+    id: string;
+    tool: TName;
+    args: BridgeToolArgs[TName];
+    permissionMode?: PermissionMode;
+    timeoutMs?: number;
+  };
+}[TTool];
+
+export interface BridgeSuccess<TResult = unknown> {
+  id: string;
+  ok: true;
+  result: TResult;
+  lifecycle?: BridgeLifecycleEvent[];
+}
+
+export interface BridgeFailure {
+  id: string;
+  ok: false;
+  error: {
+    code: BridgeErrorCode;
+    message: string;
+    details?: unknown;
+  };
+  lifecycle?: BridgeLifecycleEvent[];
+}
+
+export type BridgeResponse<TResult = unknown> = BridgeSuccess<TResult> | BridgeFailure;
+
+export interface PendingApprovalRequest<TTool extends BridgeToolName = BridgeToolName> {
+  id: string;
+  tool: TTool;
+  args: BridgeToolArgs[TTool];
+  permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
+  requestedAt: string;
+  timeoutDeadline: string;
+  targetRemId?: string;
+  targetTitle?: string;
+  hasChildren?: boolean;
+  previewMarkdown?: string;
+  riskLevel: ApprovalRiskLevel;
+  summary: string;
+  warning?: string;
+  confirmTextRequired?: 'DELETE';
+  deletePreview?: DeletePreview;
+}
+
+export interface BridgePluginHello {
+  type: 'plugin_hello';
+  protocolVersion: 1;
+  clientName: 'remnote-plugin';
+  deploymentMode?: 'local' | 'hosted';
+  deviceId?: string;
+  pluginSessionId?: string;
+  pluginSessionToken?: string;
+  token?: string;
+}
+
+export interface BridgePluginRegister {
+  type: 'plugin_register';
+  pluginInstanceId: string;
+  pluginConnectionId: string;
+  sessionSecret: string;
+  workspaceLabel?: string;
+  supportedTools: string[];
+  accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
+  trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
+  toolTier?: BridgeToolProfile;
+}
+
+export type BridgeToolProfile = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+export type BridgeToolPolicy =
+  | 'preferred'
+  | 'fallback'
+  | 'debug'
+  | 'read'
+  | 'cards'
+  | 'dangerous'
+  | 'unsupported';
+
+export interface BridgeServerHello {
+  type: 'server_hello';
+  protocolVersion: 1;
+  serverName: 'remnote-companion';
+  toolProfile?: BridgeToolProfile;
+  toolTier?: BridgeToolProfile;
+  activeToolTier?: BridgeToolProfile;
+  defaultToolTier?: BridgeToolProfile;
+  toolSchemaVersion?: string;
+  toolRegistryVersion?: string;
+  serverToolRegistryVersion?: string;
+  mcpDiscoveryVersion?: string;
+  pluginProtocolVersion?: number;
+  registeredTools?: string[];
+  allPublicTools?: string[];
+  allPublicToolCount?: number;
+  publicTools?: string[];
+  publicToolCount?: number;
+  exposedTools?: string[];
+  registryDeclaredTools?: string[];
+  mcpRegisteredTools?: string[];
+  mcpListedTools?: string[];
+  callabilitySource?: 'runtime_matrix_not_live_execution' | 'live_execution';
+  callableTools?: string[];
+  actualMcpCallableTools?: string[];
+  unauthMcpCallableTools?: string[];
+  realPluginVerifiedTools?: string[];
+  runtimeUnverifiedTools?: string[];
+  sdkUnsupportedTools?: string[];
+  preferredTools?: string[];
+  fallbackTools?: string[];
+  debugTools?: string[];
+  readTools?: string[];
+  cardTools?: string[];
+  dangerousTools?: string[];
+  unsupportedTools?: string[];
+  profileHiddenTools?: Array<{
+    name: string;
+    reason: string;
+    policy?: BridgeToolPolicy;
+    replacement?: string;
+    tier?: string;
+  }>;
+  toolMetadata?: Record<string, unknown>;
+  toolTierSummary?: Record<string, unknown>;
+  runtimeVerificationMatrix?: Array<Record<string, unknown>>;
+  hiddenTools?: Array<{ name: string; reason: string }>;
+  requiresConnectorRefresh?: boolean;
+  serverStartedAt?: string;
+}
+
+export interface BridgeCancelRequest {
+  type: 'cancel_request';
+  id: string;
+  reason: 'client_disconnected' | 'server_timeout' | 'server_shutdown';
+  message: string;
+}
+
+export type BridgeClientMessage = BridgePluginHello | BridgePluginRegister | BridgeResponse;
+export type BridgeServerMessage = BridgeServerHello | BridgeRequest | BridgeCancelRequest;
