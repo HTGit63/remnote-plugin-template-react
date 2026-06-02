@@ -43,6 +43,7 @@ export type BridgeToolName =
   | 'apply_remnote_command'
   | 'apply_structured_note_batch'
   | 'create_polished_note_tree'
+  | 'create_or_replace_note_from_markdown'
   | 'apply_style_plan'
   | 'verify_note_design'
   | 'create_basic_flashcard'
@@ -88,6 +89,7 @@ export type SafeWriteBridgeToolName =
   | 'apply_remnote_command'
   | 'apply_structured_note_batch'
   | 'create_polished_note_tree'
+  | 'create_or_replace_note_from_markdown'
   | 'apply_style_plan'
   | 'create_basic_flashcard'
   | 'create_concept_card'
@@ -375,10 +377,13 @@ export interface RichTextSpanInput {
 
 export interface RemStyleInput {
   headingLevel?: RemHeadingLevel;
+  textColor?: RemColorName | string;
+  highlightColor?: RemColorName | string;
   color?: RemColorName | string;
   highlight?: RemColorName | string;
   hideBullet?: boolean;
   remType?: RemTypeName;
+  type?: RemTypeName;
 }
 
 export type StyledRemTreeNodeType =
@@ -579,6 +584,74 @@ export interface CreatePolishedNoteTreeArgs {
   idempotencyKey?: string;
   maxDepth?: number;
   maxNodeCount?: number;
+}
+
+export type MarkdownImportMode =
+  | 'create_child'
+  | 'replace_target_children'
+  | 'update_target_and_replace_children'
+  | 'append_to_target';
+export type MarkdownDuplicatePolicy = 'skip' | 'replace' | 'create_new';
+export type MarkdownRootHeadingMode = 'first_h1' | 'title_from_first_line' | 'explicit_title';
+export type MarkdownParagraphMode = 'child_rem_per_paragraph' | 'merge_paragraphs_under_heading';
+export type MarkdownBulletMode = 'preserve_markdown_bullets' | 'plain_child_rems';
+export type MarkdownFormulaMode = 'preserve' | 'force_block_for_display_math';
+
+export interface MarkdownImportHeadingMapping {
+  rootHeading?: MarkdownRootHeadingMode;
+  explicitTitle?: string;
+  rootHeadingLevel?: RemHeadingLevel;
+  sectionHeadingLevel?: RemHeadingLevel;
+  subsectionHeadingLevel?: RemHeadingLevel;
+}
+
+export interface MarkdownImportRemnoteLayout {
+  insertSpacerBetweenSections?: boolean;
+  spacerText?: string;
+  preserveBlankLines?: boolean;
+  paragraphMode?: MarkdownParagraphMode;
+  bulletMode?: MarkdownBulletMode;
+}
+
+export interface MarkdownMathOptions {
+  inlineMathDelimiters?: ['$', '$'] | ['\\(', '\\)'] | 'both';
+  blockMathDelimiters?: ['$$', '$$'] | ['\\[', '\\]'] | 'both';
+  formulaMode?: MarkdownFormulaMode;
+  rejectMalformedMath?: boolean;
+}
+
+export interface MarkdownImportFidelityOptions {
+  requireExactText?: boolean;
+  allowWhitespaceNormalization?: boolean;
+  preserveSourceOrder?: boolean;
+  failOnContentLoss?: boolean;
+}
+
+export interface MarkdownImportSafetyOptions {
+  dryRun?: boolean;
+  verifyAfterWrite?: boolean;
+  rollbackOnFailure?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface MarkdownImportLimits {
+  maxMarkdownChars?: number;
+  maxDepth?: number;
+  maxNodes?: number;
+}
+
+export interface CreateOrReplaceNoteFromMarkdownArgs {
+  parentRemId?: string;
+  targetRemId?: string;
+  markdownText: string;
+  mode?: MarkdownImportMode;
+  duplicatePolicy?: MarkdownDuplicatePolicy;
+  headingMapping?: MarkdownImportHeadingMapping;
+  remnoteLayout?: MarkdownImportRemnoteLayout;
+  mathOptions?: MarkdownMathOptions;
+  fidelityOptions?: MarkdownImportFidelityOptions;
+  safetyOptions?: MarkdownImportSafetyOptions;
+  limits?: MarkdownImportLimits;
 }
 
 export interface ApplyStylePlanArgs {
@@ -818,6 +891,14 @@ export interface StructuredNoteBatchVerification {
   rootPlainText?: string;
 }
 
+export interface MarkdownImportVerification {
+  passed: boolean;
+  checkedNodeCount: number;
+  missingTextSnippets: string[];
+  extraTextSnippets: string[];
+  structureMismatches: string[];
+}
+
 export interface ApplyStructuredNoteBatchResult {
   operationId?: string;
   status: 'dry_run' | 'applied' | 'already_applied';
@@ -886,6 +967,40 @@ export interface CreatePolishedNoteTreeResult extends CreateStyledRemTreeResult 
     name: 'validate_tree' | 'create_tree' | 'apply_styles' | 'verify_design' | 'rollback';
     status: 'completed' | 'skipped' | 'failed';
   }>;
+}
+
+export interface CreateOrReplaceNoteFromMarkdownResult {
+  ok: boolean;
+  rootRemId?: string;
+  createdRemIds: string[];
+  updatedRemIds: string[];
+  skippedRemIds?: string[];
+  nodeCount: number;
+  maxDepth: number;
+  sourceHash: string;
+  outputHash?: string;
+  verification?: MarkdownImportVerification;
+  partialExecution?: {
+    createdRemIds: string[];
+    failedAtPath?: string;
+    failedReason?: string;
+    rollbackStatus: 'not_attempted' | 'completed' | 'failed';
+  };
+  dryRun?: boolean;
+  idempotencyKey?: string;
+  status: 'dry_run' | 'created' | 'updated' | 'appended' | 'replaced' | 'skipped' | 'partial_failure';
+  mode: MarkdownImportMode;
+  duplicatePolicy: MarkdownDuplicatePolicy;
+  plan?: {
+    previewOutline: string[];
+    headingCount: number;
+    mathBlockCount: number;
+    inlineMathCount: number;
+    codeBlockCount: number;
+    tableCount: number;
+    paragraphCount: number;
+    bulletCount: number;
+  };
 }
 
 export interface VerifyNoteDesignResult {
@@ -1094,6 +1209,7 @@ export interface BridgeToolArgs {
   apply_remnote_command: ApplyRemnoteCommandArgs;
   apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
   create_polished_note_tree: CreatePolishedNoteTreeArgs;
+  create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownArgs;
   apply_style_plan: ApplyStylePlanArgs;
   verify_note_design: VerifyNoteDesignArgs;
   create_basic_flashcard: CreateFlashcardArgs;
@@ -1140,6 +1256,7 @@ export interface BridgeToolResults {
   apply_remnote_command: ApplyRemnoteCommandResult;
   apply_structured_note_batch: ApplyStructuredNoteBatchResult;
   create_polished_note_tree: CreatePolishedNoteTreeResult;
+  create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownResult;
   apply_style_plan: ApplyStylePlanResult;
   verify_note_design: VerifyNoteDesignResult;
   create_basic_flashcard: CreateFlashcardResult;
@@ -1336,6 +1453,7 @@ export const BRIDGE_TOOL_NAMES: readonly BridgeToolName[] = [
   'apply_remnote_command',
   'apply_structured_note_batch',
   'create_polished_note_tree',
+  'create_or_replace_note_from_markdown',
   'apply_style_plan',
   'verify_note_design',
   'create_basic_flashcard',
@@ -1523,6 +1641,12 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
     destructiveHint: false,
   },
   create_polished_note_tree: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: false,
+    idempotentHint: true,
+  },
+  create_or_replace_note_from_markdown: {
     readOnlyHint: false,
     openWorldHint: false,
     destructiveHint: false,

@@ -12,13 +12,13 @@
 8. Read-only tool flow implemented through MCP and the bridge.
 9. Safe create/append write flow implemented with RemNote-side approval.
 10. MCP/ChatGPT tool layer added.
-11. Phase 1 safety freeze complete: public MCP descriptors do not expose `delete_rem` unless `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` is set for local development.
+11. Phase 1 safety freeze complete: public MCP descriptors do not expose legacy direct delete paths.
 12. Phase 2 ordering complete: create, append, and tree root creation append at the end by default, with explicit insert indexes returned for verification.
 13. Phase 3 structure awareness complete: MCP exposes bounded selection, children, breadcrumbs, search, rich Rem, and document/folder tree tools.
 14. Phase 4 safe create complete: create Rem/document/tree paths are bounded and folder creation returns `SDK_UNSUPPORTED` because the installed RemNote SDK typings do not expose folders.
 15. Phase 5 scope control complete: plugin settings now enforce focused, focused-descendant, selected, selected-descendant, approved-root, or workspace scopes inside the plugin handler.
 16. Phase 6 edit/reorder complete: `replace_rem` and `reorder_children` are exposed with approval and deterministic full-list validation.
-17. Phase 7 secure delete complete: public delete is limited to focused/selected Rems with preview, typed `DELETE`, and approval; arbitrary-ID `delete_rem` remains gated by env flag.
+17. Phase 7 secure delete complete: public delete is limited to explicit guarded ID deletion with preview and approval; legacy direct delete paths are removed.
 18. Phase 8 reliability complete: request timeout, plugin disconnect, approval timeout, rejection, and duplicate approval paths return structured errors instead of hanging.
 19. Phase 9 secure readiness complete: local auth/session/audit interfaces exist, local token auth still protects `/mcp`, and hosted mode was documented as blocked until real OAuth/pairing. Superseded by 2026-05-26 hosted-auth Phase 7-12 completion below.
 20. Phase 10 release-readiness docs complete: README, architecture, safety, manual QA, and test matrix now match implemented code.
@@ -149,4 +149,4 @@ Manual checks:
 
 ## Release Notes
 
-The MCP layer intentionally exposes bounded read tools, scoped safe writes, destructive-hinted replace, and guarded ID delete. Arbitrary-ID `delete_rem` remains blocked by default and can be exposed only with `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` for local development.
+The MCP layer intentionally exposes bounded read tools, scoped safe writes, destructive-hinted replace, and guarded ID delete. Legacy direct delete paths stay absent.

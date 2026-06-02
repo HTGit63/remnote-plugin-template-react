@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
   COLOR_SCHEMA,
+  CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA,
   DELETE_CONFIRM_SCHEMA,
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
   GET_CHILDREN_INPUT_SCHEMA,
@@ -269,6 +270,23 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       bridgeToolResult(
         () => callPlugin('apply_remnote_command', { target, command, args, dryRun, idempotencyKey }),
         'Applied RemNote command.'
+      )
+  );
+
+  registerTool(
+    'create_or_replace_note_from_markdown',
+    {
+      title: 'Create or replace note from Markdown',
+      description:
+        'Preferred one-call bulk importer for long lecture notes, ESSLCE notes, math/physics/chemistry notes, and copied Markdown outlines. Preserves headings, paragraphs, bullets, math, code, and source order; never summarizes user source text.',
+      inputSchema: CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('create_or_replace_note_from_markdown'),
+    },
+    async (args) =>
+      bridgeToolResult(
+        () => callPlugin('create_or_replace_note_from_markdown', args),
+        'Markdown note import request processed.'
       )
   );
 

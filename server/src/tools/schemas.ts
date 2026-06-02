@@ -2,15 +2,16 @@ import { z } from 'zod';
 
 export const REM_ID_SCHEMA = z.string().trim().min(1).max(256);
 export const MARKDOWN_SCHEMA = z.string().trim().min(1).max(20000);
+export const LONG_MARKDOWN_SCHEMA = z.string().trim().min(1).max(120000);
 export const POSITION_SCHEMA = z.enum(['start', 'end']).default('end');
 export const MAX_CHILDREN_SCHEMA = z.number().int().min(1).max(100);
 export const MAX_SEARCH_RESULTS_SCHEMA = z.number().int().min(1).max(25);
-export const TREE_DEPTH_SCHEMA = z.number().int().min(0).max(3).default(1);
+export const TREE_DEPTH_SCHEMA = z.number().int().min(1).max(12).default(8);
 export const ORDERED_CHILD_IDS_SCHEMA = z.array(REM_ID_SCHEMA).max(500);
 export const DELETE_CONFIRM_SCHEMA = z.literal('DELETE');
 export const IDEMPOTENCY_KEY_SCHEMA = z.string().trim().min(1).max(128);
 export const DRY_RUN_SCHEMA = z.boolean().default(false);
-export const MAX_TREE_NODE_COUNT_SCHEMA = z.number().int().min(1).max(500).default(150);
+export const MAX_TREE_NODE_COUNT_SCHEMA = z.number().int().min(1).max(1000).default(200);
 export const COLOR_SCHEMA = z.enum([
   'red',
   'orange',
@@ -34,6 +35,18 @@ export const COLOR_SCHEMA = z.enum([
 ]);
 export const HEADING_LEVEL_SCHEMA = z.enum(['H1', 'H2', 'H3', 'normal']);
 export const REM_TYPE_SCHEMA = z.enum(['normal', 'concept', 'descriptor']);
+export const REM_STYLE_SCHEMA = z
+  .object({
+    headingLevel: HEADING_LEVEL_SCHEMA.optional().describe('Canonical Rem heading level.'),
+    textColor: COLOR_SCHEMA.optional().describe('Canonical whole-Rem text color.'),
+    highlightColor: COLOR_SCHEMA.optional().describe('Canonical whole-Rem highlight color.'),
+    hideBullet: z.boolean().optional(),
+    remType: REM_TYPE_SCHEMA.optional().describe('Canonical Rem type.'),
+    color: COLOR_SCHEMA.optional().describe('Legacy alias for textColor.'),
+    highlight: COLOR_SCHEMA.optional().describe('Legacy alias for highlightColor.'),
+    type: REM_TYPE_SCHEMA.optional().describe('Legacy alias for remType.'),
+  })
+  .describe('Canonical style shape. Legacy aliases normalize internally and never create child Rems such as Size/H1/H3.');
 export const PRACTICE_DIRECTION_SCHEMA = z.enum(['forward', 'backward', 'none', 'both']).default('both');
 export const REMNOTE_COMMAND_SCHEMA = z.enum([
   'heading_1',
@@ -211,10 +224,13 @@ export interface StyledRemTreeNodeInput {
   direction?: z.infer<typeof PRACTICE_DIRECTION_SCHEMA>;
   style?: {
     headingLevel?: z.infer<typeof HEADING_LEVEL_SCHEMA>;
+    textColor?: z.infer<typeof COLOR_SCHEMA>;
+    highlightColor?: z.infer<typeof COLOR_SCHEMA>;
     color?: z.infer<typeof COLOR_SCHEMA>;
     highlight?: z.infer<typeof COLOR_SCHEMA>;
     hideBullet?: boolean;
     remType?: z.infer<typeof REM_TYPE_SCHEMA>;
+    type?: z.infer<typeof REM_TYPE_SCHEMA>;
   };
   children?: StyledRemTreeNodeInput[];
 }
@@ -248,18 +264,70 @@ export const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.
     correctChoice: z.string().max(1000).optional(),
     items: z.array(z.string().min(1).max(1000)).max(50).optional(),
     direction: PRACTICE_DIRECTION_SCHEMA.optional(),
-    style: z
-      .object({
-        headingLevel: HEADING_LEVEL_SCHEMA.optional(),
-        color: COLOR_SCHEMA.optional(),
-        highlight: COLOR_SCHEMA.optional(),
-        hideBullet: z.boolean().optional(),
-        remType: REM_TYPE_SCHEMA.optional(),
-      })
-      .optional(),
+    style: REM_STYLE_SCHEMA.optional(),
     children: z.array(STYLED_REM_TREE_NODE_SCHEMA).max(100).optional(),
   })
 );
+
+export const MARKDOWN_HEADING_MAPPING_SCHEMA = z.object({
+  rootHeading: z.enum(['first_h1', 'title_from_first_line', 'explicit_title']).default('first_h1').optional(),
+  explicitTitle: z.string().trim().min(1).max(1000).optional(),
+  rootHeadingLevel: HEADING_LEVEL_SCHEMA.default('H1').optional(),
+  sectionHeadingLevel: HEADING_LEVEL_SCHEMA.default('H3').optional(),
+  subsectionHeadingLevel: HEADING_LEVEL_SCHEMA.default('H3').optional(),
+});
+
+export const MARKDOWN_REMNOTE_LAYOUT_SCHEMA = z.object({
+  insertSpacerBetweenSections: z.boolean().default(true).optional(),
+  spacerText: z.string().max(100).default('').optional(),
+  preserveBlankLines: z.boolean().default(true).optional(),
+  paragraphMode: z.enum(['child_rem_per_paragraph', 'merge_paragraphs_under_heading']).default('child_rem_per_paragraph').optional(),
+  bulletMode: z.enum(['preserve_markdown_bullets', 'plain_child_rems']).default('preserve_markdown_bullets').optional(),
+});
+
+export const MARKDOWN_MATH_OPTIONS_SCHEMA = z.object({
+  inlineMathDelimiters: z.union([z.tuple([z.literal('$'), z.literal('$')]), z.tuple([z.literal('\\('), z.literal('\\)')]), z.literal('both')]).default('both').optional(),
+  blockMathDelimiters: z.union([z.tuple([z.literal('$$'), z.literal('$$')]), z.tuple([z.literal('\\['), z.literal('\\]')]), z.literal('both')]).default('both').optional(),
+  formulaMode: z.enum(['preserve', 'force_block_for_display_math']).default('preserve').optional(),
+  rejectMalformedMath: z.boolean().default(true).optional(),
+});
+
+export const MARKDOWN_FIDELITY_OPTIONS_SCHEMA = z.object({
+  requireExactText: z.boolean().default(true).optional(),
+  allowWhitespaceNormalization: z.boolean().default(true).optional(),
+  preserveSourceOrder: z.boolean().default(true).optional(),
+  failOnContentLoss: z.boolean().default(true).optional(),
+});
+
+export const MARKDOWN_SAFETY_OPTIONS_SCHEMA = z.object({
+  dryRun: z.boolean().default(false).optional(),
+  verifyAfterWrite: z.boolean().default(true).optional(),
+  rollbackOnFailure: z.boolean().default(true).optional(),
+  idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional(),
+});
+
+export const MARKDOWN_IMPORT_LIMITS_SCHEMA = z.object({
+  maxMarkdownChars: z.number().int().min(1).max(120000).default(120000).optional(),
+  maxDepth: TREE_DEPTH_SCHEMA.optional(),
+  maxNodes: MAX_TREE_NODE_COUNT_SCHEMA.optional(),
+});
+
+export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
+  parentRemId: REM_ID_SCHEMA.optional().describe('Parent Rem ID for mode=create_child.'),
+  targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for append/replace/update modes.'),
+  markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved; no summarization or compression.'),
+  mode: z
+    .enum(['create_child', 'replace_target_children', 'update_target_and_replace_children', 'append_to_target'])
+    .default('create_child')
+    .describe('Bulk import mode. create_child creates one root under parentRemId; target modes write under targetRemId.'),
+  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).default('create_new').optional(),
+  headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
+  remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
+  mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
+  fidelityOptions: MARKDOWN_FIDELITY_OPTIONS_SCHEMA.optional(),
+  safetyOptions: MARKDOWN_SAFETY_OPTIONS_SCHEMA.optional(),
+  limits: MARKDOWN_IMPORT_LIMITS_SCHEMA.optional(),
+});
 
 export const STRUCTURED_NOTE_SCHEMA = z.object({
   root: STYLED_REM_TREE_NODE_SCHEMA.optional().describe('Optional root payload. Required for create_child_tree and root update operations.'),

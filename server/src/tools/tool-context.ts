@@ -8,6 +8,7 @@ import type {
 } from '../../../src/bridge/protocol.js';
 import { BRIDGE_TOOL_ANNOTATIONS } from '../../../src/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
+import type { AuthenticatedPrincipal } from '../auth/types.js';
 import type { BridgeRuntimeInfo } from '../config.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 import type { ToolProfile } from '../tool-policy.js';
@@ -40,6 +41,7 @@ export interface ToolRegistrationContext {
   requestSignal?: AbortSignal;
   runtimeInfo?: BridgeRuntimeInfo;
   toolProfile?: ToolProfile;
+  principal?: AuthenticatedPrincipal;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

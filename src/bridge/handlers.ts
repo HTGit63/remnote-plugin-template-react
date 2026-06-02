@@ -18,6 +18,7 @@ import {
   type CreateFolderArgs,
   type CreateListAnswerCardArgs,
   type CreateMultipleChoiceCardArgs,
+  type CreateOrReplaceNoteFromMarkdownArgs,
   type CreatePolishedNoteTreeArgs,
   type GetChildrenArgs,
   type CreateRemTreeArgs,
@@ -82,6 +83,7 @@ import {
   createFolderFromMarkdown,
   createListAnswerCard,
   createMultipleChoiceCard,
+  createOrReplaceNoteFromMarkdown,
   createPolishedNoteTree,
   createRemFromMarkdown,
   createRemTree,
@@ -107,6 +109,7 @@ import {
 const MAX_REQUEST_ID_CHARS = 128;
 const MAX_REM_ID_CHARS = 256;
 const MAX_MARKDOWN_CHARS = 20000;
+const MAX_LONG_MARKDOWN_CHARS = 120000;
 const MAX_SEARCH_QUERY_CHARS = 500;
 
 export interface BridgeHandlerContext {
@@ -167,6 +170,20 @@ function requiredMarkdown(args: unknown): string {
 
   if (markdown.length > MAX_MARKDOWN_CHARS) {
     throw new Error(`Markdown exceeds ${MAX_MARKDOWN_CHARS} characters.`);
+  }
+
+  return markdown;
+}
+
+function requiredMarkdownText(args: unknown): string {
+  const markdown = getStringField(args, 'markdownText')?.trim();
+
+  if (!markdown) {
+    throw new Error('Missing markdownText.');
+  }
+
+  if (markdown.length > MAX_LONG_MARKDOWN_CHARS) {
+    throw new Error(`markdownText exceeds ${MAX_LONG_MARKDOWN_CHARS} characters.`);
   }
 
   return markdown;
@@ -988,6 +1005,32 @@ function normalizeArgs<TTool extends BridgeToolName>(
         maxDepth: optionalBoundedNumber(args, 'maxDepth'),
         maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
       } as BridgeToolArgs[TTool];
+    case 'create_or_replace_note_from_markdown':
+      return {
+        parentRemId: optionalRemId(args, 'parentRemId') ?? undefined,
+        targetRemId: optionalRemId(args, 'targetRemId') ?? undefined,
+        markdownText: requiredMarkdownText(args),
+        mode: getStringField(args, 'mode') as CreateOrReplaceNoteFromMarkdownArgs['mode'],
+        duplicatePolicy: getStringField(args, 'duplicatePolicy') as CreateOrReplaceNoteFromMarkdownArgs['duplicatePolicy'],
+        headingMapping: isPlainObject(args) && isPlainObject(args.headingMapping)
+          ? (args.headingMapping as CreateOrReplaceNoteFromMarkdownArgs['headingMapping'])
+          : undefined,
+        remnoteLayout: isPlainObject(args) && isPlainObject(args.remnoteLayout)
+          ? (args.remnoteLayout as CreateOrReplaceNoteFromMarkdownArgs['remnoteLayout'])
+          : undefined,
+        mathOptions: isPlainObject(args) && isPlainObject(args.mathOptions)
+          ? (args.mathOptions as CreateOrReplaceNoteFromMarkdownArgs['mathOptions'])
+          : undefined,
+        fidelityOptions: isPlainObject(args) && isPlainObject(args.fidelityOptions)
+          ? (args.fidelityOptions as CreateOrReplaceNoteFromMarkdownArgs['fidelityOptions'])
+          : undefined,
+        safetyOptions: isPlainObject(args) && isPlainObject(args.safetyOptions)
+          ? (args.safetyOptions as CreateOrReplaceNoteFromMarkdownArgs['safetyOptions'])
+          : undefined,
+        limits: isPlainObject(args) && isPlainObject(args.limits)
+          ? (args.limits as CreateOrReplaceNoteFromMarkdownArgs['limits'])
+          : undefined,
+      } as BridgeToolArgs[TTool];
     case 'apply_style_plan':
       return {
         operations: requiredStyleOperations(args),
@@ -1102,6 +1145,7 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
       CreateRemTreeArgs &
       CreateStyledRemTreeArgs &
       CreatePolishedNoteTreeArgs &
+      CreateOrReplaceNoteFromMarkdownArgs &
       ApplyStylePlanArgs &
       VerifyNoteDesignArgs &
       ApplyStructuredNoteBatchArgs &
@@ -1152,6 +1196,7 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
       UpdateRemRichArgs &
       CreateStyledRemTreeArgs &
       CreatePolishedNoteTreeArgs &
+      CreateOrReplaceNoteFromMarkdownArgs &
       ApplyStylePlanArgs &
       ApplyStructuredNoteBatchArgs &
       ApplyRemnoteCommandArgs &
@@ -1162,6 +1207,9 @@ function getRequestPreviewMarkdown(request: BridgeRequest): string | undefined {
   >;
   if (typeof args.markdown === 'string') {
     return args.markdown.slice(0, 3000);
+  }
+  if (typeof args.markdownText === 'string') {
+    return args.markdownText.slice(0, 3000);
   }
   if (typeof args.front === 'string' || typeof args.back === 'string') {
     return `Front: ${args.front ?? ''}\nBack: ${args.back ?? ''}`.slice(0, 3000);
@@ -1408,6 +1456,11 @@ function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([
         (request.args as CreatePolishedNoteTreeArgs).parentId,
         ...((request.args as CreatePolishedNoteTreeArgs).stylingPlan?.operations ?? []).map((operation) => operation.remId),
+      ]);
+    case 'create_or_replace_note_from_markdown':
+      return uniqueRemIds([
+        (request.args as CreateOrReplaceNoteFromMarkdownArgs).parentRemId,
+        (request.args as CreateOrReplaceNoteFromMarkdownArgs).targetRemId,
       ]);
     case 'apply_style_plan':
       return uniqueRemIds((request.args as ApplyStylePlanArgs).operations.map((operation) => operation.remId));
@@ -1790,6 +1843,8 @@ function approvalSummary(request: BridgeRequest): string {
       return 'Apply one structured note batch with optional dry-run, rollback, and verification.';
     case 'create_polished_note_tree':
       return 'Create a polished RemNote note tree in one call.';
+    case 'create_or_replace_note_from_markdown':
+      return `Import full Markdown note with mode ${(request.args as CreateOrReplaceNoteFromMarkdownArgs).mode ?? 'create_child'}.`;
     case 'apply_style_plan':
       return 'Apply a multi-operation style plan.';
     case 'verify_note_design':
@@ -1836,6 +1891,7 @@ async function buildApprovalRequest(
       : targetRemId &&
           (request.tool === 'create_styled_rem_tree' ||
             request.tool === 'create_polished_note_tree' ||
+            request.tool === 'create_or_replace_note_from_markdown' ||
             request.tool === 'apply_style_plan' ||
             request.tool === 'apply_remnote_command' ||
             request.tool === 'apply_structured_note_batch' ||
@@ -1894,6 +1950,8 @@ async function shouldForceApproval(_plugin: RNPlugin, request: BridgeRequest): P
       return Boolean((request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId);
     case 'apply_structured_note_batch':
       return !(request.args as ApplyStructuredNoteBatchArgs).dryRun;
+    case 'create_or_replace_note_from_markdown':
+      return (request.args as CreateOrReplaceNoteFromMarkdownArgs).safetyOptions?.dryRun !== true;
     case 'append_to_rem':
     case 'update_rem':
     case 'move_rem':
@@ -2238,6 +2296,9 @@ export async function handleBridgeRequest(
         break;
       case 'create_polished_note_tree':
         response = createBridgeSuccess(request, await createPolishedNoteTree(plugin, request.args));
+        break;
+      case 'create_or_replace_note_from_markdown':
+        response = createBridgeSuccess(request, await createOrReplaceNoteFromMarkdown(plugin, request.args));
         break;
       case 'apply_style_plan':
         response = createBridgeSuccess(request, await applyStylePlan(plugin, request.args));

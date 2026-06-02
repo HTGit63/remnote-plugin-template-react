@@ -63,6 +63,7 @@ Safe write tools are:
 - `set_rem_type`
 - `set_hide_bullet`
 - `clear_rem_formatting`
+- `create_or_replace_note_from_markdown`
 - `create_styled_rem_tree`
 - `apply_structured_note_batch`
 - `create_basic_flashcard`
@@ -90,9 +91,9 @@ Dangerous tools are:
 - `replace_rem`
 - `delete_rem_by_id`
 
-These always require explicit approval in the internal bridge protocol, even in trusted modes. `replace_rem` is exposed with destructive hints. `delete_rem_by_id` is the only public delete tool and defaults to dry-run with ID guards. Focus/selection delete and legacy `delete_rem` are hidden by default.
+These always require explicit approval in the internal bridge protocol, even in trusted modes. `replace_rem` is exposed with destructive hints. `delete_rem_by_id` is the only public delete tool and defaults to dry-run with ID guards. Legacy focus/selection/direct delete paths are removed from the public and plugin protocol surfaces.
 
-`delete_rem_by_id` dry-run returns target text, parent, breadcrumbs, child count, guard matches, and would-delete evidence. Real delete requires `dryRun: false` plus a matching `expectedParentId` or `expectedAncestorId`; optional `confirmTitle` must match. Keep focus/selection delete and legacy arbitrary-ID delete disabled for normal use.
+`delete_rem_by_id` dry-run returns target text, parent, breadcrumbs, child count, guard matches, and would-delete evidence. Real delete requires `dryRun: false` plus a matching `expectedParentId` or `expectedAncestorId`; optional `confirmTitle` must match. Focus/selection delete and legacy arbitrary-ID delete paths must stay absent.
 
 ## Approval and No-Hang Policy
 

@@ -46,7 +46,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'core';
-export const TOOL_SCHEMA_VERSION = '2026-06-01.area1';
+export const TOOL_SCHEMA_VERSION = '2026-06-02.markdown-importer';
 
 export const CORE_TIER_TOOLS = [
   'get_bridge_status',
@@ -79,6 +79,7 @@ export const ADVANCED_NOTES_TIER_TOOLS = [
   'update_rem_rich',
   'create_styled_rem_tree',
   'create_polished_note_tree',
+  'create_or_replace_note_from_markdown',
   'apply_structured_note_batch',
   'apply_style_plan',
   'verify_note_design',
@@ -108,6 +109,11 @@ const ADVANCED_SET = new Set<string>(ADVANCED_NOTES_TIER_TOOLS);
 const DEVELOPER_SET = new Set<string>(DEVELOPER_DIAGNOSTICS_TIER_TOOLS);
 
 export const TOOL_POLICY_ENTRIES = [
+  {
+    name: 'create_or_replace_note_from_markdown',
+    policy: 'preferred',
+    preferredFor: ['long lecture notes', 'Markdown imports', 'ESSLCE notes', 'math-heavy bulk note transfer'],
+  },
   {
     name: 'create_polished_note_tree',
     policy: 'preferred',
@@ -291,6 +297,7 @@ export const TOOL_METADATA = [
   meta('update_rem_rich', 'write', 'high', { supportsIdempotency: true }),
   meta('create_styled_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_polished_note_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_or_replace_note_from_markdown', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_structured_note_batch', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_style_plan', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('verify_note_design', 'read', 'low'),

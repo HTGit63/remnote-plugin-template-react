@@ -55,6 +55,7 @@ const WRITE_TOOLS = new Set([
   'create_styled_rem_tree',
   'apply_remnote_command',
   'apply_structured_note_batch',
+  'create_or_replace_note_from_markdown',
   'create_basic_flashcard',
   'create_concept_card',
   'create_descriptor_card',
@@ -338,6 +339,35 @@ function healthCheckArgsFor(
             },
             verifyAfterWrite: true,
             idempotencyKey: `health-polished-${Date.now()}`,
+          }
+        : undefined;
+    case 'create_or_replace_note_from_markdown':
+      return parentId
+        ? {
+            parentRemId: parentId,
+            markdownText: [
+              '# Bridge health Markdown import',
+              '',
+              '### Health section',
+              '',
+              'Inline math $a^2+b^2=c^2$ stays in source.',
+              '',
+              '$$',
+              'E=mc^2',
+              '$$',
+            ].join('\n'),
+            mode: 'create_child',
+            duplicatePolicy: 'create_new',
+            safetyOptions: {
+              dryRun: !options.includeWrites,
+              verifyAfterWrite: Boolean(options.includeWrites),
+              rollbackOnFailure: true,
+              idempotencyKey: `health-markdown-${Date.now()}`,
+            },
+            limits: {
+              maxDepth: 8,
+              maxNodes: 200,
+            },
           }
         : undefined;
     case 'apply_style_plan':

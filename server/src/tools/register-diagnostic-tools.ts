@@ -24,6 +24,7 @@ export function registerDiagnosticTools({
   requestSignal,
   runtimeInfo,
   toolProfile,
+  principal,
 }: ToolRegistrationContext): void {
   registerTool(
     'get_bridge_diagnostics',
@@ -152,6 +153,7 @@ export function registerDiagnosticTools({
         timeoutMs,
         signal: requestSignal,
         toolProfile,
+        principal,
       });
       return {
         content: [

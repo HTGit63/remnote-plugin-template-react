@@ -599,6 +599,44 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
             : undefined,
         },
       };
+    case 'create_or_replace_note_from_markdown': {
+      const dryRun = request.args.safetyOptions?.dryRun ?? false;
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          ok: true,
+          dryRun,
+          mode: request.args.mode ?? 'create_child',
+          duplicatePolicy: request.args.duplicatePolicy ?? 'create_new',
+          status: dryRun ? 'dry_run' : 'created',
+          rootRemId: dryRun ? undefined : 'rem-markdown-root-1',
+          createdRemIds: dryRun ? [] : ['rem-markdown-root-1', 'rem-markdown-child-1'],
+          updatedRemIds: [],
+          skippedRemIds: [],
+          nodeCount: 8,
+          maxDepth: 3,
+          sourceHash: 'fnv1a32:source-smoke',
+          outputHash: 'fnv1a32:output-smoke',
+          idempotencyKey: request.args.safetyOptions?.idempotencyKey,
+          verification: {
+            passed: true,
+            missingSourceSnippets: [],
+            extraOutputSnippets: [],
+            checkedSnippetCount: 8,
+            sourceHash: 'fnv1a32:source-smoke',
+            outputHash: 'fnv1a32:output-smoke',
+          },
+          plan: {
+            rootText: 'Markdown Smoke Note',
+            plannedNodeCount: 8,
+            maxDepth: 3,
+            containsMath: true,
+            containsCode: true,
+          },
+        },
+      };
+    }
     case 'apply_style_plan':
       return {
         id: request.id,
@@ -1119,7 +1157,13 @@ try {
   if (toolNames.includes(removedFocusDeleteTool) || toolNames.includes(removedSelectionDeleteTool)) {
     throw new Error('focus/selection delete tools must not be exposed through MCP by default.');
   }
-  for (const requiredTool of ['delete_rem_by_id', 'create_polished_note_tree', 'apply_style_plan', 'verify_note_design']) {
+  for (const requiredTool of [
+    'delete_rem_by_id',
+    'create_polished_note_tree',
+    'create_or_replace_note_from_markdown',
+    'apply_style_plan',
+    'verify_note_design',
+  ]) {
     if (!toolNames.includes(requiredTool)) {
       throw new Error(`${requiredTool} must be exposed through MCP.`);
     }
@@ -1580,6 +1624,50 @@ try {
   );
   if (!polished.includes('created_polished_tree') || !polished.includes('verification')) {
     throw new Error('create_polished_note_tree did not return created tree verification status.');
+  }
+
+  const markdownImport = JSON.stringify(
+    await callMcpTool(mcp, 'create_or_replace_note_from_markdown', {
+      parentRemId: fakeRem.remId,
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      markdownText: [
+        '# Markdown Smoke Note',
+        '',
+        'Intro paragraph with inline math \\(E=mc^2\\).',
+        '',
+        '### Section',
+        '',
+        '- Nested point',
+        '  - Child point with q_1 preserved',
+        '',
+        '$$',
+        'F = ma',
+        '$$',
+        '',
+        '```ts',
+        'const force = mass * acceleration;',
+        '```',
+      ].join('\n'),
+      safetyOptions: {
+        dryRun: false,
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'smoke-markdown-1',
+      },
+      limits: {
+        maxDepth: 8,
+        maxNodes: 200,
+      },
+    })
+  );
+  if (
+    !markdownImport.includes('rem-markdown-root-1') ||
+    !markdownImport.includes('"passed":true') ||
+    !markdownImport.includes('fnv1a32:source-smoke') ||
+    markdownImport.includes('Size')
+  ) {
+    throw new Error('create_or_replace_note_from_markdown did not return source-fidelity verification status.');
   }
 
   const stylePlan = JSON.stringify(

@@ -166,18 +166,15 @@ The plugin must only expose controlled RemNote operations through the bridge.
 The latest known working state has:
 
 ```text
-46 public MCP tools
+47 public MCP tools
 unsupported create_folder is diagnostics-only, not public
-legacy delete tools are removed:
-  delete_rem
-  delete_focused_rem
-  delete_selected_rem
+legacy focus/selection/direct delete tools are removed
 
 toolRegistryVersion:
-  2026-06-01.1
+  2026-06-02.markdown-importer
 
 mcpDiscoveryVersion:
-  mcp-discovery-2026-06-01.1
+  mcp-discovery-2026-06-02.markdown-importer
 ```
 
 The working tests showed that the bridge is now functionally strong.
@@ -192,6 +189,7 @@ formatting tools
 font color tools
 highlight tools
 high-level structured note tools
+one-call Markdown note importer
 flashcard tools
 guarded delete dry-run
 verification tools
@@ -284,13 +282,7 @@ The companion server cannot widen plugin scope.
 
 Destructive tools must require explicit approval.
 
-Legacy delete tools must remain hidden/private by default:
-
-```text
-delete_rem
-delete_focused_rem
-delete_selected_rem
-```
+Legacy focus/selection/direct delete tools must not exist as hidden, private, gated, or deprecated paths.
 
 The only public delete tool must be:
 
@@ -516,10 +508,8 @@ unsupported:
 dangerous:
   replace_rem
 
-legacy_hidden:
-  delete_rem
-  delete_focused_rem
-  delete_selected_rem
+removed:
+  legacy focus/selection/direct delete tools
 ```
 
 ---
@@ -572,7 +562,7 @@ create_list_answer_card
 
 ### Full profile
 
-Expose all 46 public supported tools for development, debugging, and regression testing.
+Expose all 47 public supported tools for development, debugging, and regression testing.
 
 The full profile must keep hidden legacy delete tools hidden by default.
 
@@ -972,7 +962,8 @@ It must tell ChatGPT:
 
 ```text
 For full note creation:
-  use create_polished_note_tree first.
+  use create_or_replace_note_from_markdown first when source is Markdown or copied lecture notes.
+  use create_polished_note_tree when the note is already planned as structured JSON.
 
 For atomic structured writing:
   use apply_structured_note_batch.
@@ -1004,6 +995,9 @@ Examples:
 create_polished_note_tree:
   Preferred tool for creating complete polished RemNote notes, lessons, outlines, and study trees in one operation.
 
+create_or_replace_note_from_markdown:
+  Preferred one-call importer for long Markdown lecture notes. Preserves headings, paragraphs, bullets, formulas, code blocks, tables-as-text, source order, and reports fidelity verification.
+
 apply_structured_note_batch:
   Preferred atomic batch writer for structured note creation with dry-run, idempotency, verification, and rollback evidence.
 
@@ -1032,7 +1026,7 @@ Manual ChatGPT test:
 
 ```text
 Ask ChatGPT to create a polished note.
-It should choose create_polished_note_tree or apply_structured_note_batch.
+It should choose create_or_replace_note_from_markdown for Markdown source, or create_polished_note_tree / apply_structured_note_batch for structured JSON.
 It should not call many low-level tools unless repairing an existing note.
 ```
 

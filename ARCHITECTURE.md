@@ -219,6 +219,7 @@ The MCP layer exposes safe writes:
 - `create_styled_rem_tree`
 - `apply_structured_note_batch`
 - `create_polished_note_tree`
+- `create_or_replace_note_from_markdown`
 - `apply_style_plan`
 - `verify_note_design`
 - `create_basic_flashcard`
@@ -238,9 +239,9 @@ The MCP layer exposes one public guarded delete:
 
 `run_bridge_health_check` records pass/fail/skipped/unsupported results for public tools. It is safe by default, can run a structured batch dry run when a parent Rem ID is supplied, can execute safe writes only under a disposable sandbox Rem, and only deletes its own disposable child with `delete_rem_by_id` in destructive health mode.
 
-`apply_structured_note_batch` is the high-level note writer. It validates a styled tree root, supports dry runs and idempotency keys, creates the tree after one approval, can verify created Rem IDs after write, and returns partial execution plus rollback evidence when an SDK operation fails after creating Rems.
+`create_or_replace_note_from_markdown` is the preferred long-note importer. It accepts full Markdown, parses headings/paragraphs/bullets/math/code/tables into a styled Rem tree, performs one approved batch write, and returns source-fidelity verification plus partial-execution evidence. `apply_structured_note_batch` remains the high-level JSON batch writer. It validates a styled tree root, supports dry runs and idempotency keys, creates the tree after one approval, can verify created Rem IDs after write, and returns partial execution plus rollback evidence when an SDK operation fails after creating Rems.
 
-`replace_rem` and `delete_rem_by_id` are destructive-hinted MCP tools. `delete_rem_by_id` defaults to dry-run and requires ID guards for real deletion. Legacy focus/selection delete and `delete_rem` stay hidden unless explicitly enabled for local development.
+`replace_rem` and `delete_rem_by_id` are destructive-hinted MCP tools. `delete_rem_by_id` defaults to dry-run and requires ID guards for real deletion. Legacy focus/selection/direct delete paths are removed, not hidden or gated.
 
 ## Hosted App Architecture
 

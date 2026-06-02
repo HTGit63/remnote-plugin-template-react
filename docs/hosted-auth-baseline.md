@@ -12,10 +12,7 @@ Recorded on: 2026-05-25 (Current Local Time: 2026-05-25T18:57:04+03:00)
 - **Total Registered MCP Tools (Registry)**: 50
 - **Public Tool Count in Full Profile**: 47
 - **Public Tool Count in Simple Profile**: 23
-- **Hidden/Gated Legacy Delete Tools**: 3
-  - `delete_rem`
-  - `delete_focused_rem`
-  - `delete_selected_rem`
+- **Removed Legacy Delete Tools**: legacy focus/selection/direct delete paths are no longer public or gated.
 
 ## 3. Environment & Deployment Specs
 - **Render Deployment Shape**: Single-port personal companion server running WebSocket bridge client/companion hub and MCP server concurrently.

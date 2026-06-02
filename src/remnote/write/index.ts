@@ -19,6 +19,8 @@ import type {
   CreateFolderResult,
   CreateListAnswerCardArgs,
   CreateMultipleChoiceCardArgs,
+  CreateOrReplaceNoteFromMarkdownArgs,
+  CreateOrReplaceNoteFromMarkdownResult,
   CreatePolishedNoteTreeArgs,
   CreatePolishedNoteTreeResult,
   CreateRemTreeArgs,
@@ -64,6 +66,12 @@ import type {
   VerifyNoteDesignResult,
 } from '../../bridge/protocol';
 import {
+  markdownImportOutputTextFromTree,
+  normalizeMarkdownImportArgs,
+  parseMarkdownImportPlan,
+  verifyMarkdownSourceFidelity,
+} from '../../bridge/markdown-importer';
+import {
   RichTextFormattingError,
   applyClozeToRange,
   applyFormatsToRichTextRange,
@@ -78,8 +86,10 @@ import {
 } from '../richTextFormatting';
 
 const MAX_MARKDOWN_CHARS = 20000;
-export const CREATE_TREE_MAX_DEPTH = 5;
-export const CREATE_TREE_MAX_NODES = 100;
+export const CREATE_TREE_DEFAULT_MAX_DEPTH = 8;
+export const CREATE_TREE_DEFAULT_MAX_NODES = 200;
+export const CREATE_TREE_MAX_DEPTH = 12;
+export const CREATE_TREE_MAX_NODES = 1000;
 export const CREATE_TREE_MAX_TITLE_LENGTH = 1000;
 const STRUCTURED_BATCH_CACHE_LIMIT = 50;
 
@@ -93,6 +103,8 @@ interface ValidatedTreeNode {
 interface TreeValidationState {
   nodeCount: number;
   maxDepthSeen?: number;
+  maxDepthPath?: string;
+  maxDepthTitle?: string;
 }
 
 const COLOR_FORMATS: Record<RemColorName, RichTextFormatName | undefined> = {
@@ -115,6 +127,7 @@ const STYLE_PLAN_RESULT_CACHE = new Map<string, ApplyStylePlanResult>();
 const STYLED_TREE_RESULT_CACHE = new Map<string, CreateStyledRemTreeResult>();
 const DELETE_BY_ID_RESULT_CACHE = new Map<string, DeleteRemByIdResult>();
 const POLISHED_TREE_RESULT_CACHE = new Map<string, CreatePolishedNoteTreeResult>();
+const MARKDOWN_IMPORT_RESULT_CACHE = new Map<string, CreateOrReplaceNoteFromMarkdownResult>();
 const CREATE_REM_RESULT_CACHE = new Map<string, CreateRemResult>();
 const CREATE_DOCUMENT_RESULT_CACHE = new Map<string, CreateDocumentResult>();
 const APPEND_RESULT_CACHE = new Map<string, AppendToRemResult>();
@@ -543,15 +556,28 @@ async function buildStyledText(
   text: string,
   style?: RemStyleInput
 ): Promise<RichTextInterface> {
+  const normalizedStyle = normalizeRemStyleInput(style);
   return buildRichTextFromSpans(plugin, [
     {
       text,
       styles: {
-        color: style?.color,
-        highlight: style?.highlight,
+        color: normalizedStyle?.textColor,
+        highlight: normalizedStyle?.highlightColor,
       },
     },
   ]);
+}
+
+function normalizeRemStyleInput(style: RemStyleInput | undefined): RemStyleInput | undefined {
+  if (!style) {
+    return undefined;
+  }
+  return {
+    ...style,
+    textColor: style.textColor ?? style.color,
+    highlightColor: style.highlightColor ?? style.highlight,
+    remType: style.remType ?? style.type,
+  };
 }
 
 async function getRemPlainString(plugin: RNPlugin, rem: Rem): Promise<string> {
@@ -642,39 +668,40 @@ async function setTextHighlightInRange(
 }
 
 async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleInput | undefined) {
-  if (!style) {
+  const normalizedStyle = normalizeRemStyleInput(style);
+  if (!normalizedStyle) {
     return;
   }
 
-  if (style.headingLevel) {
-    const headingLevel = style.headingLevel;
+  if (normalizedStyle.headingLevel) {
+    const headingLevel = normalizedStyle.headingLevel;
     await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(headingLevel)));
   }
 
-  if (style.hideBullet !== undefined) {
-    await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!style.hideBullet));
+  if (normalizedStyle.hideBullet !== undefined) {
+    await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!normalizedStyle.hideBullet));
   }
 
-  if (style.remType && style.remType !== 'normal') {
-    const remType = style.remType;
+  if (normalizedStyle.remType && normalizedStyle.remType !== 'normal') {
+    const remType = normalizedStyle.remType;
     await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(remType)));
   }
 
-  if (style.highlight && style.highlight !== 'default') {
-    const color = getColorFormat(style.highlight);
+  if (normalizedStyle.highlightColor && normalizedStyle.highlightColor !== 'default') {
+    const color = getColorFormat(normalizedStyle.highlightColor);
     if (color) {
       await runSdkOperation('rem.setHighlightColor', () => rem.setHighlightColor(color as never));
     }
   }
 
-  if (style.color && style.color !== 'default') {
+  if (normalizedStyle.textColor && normalizedStyle.textColor !== 'default') {
     const plain = await getRemPlainString(plugin, rem);
     if (plain.length > 0) {
       await setTextColorInRange(
         plugin,
         rem,
         { start: 0, end: plain.length, resolvedPlainText: plain },
-        style.color,
+        normalizedStyle.textColor,
         'text_color_set'
       );
     }
@@ -765,14 +792,19 @@ async function getFreshInsertIndex(
 function validateTreeNode(
   rawNode: unknown,
   depth: number,
-  state: TreeValidationState
+  state: TreeValidationState,
+  path = 'root'
 ): ValidatedTreeNode {
   if (typeof rawNode !== 'object' || rawNode === null || Array.isArray(rawNode)) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Tree node must be an object.');
   }
 
   if (depth > CREATE_TREE_MAX_DEPTH) {
-    throw new RemnoteWriteError('INVALID_ARGS', `Tree depth exceeds ${CREATE_TREE_MAX_DEPTH}.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Tree depth exceeds ${CREATE_TREE_MAX_DEPTH}.`, {
+      actualDepth: depth,
+      maxDepth: CREATE_TREE_MAX_DEPTH,
+      path,
+    });
   }
 
   const node = rawNode as Partial<CreateRemTreeNode>;
@@ -789,9 +821,18 @@ function validateTreeNode(
   }
 
   state.nodeCount += 1;
-  state.maxDepthSeen = Math.max(state.maxDepthSeen ?? 0, depth);
+  if (depth > (state.maxDepthSeen ?? 0)) {
+    state.maxDepthSeen = depth;
+    state.maxDepthPath = path;
+    state.maxDepthTitle = title;
+  }
   if (state.nodeCount > CREATE_TREE_MAX_NODES) {
-    throw new RemnoteWriteError('INVALID_ARGS', `Tree node count exceeds ${CREATE_TREE_MAX_NODES}.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Tree node count exceeds ${CREATE_TREE_MAX_NODES}.`, {
+      actualNodeCount: state.nodeCount,
+      maxNodeCount: CREATE_TREE_MAX_NODES,
+      path,
+      title,
+    });
   }
 
   const rawChildren = node.children ?? [];
@@ -801,7 +842,7 @@ function validateTreeNode(
 
   return {
     title,
-    children: rawChildren.map((child) => validateTreeNode(child, depth + 1, state)),
+    children: rawChildren.map((child, index) => validateTreeNode(child, depth + 1, state, `${path}.children[${index}]`)),
   };
 }
 
@@ -1626,20 +1667,36 @@ export async function createRemTree(
 function normalizeStyledNode(
   rawNode: StyledRemTreeNode,
   depth: number,
-  state: TreeValidationState
+  state: TreeValidationState,
+  path = 'root'
 ): StyledRemTreeNode {
   if (typeof rawNode !== 'object' || rawNode === null || Array.isArray(rawNode)) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Styled tree node must be an object.');
   }
 
   if (depth > CREATE_TREE_MAX_DEPTH) {
-    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree depth exceeds ${CREATE_TREE_MAX_DEPTH}.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree depth exceeds ${CREATE_TREE_MAX_DEPTH}.`, {
+      actualDepth: depth,
+      maxDepth: CREATE_TREE_MAX_DEPTH,
+      path,
+      title: rawNode.text ?? rawNode.title ?? rawNode.latex ?? rawNode.type,
+    });
   }
 
   state.nodeCount += 1;
-  state.maxDepthSeen = Math.max(state.maxDepthSeen ?? 0, depth);
+  const title = rawNode.text ?? rawNode.title ?? rawNode.latex ?? rawNode.front ?? rawNode.type ?? 'rem';
+  if (depth > (state.maxDepthSeen ?? 0)) {
+    state.maxDepthSeen = depth;
+    state.maxDepthPath = path;
+    state.maxDepthTitle = title;
+  }
   if (state.nodeCount > CREATE_TREE_MAX_NODES) {
-    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree node count exceeds ${CREATE_TREE_MAX_NODES}.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Styled tree node count exceeds ${CREATE_TREE_MAX_NODES}.`, {
+      actualNodeCount: state.nodeCount,
+      maxNodeCount: CREATE_TREE_MAX_NODES,
+      path,
+      title,
+    });
   }
 
   const children = rawNode.children ?? [];
@@ -1649,7 +1706,8 @@ function normalizeStyledNode(
 
   return {
     ...rawNode,
-    children: children.map((child) => normalizeStyledNode(child, depth + 1, state)),
+    style: normalizeRemStyleInput(rawNode.style),
+    children: children.map((child, index) => normalizeStyledNode(child, depth + 1, state, `${path}.children[${index}]`)),
   };
 }
 
@@ -1658,17 +1716,23 @@ function assertTreeLimits(
   limits: { maxDepth?: number; maxNodeCount?: number },
   label: string
 ) {
-  if (limits.maxDepth !== undefined && (state.maxDepthSeen ?? 0) > limits.maxDepth) {
+  const maxDepth = limits.maxDepth ?? CREATE_TREE_DEFAULT_MAX_DEPTH;
+  const maxNodeCount = limits.maxNodeCount ?? CREATE_TREE_DEFAULT_MAX_NODES;
+  if ((state.maxDepthSeen ?? 0) > maxDepth) {
     throw new RemnoteWriteError('INVALID_ARGS', `${label} depth exceeds requested maxDepth.`, {
-      maxDepth: limits.maxDepth,
+      maxDepth,
       actualDepth: state.maxDepthSeen ?? 0,
+      path: state.maxDepthPath,
+      title: state.maxDepthTitle,
     });
   }
 
-  if (limits.maxNodeCount !== undefined && state.nodeCount > limits.maxNodeCount) {
+  if (state.nodeCount > maxNodeCount) {
     throw new RemnoteWriteError('INVALID_ARGS', `${label} node count exceeds requested maxNodeCount.`, {
-      maxNodeCount: limits.maxNodeCount,
+      maxNodeCount,
       actualNodeCount: state.nodeCount,
+      path: state.maxDepthPath,
+      title: state.maxDepthTitle,
     });
   }
 }
@@ -2363,6 +2427,56 @@ function rememberPolishedTreeResult(idempotencyKey: string, result: CreatePolish
   }
 }
 
+function rememberMarkdownImportResult(idempotencyKey: string, result: CreateOrReplaceNoteFromMarkdownResult) {
+  MARKDOWN_IMPORT_RESULT_CACHE.delete(idempotencyKey);
+  MARKDOWN_IMPORT_RESULT_CACHE.set(idempotencyKey, result);
+
+  while (MARKDOWN_IMPORT_RESULT_CACHE.size > STRUCTURED_BATCH_CACHE_LIMIT) {
+    const oldestKey = MARKDOWN_IMPORT_RESULT_CACHE.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    MARKDOWN_IMPORT_RESULT_CACHE.delete(oldestKey);
+  }
+}
+
+async function findDirectChildByPlainText(plugin: RNPlugin, parentId: string, plainText: string): Promise<Rem | null> {
+  const parent = await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND');
+  const children = await runSdkOperation('rem.getChildrenRem', () => parent.getChildrenRem());
+  for (const child of children) {
+    const childText = await getRemPlainString(plugin, child);
+    if (childText.trim() === plainText.trim()) {
+      return child;
+    }
+  }
+  return null;
+}
+
+async function collectPlainTextForRemIds(plugin: RNPlugin, remIds: readonly string[]): Promise<string> {
+  const parts: string[] = [];
+  for (const remId of Array.from(new Set(remIds))) {
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) {
+      continue;
+    }
+    parts.push(await getRemPlainString(plugin, rem));
+  }
+  return parts.join('\n');
+}
+
+function markdownImportPlanSummary(plan: ReturnType<typeof parseMarkdownImportPlan>): CreateOrReplaceNoteFromMarkdownResult['plan'] {
+  return {
+    previewOutline: plan.previewOutline,
+    headingCount: plan.stats.headingCount,
+    mathBlockCount: plan.stats.mathBlockCount,
+    inlineMathCount: plan.stats.inlineMathCount,
+    codeBlockCount: plan.stats.codeBlockCount,
+    tableCount: plan.stats.tableCount,
+    paragraphCount: plan.stats.paragraphCount,
+    bulletCount: plan.stats.bulletCount,
+  };
+}
+
 export async function createPolishedNoteTree(
   plugin: RNPlugin,
   args: CreatePolishedNoteTreeArgs
@@ -2422,6 +2536,238 @@ export async function createPolishedNoteTree(
   }
 
   return result;
+}
+
+export async function createOrReplaceNoteFromMarkdown(
+  plugin: RNPlugin,
+  args: CreateOrReplaceNoteFromMarkdownArgs
+): Promise<CreateOrReplaceNoteFromMarkdownResult> {
+  const normalized = normalizeMarkdownImportArgs(args);
+  const idempotencyKey = getWriteIdempotencyKey(normalized.safetyOptions.idempotencyKey, 'markdown-import');
+  const dryRun = normalized.safetyOptions.dryRun;
+  if (!dryRun) {
+    const cached = MARKDOWN_IMPORT_RESULT_CACHE.get(idempotencyKey);
+    if (cached) {
+      return {
+        ...cached,
+        status: 'skipped',
+      };
+    }
+  }
+
+  let plan: ReturnType<typeof parseMarkdownImportPlan>;
+  try {
+    plan = parseMarkdownImportPlan(normalized.markdownText, {
+      headingMapping: normalized.headingMapping,
+      remnoteLayout: normalized.remnoteLayout,
+      mathOptions: normalized.mathOptions,
+      fidelityOptions: normalized.fidelityOptions,
+      limits: normalized.limits,
+    });
+  } catch (error: unknown) {
+    throw new RemnoteWriteError('INVALID_ARGS', error instanceof Error ? error.message : String(error));
+  }
+
+  const baseResult = {
+    ok: true,
+    createdRemIds: [] as string[],
+    updatedRemIds: [] as string[],
+    nodeCount: plan.stats.nodeCount,
+    maxDepth: plan.stats.maxDepth,
+    sourceHash: plan.sourceHash,
+    outputHash: plan.outputHash,
+    dryRun,
+    idempotencyKey,
+    mode: normalized.mode,
+    duplicatePolicy: normalized.duplicatePolicy,
+    plan: markdownImportPlanSummary(plan),
+  };
+
+  if (dryRun) {
+    return {
+      ...baseResult,
+      status: 'dry_run',
+      verification: verifyMarkdownSourceFidelity(
+        plan.sourceSnippets,
+        markdownImportOutputTextFromTree(plan.tree),
+        normalized.fidelityOptions
+      ),
+    };
+  }
+
+  try {
+    let batchResult: ApplyStructuredNoteBatchResult;
+    let rootRemId: string | undefined;
+    let skippedRemIds: string[] | undefined;
+
+    if (normalized.mode === 'create_child') {
+      if (!normalized.parentRemId) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'create_child mode requires parentRemId.');
+      }
+      const duplicate = normalized.duplicatePolicy === 'create_new'
+        ? null
+        : await findDirectChildByPlainText(plugin, normalized.parentRemId, plan.tree.text ?? plan.tree.title ?? '');
+      if (duplicate && normalized.duplicatePolicy === 'skip') {
+        const result: CreateOrReplaceNoteFromMarkdownResult = {
+          ...baseResult,
+          rootRemId: duplicate._id,
+          skippedRemIds: [duplicate._id],
+          status: 'skipped',
+          verification: normalized.safetyOptions.verifyAfterWrite
+            ? verifyMarkdownSourceFidelity(plan.sourceSnippets, await getRemPlainString(plugin, duplicate), normalized.fidelityOptions)
+            : undefined,
+        };
+        rememberMarkdownImportResult(idempotencyKey, result);
+        return result;
+      }
+      if (duplicate && normalized.duplicatePolicy === 'replace') {
+        batchResult = await applyStructuredNoteBatch(plugin, {
+          target: { mode: 'rem_id', remId: duplicate._id },
+          operation: 'update_root_and_replace_children',
+          root: plan.tree,
+          dryRun: false,
+          idempotencyKey,
+          rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
+          verifyAfterWrite: normalized.safetyOptions.verifyAfterWrite,
+          maxDepth: normalized.limits.maxDepth,
+          maxNodeCount: normalized.limits.maxNodes,
+        });
+        rootRemId = duplicate._id;
+      } else {
+        batchResult = await applyStructuredNoteBatch(plugin, {
+          target: { mode: 'parent_child', parentId: normalized.parentRemId },
+          operation: 'create_child_tree',
+          parentId: normalized.parentRemId,
+          position: 'end',
+          root: plan.tree,
+          dryRun: false,
+          idempotencyKey,
+          rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
+          verifyAfterWrite: normalized.safetyOptions.verifyAfterWrite,
+          maxDepth: normalized.limits.maxDepth,
+          maxNodeCount: normalized.limits.maxNodes,
+        });
+        rootRemId = batchResult.rootCreatedRemId;
+      }
+    } else if (normalized.mode === 'append_to_target') {
+      if (!normalized.targetRemId) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'append_to_target mode requires targetRemId.');
+      }
+      batchResult = await applyStructuredNoteBatch(plugin, {
+        target: { mode: 'rem_id', remId: normalized.targetRemId },
+        operation: 'append_children',
+        note: { children: [plan.tree] },
+        dryRun: false,
+        idempotencyKey,
+        rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
+        verifyAfterWrite: normalized.safetyOptions.verifyAfterWrite,
+        maxDepth: normalized.limits.maxDepth,
+        maxNodeCount: normalized.limits.maxNodes,
+      });
+      rootRemId = batchResult.rootCreatedRemId ?? normalized.targetRemId;
+    } else if (normalized.mode === 'replace_target_children') {
+      if (!normalized.targetRemId) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'replace_target_children mode requires targetRemId.');
+      }
+      batchResult = await applyStructuredNoteBatch(plugin, {
+        target: { mode: 'rem_id', remId: normalized.targetRemId },
+        operation: 'replace_children',
+        note: { children: plan.tree.children ?? [] },
+        dryRun: false,
+        idempotencyKey,
+        rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
+        verifyAfterWrite: normalized.safetyOptions.verifyAfterWrite,
+        maxDepth: normalized.limits.maxDepth,
+        maxNodeCount: normalized.limits.maxNodes,
+      });
+      rootRemId = normalized.targetRemId;
+    } else {
+      if (!normalized.targetRemId) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'update_target_and_replace_children mode requires targetRemId.');
+      }
+      batchResult = await applyStructuredNoteBatch(plugin, {
+        target: { mode: 'rem_id', remId: normalized.targetRemId },
+        operation: 'update_root_and_replace_children',
+        root: plan.tree,
+        dryRun: false,
+        idempotencyKey,
+        rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
+        verifyAfterWrite: normalized.safetyOptions.verifyAfterWrite,
+        maxDepth: normalized.limits.maxDepth,
+        maxNodeCount: normalized.limits.maxNodes,
+      });
+      rootRemId = normalized.targetRemId;
+    }
+
+    const idsForVerification = Array.from(
+      new Set([
+        ...(rootRemId ? [rootRemId] : []),
+        ...batchResult.createdRemIds,
+        ...(batchResult.updatedRemIds ?? []),
+      ])
+    );
+    const outputText = normalized.safetyOptions.verifyAfterWrite
+      ? await collectPlainTextForRemIds(plugin, idsForVerification)
+      : markdownImportOutputTextFromTree(plan.tree);
+    const verification = normalized.safetyOptions.verifyAfterWrite
+      ? verifyMarkdownSourceFidelity(
+          normalized.mode === 'replace_target_children' ? plan.sourceSnippets.slice(1) : plan.sourceSnippets,
+          outputText,
+          normalized.fidelityOptions
+        )
+      : undefined;
+    if (verification && !verification.passed && normalized.fidelityOptions.failOnContentLoss) {
+      throw new RemnoteWriteError('PARTIAL_FAILURE', 'Markdown import verification detected source content loss.', {
+        verification,
+        createdRemIds: batchResult.createdRemIds,
+        updatedRemIds: batchResult.updatedRemIds ?? [],
+        partialExecution: {
+          createdRemIds: batchResult.createdRemIds,
+          failedStage: 'verify_markdown_source_fidelity',
+          rollbackStatus: 'not_attempted',
+        },
+      });
+    }
+
+    const status: CreateOrReplaceNoteFromMarkdownResult['status'] =
+      normalized.mode === 'append_to_target'
+        ? 'appended'
+        : normalized.mode === 'create_child'
+          ? 'created'
+          : normalized.mode === 'replace_target_children'
+            ? 'replaced'
+            : 'updated';
+    const result: CreateOrReplaceNoteFromMarkdownResult = {
+      ...baseResult,
+      rootRemId,
+      createdRemIds: batchResult.createdRemIds,
+      updatedRemIds: batchResult.updatedRemIds ?? [],
+      ...(skippedRemIds ? { skippedRemIds } : {}),
+      outputHash: batchResult.createdRemIds.length || batchResult.updatedRemIds?.length
+        ? markdownImportOutputTextFromTree(plan.tree)
+          ? plan.outputHash
+          : undefined
+        : plan.outputHash,
+      verification,
+      status,
+    };
+    rememberMarkdownImportResult(idempotencyKey, result);
+    return result;
+  } catch (error: unknown) {
+    if (error instanceof RemnoteWriteError) {
+      const partial = getPartialExecutionDetails(error.details);
+      throw new RemnoteWriteError(error.code, error.message, {
+        originalDetails: error.details,
+        partialExecution: {
+          createdRemIds: readCreatedRemIdsFromError(error),
+          failedAtPath: typeof partial.failedStage === 'string' ? partial.failedStage : 'create_or_replace_note_from_markdown',
+          failedReason: error.message,
+          rollbackStatus: typeof partial.rollbackStatus === 'string' ? partial.rollbackStatus : 'not_attempted',
+        },
+      });
+    }
+    throw error;
+  }
 }
 
 const RICH_TEXT_COLOR_NUMBERS: Record<string, number> = {

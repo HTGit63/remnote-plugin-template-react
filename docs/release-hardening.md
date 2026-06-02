@@ -110,16 +110,17 @@ Normal note creation should prefer:
 
 ```text
 create_polished_note_tree
+create_or_replace_note_from_markdown
 apply_structured_note_batch
 apply_style_plan
 verify_note_design
 ```
 
-Use low-level write tools only as fallbacks or for explicit narrow edits. Dry-run capable tools should be dry-run first when target identity or scope is uncertain.
+Use `create_or_replace_note_from_markdown` for long copied Markdown/source notes so one approved operation preserves headings, paragraphs, formulas, bullets, code, and source order. Use low-level write tools only as fallbacks or for explicit narrow edits. Dry-run capable tools should be dry-run first when target identity or scope is uncertain.
 
 ## Delete Safety
 
-Only `delete_rem_by_id` is public. Legacy focus/selection delete tools must not be exposed.
+Only `delete_rem_by_id` is public. Legacy focus/selection delete tools must not be exposed or kept as hidden/gated paths.
 
 Real deletion requires:
 

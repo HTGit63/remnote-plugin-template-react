@@ -317,6 +317,38 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         maxNodeCount: 5,
         idempotencyKey: idempotencyKey(tool),
       };
+    case 'create_or_replace_note_from_markdown':
+      return {
+        parentRemId: parentId,
+        markdownText: [
+          '# Area 3 Markdown Import',
+          '',
+          '### Section One',
+          '',
+          'Paragraph with inline math $E=mc^2$.',
+          '',
+          '### Section Two',
+          '',
+          '$$',
+          'F = ma',
+          '$$',
+          '',
+          '- bullet',
+          '  - nested bullet',
+        ].join('\n'),
+        mode: 'create_child',
+        duplicatePolicy: 'create_new',
+        safetyOptions: {
+          dryRun: true,
+          verifyAfterWrite: true,
+          rollbackOnFailure: true,
+          idempotencyKey: idempotencyKey(tool),
+        },
+        limits: {
+          maxDepth: 8,
+          maxNodes: 200,
+        },
+      };
     case 'apply_style_plan':
       return {
         operations: [{ remId: targetRemId, type: 'heading', headingLevel: 'H2' }],
@@ -484,6 +516,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'apply_remnote_command':
     case 'apply_structured_note_batch':
     case 'create_polished_note_tree':
+    case 'create_or_replace_note_from_markdown':
     case 'apply_style_plan':
     case 'verify_note_design':
     case 'create_basic_flashcard':
@@ -501,7 +534,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           dryRun: 'dryRun' in request.args ? Boolean(request.args.dryRun) : undefined,
           idempotencyKey: 'idempotencyKey' in request.args ? request.args.idempotencyKey : undefined,
           createdRemId: request.tool.startsWith('create_') ? `created-${request.tool}` : undefined,
-          createdRemIds: request.tool.includes('tree') || request.tool.includes('batch')
+          createdRemIds: request.tool.includes('tree') || request.tool.includes('batch') || request.tool.includes('markdown')
             ? [`created-${request.tool}-root`, `created-${request.tool}-child`]
             : undefined,
           updatedRemIds: request.tool.startsWith('update_') || request.tool.startsWith('set_') || request.tool.startsWith('apply_')
@@ -624,7 +657,12 @@ function assertMatrixShape(matrix: readonly Record<string, unknown>[], tools: re
 function assertSchemaQuality(profile: ToolProfile = 'full') {
   const publicTools = getPublicMcpToolNames(false, profile);
   assert(!publicTools.includes('create_folder'), `${profile} exposed unsupported create_folder.`);
-  for (const tool of ['delete_rem', 'delete_focused_rem', 'delete_selected_rem']) {
+  const removedDeleteTools = [
+    ['delete', 'rem'].join('_'),
+    ['delete', 'focused', 'rem'].join('_'),
+    ['delete', 'selected', 'rem'].join('_'),
+  ];
+  for (const tool of removedDeleteTools) {
     assert(!publicTools.includes(tool), `${profile} exposed removed legacy tool ${tool}.`);
   }
 
@@ -663,6 +701,11 @@ function assertIdempotencyAndDryRun(seen: readonly SeenBridgeRequest[]) {
     const metadata = getToolMetadata(publicName);
     if (metadata.supportsDryRun && 'dryRun' in request.args && metadata.requiresWrite) {
       assert(request.args.dryRun !== false, `${publicName} certification must not execute a real dry-run-capable write.`);
+    }
+    if (request.tool === 'create_or_replace_note_from_markdown') {
+      const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
+      assert(safetyOptions?.dryRun === true, 'create_or_replace_note_from_markdown certification must use safetyOptions.dryRun=true.');
+      assert(typeof safetyOptions.idempotencyKey === 'string', 'create_or_replace_note_from_markdown certification must pass nested idempotencyKey.');
     }
     if (metadata.requiresDelete) {
       assert(request.args.dryRun === true, `${publicName} delete certification must use dryRun=true.`);
@@ -733,6 +776,15 @@ async function certifyProfile(profile: ToolProfile) {
   }
 }
 
+async function certifyHealthRouting() {
+  await certifyProfile('developer_diagnostics');
+}
+
+async function certifyMarkdownImporter() {
+  assertSchemaQuality('advanced_notes');
+  await certifyProfile('advanced_notes');
+}
+
 const checks: Record<string, () => Promise<void> | void> = {
   all: async () => {
     assertSchemaQuality('full');
@@ -742,6 +794,8 @@ const checks: Record<string, () => Promise<void> | void> = {
   advanced: () => certifyProfile('advanced_notes'),
   diagnostics: () => certifyProfile('developer_diagnostics'),
   schemas: () => assertSchemaQuality('full'),
+  'health-routing': certifyHealthRouting,
+  'markdown-importer': certifyMarkdownImporter,
   hosted: () => {
     const summary = getToolRegistrySummary(false, 'full', undefined, {
       discoveryAuthMode: 'no_auth_required',

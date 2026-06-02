@@ -23,13 +23,10 @@ Source registry:
 toolRegistryVersion: 2026-05-15.2
 mcpDiscoveryVersion: mcp-discovery-2026-05-15.2
 publicToolCount: 47
-hidden legacy delete tools:
-  delete_rem
-  delete_focused_rem
-  delete_selected_rem
+legacy focus/selection/direct delete tools removed
 ```
 
-Default discovery keeps hidden legacy delete tools out of the public MCP tool list.
+Default discovery keeps legacy delete paths absent from the public MCP tool list.
 
 ## Validation
 

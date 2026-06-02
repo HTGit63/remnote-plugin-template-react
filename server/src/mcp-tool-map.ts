@@ -48,6 +48,7 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
     case 'apply_remnote_command':
     case 'apply_structured_note_batch':
     case 'create_polished_note_tree':
+    case 'create_or_replace_note_from_markdown':
     case 'apply_style_plan':
     case 'verify_note_design':
     case 'create_basic_flashcard':

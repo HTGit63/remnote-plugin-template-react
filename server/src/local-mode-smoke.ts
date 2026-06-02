@@ -120,6 +120,31 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           verification: { checked: true, missingIds: [] },
         },
       };
+    case 'create_or_replace_note_from_markdown':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          ok: true,
+          dryRun: request.args.safetyOptions?.dryRun ?? false,
+          mode: request.args.mode ?? 'create_child',
+          status: request.args.safetyOptions?.dryRun ? 'dry_run' : 'created',
+          rootRemId: request.args.safetyOptions?.dryRun ? undefined : 'rem-local-markdown-root-1',
+          createdRemIds: request.args.safetyOptions?.dryRun ? [] : ['rem-local-markdown-root-1'],
+          updatedRemIds: [],
+          skippedRemIds: [],
+          nodeCount: 3,
+          maxDepth: 2,
+          sourceHash: 'fnv1a32:local-source-smoke',
+          outputHash: 'fnv1a32:local-output-smoke',
+          idempotencyKey: request.args.safetyOptions?.idempotencyKey,
+          verification: {
+            passed: true,
+            missingSourceSnippets: [],
+            checkedSnippetCount: 3,
+          },
+        },
+      };
     default:
       return {
         id: request.id,
@@ -272,6 +297,25 @@ async function runLocalBearerMode(): Promise<void> {
           root: { text: 'Local batch root' },
         },
       ],
+      [
+        'create_or_replace_note_from_markdown',
+        {
+          parentRemId: fakeRem.remId,
+          mode: 'create_child',
+          duplicatePolicy: 'create_new',
+          markdownText: '# Local Markdown\n\nParagraph with \\(q_1\\).',
+          safetyOptions: {
+            dryRun: false,
+            verifyAfterWrite: true,
+            rollbackOnFailure: true,
+            idempotencyKey: 'local-mode-smoke-markdown',
+          },
+          limits: {
+            maxDepth: 8,
+            maxNodes: 200,
+          },
+        },
+      ],
     ] as Array<[string, Record<string, unknown>]>) {
       const result = await mcpToolCall(mcpUrl, toolName, args, token);
       texts.push(result.text);
@@ -280,7 +324,13 @@ async function runLocalBearerMode(): Promise<void> {
       }
     }
 
-    for (const expectedBridgeTool of ['get_status', 'get_focused_rem', 'get_rem_tree', 'apply_structured_note_batch'] as const) {
+    for (const expectedBridgeTool of [
+      'get_status',
+      'get_focused_rem',
+      'get_rem_tree',
+      'apply_structured_note_batch',
+      'create_or_replace_note_from_markdown',
+    ] as const) {
       if (!seenTools.includes(expectedBridgeTool)) {
         throw new Error(`${expectedBridgeTool} did not route through local BridgeHub WebSocket path.`);
       }

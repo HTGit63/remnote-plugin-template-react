@@ -151,11 +151,20 @@ function requestReachedPlugin(response: BridgeResponse): boolean {
 }
 
 function hasIdempotencyKey(args: unknown): boolean {
-  return isRecord(args) && typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim().length > 0;
+  return Boolean(getIdempotencyKey(args));
 }
 
 function getIdempotencyKey(args: unknown): string | undefined {
-  return isRecord(args) && typeof args.idempotencyKey === 'string' ? args.idempotencyKey.trim() || undefined : undefined;
+  if (!isRecord(args)) {
+    return undefined;
+  }
+  if (typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim()) {
+    return args.idempotencyKey.trim();
+  }
+  if (isRecord(args.safetyOptions) && typeof args.safetyOptions.idempotencyKey === 'string') {
+    return args.safetyOptions.idempotencyKey.trim() || undefined;
+  }
+  return undefined;
 }
 
 function isHighLevelIdempotentWrite(tool: BridgeToolName): boolean {
@@ -163,6 +172,7 @@ function isHighLevelIdempotentWrite(tool: BridgeToolName): boolean {
     'apply_structured_note_batch',
     'create_polished_note_tree',
     'create_styled_rem_tree',
+    'create_or_replace_note_from_markdown',
     'apply_style_plan',
     'apply_remnote_command',
     'delete_rem_by_id',

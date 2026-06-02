@@ -92,6 +92,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     requestSignal: options.requestSignal,
     runtimeInfo: options.runtimeInfo,
     toolProfile,
+    principal: options.principal,
   };
 
   registerStatusTools(context);
