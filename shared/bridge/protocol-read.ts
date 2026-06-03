@@ -46,6 +46,42 @@ export interface PingResult {
 
 export interface GetStatusArgs {}
 
+export type RemnoteSdkCapabilityName =
+  | 'plugin.app.transaction'
+  | 'plugin.app.waitForInitialSync'
+  | 'plugin.rem.createSingleRemWithMarkdown'
+  | 'plugin.rem.createTreeWithMarkdown'
+  | 'plugin.rem.createTable'
+  | 'plugin.reader.addHighlight'
+  | 'plugin.queue.getCurrentCard'
+  | 'plugin.queue.getNumRemainingCards'
+  | 'plugin.queue.getCurrentStreak'
+  | 'plugin.queue.inLookbackMode';
+
+export interface RemnoteSdkCapabilityDetail {
+  supported: boolean;
+  namespace: 'app' | 'rem' | 'reader' | 'queue';
+  api: string;
+}
+
+export interface RemnoteSdkCapabilityReport {
+  sdkVersion: string;
+  supportedSdkCapabilities: RemnoteSdkCapabilityName[];
+  unsupportedSdkCapabilities: RemnoteSdkCapabilityName[];
+  sdkCapabilityDetails: Record<RemnoteSdkCapabilityName, RemnoteSdkCapabilityDetail>;
+}
+
+export interface RemnoteInitialSyncStatus {
+  initialSyncSupported: boolean;
+  initialSyncComplete: boolean;
+  initialSyncTimedOut: boolean;
+  initialSyncDurationMs: number;
+  initialSyncCompletedAt?: string;
+  initialSyncWarning?: string;
+}
+
+export interface BridgePluginRuntimeInfo extends RemnoteSdkCapabilityReport, RemnoteInitialSyncStatus {}
+
 export interface BridgePluginStatus {
   connected: true;
   permissionMode: PermissionMode;
@@ -57,6 +93,13 @@ export interface BridgePluginStatus {
     label: string;
     hasChildren?: boolean;
   };
+  pluginRuntime?: BridgePluginRuntimeInfo;
+  sdkVersion?: string;
+  supportedSdkCapabilities?: RemnoteSdkCapabilityName[];
+  unsupportedSdkCapabilities?: RemnoteSdkCapabilityName[];
+  initialSyncComplete?: boolean;
+  initialSyncTimedOut?: boolean;
+  initialSyncWarning?: string;
 }
 
 export interface GetFocusedRemArgs {}

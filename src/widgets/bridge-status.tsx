@@ -1,4 +1,4 @@
-import { renderWidget, usePlugin, useTracker } from '@remnote/plugin-sdk';
+import { renderWidget, usePlugin, useTrackerPlugin as useTracker } from '@remnote/plugin-sdk';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import '../style.css';
 import '../index.css';

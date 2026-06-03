@@ -60,6 +60,7 @@ import type {
   SearchRemsArgs,
   SearchRemsResult,
   BridgePluginStatus,
+  BridgePluginRuntimeInfo,
   GetStatusArgs,
   SerializedRem,
 } from './protocol-read.js';
@@ -233,6 +234,7 @@ export interface BridgePluginHello {
   type: 'plugin_hello';
   protocolVersion: 1;
   clientName: 'remnote-plugin';
+  pluginRuntime?: BridgePluginRuntimeInfo;
   deploymentMode?: 'local' | 'hosted';
   deviceId?: string;
   pluginSessionId?: string;
@@ -247,6 +249,7 @@ export interface BridgePluginRegister {
   sessionSecret: string;
   workspaceLabel?: string;
   supportedTools: string[];
+  pluginRuntime?: BridgePluginRuntimeInfo;
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
   toolTier?: BridgeToolProfile;
@@ -311,6 +314,13 @@ export interface BridgeServerHello {
   hiddenTools?: Array<{ name: string; reason: string }>;
   requiresConnectorRefresh?: boolean;
   serverStartedAt?: string;
+  pluginRuntime?: BridgePluginRuntimeInfo | null;
+  sdkVersion?: string;
+  supportedSdkCapabilities?: BridgePluginRuntimeInfo['supportedSdkCapabilities'];
+  unsupportedSdkCapabilities?: BridgePluginRuntimeInfo['unsupportedSdkCapabilities'];
+  initialSyncComplete?: boolean;
+  initialSyncTimedOut?: boolean;
+  initialSyncWarning?: string;
 }
 
 export interface BridgeCancelRequest {

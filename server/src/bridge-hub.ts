@@ -8,6 +8,7 @@ import {
   type BridgeLifecycleEvent,
   type BridgeLifecyclePhase,
   type BridgePluginHello,
+  type BridgePluginRuntimeInfo,
   type BridgePluginRegister,
   type BridgeRequest,
   type BridgeResponse,
@@ -72,6 +73,7 @@ export class BridgeHub {
   private readonly startedAt = new Date().toISOString();
   private readonly recentRequests: BridgeHubRequestOutcome[] = [];
   private lastHealthCheck: BridgeHealthCheckResult | null = null;
+  private pluginRuntimeInfo: BridgePluginRuntimeInfo | null = null;
   private readonly sessionRouter: SessionRouter;
   private readonly socketUsers = new WeakMap<WebSocket, string>();
 
@@ -175,12 +177,14 @@ export class BridgeHub {
   }
 
   getStatus(): BridgeHubStatus {
+    const runtimeStatus = this.pluginRuntimeStatus();
     if (this.config.deploymentMode === 'hosted') {
       return {
         connected: this.sessionRouter.getStatus().activeConnections > 0,
         lastConnectedAt: this.lastConnectedAt,
         lastDisconnectedAt: this.lastDisconnectedAt,
         pendingRequests: this.pending.size,
+        ...runtimeStatus,
       };
     }
 
@@ -189,6 +193,7 @@ export class BridgeHub {
       lastConnectedAt: this.lastConnectedAt,
       lastDisconnectedAt: this.lastDisconnectedAt,
       pendingRequests: this.pending.size,
+      ...runtimeStatus,
     };
   }
 
@@ -207,6 +212,13 @@ export class BridgeHub {
       })),
       recentRequests: [...this.recentRequests],
       lastHealthCheck: this.lastHealthCheck,
+      pluginRuntime: this.pluginRuntimeInfo,
+      sdkVersion: this.pluginRuntimeInfo?.sdkVersion,
+      supportedSdkCapabilities: this.pluginRuntimeInfo?.supportedSdkCapabilities,
+      unsupportedSdkCapabilities: this.pluginRuntimeInfo?.unsupportedSdkCapabilities,
+      initialSyncComplete: this.pluginRuntimeInfo?.initialSyncComplete,
+      initialSyncTimedOut: this.pluginRuntimeInfo?.initialSyncTimedOut,
+      initialSyncWarning: this.pluginRuntimeInfo?.initialSyncWarning,
       sessionRouter: this.sessionRouter.getStatus(),
       activePluginConnections: this.sessionRouter.getActiveConnectionInfos().map((connection) => ({
         ...connection,
@@ -218,6 +230,18 @@ export class BridgeHub {
 
   recordHealthCheck(result: BridgeHealthCheckResult) {
     this.lastHealthCheck = result;
+  }
+
+  private pluginRuntimeStatus() {
+    return {
+      pluginRuntime: this.pluginRuntimeInfo,
+      sdkVersion: this.pluginRuntimeInfo?.sdkVersion,
+      supportedSdkCapabilities: this.pluginRuntimeInfo?.supportedSdkCapabilities,
+      unsupportedSdkCapabilities: this.pluginRuntimeInfo?.unsupportedSdkCapabilities,
+      initialSyncComplete: this.pluginRuntimeInfo?.initialSyncComplete,
+      initialSyncTimedOut: this.pluginRuntimeInfo?.initialSyncTimedOut,
+      initialSyncWarning: this.pluginRuntimeInfo?.initialSyncWarning,
+    };
   }
 
   get bridgePort(): number {
@@ -568,6 +592,14 @@ export class BridgeHub {
     });
   }
 
+  private extractPluginRuntimeInfo(message: BridgePluginHello | BridgePluginRegister): BridgePluginRuntimeInfo | null {
+    const runtime = message.pluginRuntime;
+    if (!runtime || typeof runtime !== 'object') {
+      return null;
+    }
+    return runtime;
+  }
+
   private async handleInitialPluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
       const hello = this.parseClientMessage(raw);
       if (!this.isPluginHello(hello) && !this.isPluginRegister(hello)) {
@@ -589,6 +621,8 @@ export class BridgeHub {
         return;
       }
 
+      const pluginRuntime = this.extractPluginRuntimeInfo(hello);
+      this.pluginRuntimeInfo = pluginRuntime;
       let registeredToolTier = this.config.toolProfile;
       let requiresConnectorRefresh = false;
       if (this.config.deploymentMode === 'hosted') {
@@ -627,6 +661,13 @@ export class BridgeHub {
         }),
         requiresConnectorRefresh,
         serverStartedAt: this.startedAt,
+        pluginRuntime,
+        sdkVersion: pluginRuntime?.sdkVersion,
+        supportedSdkCapabilities: pluginRuntime?.supportedSdkCapabilities,
+        unsupportedSdkCapabilities: pluginRuntime?.unsupportedSdkCapabilities,
+        initialSyncComplete: pluginRuntime?.initialSyncComplete,
+        initialSyncTimedOut: pluginRuntime?.initialSyncTimedOut,
+        initialSyncWarning: pluginRuntime?.initialSyncWarning,
       };
       socket.send(JSON.stringify(serverHello));
   }

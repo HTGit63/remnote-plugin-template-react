@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -68,7 +68,7 @@ import type {
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
 import { DELETE_BY_ID_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
-import { findRequiredRem, getRemPlainString, getRemTitle } from './remnoteSdkHelpers';
+import { findRequiredRem, getRemChildCount, getRemPlainString, getRemTitle } from './remnoteSdkHelpers';
 
 export async function buildDeletePreview(
   plugin: RNPlugin,
@@ -86,7 +86,7 @@ export async function buildDeletePreview(
     targetTitle: await getRemTitle(plugin, rem),
     parentRemId: parent?._id ?? null,
     parentTitle: parent ? await getRemTitle(plugin, parent) : null,
-    childCount: rem.children.length,
+    childCount: getRemChildCount(rem),
     descendantCount: descendants.length,
     recursive,
     requiresConfirmText: 'DELETE',
@@ -117,7 +117,7 @@ export async function getDeleteTarget(plugin: RNPlugin, rem: Rem): Promise<Delet
     plainText: await getRemPlainString(plugin, rem),
     parentId: rem.parent ?? null,
     breadcrumbs,
-    childCount: rem.children.length,
+    childCount: getRemChildCount(rem),
   };
 }
 

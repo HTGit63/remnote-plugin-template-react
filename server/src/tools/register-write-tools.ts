@@ -82,7 +82,7 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
     {
       title: 'Create RemNote folder',
       description:
-        'Use this when the user asks to create a RemNote folder. Returns SDK_UNSUPPORTED if the installed RemNote SDK cannot create folders.',
+        'Use this when the user asks to create a RemNote folder. Hidden until the modern SDK folder path is live-verified.',
       inputSchema: z.object({
         parentId: z.string().trim().max(256).nullable().optional().describe('Optional parent Rem ID.'),
         markdown: MARKDOWN_SCHEMA.describe('Folder title/content requested by the user.'),

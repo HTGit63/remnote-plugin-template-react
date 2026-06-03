@@ -1,6 +1,7 @@
 import { WebSocket } from 'ws';
 import type {
   BridgePluginHello,
+  BridgePluginRuntimeInfo,
   BridgeRequest,
   BridgeResponse,
   BridgeServerHello,
@@ -21,6 +22,41 @@ const fakeRem: SerializedRem = {
   plainText: 'Local mode smoke Rem',
   breadcrumbs: ['Local mode smoke Rem'],
   hasChildren: false,
+};
+
+const fakePluginRuntime: BridgePluginRuntimeInfo = {
+  sdkVersion: '0.0.46',
+  supportedSdkCapabilities: [
+    'plugin.app.transaction',
+    'plugin.app.waitForInitialSync',
+    'plugin.rem.createSingleRemWithMarkdown',
+    'plugin.rem.createTreeWithMarkdown',
+    'plugin.rem.createTable',
+    'plugin.queue.getCurrentCard',
+  ],
+  unsupportedSdkCapabilities: [
+    'plugin.reader.addHighlight',
+    'plugin.queue.getNumRemainingCards',
+    'plugin.queue.getCurrentStreak',
+    'plugin.queue.inLookbackMode',
+  ],
+  sdkCapabilityDetails: {
+    'plugin.app.transaction': { supported: true, namespace: 'app', api: 'transaction' },
+    'plugin.app.waitForInitialSync': { supported: true, namespace: 'app', api: 'waitForInitialSync' },
+    'plugin.rem.createSingleRemWithMarkdown': { supported: true, namespace: 'rem', api: 'createSingleRemWithMarkdown' },
+    'plugin.rem.createTreeWithMarkdown': { supported: true, namespace: 'rem', api: 'createTreeWithMarkdown' },
+    'plugin.rem.createTable': { supported: true, namespace: 'rem', api: 'createTable' },
+    'plugin.reader.addHighlight': { supported: false, namespace: 'reader', api: 'addHighlight' },
+    'plugin.queue.getCurrentCard': { supported: true, namespace: 'queue', api: 'getCurrentCard' },
+    'plugin.queue.getNumRemainingCards': { supported: false, namespace: 'queue', api: 'getNumRemainingCards' },
+    'plugin.queue.getCurrentStreak': { supported: false, namespace: 'queue', api: 'getCurrentStreak' },
+    'plugin.queue.inLookbackMode': { supported: false, namespace: 'queue', api: 'inLookbackMode' },
+  },
+  initialSyncSupported: true,
+  initialSyncComplete: true,
+  initialSyncTimedOut: false,
+  initialSyncDurationMs: 12,
+  initialSyncCompletedAt: '2026-06-03T00:00:00.000Z',
 };
 
 async function mcpRequest(
@@ -96,6 +132,12 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
             label: fakeRem.frontText,
             hasChildren: false,
           },
+          pluginRuntime: fakePluginRuntime,
+          sdkVersion: fakePluginRuntime.sdkVersion,
+          supportedSdkCapabilities: fakePluginRuntime.supportedSdkCapabilities,
+          unsupportedSdkCapabilities: fakePluginRuntime.unsupportedSdkCapabilities,
+          initialSyncComplete: fakePluginRuntime.initialSyncComplete,
+          initialSyncTimedOut: fakePluginRuntime.initialSyncTimedOut,
         },
       };
     case 'get_focused_rem':
@@ -170,6 +212,7 @@ async function connectMockPlugin(
         type: 'plugin_hello',
         protocolVersion: 1,
         clientName: 'remnote-plugin',
+        pluginRuntime: fakePluginRuntime,
         ...(bridgeToken ? { token: bridgeToken } : {}),
       };
       ws.send(JSON.stringify(hello));
@@ -273,7 +316,11 @@ async function runLocalBearerMode(): Promise<void> {
       !diagnosticsText.includes('"deploymentMode":"local"') ||
       !diagnosticsText.includes('"localTokenRequired":true') ||
       !diagnosticsText.includes('"hostedPairingEnabled":false') ||
-      !diagnosticsText.includes(localPairingDisabledMessage)
+      !diagnosticsText.includes(localPairingDisabledMessage) ||
+      !diagnosticsText.includes('"sdkVersion":"0.0.46"') ||
+      !diagnosticsText.includes('"supportedSdkCapabilities"') ||
+      !diagnosticsText.includes('"unsupportedSdkCapabilities"') ||
+      !diagnosticsText.includes('"initialSyncComplete":true')
     ) {
       throw new Error(`/diagnostics missed local mode proof: ${authedDiagnostics.status} ${diagnosticsText}`);
     }

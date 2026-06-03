@@ -5,6 +5,7 @@ import type {
   BridgeResponse,
   BridgeToolName,
   BridgeErrorCode,
+  BridgePluginRuntimeInfo,
 } from '../../../shared/bridge/protocol.js';
 import type { BridgeHealthCheckResult } from '../health-check-types.js';
 import type { SessionRouter } from './session-router.js';
@@ -35,6 +36,13 @@ export interface BridgeHubStatus {
   lastConnectedAt?: string;
   lastDisconnectedAt?: string;
   pendingRequests: number;
+  pluginRuntime?: BridgePluginRuntimeInfo | null;
+  sdkVersion?: string;
+  supportedSdkCapabilities?: BridgePluginRuntimeInfo['supportedSdkCapabilities'];
+  unsupportedSdkCapabilities?: BridgePluginRuntimeInfo['unsupportedSdkCapabilities'];
+  initialSyncComplete?: boolean;
+  initialSyncTimedOut?: boolean;
+  initialSyncWarning?: string;
 }
 
 export interface BridgeHubRequestSnapshot {
@@ -71,6 +79,13 @@ export interface BridgeHubDiagnostics {
   pending: BridgeHubRequestSnapshot[];
   recentRequests: BridgeHubRequestOutcome[];
   lastHealthCheck: BridgeHealthCheckResult | null;
+  pluginRuntime?: BridgePluginRuntimeInfo | null;
+  sdkVersion?: string;
+  supportedSdkCapabilities?: BridgePluginRuntimeInfo['supportedSdkCapabilities'];
+  unsupportedSdkCapabilities?: BridgePluginRuntimeInfo['unsupportedSdkCapabilities'];
+  initialSyncComplete?: boolean;
+  initialSyncTimedOut?: boolean;
+  initialSyncWarning?: string;
   sessionRouter?: ReturnType<SessionRouter['getStatus']>;
   activePluginConnections?: Array<{
     connectionId: string;

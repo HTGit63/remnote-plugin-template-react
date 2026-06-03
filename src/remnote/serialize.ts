@@ -1,4 +1,4 @@
-import type { Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type { SerializedRem } from '../../shared/bridge/protocol';
 
 const DEFAULT_TREE_DEPTH = 0;
@@ -103,7 +103,7 @@ export async function serializeRem(
   const front = truncateText(frontText, maxChars);
   const back = truncateText(backText, maxChars);
   const plain = truncateText(plainText, maxChars);
-  const hasChildren = rem.children.length > 0;
+  const hasChildren = (rem.children?.length ?? 0) > 0;
   const breadcrumbs = await buildRemBreadcrumbs(plugin, rem);
   const children: SerializedRem[] = [];
   let truncated = front.truncated || back.truncated || plain.truncated;

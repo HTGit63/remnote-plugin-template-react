@@ -103,11 +103,11 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'A document is a Rem marked as a page-like zoom point for working with that Rem and its children.',
       'A folder is also a Rem, but its role is to organize documents and folders. Folders should contain documents or folders, not ordinary note Rems.',
       'A top-level Rem has no parent. It may be a document, folder, normal concept Rem, or none of those.',
-      'Any Rem can be marked as a document. Folder creation is UI-supported in RemNote, but this bridge keeps `create_folder` as SDK_UNSUPPORTED until the installed SDK exposes a safe creation API.',
+      'Any Rem can be marked as a document. Folder creation is UI-supported in RemNote, but this bridge keeps `create_folder` hidden until the modern SDK folder path is live-verified.',
     ],
     bridgeUse: [
       'Use `create_document` for page-like notes. Use ordinary Rem trees inside documents for content.',
-      'Never fake folders by creating a normal Rem and calling it a folder. Return SDK_UNSUPPORTED when the SDK cannot create a real folder.',
+      'Never fake folders by creating a normal Rem and calling it a folder. Return SDK_UNSUPPORTED when a real folder API is absent or not live-verified.',
       'When the user provides Markdown/source notes, target the existing Rem as `parentRemId` and use `create_or_replace_note_from_markdown`. Use `create_polished_note_tree` or `apply_structured_note_batch` for structured JSON note plans.',
     ],
   },

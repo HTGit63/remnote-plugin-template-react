@@ -42,7 +42,7 @@
     "mcp:live-test": "npm run live-test --prefix server"
   },
   "dependencies": {
-    "@remnote/plugin-sdk": "0.0.14",
+    "@remnote/plugin-sdk": "0.0.46",
     "react": "^17.0.2",
     "react-dom": "^17.0.2"
   },

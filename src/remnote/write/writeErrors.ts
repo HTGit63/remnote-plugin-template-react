@@ -1,4 +1,4 @@
-import type { Rem } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem } from '@remnote/plugin-sdk';
 import type { BridgeErrorCode } from '../../../shared/bridge/protocol';
 import { RichTextFormattingError } from '../richTextFormatting';
 

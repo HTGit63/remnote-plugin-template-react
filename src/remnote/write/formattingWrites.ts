@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -81,7 +81,7 @@ import {
 import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeErrors';
 import { REMNOTE_COMMAND_RESULT_CACHE, STYLE_PLAN_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
-import { buildRichTextFromSpans, findRequiredRem, getColorFormat, getRemPlainString, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
+import { buildRichTextFromSpans, findRequiredRem, getColorFormat, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
 
 export async function setRemHeadingLevel(
   plugin: RNPlugin,
@@ -98,7 +98,7 @@ export async function setRemTextColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   try {
-    const formatted = await applyTextColorToAllText(plugin, rem.text, args.color);
+    const formatted = await applyTextColorToAllText(plugin, getRemRichText(rem), args.color);
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
     const plain = await getRemPlainString(plugin, rem);
     return {
@@ -126,7 +126,7 @@ export async function setTextSpanColor(
   try {
     const range = await resolveRangeFromPlainText(
       plugin,
-      rem.text,
+      getRemRichText(rem),
       rangeInputFromArgs(args).start,
       rangeInputFromArgs(args).end,
       rangeInputFromArgs(args).text,
@@ -147,7 +147,7 @@ export async function setTextSpanHighlight(
   try {
     const range = await resolveRangeFromPlainText(
       plugin,
-      rem.text,
+      getRemRichText(rem),
       rangeArgs.start,
       rangeArgs.end,
       rangeArgs.text,
@@ -169,7 +169,7 @@ export async function setRemHighlightColor(
   if (!format) {
     throw new RemnoteWriteError(
       'SDK_UNSUPPORTED',
-      'The installed RemNote SDK does not expose clearing whole-Rem highlight color.'
+      'The current RemNote SDK path does not expose clearing whole-Rem highlight color.'
     );
   }
 
@@ -188,7 +188,7 @@ export async function setRemType(
   if (args.type === 'normal') {
     throw new RemnoteWriteError(
       'SDK_UNSUPPORTED',
-      'The installed RemNote SDK does not expose a reliable reset to normal Rem type.'
+      'The current RemNote SDK path does not expose a reliable reset to normal Rem type.'
     );
   }
 
@@ -227,12 +227,12 @@ export async function clearRemFormatting(
 
   cleared.wholeRemHighlight = false;
   unsupported.wholeRemHighlightReset = true;
-  warnings.push('Whole-Rem highlight clearing is not exposed by installed @remnote/plugin-sdk 0.0.14.');
+  warnings.push('Whole-Rem highlight clearing is not exposed by the current RemNote SDK path.');
 
   if (rem.type === RemType.CONCEPT || rem.type === RemType.DESCRIPTOR) {
     cleared.remType = false;
     unsupported.remTypeReset = true;
-    unsupported.reason = 'The installed RemNote SDK does not expose a reliable concept/descriptor reset to normal type.';
+    unsupported.reason = 'The current RemNote SDK path does not expose a reliable concept/descriptor reset to normal type.';
     warnings.push(unsupported.reason);
   } else {
     cleared.remType = true;
@@ -493,7 +493,7 @@ async function applyOneStyleOperation(
       const rem = await findRequiredRem(plugin, operation.remId, 'Target');
       const range = await resolveRangeFromPlainText(
         plugin,
-        rem.text,
+        getRemRichText(rem),
         operation.start,
         operation.end,
         operation.text,
@@ -501,7 +501,7 @@ async function applyOneStyleOperation(
       );
       const richText = await applyFormatsToRichTextRange(
         plugin,
-        rem.text,
+        getRemRichText(rem),
         range.start,
         range.end,
         [operation.type === 'bold_span' ? 'bold' : 'italic']

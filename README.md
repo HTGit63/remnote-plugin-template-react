@@ -21,6 +21,16 @@ Server code must not import RemNote SDK, React, widgets, plugin handlers, or Rem
 npm run server:test:boundaries
 ```
 
+## RemNote SDK Foundation
+
+Pinned RemNote plugin SDK:
+
+```text
+@remnote/plugin-sdk 0.0.46
+```
+
+Goal 1 SDK notes live in `docs/REMNOTE_SDK_NOTES.md`. Runtime status and diagnostics expose `sdkVersion`, `supportedSdkCapabilities`, `unsupportedSdkCapabilities`, `initialSyncComplete`, `initialSyncTimedOut`, and any `initialSyncWarning`.
+
 ## Local Mode
 
 Default mode is local.
@@ -81,7 +91,7 @@ npm run server:test:tool-profile
 
 `delete_rem_by_id` is gated by `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and full profile. It defaults to `dryRun=true`; real delete requires `dryRun=false`, `confirmTitle`, and `expectedParentId` or `expectedAncestorId`.
 
-Unsupported `create_folder` is not public/callable. It remains only as an SDK-unsupported capability note because the installed RemNote SDK does not expose safe folder creation.
+`create_folder` is not public/callable in this pass. Modern SDK typings expose folder APIs, but this bridge keeps the tool hidden until the Goal 2 refactor live-verifies the safe path.
 
 ## Markdown Importer
 

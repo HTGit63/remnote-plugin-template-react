@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -67,7 +67,7 @@ import type {
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
 import { APPEND_RESULT_CACHE, CREATE_DOCUMENT_RESULT_CACHE, CREATE_REM_RESULT_CACHE, MOVE_RESULT_CACHE, REORDER_RESULT_CACHE, UPDATE_RESULT_CACHE, UPDATE_RICH_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult } from './writeCaches';
-import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemPlainString, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
+import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
 import { normalizeMarkdown } from './writeValidation';
 import { getDeleteTarget } from './deleteWrites';
 
@@ -141,7 +141,7 @@ export async function createFolderFromMarkdown(
 ): Promise<CreateFolderResult> {
   throw new RemnoteWriteError(
     'SDK_UNSUPPORTED',
-    'Folder creation is not exposed by the installed @remnote/plugin-sdk typings. Document creation is supported through setIsDocument(true).'
+    'Folder creation is hidden until the modern RemNote SDK folder path is live-verified. Document creation is supported through setIsDocument(true).'
   );
 }
 
@@ -291,7 +291,8 @@ export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<Move
   await assertNewParentIsNotDescendant(plugin, rem, newParent);
 
   const sameParent = rem.parent === newParent._id;
-  const maxIndex = sameParent ? Math.max(newParent.children.length - 1, 0) : newParent.children.length;
+  const newParentChildCount = getRemChildCount(newParent);
+  const maxIndex = sameParent ? Math.max(newParentChildCount - 1, 0) : newParentChildCount;
   if (args.index > maxIndex) {
     throw new RemnoteWriteError('INVALID_ARGS', 'index is outside the target parent child range.', {
       index: args.index,
@@ -444,4 +445,3 @@ export async function replaceRemMarkdown(
     idempotencyKey: updated.idempotencyKey,
   };
 }
-

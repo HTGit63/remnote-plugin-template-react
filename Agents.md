@@ -1,2185 +1,2040 @@
-# AGENTS.md — RemNote MCP Bridge Stabilization, Architecture, and Cleanup Plan
+# Agents.md — RemnoteMCP User-Grade Rebuild Plan
 
-## Repository
+## 0. Mission
+
+This repository is the **RemnoteMCP** project.
+
+The goal is to build a user-grade RemNote MCP bridge that lets ChatGPT/Vivy create, edit, verify, repair, and style RemNote notes and flashcards safely, quickly, and beautifully.
+
+The product target is **public RemNote users**, not only local development.
+
+The bridge must feel like a real RemNote study productivity plugin, not a developer console.
+
+Core product promise:
 
 ```text
-HTGit63/remnote-plugin-template-react
+User gives ChatGPT content, a document, or a note-writing instruction.
+RemnoteMCP creates clean RemNote-native notes/cards quickly.
+The structure is correct, math is real RemNote math, headings/styles are correct, flashcards are usable, and dangerous edits require clear approval.
 ```
 
-## Target Branch
-
-```text
-feature/hosted-auth-pairing
-```
-
-## Primary Mission
-
-Stabilize the RemNote MCP bridge so it becomes a clean, maintainable, secure, and genuinely useful system for high-fidelity RemNote note writing.
-
-The current branch added many features, but the project is still not production-ready. The latest work must focus on:
-
-1. Fixing the deployment/build failure.
-2. Separating server code from RemNote plugin SDK code.
-3. Reducing bloat and splitting oversized files.
-4. Making Markdown-to-RemNote bulk import reliable and fast.
-5. Hardening hosted/local security behavior.
-6. Ensuring the public MCP tool registry is accurate and safe.
-7. Proving everything with tests and two audit passes.
-
-Do not add more features until the existing system is stable.
+The plugin must not become a fake AI chatbot inside RemNote. ChatGPT/Vivy is the reasoning layer. The RemNote plugin is the SDK access layer. The bridge/server is the secure MCP transport and authorization layer.
 
 ---
 
-# Second-Pass Audit Findings That Must Be Treated as Known Bugs
+## 0.1 Official RemNote Plugin Documentation Sources
 
-The next Codex run must not rediscover these as surprises. Treat them as already observed risks and verify/fix them explicitly.
+Agents must use these official docs while working on this project.
 
-## Known Build and Boundary Bugs
+Primary docs:
 
-1. `server/tsconfig.json` still includes `../src/bridge/**/*.ts`, so the server build can still compile plugin-side files.
-2. `server/src/mcp-server.ts` still imports bridge protocol from `../../src/bridge/protocol.js` instead of an SDK-free shared module.
-3. Any server file importing from `src/bridge/**` is suspect unless that file is proven SDK-free.
-4. Server-only install must not require the root package or `@remnote/plugin-sdk`.
+```text
+https://plugins.remnote.com/
+https://plugins.remnote.com/CHANGELOG
+https://plugins.remnote.com/advanced/permissions
+https://plugins.remnote.com/advanced/widgets
+https://plugins.remnote.com/advanced/manifest
+https://plugins.remnote.com/advanced/settings
+https://plugins.remnote.com/advanced/storage
+https://plugins.remnote.com/advanced/rich-text
+https://plugins.remnote.com/advanced/tables
+https://plugins.remnote.com/advanced/submitting-plugins
+```
 
-## Known Tool Registry and Safety Bugs
+API reference areas to check before implementing SDK features:
 
-1. `delete_rem_by_id` is currently included in the `core` profile. That is too aggressive for a default/simple profile.
-2. `replace_rem` is publicly exposed and metadata classifies it as `write` while policy says dangerous. This mismatch must be fixed.
-3. `create_folder` remains in policy/metadata/protocol even though it is unsupported. It must not be public/callable.
-4. `getAllPublicMcpToolNames(exposeDeleteTool)` ignores `exposeDeleteTool`, so delete exposure behavior is misleading.
-5. `getHiddenMcpTools()` currently returns an empty list, so hidden/unsupported/dangerous tool reporting can be dishonest.
-6. `callabilitySource: "registry_only_not_live_execution"` must not be presented as real runtime verification.
-7. Tool count must be generated from the canonical source of truth, not hand-maintained in docs.
+```text
+AppNamespace
+RemNamespace
+RichTextNamespace
+QueueNamespace
+ReaderNamespace
+WidgetLocation
+PluginCommandMenuLocation
+SelectionType
+```
 
-## Known Hosted Deployment Bugs
+Important docs-derived guidance:
 
-1. `render.yaml` sets hosted OAuth mode but does not set `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`.
-2. Render build uses `npm install && npm run build`; use a deterministic/deploy-safe install strategy and ensure dev dependencies needed for TypeScript build are available.
-3. Config uses both `toolProfile` and `toolTier` names in responses. Internal logic should use one canonical term.
-4. Hosted CORS config in `render.yaml` includes `https://www.remnote.com` but not necessarily `https://remnote.com`; verify final allowed origins intentionally.
+```text
+RemNote plugins are designed around security-first permission scopes and levels.
+Sandboxed plugins are strongly preferred for public users.
+Widgets should be used to create polished UI surfaces.
+Manifest metadata matters for marketplace readiness.
+Recent SDK versions add transactions, better markdown tree creation, tables, reader APIs, initial sync readiness, and widget/menu improvements.
+```
 
-## Known Security Bugs
-
-1. Hosted `validateMcpToolPermission` currently checks scope but must also enforce trusted write and destructive permissions.
-2. Public discovery/no-auth tool listing must be reviewed. Discovery may be allowed, but it must not expose dangerous/debug internals beyond what is intended.
-3. Root dashboard and diagnostics must not expose PID, cwd, recent tool calls, pairing/session internals, token/session details, or storage internals publicly in hosted mode.
-4. Audit logs and diagnostics must redact secrets, tokens, pairing codes, session secrets, database URLs, and OAuth secrets.
-
-## Known Markdown Importer Gaps
-
-1. The importer exists, but one MCP call may still perform many internal SDK writes. That is acceptable only if timeout, rollback, partial failure, and verification are robust.
-2. Source fidelity verification is currently snippet-based. It must become stronger: headings, ordering, formulas, paragraphs, bullets, code, tables, and pollution Rem checks.
-3. Rollback behavior after verification failure must be explicit and tested.
-4. Parser/dry-run tests must not require live RemNote.
+Do not rely only on old SDK assumptions. Check the changelog before using or rejecting an API.
 
 ---
 
-# Required Double-Pass Code Review
+## 0.2 Current Repo Reality From Second-Pass Audit
 
-Codex must inspect the codebase twice.
+The current repo still shows several prototype-era traits that must be fixed before public user release.
 
-## Pass A — Before Writing Code
-
-Perform a read-only audit and document:
+Observed current state:
 
 ```text
-current branch
-latest commit
-build boundary
-dependency graph
-server/plugin/shared import violations
-tool registry drift
-security gaps
-markdown importer gaps
-dead code and bloat
-tests currently present/missing
-deployment config risks
+Root package still pins @remnote/plugin-sdk at 0.0.14.
+The plugin manifest still says "RemNote ChatGPT Bridge", not "RemnoteMCP".
+The manifest requests broad All + ReadCreateModifyDelete permission.
+The manifest does not yet include public-release polish such as projectUrl, supportUrl, changelogUrl, or proper final branding.
+The server registry exposes many tools as public, but the registry metadata is too shallow.
+Tool metadata currently lacks category, risk level, operation tier, tool access tier, SDK capability, and live verification state.
+The permission system still mixes write mode, scope, and danger behavior.
+The default permission scope is focused_rem_only, but user-grade note writing should onboard users into a clear default such as Focused Rem + descendants.
+The current bridge status widget is large and debug-heavy rather than a simple public-user UX.
+The server has good early security controls, but hosted/public auth is intentionally not production-ready.
 ```
 
-## Pass B — After Writing Code
-
-Repeat the audit after implementation and prove:
+Key files agents should inspect before changing behavior:
 
 ```text
-the original failures are gone
-new architecture boundaries are enforced
-no new god files were created
-security behavior is stronger
-importer behavior is tested
-tool registry is consistent
-deployment is ready or explicitly not ready
-```
-
-Both passes must write audit files under `docs/audits/`.
-
-
----
-
-# Working Principles
-
-## Non-Negotiable Engineering Rules
-
-1. Prefer simple, explicit code over clever abstractions.
-2. Do not hide broken behavior behind docs or fake diagnostics.
-3. Do not expose dangerous tools just to match an expected tool count.
-4. Do not silently summarize, compress, or drop user-provided notes.
-5. Do not let server code compile plugin-only RemNote SDK code.
-6. Do not create another giant “god file.”
-7. Do not make broad rewrites without tests proving behavior is preserved.
-8. Do not remove working direct MCP tools unless they are unsafe, unsupported, or dead.
-9. Do not scrape the RemNote DOM.
-10. Do not add OpenAI API calls or a chat UI inside RemNote.
-11. Keep the RemNote plugin as the SDK access layer only.
-12. Keep the hosted server as the auth/routing/MCP layer only.
-13. Shared code must be SDK-free.
-14. Every write-capable tool must have clear permission and safety behavior.
-15. Every destructive operation must require explicit guardrails.
-
----
-
-# Required Two-Turn Audit Workflow
-
-This task must be completed in two audit turns. Do not skip either audit.
-
-## Audit Turn 1 — Read-Only Architecture and Safety Audit
-
-Before modifying code, inspect the repository and produce a written audit report.
-
-### Audit Turn 1 Must Determine
-
-1. Current branch and latest commit.
-2. Whether `npm run server:build` currently passes or fails.
-3. Whether `npm run build` currently passes or fails.
-4. Whether the server build still compiles plugin-side SDK files.
-5. Whether `@remnote/plugin-sdk` is imported anywhere in server-compiled code.
-6. Whether public tool registry, tool metadata, protocol, tool map, and docs agree.
-7. Whether dangerous delete tools are exposed.
-8. Whether `create_or_replace_note_from_markdown` is fully wired from:
-   - MCP registry
-   - MCP server registration
-   - bridge protocol
-   - plugin handler
-   - RemNote write executor
-   - tests
-9. Whether Markdown import verification actually detects content loss.
-10. Whether health-check local/direct mode still reports `NO_PAIRED_PLUGIN_SESSION`.
-11. Whether server routes expose unsafe hosted diagnostics.
-12. Whether trusted write mode and destructive tool permissions are actually enforced.
-13. Which files are bloated and need segmentation.
-14. Which files are empty, duplicated, obsolete, or placeholder-only.
-15. Which docs are stale or misleading.
-
-### Audit Turn 1 Output Required
-
-Create or update:
-
-```text
-docs/audits/audit-turn-1-readonly.md
-```
-
-Include:
-
-```text
-Executive summary
-Build status
-Architecture boundary findings
-Tool registry findings
-Markdown importer findings
-Security findings
-Bloat/dead-code findings
-Prioritized fix list
-Files likely to modify
-Files likely to remove
-Risks
-```
-
-After this audit, proceed to implementation.
-
----
-
-## Audit Turn 2 — Post-Repair Verification Audit
-
-After implementing fixes, run a second audit.
-
-### Audit Turn 2 Must Verify
-
-1. Server build no longer compiles plugin SDK files.
-2. Server package builds without `@remnote/plugin-sdk`.
-3. Root plugin build still works.
-4. Tool registry and protocol are consistent.
-5. Public tools match the intended profile.
-6. Dangerous legacy delete tools remain hidden/removed.
-7. `delete_rem_by_id` is guarded and dry-run by default.
-8. Markdown importer preserves source fidelity.
-9. Health-check works correctly in local and hosted mode.
-10. Security checks enforce scope, trusted write, and destructive permissions.
-11. Dashboard/debug routes are safe in hosted mode.
-12. Tests pass.
-13. Documentation matches implementation.
-
-### Audit Turn 2 Output Required
-
-Create or update:
-
-```text
-docs/audits/audit-turn-2-post-repair.md
-```
-
-Include:
-
-```text
-What changed
-What was removed
-What was split
-Build results
-Test results
-Security verification
-Remaining limitations
-Final go/no-go deployment verdict
-```
-
----
-
-
-# Goal -1 — Create a Codebase Map Before Refactoring
-
-## Purpose
-
-Prevent blind refactoring. Codex must first understand the repository shape and dependency boundaries.
-
-## Required Output
-
-Create:
-
-```text
-docs/audits/codebase-map.md
-```
-
-Include:
-
-```text
-directory tree summary
-entry points
-server build entry
-plugin build entry
-shared candidates
-plugin-only files
-server-only files
-files importing @remnote/plugin-sdk
-files importing server internals
-oversized files ranked by line count
-dead/empty/placeholder files
-critical dependency graph
-```
-
-## Required Checks
-
-1. Generate or manually document a list of files over 500, 800, and 1000 lines.
-2. Identify circular dependencies if any are visible.
-3. Identify files that mix responsibilities.
-4. Identify files whose names no longer match their behavior.
-5. Identify tests that are smoke-only but not assertion-heavy.
-
-## Acceptance Criteria
-
-1. Refactoring starts only after this map exists.
-2. Any proposed file split references this map.
-3. Audit Turn 1 links to this map.
-
----
-
-# Goal 0 — Preflight and Baseline
-
-## Purpose
-
-Establish a clean baseline before changing code.
-
-## Tasks
-
-1. Confirm repository branch and latest commit.
-2. Inspect package scripts in:
-   - `package.json`
-   - `server/package.json`
-3. Inspect build config:
-   - `tsconfig.json`
-   - `server/tsconfig.json`
-   - `render.yaml`
-4. Inspect tool registry and protocol:
-   - `server/src/tool-registry.ts`
-   - `server/src/tool-policy.ts`
-   - `server/src/mcp-tool-map.ts`
-   - shared/protocol location if present
-   - `src/bridge/protocol.ts`
-5. Inspect plugin bridge files:
-   - `src/bridge/client.ts`
-   - `src/bridge/handlers.ts`
-   - `src/bridge/pairing.ts`
-6. Inspect RemNote write files:
-   - `src/remnote/write/**`
-7. Inspect server routing/auth files:
-   - `server/src/app.ts`
-   - `server/src/auth/**`
-   - `server/src/routes/**` if present
-8. Search for:
-   - `@remnote/plugin-sdk`
-   - `NO_PAIRED_PLUGIN_SESSION`
-   - `delete_focused_rem`
-   - `delete_selected_rem`
-   - `delete_rem`
-   - `create_folder`
-   - `Size`
-   - `H1`
-   - `H2`
-   - `H3`
-   - `toolTier`
-   - `toolProfile`
-   - `registry_only_not_live_execution`
-   - `maxDepth`
-   - `TODO`
-   - `placeholder`
-   - empty files
-
-## Acceptance Criteria
-
-1. Baseline audit file exists.
-2. Current failures are documented before fixes.
-3. No code is changed before Audit Turn 1 is written.
-
----
-
-# Goal 1 — Fix Build and Deployment Boundary
-
-## Problem
-
-The server build currently compiles plugin-side source files. This caused deployment failure because plugin-side files import `@remnote/plugin-sdk`, while the server package does not depend on it.
-
-Current broken pattern:
-
-```json
-"rootDir": "..",
-"include": ["src/**/*.ts", "../src/bridge/**/*.ts"]
-```
-
-## Target Architecture
-
-Use three clean layers:
-
-```text
-shared/
-  bridge/
-    protocol.ts
-    markdown-importer.ts
-    tool-types.ts
-    style-types.ts
-    errors.ts
-
-server/
-  src/
-    app.ts
-    mcp-server.ts
-    routes/
-    auth/
-    storage/
-    bridge-hub.ts
-
-src/
-  bridge/
-    client.ts
-    handlers.ts
-    pairing.ts
-  remnote/
-    read.ts
-    write/
-  widgets/
-```
-
-## Layer Rules
-
-### `shared/**`
-
-May contain:
-
-```text
-types
-schemas
-pure parsers
-pure validators
-pure formatters
-constants
-SDK-free tool definitions
-```
-
-Must not import:
-
-```text
-@remnote/plugin-sdk
-React
-DOM APIs
-server-only auth/storage modules
-Node-only networking modules unless intentionally shared and build-safe
-```
-
-### `server/**`
-
-May import:
-
-```text
-shared/**
-server/src/**
-@modelcontextprotocol/sdk
-pg
-ws
-zod
-node built-ins
-```
-
-Must not import:
-
-```text
-@remnote/plugin-sdk
-src/remnote/**
-src/widgets/**
+package.json
+public/manifest.json
+src/widgets/bridge-status.tsx
+src/widgets/index.tsx
+src/bridge/protocol.ts
 src/bridge/client.ts
 src/bridge/handlers.ts
-src/bridge/pairing.ts
+src/remnote/permissions.ts
+src/remnote/read.ts
+src/remnote/write.ts
+src/remnote/richTextFormatting.ts
+src/remnote/serialize.ts
+server/src/app.ts
+server/src/config.ts
+server/src/bridge-hub.ts
+server/src/mcp-server.ts
+server/src/tool-registry.ts
+server/src/health-check.ts
+server/src/smoke.ts
+server/src/live-test.ts
+README.md
+SAFETY.md
+ARCHITECTURE.md
+NEXT_STEPS.md
 ```
-
-### `src/**` Plugin Code
-
-May import:
-
-```text
-shared/**
-@remnote/plugin-sdk
-React
-plugin bridge client/handlers
-plugin RemNote read/write modules
-```
-
-Must not import:
-
-```text
-server/src/**
-server storage/auth internals
-```
-
-## Required Changes
-
-1. Move SDK-free protocol/types from `src/bridge/protocol.ts` to:
-
-```text
-shared/bridge/protocol.ts
-```
-
-2. Move SDK-free Markdown importer from `src/bridge/markdown-importer.ts` to:
-
-```text
-shared/bridge/markdown-importer.ts
-```
-
-3. Update imports:
-   - server imports from `shared/bridge/**`
-   - plugin imports from `shared/bridge/**`
-4. Keep plugin-only handler/client/pairing files under `src/bridge/**`.
-5. Update `server/tsconfig.json`:
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "Bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "rootDir": "..",
-    "outDir": "dist",
-    "resolveJsonModule": true
-  },
-  "include": [
-    "src/**/*.ts",
-    "../shared/**/*.ts"
-  ],
-  "exclude": [
-    "../src/remnote/**",
-    "../src/widgets/**",
-    "../src/bridge/client.ts",
-    "../src/bridge/handlers.ts",
-    "../src/bridge/pairing.ts"
-  ]
-}
-```
-
-6. Verify `server/package.json` does not need `@remnote/plugin-sdk`.
-7. Verify `cd server && npm run build` passes with only server dependencies installed.
-
-## Acceptance Criteria
-
-1. `npm run server:build` passes.
-2. `cd server && npm run build` passes.
-3. Server build output contains no plugin widget or RemNote SDK runtime files.
-4. `grep -R "@remnote/plugin-sdk" server/src shared` returns no matches.
-5. Render deployment build can succeed.
-
-## Additional Boundary Tests Required
-
-Add a server-only boundary test script, for example:
-
-```bash
-npm run server:test:boundaries
-```
-
-It must fail if:
-
-```text
-server/src imports ../src/remnote/**
-server/src imports ../src/widgets/**
-server/src imports ../src/bridge/client
-server/src imports ../src/bridge/handlers
-server/src imports ../src/bridge/pairing
-server/src or shared imports @remnote/plugin-sdk
-server/src or shared imports React
-shared imports server/src/**
-plugin src imports server/src/**
-```
-
-Also add a static grep-style CI check so this cannot regress.
-
-## Build Output Rule
-
-The server `dist/` output must not contain copied plugin widget, plugin handler, or RemNote SDK runtime files. If `rootDir` remains `..`, verify output layout is intentional and documented. Prefer a cleaner build layout if practical.
-
 
 ---
 
-# Goal 2 — Reduce Bloat and Split Oversized Files
+## 1. Product Decisions Already Made
+
+These decisions are fixed unless the project owner explicitly changes them.
+
+### 1.1 Product name
+
+```text
+RemnoteMCP
+```
+
+Use this name in UI, docs, manifest metadata, diagnostics, and future branding.
+
+Do not keep user-facing text as "RemNote ChatGPT Bridge" after the branding goal is reached.
+
+### 1.2 First production target
+
+```text
+Public RemNote users
+```
+
+This means security, onboarding, setup UX, safe defaults, diagnostics, documentation, marketplace metadata, and support flow must be treated seriously.
+
+### 1.3 Primary workflow priority
+
+```text
+Notes first, flashcards second.
+```
+
+Do not neglect flashcards. Many RemNote users care deeply about cards. But the first-class workflow is polished, structured, beautiful RemNote notes.
+
+### 1.4 Default writing mode
+
+The user should be asked once during onboarding:
+
+```text
+Which writing mode should RemnoteMCP use by default?
+```
+
+Recommended default:
+
+```text
+Focused Rem + descendants
+```
+
+Explanation shown to user:
+
+```text
+RemnoteMCP will write inside the Rem you are focused on and inside the children it creates there. This is the safest normal mode for creating one note without giving broad workspace access.
+```
+
+The user can change this later from settings.
+
+### 1.5 Performance target
+
+The target for medium note creation is:
+
+```text
+Under 5 seconds when possible.
+```
+
+This is not optional. If note creation takes minutes, the user can do it manually. Speed is a product requirement.
+
+If under 5 seconds is not technically possible in a given path, diagnostics must explain why and show which layer caused the delay.
+
+### 1.6 Template storage
+
+Design templates must be saved in:
+
+```text
+1. Plugin local settings or local plugin storage for fast local use.
+2. Hosted account sync later for cross-device/template sync.
+```
+
+Do not depend only on RemNote-visible template Rems.
+
+### 1.7 Repair behavior
+
+Repairs are allowed only:
+
+```text
+After approval.
+```
+
+The agent may preview repairs first, but real repair must be approved.
+
+### 1.8 Dangerous tools
+
+Dangerous tools such as delete-by-id and replace must remain available, but they must be explicitly controlled.
+
+Default behavior:
+
+```text
+Dangerous tools require user confirmation.
+```
+
+Danger Zone behavior:
+
+```text
+A user can enter Danger Zone and allow broader dangerous operations.
+```
+
+However, even in Danger Zone, ChatGPT must be warned through tool descriptions and diagnostics that these tools are dangerous and must not be used casually or wildly.
+
+### 1.9 No fake production security
+
+Do not pretend hosted auth is ready.
+
+Until real hosted auth/pairing exists:
+
+```text
+hosted mode must stay disabled or clearly marked experimental
+local token mode must remain secure
+no fake OAuth
+no broad hosted access
+```
+
+### 1.10 Public-user onboarding is mandatory
+
+A public user must not need to understand WebSocket ports, MCP internals, ngrok, bridge paths, raw diagnostics, or permission internals just to start.
+
+---
+
+## 2. Known Evidence and Failure Signals
+
+The current plugin is usable but not user-grade.
+
+Known benchmark/test problems:
+
+```text
+Large structured payloads are fragile.
+Full one-shot structured writes can be blocked.
+Some content had to be shortened.
+append_to_rem dumps Markdown as text instead of creating clean Rem children.
+set_rem_heading_level creates unwanted Size → H1/H3 child Rems.
+delete_rem_by_id appeared in diagnostics but was not actually callable in one session.
+create_or_replace_note_from_markdown repeatedly failed with PARTIAL_FAILURE.
+Some formula-heavy rich updates were blocked.
+The benchmarked 5.9 note run took about 727 seconds, which is far too slow.
+```
+
+Known positive signals:
+
+```text
+Many read tools work.
+Many simple write and card tools work.
+apply_structured_note_batch can work when payloads are reduced.
+get_rem_rich can verify heading/color/style.
+move_rem works when the required guard is supplied.
+The server has useful security checks around local token, CORS, remote bind, and hosted mode blocking.
+```
+
+Critical interpretation:
+
+```text
+The bridge is not broken, but its workflow is not product-grade yet.
+The next work must focus on foundation, correctness, speed, UX, and safety.
+```
+
+---
+
+## 3. Non-Negotiable Engineering Rules
+
+### 3.1 Do not build on the old SDK
+
+The current old SDK foundation must be upgraded before major new feature work.
+
+Do not add major new tools before:
+
+```text
+SDK upgrade passes
+tool refactor passes
+transactional write path exists
+heading/style/math correctness is fixed
+```
+
+### 3.2 Do not fake tool success
+
+Never report success if:
+
+```text
+the RemNote SDK operation failed
+the tool was blocked
+the tool was hidden
+the tool was skipped
+the tool only exists in the registry but was not callable
+```
+
+Diagnostics must distinguish:
+
+```text
+declared
+registered
+listed
+callable
+liveVerified
+sdkUnsupported
+hidden
+blockedByTier
+blockedByScope
+gatewayBlocked
+partialFailure
+```
+
+### 3.3 Do not silently damage user notes
+
+Never silently:
+
+```text
+delete existing Rems
+replace existing children
+repair notes
+move notes
+rewrite user content
+```
+
+Existing-note mutation must require an explicit approved operation, unless the user has intentionally enabled the right trusted/danger setting.
+
+### 3.4 Do not expose dangerous tools casually
+
+Dangerous tools must be:
+
+```text
+hidden by default or clearly tier-gated
+described as dangerous to ChatGPT
+confirmed by the user
+guarded by parent/ancestor/title checks where possible
+logged in diagnostics
+```
+
+### 3.5 Speed matters
+
+A medium note should target under 5 seconds.
+
+Avoid workflows that require:
+
+```text
+dozens of sequential MCP calls
+repeated approvals
+manual fallback loops
+unbounded verification calls
+large fragile payloads without chunking
+```
+
+### 3.6 Notes must be RemNote-native
+
+Generated notes must use real RemNote structure:
+
+```text
+headings as heading Rems
+bullets as child Rems
+formulas as inline/block math nodes
+tables as RemNote tables where possible
+cards as RemNote cards
+spacer Rems only when intentionally requested by template/style
+```
+
+Do not dump Markdown syntax into one Rem if the user expects RemNote hierarchy.
+
+### 3.7 Public user UX matters
+
+The plugin UI must be understandable to a non-developer RemNote user.
+
+Default view should not look like raw diagnostics.
+
+Advanced/debug details must be hidden behind an advanced section.
+
+### 3.8 Official docs must guide SDK work
+
+Agents must check:
+
+```text
+https://plugins.remnote.com/
+https://plugins.remnote.com/CHANGELOG
+```
+
+before assuming APIs are missing, deprecated, or unsupported.
+
+### 3.9 Sandbox-first public release
+
+For public users, prefer sandboxed plugin behavior. Only request native mode if it is absolutely required and well justified.
+
+### 3.10 Minimum permission principle
+
+The current broad permission manifest is acceptable only as a prototype baseline.
+
+A public release must either:
+
+```text
+request the narrowest practical manifest scope
+or clearly explain why broad scope is required
+or dynamically request narrower runtime permissions where possible
+```
+
+---
+
+## 4. Final 12-Goal Execution Roadmap
+
+Follow the order below unless the project owner explicitly changes it.
+
+The order is designed to reduce breakage and avoid building advanced workflows on broken foundations.
+
+```text
+1. SDK upgrade and official docs alignment
+2. Existing tool refactor for new SDK
+3. Tool truth / diagnostics / exposure cleanup
+4. Transactional write engine
+5. Markdown-to-Rem hierarchy pipeline
+6. Heading/style/math correctness
+7. Large payload resilience and speed
+8. Tier and permission model
+9. Tool division and registry cleanup
+10. Sample-based design templates and storage/sync
+11. Designed-note and flashcard high-level tools
+12. UI / access / logo / auth / release polish
+```
+
+---
+
+# Goal 1 — Upgrade the RemNote SDK Foundation and Align With Official Docs
 
 ## Purpose
 
-Make the codebase maintainable. The current project is too compacted and hard to reason about.
+Bring RemnoteMCP from old SDK behavior to the current RemNote plugin SDK so the bridge can use modern transactions, markdown tree creation, sync readiness, tables, reader APIs, and improved plugin UI APIs.
 
-## Target File Size Guidelines
+## 1.A — Upgrade SDK dependency
 
-These are guidelines, not absolute laws:
-
-```text
-< 250 lines: ideal
-250–500 lines: acceptable for route or parser files
-500–800 lines: allowed only for dense registries/tests
-> 800 lines: split unless there is a strong reason
-> 1000 lines: must split
-```
-
-## Split Plugin Write Code
-
-Current hotspot:
+Tasks:
 
 ```text
-src/remnote/write/index.ts
+Update @remnote/plugin-sdk from the old pinned version to the current stable version.
+Pin the exact version first, not a broad caret range.
+Regenerate package-lock.
+Document the exact SDK version in README and diagnostics.
 ```
 
-Refactor into:
+Acceptance:
 
 ```text
-src/remnote/write/index.ts
-src/remnote/write/writeErrors.ts
-src/remnote/write/writeCaches.ts
-src/remnote/write/writeValidation.ts
-src/remnote/write/basicWrites.ts
-src/remnote/write/treeWrites.ts
-src/remnote/write/structuredBatch.ts
-src/remnote/write/markdownImportExecutor.ts
-src/remnote/write/formattingWrites.ts
-src/remnote/write/deleteWrites.ts
-src/remnote/write/cardWrites.ts
-src/remnote/write/verification.ts
-src/remnote/write/remnoteSdkHelpers.ts
+package.json uses current stable SDK
+lockfile updated
+no duplicate SDK versions
 ```
 
-### Module Responsibilities
+## 1.B — Fix breaking type/build errors
 
-#### `index.ts`
-
-Only re-export public functions/types.
-
-#### `writeErrors.ts`
-
-Contains:
+Tasks:
 
 ```text
-RemnoteWriteError
-SDK error mapping
-partial execution error helpers
+Run npm run check-types.
+Run npm run validate.
+Run npm run build.
+Run npm run server:build.
+Fix all SDK breaking changes.
+Pay special attention to registerPowerup and changed namespace APIs.
 ```
 
-#### `writeCaches.ts`
-
-Contains:
+Acceptance:
 
 ```text
-idempotency caches
-cache size limits
-remember/read cache helpers
+type check passes
+plugin validate passes
+plugin build passes
+server build passes
 ```
 
-#### `writeValidation.ts`
+## 1.C — Add SDK capability detection
 
-Contains:
+Tasks:
 
 ```text
-argument normalization
-tree limit validation
-style normalization
-color normalization
-safe guard validation
+Create a capability detector for modern SDK APIs.
+Detect plugin.app.transaction.
+Detect plugin.app.waitForInitialSync.
+Detect createSingleRemWithMarkdown.
+Detect createTreeWithMarkdown.
+Detect createTable.
+Detect reader APIs where available.
+Detect queue APIs where available.
+Return SDK_UNSUPPORTED cleanly when an API is absent.
 ```
 
-#### `basicWrites.ts`
-
-Contains:
+Acceptance:
 
 ```text
-create_rem
-append_to_rem
-create_document
-update_rem
-replace_rem
-move_rem
-reorder_children
+diagnostics reports supportedSdkCapabilities
+diagnostics reports unsupportedSdkCapabilities
+no tool guesses SDK support
 ```
 
-#### `treeWrites.ts`
+## 1.D — Add sync readiness before bridge ready
 
-Contains:
+Tasks:
 
 ```text
-create_rem_tree
-create_styled_rem_tree
-tree traversal
-structured child creation
+Call plugin.app.waitForInitialSync when available before reporting ready.
+Expose initialSyncComplete in plugin status.
+Do not block forever; add timeout and diagnostic warning.
 ```
 
-#### `structuredBatch.ts`
+Acceptance:
 
-Contains:
+```text
+bridge reports sync-ready status
+plugin does not claim full readiness before initial sync
+timeout produces clean diagnostic state
+```
+
+## 1.E — Add official-doc audit notes
+
+Tasks:
+
+```text
+Add a docs/REMNOTE_SDK_NOTES.md file.
+Summarize SDK APIs used by RemnoteMCP.
+Link to the official plugin docs and changelog.
+List APIs that must be tested live.
+```
+
+Acceptance:
+
+```text
+agents have a local SDK notes file with official docs links
+future agents do not need to rediscover the same SDK facts
+```
+
+---
+
+# Goal 2 — Refactor Existing Tools for the Modern SDK
+
+## Purpose
+
+Update current tools to use official SDK APIs instead of fragile old workarounds.
+
+## 2.A — Refactor simple create tools
+
+Tasks:
+
+```text
+Update create_rem to use createSingleRemWithMarkdown when appropriate.
+Update create_document with modern SDK path.
+Update simple create_rem_tree to use createTreeWithMarkdown when appropriate.
+Keep compatibility fallback only if needed.
+```
+
+Acceptance:
+
+```text
+create_rem works with markdown
+create_document works
+create_rem_tree creates actual hierarchy for simple markdown trees
+```
+
+## 2.B — Keep advanced structured writing separate
+
+Tasks:
+
+```text
+Do not replace apply_structured_note_batch with plain markdown.
+Keep create_styled_rem_tree for rich/styled notes.
+Use SDK markdown APIs only for simple unstyled or lightly styled paths.
+```
+
+Acceptance:
+
+```text
+simple markdown tool and advanced styled-note tool are separate
+advanced notes still support headings, colors, math, spacers, cards, and verification
+```
+
+## 2.C — Add official table support wrapper
+
+Tasks:
+
+```text
+Add internal wrapper for plugin.rem.createTable when supported.
+Add table capability detection.
+Add private test utilities for table creation.
+Do not expose public table tools until live-tested.
+```
+
+Acceptance:
+
+```text
+table capability appears in diagnostics
+unsupported table API returns SDK_UNSUPPORTED
+```
+
+## 2.D — Remove or hide fake/unsupported tools
+
+Tasks:
+
+```text
+Audit create_folder and all SDK-limited tools.
+Hide unsupported tools from normal users or mark them clearly unsupported.
+Do not count unsupported tools as working.
+```
+
+Acceptance:
+
+```text
+diagnostics separates unsupported from working
+tool list is honest
+```
+
+## 2.E — Refactor old command-style workarounds
+
+Tasks:
+
+```text
+Audit apply_remnote_command.
+Audit set_rem_heading_level.
+Audit style tools that simulate RemNote commands.
+Prefer direct SDK operations over command/powerup-style indirect operations.
+Remove any path that creates unintended child Rems.
+```
+
+Acceptance:
+
+```text
+style operations do not create content pollution
+indirect command tools are fallback-only
+```
+
+---
+
+# Goal 3 — Fix Tool Truth, Exposure, and Diagnostics
+
+## Purpose
+
+Make diagnostics truthful and prevent confusion between registered tools and live-working tools.
+
+## 3.A — Define tool state model
+
+Every tool registry entry must include:
+
+```text
+name
+description
+category
+declared
+registered
+listed
+callable
+liveVerified
+sdkUnsupported
+hidden
+blockedByTier
+blockedByScope
+gatewayBlocked
+lastSuccessAt
+lastFailureAt
+lastErrorCode
+riskLevel
+operationTier
+toolAccessTier
+scopeRequirement
+sdkCapability
+```
+
+Acceptance:
+
+```text
+tool diagnostics can explain exactly why a tool is or is not usable
+```
+
+## 3.B — Fix registry/list/call mismatch
+
+Tasks:
+
+```text
+Compare source registry to MCP tools/list.
+Compare MCP tools/list to actual callable tools.
+Report mismatches.
+Do not mark registry-only tools as callable.
+```
+
+Acceptance:
+
+```text
+get_bridge_diagnostics does not overclaim
+mcpListedTools and actualMcpCallableTools are separated
+```
+
+## 3.C — Fix delete_rem_by_id truth
+
+Tasks:
+
+```text
+Make delete_rem_by_id Danger-tier public or explicitly hidden.
+If exposed, make it callable.
+If hidden, remove it from public tool claims.
+Keep dryRun true by default.
+Require parent/ancestor/title guard for real delete.
+Require explicit confirmation for real delete.
+```
+
+Acceptance:
+
+```text
+delete_rem_by_id does not appear as usable unless it is actually callable
+real delete requires guard and confirmation
+```
+
+## 3.D — Add live health history
+
+Tasks:
+
+```text
+Track last success/failure by tool.
+Track partial failures.
+Track gateway blocks.
+Track SDK_UNSUPPORTED.
+Track tool tier blocks.
+Track scope blocks.
+Track average duration.
+Track last benchmark run.
+```
+
+Acceptance:
+
+```text
+diagnostics gives recent and useful tool history
+health check reports are actionable
+```
+
+## 3.E — Add public-user diagnostic summaries
+
+Tasks:
+
+```text
+Create simple diagnostic summary for normal users.
+Create full diagnostic bundle for developers.
+Add one-click copy diagnostic bundle from UI.
+Redact tokens, note bodies, and private payloads.
+```
+
+Acceptance:
+
+```text
+normal users can understand the problem
+developers can debug without leaking note content
+```
+
+---
+
+# Goal 4 — Build a Transactional Write Engine
+
+## Purpose
+
+Prevent partial note creation, blank Rems, unsafe replacement, and slow fallback-heavy writes.
+
+## 4.A — Introduce write operation plans
+
+Before writing, every complex note operation must generate a plan:
+
+```text
+operationId
+idempotencyKey
+target parent/root
+nodes to create
+nodes to update
+nodes to delete
+styles to apply
+math blocks to create
+cards to create
+verification checks
+rollback strategy
+estimated payload size
+estimated operation count
+estimated time budget
+```
+
+Acceptance:
+
+```text
+dryRun returns a clear operation plan
+real write executes the same plan
+```
+
+## 4.B — Wrap multi-step writes in SDK transactions
+
+Apply transaction support to:
 
 ```text
 apply_structured_note_batch
-replace children
-append children
-update root and replace children
-rollback handling
-```
-
-#### `markdownImportExecutor.ts`
-
-Contains:
-
-```text
+create_styled_rem_tree
+create_polished_note_tree
 create_or_replace_note_from_markdown
-Markdown plan execution
-integrated verification
-partial failure reporting
+replace_children
+update_root_and_replace_children
+repair_note_design
+create_designed_note_tree
 ```
 
-#### `formattingWrites.ts`
-
-Contains:
+Acceptance:
 
 ```text
-set_rem_heading_level
-set_rem_text_color
-set_rem_highlight_color
-set_text_span_color
-set_text_span_highlight
-set_rem_type
-set_hide_bullet
-clear_rem_formatting
-apply_style_plan
-apply_remnote_command
+multi-step writes are transactional when SDK supports it
+failed transactions do not leave silent partial notes
 ```
 
-#### `deleteWrites.ts`
+## 4.C — Make replacement safe
 
-Contains:
+Tasks:
 
 ```text
-delete_rem_by_id
-delete preview
-guard validation
-dry-run default behavior
+Do not delete existing children before replacement is verified.
+Prefer create-new → verify → swap/replace.
+Preserve old content on failure.
+Report exactly what changed.
 ```
 
-#### `cardWrites.ts`
-
-Contains:
+Acceptance:
 
 ```text
-create_basic_flashcard
-create_concept_card
-create_descriptor_card
-create_cloze_card
-create_multiple_choice_card
-create_list_answer_card
+replace failure does not destroy existing note
+partial failure includes recovery details
 ```
 
-#### `verification.ts`
+## 4.D — Improve idempotency
 
-Contains:
+Tasks:
 
 ```text
-verify_note_design
-verify created Rems
-Markdown source fidelity verification against RemNote output
-pollution Rem detection
+Prevent duplicate notes on retry.
+Use idempotencyKey for all complex writes.
+Return already_applied when repeated.
+Plan persistent idempotency for hosted mode.
 ```
 
-## Split Server App Code
-
-Current hotspot:
+Acceptance:
 
 ```text
-server/src/app.ts
+same idempotencyKey does not create duplicate note
+duplicate attempt returns previous result
 ```
 
-Refactor into:
+## 4.E — Add write engine module boundaries
+
+Tasks:
 
 ```text
-server/src/app.ts
-server/src/server/create-http-server.ts
-server/src/server/runtime-info.ts
-server/src/server/request-context.ts
-server/src/routes/mcp-routes.ts
-server/src/routes/health-routes.ts
-server/src/routes/plugin-api-routes.ts
-server/src/routes/dashboard-routes.ts
-server/src/routes/oauth-routes.ts
-server/src/routes/pairing-routes.ts
-server/src/routes/diagnostics-routes.ts
-server/src/routes/route-utils.ts
+Create src/remnote/write-engine/plan.ts.
+Create src/remnote/write-engine/execute.ts.
+Create src/remnote/write-engine/verify.ts.
+Create src/remnote/write-engine/rollback.ts.
+Create src/remnote/write-engine/types.ts.
+Keep old write.ts as a thin compatibility layer or split it.
 ```
 
-### Route Responsibilities
-
-#### `mcp-routes.ts`
-
-Handles:
+Acceptance:
 
 ```text
-/mcp
-MCP discovery
-MCP tools/list
-MCP tools/call
-streamable HTTP transport
-tool permission validation
+write engine code is testable and not buried in one giant file
 ```
-
-#### `health-routes.ts`
-
-Handles:
-
-```text
-/health
-/public/status
-minimal safe status
-```
-
-#### `diagnostics-routes.ts`
-
-Handles:
-
-```text
-/diagnostics
-/api/plugin/diagnostics
-runtime verification matrix
-admin/authorized diagnostics only
-```
-
-#### `dashboard-routes.ts`
-
-Handles:
-
-```text
-/
-/dashboard
-admin dashboard
-public-safe landing
-```
-
-#### `plugin-api-routes.ts`
-
-Handles:
-
-```text
-/api/plugin/tool-profile
-/api/plugin/health-check
-/api/plugin/*
-```
-
-#### `oauth-routes.ts`
-
-Handles OAuth metadata, auth, token, callback routes.
-
-#### `pairing-routes.ts`
-
-Handles local/hosted pairing flows.
-
-#### `route-utils.ts`
-
-Contains shared route helpers only.
-
-## Acceptance Criteria
-
-1. `src/remnote/write/index.ts` is no longer a god file.
-2. `server/src/app.ts` is no longer a god file.
-3. Behavior is preserved through tests.
-4. No newly created module becomes another large dumping ground.
-5. Public exports remain stable.
 
 ---
 
-# Goal 3 — Remove Dead, Duplicate, Placeholder, and Unsupported Code
+# Goal 5 — Build Markdown-to-Rem Hierarchy Pipeline
 
 ## Purpose
 
-Clean code means removing what should not exist, not only adding fixes.
+Turn Markdown into clean RemNote-native hierarchy instead of dumping Markdown as visible text.
 
-## Required Search
-
-Find and classify:
-
-```text
-empty files
-placeholder-only files
-duplicated docs
-old phase/final-polish docs no longer needed
-unused imports
-unused exports
-unreachable code
-unsupported public tools
-obsolete comments
-stale README claims
-deprecated legacy delete tools
-```
-
-## Required Actions
-
-1. Remove genuinely empty files.
-2. Remove placeholder-only files.
-3. Remove stale docs that only describe old phases and are no longer useful.
-4. Keep important architecture/audit docs.
-5. Remove or hide unsupported tools from public MCP registration.
-6. Remove references to removed tools from README/Agents docs.
-7. Add a short changelog entry describing removals.
-
-## Unsupported Tool Policy
-
-`create_folder` is unsupported by the current RemNote SDK.
-
-Requirements:
-
-1. Do not expose `create_folder` in public MCP tools.
-2. Do not register it as callable under normal profiles.
-3. Keep only a capability-guide note:
-   - “Folder creation is unsupported by the installed RemNote SDK.”
-4. If backwards compatibility requires keeping a protocol type, mark it:
-   - internal
-   - unsupported
-   - not exposed
-   - not callable
-
-## Acceptance Criteria
-
-1. No empty placeholder source files remain.
-2. No unsupported tool is publicly exposed.
-3. Docs no longer claim unsupported tools work.
-4. Public tool count is intentional and documented.
-5. Removed files are listed in Audit Turn 2.
-
----
-
-# Goal 4 — Build a Clean Tool Registry and Public Tool Architecture
-
-## Purpose
-
-The MCP tool system must have one source of truth.
-
-## Current Risk
-
-The following can drift:
-
-```text
-MCP_TOOL_REGISTRY
-TOOL_METADATA
-TOOL_POLICY_ENTRIES
-BridgeToolName
-BRIDGE_TOOL_NAMES
-BRIDGE_TOOL_ANNOTATIONS
-mcp-tool-map
-README tool docs
-Agents docs
-bridge status UI
-```
-
-## Target Architecture
-
-Create one canonical source, then derive everything else.
-
-Recommended:
-
-```text
-shared/tools/tool-definitions.ts
-server/src/tools/register-*.ts
-server/src/tool-registry.ts
-```
-
-Each tool definition should include:
-
-```ts
-{
-  name: string;
-  bridgeToolName: string;
-  title: string;
-  category: "status" | "read" | "write" | "formatting" | "batch" | "cards" | "diagnostics" | "delete" | "debug";
-  profile: "core" | "advanced_notes" | "developer_diagnostics" | "full";
-  policy: "preferred" | "fallback" | "debug" | "read" | "cards" | "dangerous" | "unsupported";
-  riskLevel: "low" | "medium" | "high" | "dangerous";
-  requiresWrite: boolean;
-  requiresDelete: boolean;
-  supportsDryRun: boolean;
-  supportsIdempotency: boolean;
-  sdkSupported: boolean;
-  exposedNormally: boolean;
-  recommendedForNormalUse: boolean;
-}
-```
-
-## Tool Profile Rules
-
-Use one canonical term:
-
-```text
-toolProfile
-```
-
-Allowed values:
-
-```text
-core
-advanced_notes
-developer_diagnostics
-full
-```
-
-`toolTier` may remain only as a backwards-compatible response alias, not as internal logic.
-
-
-## Second-Pass Registry Corrections Required
-
-1. Move `delete_rem_by_id` out of the default/core profile unless there is a compelling safety-reviewed reason.
-2. Mark `replace_rem` consistently as dangerous across:
-   - metadata
-   - policy
-   - permission table
-   - MCP annotations
-   - docs
-3. Make `exposeDeleteTool` meaningful or remove the parameter. It must not be ignored.
-4. Implement honest hidden-tool reporting. `getHiddenMcpTools()` must report unsupported, gated, disabled, and profile-hidden tools.
-5. Do not show `debug_get_raw_rich_text` in normal user-facing profiles unless the active profile is developer diagnostics or full.
-6. `create_or_replace_note_from_markdown` should be the preferred high-level note tool in `advanced_notes`, not buried behind low-level tools.
-7. Tool profile names must be canonical:
-   - internal: `toolProfile`
-   - compatibility aliases may include `toolTier`, but only as response aliases.
-
-
-## Required Tests
-
-Add a registry consistency test that fails if:
-
-1. A public MCP tool has no metadata.
-2. Metadata exists for a missing tool.
-3. Protocol has a bridge tool that is not mapped.
-4. Tool map points to a non-existent bridge tool.
-5. Unsupported tools are publicly exposed.
-6. Dangerous legacy delete tools appear.
-7. Docs claim a different count from code.
-
-## Delete Tool Rules
-
-These tools must not be exposed publicly:
-
-```text
-delete_focused_rem
-delete_selected_rem
-delete_rem
-```
-
-`delete_rem_by_id` may remain public only if:
-
-1. `dryRun` defaults to `true`.
-2. Real delete requires `dryRun: false`.
-3. Real delete requires guard fields:
-   - `expectedParentId` or `expectedAncestorId`
-   - `confirmTitle`
-   - approval
-4. Hosted mode requires destructive scope.
-5. Local mode still requires plugin approval.
-
-## Acceptance Criteria
-
-1. Registry and protocol cannot drift silently.
-2. Tool counts are generated, not hand-maintained.
-3. Tool profile output is consistent across:
-   - status
-   - diagnostics
-   - server hello
-   - README
-   - bridge widget
-4. Dangerous legacy delete tools are absent.
-
----
-
-# Goal 5 — Fix Markdown-to-RemNote Importer
-
-## Purpose
-
-The bridge must be useful for real long notes. It must not be slower or worse than manual copy-paste.
-
-## Preferred Tool
-
-```text
-create_or_replace_note_from_markdown
-```
-
-## Required User Experience
-
-For one long note, the assistant should need:
-
-```text
-one MCP tool call
-one RemNote approval
-one compact verification report
-```
-
-Not dozens of calls.
-
-## Required Input Modes
+## 5.A — Build Markdown note parser
 
 Support:
 
 ```text
-create_child
-replace_target_children
-update_target_and_replace_children
-append_to_target
-```
-
-## Required Defaults
-
-```ts
-{
-  mode: "create_child",
-  duplicatePolicy: "create_new",
-  headingMapping: {
-    rootHeading: "first_h1",
-    rootHeadingLevel: "H1",
-    sectionHeadingLevel: "H3",
-    subsectionHeadingLevel: "H3"
-  },
-  remnoteLayout: {
-    insertSpacerBetweenSections: true,
-    spacerText: "",
-    preserveBlankLines: true,
-    paragraphMode: "child_rem_per_paragraph",
-    bulletMode: "preserve_markdown_bullets"
-  },
-  mathOptions: {
-    inlineMathDelimiters: "both",
-    blockMathDelimiters: "both",
-    formulaMode: "preserve",
-    rejectMalformedMath: true
-  },
-  fidelityOptions: {
-    requireExactText: true,
-    allowWhitespaceNormalization: true,
-    preserveSourceOrder: true,
-    failOnContentLoss: true
-  },
-  safetyOptions: {
-    dryRun: false,
-    verifyAfterWrite: true,
-    rollbackOnFailure: true
-  },
-  limits: {
-    maxMarkdownChars: 120000,
-    maxDepth: 12,
-    maxNodes: 1000
-  }
-}
-```
-
-## Parser Requirements
-
-The parser must preserve:
-
-```text
-H1/H2/H3/H4 headings
-paragraphs
-blank lines
-section spacers
+# root title
+### H3 section headings
 nested bullets
-numbered lists
-inline math: $...$ and \(...\)
-block math: $$...$$ and \[...\]
-plain formulas
-code blocks
-tables as plain text if rich conversion is unsupported
-bold/italic text where practical
-source order
+ordered lists
+blank spacer Rems
+inline math
+block math
+tables
+worked examples
+flashcard markers only when requested
+callouts/admonitions where useful
 ```
 
-## Fidelity Rules
-
-The importer must never:
+Acceptance:
 
 ```text
-summarize
-compress
-omit examples
-omit formulas
-omit paragraphs
-reorder sections
-change heading meaning
-replace exact content with shorter content
+parser produces a structured intermediate tree
+parser does not lose content
 ```
 
-unless the user explicitly asks.
+## 5.B — Convert parsed tree to RemNote nodes
 
-## Verification Requirements
-
-Integrated verification must return:
-
-```ts
-{
-  passed: boolean;
-  checkedNodeCount: number;
-  headingCount: number;
-  paragraphCount: number;
-  bulletCount: number;
-  mathBlockCount: number;
-  inlineMathCount: number;
-  codeBlockCount: number;
-  tableCount: number;
-  missingTextSnippets: string[];
-  extraTextSnippets: string[];
-  structureMismatches: string[];
-  pollutionRems: string[];
-}
-```
-
-## Failure Behavior
-
-If import fails:
-
-1. Do not silently leave an incomplete note without reporting it.
-2. Return:
-   - `rootRemId` if available
-   - `createdRemIds`
-   - `updatedRemIds`
-   - `failedAtPath`
-   - `failedReason`
-   - `rollbackStatus`
-   - `verification`
-3. If rollback succeeds, report it.
-4. If rollback fails, report exactly which Rem IDs remain.
-5. If rollback is intentionally not attempted after verification failure, return:
-   - `rollbackStatus: "not_attempted_by_policy"`
-   - `rootRemId`
-   - inspection instructions
-
-
-## Large Import Execution Strategy
-
-The implementation must choose and document one of these strategies:
-
-### Strategy A — Single Internal Batch
-
-One MCP call sends a parsed tree to the plugin, and the plugin writes all Rems internally under one approval.
-
-### Strategy B — Chunked Internal Batch
-
-One MCP call sends the source, plugin parses/plans, then writes internally in safe chunks with progress and rollback.
-
-### Strategy C — Dry-Run Then Apply
-
-First call may be dry-run only, second call applies exactly the plan using an idempotency key.
-
-Normal assistant use must still avoid dozens of tiny external MCP calls.
-
-## Timeout and Cancellation Rules
-
-1. Long import operations must respect request timeout.
-2. If cancelled, return partial execution info.
-3. Idempotency key must prevent duplicate long-note creation after retry.
-4. A retry after unknown status must support safe detection of already-created root by source hash/idempotency metadata where possible.
-
-## Source Hash Metadata
-
-Where the RemNote SDK allows it, store or report:
+Tasks:
 
 ```text
-sourceHash
-idempotencyKey
-importedAt
-importToolVersion
+Each bullet becomes a child Rem.
+Each section heading becomes heading Rem.
+Each formula block becomes math block Rem.
+Inline math becomes inline math rich-text span.
+Body bullets nest under the correct section heading.
 ```
 
-If SDK metadata is unavailable, return those fields in the result and use duplicate detection by root title plus optional idempotency cache.
-
-
-## Performance Requirements
-
-Add a parser performance smoke test:
-
-```bash
-npm run server:test:performance
-```
-
-It must not require live RemNote.
-
-It must verify:
+Acceptance:
 
 ```text
-120k char Markdown parse completes quickly
-dry-run plan generation does not call RemNote SDK
-node count and depth limits are enforced
-source-fidelity check runs locally
+generated note is navigable as Rem hierarchy
+no visible Markdown dash pollution
 ```
 
-## Acceptance Criteria
+## 5.C — Add formula-safe splitting
 
-1. Long Markdown import works in one MCP call.
-2. Parser tests pass without RemNote.
-3. Dry-run returns a preview plan.
-4. Real write returns created IDs and verification.
-5. No source text is silently dropped.
-6. No `Size`, `H1`, `H2`, `H3`, or `normal` pollution Rems appear.
-7. If content loss is simulated, verification fails.
+Tasks:
+
+```text
+Do not split inside LaTeX blocks.
+Do not escape formulas incorrectly.
+Split long formula-heavy sections safely.
+Validate common LaTeX delimiters before writing.
+```
+
+Acceptance:
+
+```text
+formula-heavy sections survive chunking
+math is real RemNote math
+```
+
+## 5.D — Add public tools
+
+Add tools:
+
+```text
+preview_markdown_note_tree
+create_note_from_markdown_tree
+append_markdown_as_rem_tree
+```
+
+Acceptance:
+
+```text
+preview does not write
+create writes clean hierarchy
+append writes clean hierarchy under existing Rem
+```
+
+## 5.E — Add Markdown import benchmarks
+
+Tasks:
+
+```text
+Benchmark small Markdown note.
+Benchmark 5.9-style nuclear physics note.
+Benchmark formula-heavy note.
+Benchmark note with tables and cards.
+```
+
+Acceptance:
+
+```text
+markdown pipeline has measurable performance and correctness results
+```
 
 ---
 
-# Goal 6 — Fix Structured Batch and Tree Depth Handling
-
-## Problem
-
-The current structured write tools reject realistic study-note trees too early.
-
-Observed failures:
-
-```text
-Styled tree depth exceeds requested maxDepth.
-Structured note batch depth exceeds requested maxDepth.
-```
-
-## Requirements
-
-Use consistent depth and node limits across:
-
-```text
-create_rem_tree
-create_styled_rem_tree
-create_polished_note_tree
-apply_structured_note_batch
-create_or_replace_note_from_markdown
-```
-
-## Defaults
-
-```text
-default maxDepth: 8
-default maxNodes: 200
-hard maxDepth: 12
-hard maxNodes: 1000
-```
-
-## Error Reporting
-
-When a tree is rejected, return:
-
-```text
-actualDepth
-allowedMaxDepth
-actualNodeCount
-allowedMaxNodes
-failedPath
-failedTitle
-```
-
-## Tests
-
-Add or update tests proving:
-
-1. A realistic 5-level study-note tree passes.
-2. A realistic Markdown note with H1 + H3 + nested bullets passes.
-3. Extreme depth fails safely.
-4. Extreme node count fails safely.
-5. Error message points to the exact path/title.
-
-## Acceptance Criteria
-
-1. Realistic notes are not rejected.
-2. Unsafe giant trees still fail.
-3. All high-level write tools use the same validation logic.
-
----
-
-# Goal 7 — Fix Style System and Formatting Safety
-
-## Problem
-
-Heading/style application previously created pollution Rems such as:
-
-```text
-Size
-H1
-H2
-H3
-normal
-```
-
-This must never happen.
-
-## Canonical Style Shape
-
-Use this internally everywhere:
-
-```ts
-style?: {
-  headingLevel?: "H1" | "H2" | "H3" | "normal";
-  textColor?: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "default";
-  highlightColor?: "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "default";
-  hideBullet?: boolean;
-  remType?: "normal" | "concept" | "descriptor";
-}
-```
-
-## Legacy Alias Policy
-
-Accept aliases only at external boundaries:
-
-```text
-color -> textColor
-highlight -> highlightColor
-type -> remType
-```
-
-After normalization, internal code must use canonical fields only.
-
-## Canonical Style Operations
-
-Use explicit discriminated operations:
-
-```ts
-type StylePlanOperation =
-  | { type: "heading"; remId: string; headingLevel: "H1" | "H2" | "H3" | "normal" }
-  | { type: "text_color"; remId: string; color: RemColor }
-  | { type: "highlight"; remId: string; color: RemColor }
-  | { type: "hide_bullet"; remId: string; hideBullet: boolean }
-  | { type: "rem_type"; remId: string; remType: "normal" | "concept" | "descriptor" }
-  | { type: "text_color_span"; remId: string; color: RemColor; range?: Range; text?: string; occurrence?: number }
-  | { type: "highlight_span"; remId: string; color: RemColor; range?: Range; text?: string; occurrence?: number }
-  | { type: "bold_span"; remId: string; range?: Range; text?: string; occurrence?: number }
-  | { type: "italic_span"; remId: string; range?: Range; text?: string; occurrence?: number };
-```
-
-## Unsupported SDK Behavior
-
-If the RemNote SDK cannot apply a style safely:
-
-```text
-return SDK_UNSUPPORTED
-```
-
-Do not fake success.
-
-Do not create text child Rems to represent style.
-
-## Tests
-
-Add tests proving:
-
-1. Canonical style shape normalizes legacy aliases.
-2. Internal code uses canonical style fields.
-3. Heading style does not create child Rems.
-4. `Size`, `H1`, `H2`, `H3`, `normal` pollution is detected.
-5. Font color and highlight remain separate.
-6. Span font color and span highlight remain separate.
-
-## Acceptance Criteria
-
-1. No style operation writes style labels as Rem children.
-2. Style schema is consistent across high-level tools.
-3. Unsupported operations fail cleanly.
-
----
-
-# Goal 8 — Fix Health Check and Diagnostics
-
-## Problem
-
-Health check reported:
-
-```text
-NO_PAIRED_PLUGIN_SESSION
-```
-
-even when direct MCP calls worked against the local RemNote plugin.
-
-## Required Modes
-
-Health check must distinguish:
-
-```text
-local_direct
-hosted_paired
-no_plugin
-hosted_missing_pairing
-```
-
-## Requirements
-
-1. Local direct bridge health-check must use the active WebSocket plugin connection.
-2. Local direct bridge health-check must not require hosted pairing.
-3. Hosted health-check must use paired session routing.
-4. Hosted missing pairing must return a clear hosted-specific error.
-5. No fake success.
-6. A tool passes only if it actually succeeds.
-7. Write health checks must use:
-   - dry-run, or
-   - disposable sandbox Rems, or
-   - explicit user-provided parent Rem.
-8. Destructive checks must never perform real delete unless explicitly requested in a controlled test.
-
-## Diagnostics Must Report
-
-```text
-deploymentMode
-pluginConnectionStatus
-hostedPairingStatus
-activeToolProfile
-publicToolCount
-registeredToolCount
-runtimeVerifiedTools
-runtimeUnverifiedTools
-lastHealthCheckResult
-lastSuccessfulPluginTool
-lastFailedPluginTool
-```
-
-## Acceptance Criteria
-
-1. Local/direct connected plugin does not produce `NO_PAIRED_PLUGIN_SESSION`.
-2. Hosted/no-pairing reports hosted-specific missing pairing.
-3. Diagnostics are honest about unverified tools.
-4. Health-check does not pollute RemNote with test Rems unless explicitly using sandbox mode.
-
----
-
-# Goal 9 — Harden Security
+# Goal 6 — Fix Heading, Style, Color, and Math Correctness
 
 ## Purpose
 
-The hosted bridge must not expose unsafe write or debug behavior.
+Fix visible note pollution and style problems.
 
-## Permission Rules
+## 6.A — Fix heading setter
 
-### Access Scope
-
-Use scope hierarchy:
+Tasks:
 
 ```text
-focused-rem-only < current-rem-tree < full-kb
+Inspect set_rem_heading_level implementation.
+Remove any command/powerup path that creates Size → H1/H3 child Rems.
+Use correct SDK heading/font-size API.
+Add regression test that no children are created by style changes.
 ```
 
-Tools must declare required scope.
-
-### Trusted Write
-
-If a tool has:
+Acceptance:
 
 ```text
-requiresTrustedWrite: true
+H1/H3 applied correctly
+no Size child Rems are created
 ```
 
-then hosted execution requires one of:
+## 6.B — Fix text color and highlight separation
+
+Tasks:
 
 ```text
-trustedWriteMode: "trusted-inside-scope"
+Keep font color separate from highlight.
+Keep span highlight separate from whole-Rem highlight.
+Add verification for font color and highlight.
+Avoid unsupported raw field hacks when SDK supports official path.
 ```
 
-or
+Acceptance:
 
 ```text
-plugin approval flow
+red H1 font works
+blue H3 font works
+highlight does not corrupt text color
 ```
 
-Do not silently execute trusted writes without trusted mode or approval.
+## 6.C — Fix math insertion
 
-### Destructive Tools
-
-If a tool is destructive:
-
-1. Require `bridge:delete`.
-2. Require explicit guard fields.
-3. Require plugin approval.
-4. Default dry-run must be true.
-5. Real delete must be visibly intentional.
-
-### Local Mode
-
-Local mode may rely on plugin approval, but the server should still classify destructive tools and prevent accidental silent deletion.
-
-
-## Public MCP Discovery Rule
-
-Hosted discovery may be unauthenticated only if it returns a safe tool list and OAuth metadata required by ChatGPT. It must not reveal:
+Tasks:
 
 ```text
-recent requests
-runtime diagnostics
-pairing sessions
-debug internals
-dangerous tools hidden by profile
-storage details
-server cwd/pid
+Inline math becomes inline math rich-text node.
+Block math becomes separate math block Rem.
+Escaped visible LaTeX is treated as a bug unless requested as literal text.
 ```
 
-If tool discovery includes tools that require scopes, each tool must include accurate `securitySchemes` metadata.
-
-## Admin Authentication Rule
-
-Protected diagnostics/dashboard routes must require one of:
+Acceptance:
 
 ```text
-admin session
-ADMIN_DEBUG_SECRET
-explicit local-only mode
+block formulas are real math Rems
+inline formulas render as inline math
 ```
 
-In hosted mode, admin/debug routes must not rely only on obscurity.
+## 6.D — Add style verification and repair signals
 
-
-## Dashboard and Diagnostic Route Safety
-
-Hosted mode must not expose sensitive runtime details publicly.
-
-### Public Routes
-
-Allowed public info:
+Tasks:
 
 ```text
-ok
-service name
-deployment mode
-health status
-public base URL if safe
-tool registry version
-minimal uptime if needed
+verify heading
+verify color
+verify highlight
+verify bullet visibility
+verify math type
+detect pollution Rems
+detect wrong nesting
+detect broken formula text
 ```
 
-### Protected Routes
-
-Require admin session or admin secret:
+Acceptance:
 
 ```text
-/dashboard
-/diagnostics
-/debug/status
-pairing internals
-recent requests
-pid
-cwd
-storage details
-token/session info
+verify_note_design catches heading pollution
+repair_note_design can propose fixes
 ```
 
-## Secrets
+## 6.E — Add style regression suite
 
-Never log or return:
+Tests:
 
 ```text
-SESSION_SECRET
-ADMIN_DEBUG_SECRET
-DATABASE_URL
-OAuth client secret
-plugin session secret
-access token
-refresh token
-pairing code
-authorization code
+set H1 on existing Rem
+set H3 on existing Rem
+set red text color
+set blue text color
+set whole-rem highlight
+set span highlight
+insert inline math
+insert block math
+verify no children added by style tools
 ```
 
-## Render Configuration
-
-Fix `render.yaml`.
-
-If deployment mode is hosted, add:
+Acceptance:
 
 ```text
-REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
+style regression tests run in smoke and live-test modes
 ```
-
-If hosted pairing is not ready, change deployment mode to local or personal-hosted token mode intentionally.
-
-## Acceptance Criteria
-
-1. Trusted write mode is enforced.
-2. Destructive tools require delete scope and approval.
-3. Hosted dashboard/debug routes are protected.
-4. Secrets are redacted from diagnostics/logs.
-5. Render config matches config validation.
 
 ---
 
-# Goal 10 — Improve Hosted/Local Architecture
+# Goal 7 — Add Large-Payload Resilience and Under-5-Second Performance Path
 
-## Target Runtime Architecture
+## Purpose
 
-```text
-ChatGPT MCP Client
-        |
-        v
-Hosted/Local MCP Server
-        |
-        |-- Auth and permission checks
-        |-- Tool registry/profile filtering
-        |-- Health and diagnostics
-        |-- Request routing
-        |
-        v
-BridgeHub
-        |
-        v
-RemNote Plugin WebSocket Client
-        |
-        v
-RemNote SDK Access Layer
-        |
-        v
-RemNote Workspace
-```
+Make note creation feel instant.
 
-## Server Responsibilities
-
-The server should handle:
+The target is:
 
 ```text
-MCP protocol
-HTTP routes
-OAuth/local token auth
-pairing/session routing
-rate limiting
-CORS/host checks
-tool permissions
-registry summaries
-request timeouts
-audit logging
+Under 5 seconds for medium notes when possible.
 ```
 
-The server must not handle:
+## 7.A — Define performance budgets
+
+Budgets:
 
 ```text
-RemNote SDK calls
-RemNote rich text mutation internals
-plugin UI rendering
-DOM access
+planning: < 500 ms
+single write execution: < 3000 ms
+verification: < 1000 ms
+total target: < 5000 ms
 ```
 
-## Plugin Responsibilities
-
-The plugin should handle:
+Acceptance:
 
 ```text
-RemNote SDK reads
-RemNote SDK writes
-approval prompts
-permission scope enforcement inside RemNote
-rich text formatting
-tree creation
-Markdown import execution
+benchmarks report each phase
 ```
 
-The plugin must not handle:
+## 7.B — Reduce tool-call count
+
+Tasks:
 
 ```text
-OAuth token issuance
-hosted session storage
-MCP HTTP transport
-server routing
-database persistence
+Prefer one high-level write call.
+Avoid sequential style calls.
+Apply styles during creation, not after creation when possible.
+Batch verification.
+Avoid repeated get_rem_rich calls unless necessary.
 ```
 
-## Shared Layer Responsibilities
-
-The shared layer should handle:
+Acceptance:
 
 ```text
-protocol types
-tool names
-pure schemas
-Markdown parsing
-style normalization
-tree validation
-source fidelity planning
+medium note write uses one primary tool call
+fallback path is rare
 ```
 
-The shared layer must not import:
+## 7.C — Add payload chunking only as fallback
+
+Tasks:
 
 ```text
-@remnote/plugin-sdk
-React
-Node HTTP server modules
-database drivers
+Attempt optimized one-shot plan first.
+If payload exceeds safe limits, chunk by section.
+Keep chunking automatic.
+Report fallback reason.
+Do not chunk inside math blocks or card syntax.
 ```
 
-## Acceptance Criteria
+Acceptance:
 
-1. Boundaries are visible from directory structure.
-2. Each layer has a clear responsibility.
-3. Cross-layer imports are intentional and tested.
-4. Future developers can understand the system from `ARCHITECTURE.md`.
+```text
+large notes do not randomly fail
+chunking preserves hierarchy
+```
+
+## 7.D — Add benchmark suite
+
+Benchmarks:
+
+```text
+small note
+medium 5.9-style note
+large formula-heavy note
+flashcard set
+table note
+repair pass
+template-based note
+```
+
+Acceptance:
+
+```text
+benchmark report includes total time, phase time, calls, fallbacks, failures
+medium note target is <5 seconds or a clear blocker is reported
+```
+
+## 7.E — Add performance failure policy
+
+Tasks:
+
+```text
+If target fails, report exact bottleneck.
+Classify bottleneck as model payload, MCP transport, server, bridge WebSocket, RemNote SDK, verification, or approval wait.
+Do not hide slow runs as success.
+```
+
+Acceptance:
+
+```text
+slow success is reported as success_with_performance_warning
+```
 
 ---
 
-# Goal 11 — Improve Documentation and Developer Onboarding
+# Goal 8 — Redesign Tiers, Permissions, and Tool Access
 
-## Required Docs
+## Purpose
 
-Update:
+Separate operation permission, scope, and tool access.
 
-```text
-README.md
-ARCHITECTURE.md
-SAFETY.md
-NEXT_STEPS.md
-DEPLOY_RENDER.md
-Agents.md
-```
+## 8.A — Define operation permission tiers
 
-Create or update:
+Use:
 
 ```text
-docs/audits/audit-turn-1-readonly.md
-docs/audits/audit-turn-2-post-repair.md
-docs/development/local-setup.md
-docs/development/server-plugin-boundary.md
-docs/development/tool-registry.md
-docs/development/markdown-importer.md
-docs/deployment/render.md
-docs/security/permissions.md
+Read Only
+Read + Create
+Read + Create + Modify
+Full Control With Delete Approval
+Danger Zone
 ```
 
-## Documentation Rules
+Acceptance:
 
-1. Docs must describe actual behavior, not planned behavior.
-2. Tool counts must be generated or verified against source.
-3. Unsupported tools must be clearly marked.
-4. Local mode and hosted mode must be explained separately.
-5. Do not keep stale “phase” docs unless they remain useful.
-6. Include troubleshooting for:
-   - deployment build failure
-   - `NO_PAIRED_PLUGIN_SESSION`
-   - plugin not connected
-   - insufficient scope
-   - trusted write not approved
-   - Markdown import partial failure
+```text
+operation tier is separate from tool tier
+```
 
-## Acceptance Criteria
+## 8.B — Define scope tiers
 
-1. New developer can understand architecture in under 15 minutes.
-2. Deployment instructions are accurate.
-3. Troubleshooting docs match real error codes.
-4. Docs do not claim untested tools are verified.
+Use:
+
+```text
+Focused Rem
+Focused Rem + Descendants
+Selected Rem
+Selected Rem + Descendants
+Approved Root
+Workspace
+```
+
+Default onboarding should recommend:
+
+```text
+Focused Rem + Descendants
+```
+
+Acceptance:
+
+```text
+user can ask once and save default writing mode
+default can be changed later
+```
+
+## 8.C — Define tool access tiers
+
+Use:
+
+```text
+Basic
+Note Writer
+Power User
+Developer
+Danger
+```
+
+Suggested mapping:
+
+```text
+Basic: status/read
+Note Writer: designed-note and markdown note tools
+Power User: move/reorder/table/template tools
+Developer: diagnostics/raw/debug
+Danger: replace/delete/destructive repair
+```
+
+Acceptance:
+
+```text
+tool access tier controls visible/usable tools
+```
+
+## 8.D — Make tier changes live without reconnect
+
+Tasks:
+
+```text
+Changing operation tier must not reconnect.
+Changing scope tier must not reconnect.
+Changing tool access tier must not reconnect.
+Only server URL/token changes should reconnect.
+Persist tier changes to plugin settings.
+Use runtime refs/state for immediate behavior.
+```
+
+Acceptance:
+
+```text
+changing from trusted writes to danger zone applies instantly
+changing from focused rem to workspace applies instantly
+bridge connection remains alive
+```
+
+## 8.E — Warn user and ChatGPT about danger
+
+Tasks:
+
+```text
+Danger Zone UI warning.
+Danger tool descriptions warn ChatGPT.
+Danger diagnostics flag active Danger Zone.
+Danger actions still produce audit records.
+Require explicit user action to enter Danger Zone.
+Allow user to exit Danger Zone easily.
+```
+
+Acceptance:
+
+```text
+Danger Zone is explicit and hard to enter accidentally
+ChatGPT sees danger metadata before tool use
+```
+
+## 8.F — Align with RemNote manifest permissions
+
+Tasks:
+
+```text
+Map internal operation tiers to RemNote Permission Levels.
+Map internal scopes to RemNote Permission Scopes.
+Investigate dynamic DescendantsOfId permission request flow.
+Document why any broad All scope remains necessary.
+```
+
+Acceptance:
+
+```text
+internal tiers do not contradict RemNote's permission model
+public release has a minimal-permission story
+```
 
 ---
 
-# Goal 12 — Testing and Quality Gates
+# Goal 9 — Simplify Architecture and Tool Registry
 
-## Required Commands
+## Purpose
 
-Make these commands exist and pass from repo root:
+Make the codebase maintainable for agents and humans.
 
-```bash
+## 9.A — Split server modules
+
+Target structure:
+
+```text
+server/src/app
+server/src/auth
+server/src/bridge
+server/src/tools
+server/src/security
+server/src/config
+server/src/diagnostics
+server/src/performance
+```
+
+Acceptance:
+
+```text
+server files are smaller and purpose-specific
+```
+
+## 9.B — Split plugin modules
+
+Target structure:
+
+```text
+src/bridge
+src/remnote/read
+src/remnote/write
+src/remnote/style
+src/remnote/templates
+src/remnote/cards
+src/remnote/tables
+src/remnote/permissions
+src/remnote/capabilities
+src/widgets/bridge-panel
+```
+
+Acceptance:
+
+```text
+UI code is not mixed with SDK operations
+```
+
+## 9.C — Rebuild tool registry
+
+Every tool entry must include:
+
+```text
+category
+operationTier
+scopeRequirement
+toolAccessTier
+riskLevel
+sdkCapability
+isPublic
+isDebug
+isDangerous
+liveVerificationRequired
+performanceBudgetMs
+userFacingName
+agentWarning
+```
+
+Acceptance:
+
+```text
+registry is the source of truth
+MCP registration derives from registry
+diagnostics derives from registry
+```
+
+## 9.D — Clean tool categories
+
+Categories:
+
+```text
+system
+read
+simple_write
+markdown_note
+structured_note
+design_template
+study_card
+table
+repair
+debug
+danger
+```
+
+Acceptance:
+
+```text
+tools are organized by user workflow and risk
+```
+
+## 9.E — Add documentation generation from registry
+
+Tasks:
+
+```text
+Generate TOOL_REFERENCE.md from registry.
+Generate user-facing tool tier summary.
+Generate developer diagnostics reference.
+```
+
+Acceptance:
+
+```text
+docs match actual tool registry
+agents do not manually maintain duplicate tool lists
+```
+
+---
+
+# Goal 10 — Build Sample-Based Design Templates and Storage/Sync
+
+## Purpose
+
+Let users save a sample RemNote design and reuse it.
+
+## 10.A — Analyze focused sample note
+
+Tool:
+
+```text
+analyze_note_design
+```
+
+Extract:
+
+```text
+heading pattern
+color pattern
+spacing pattern
+math pattern
+bullet nesting
+formula placement
+table style
+card style
+worked example style
+```
+
+Acceptance:
+
+```text
+sample note analysis returns reusable design rules
+```
+
+## 10.B — Save templates locally
+
+Tool:
+
+```text
+save_note_design_template
+```
+
+Storage:
+
+```text
+plugin local settings or local plugin storage
+```
+
+Acceptance:
+
+```text
+template persists locally
+template can be listed
+```
+
+## 10.C — Prepare hosted template sync
+
+Tasks:
+
+```text
+Define hosted template schema.
+Define user/account/template ownership.
+Define conflict behavior.
+Define last-write-wins or versioned sync.
+Do not implement insecure sync.
+Add placeholder interfaces only.
+```
+
+Acceptance:
+
+```text
+hosted sync design exists
+local templates work now
+```
+
+## 10.D — Preview template application
+
+Tool:
+
+```text
+preview_note_design_plan
+```
+
+Acceptance:
+
+```text
+preview shows changes before writing
+```
+
+## 10.E — Add template import/export
+
+Tasks:
+
+```text
+Export template JSON.
+Import template JSON.
+Validate template schema.
+Reject templates with unsafe operation rules.
+```
+
+Acceptance:
+
+```text
+users can back up and share safe design templates
+```
+
+---
+
+# Goal 11 — Create High-Level Designed-Note and Flashcard Tools
+
+## Purpose
+
+Give ChatGPT a small set of high-level user-grade tools instead of many fragile low-level calls.
+
+## 11.A — Create designed note
+
+Tool:
+
+```text
+create_designed_note_tree
+```
+
+Input:
+
+```text
+parentId
+title
+content
+templateId
+writingMode
+verifyAfterWrite
+performanceTargetMs
+```
+
+Acceptance:
+
+```text
+one tool creates polished note
+```
+
+## 11.B — Update designed note
+
+Tool:
+
+```text
+update_note_with_design
+```
+
+Supports:
+
+```text
+append sections
+replace children after approval
+repair structure after approval
+convert markdown pollution
+convert formulas
+```
+
+Acceptance:
+
+```text
+existing note repair/update requires approval
+```
+
+## 11.C — Verify designed note
+
+Tool:
+
+```text
+verify_note_against_design
+```
+
+Acceptance:
+
+```text
+verification catches missing headings, wrong color, wrong nesting, wrong math, pollution Rems
+```
+
+## 11.D — Repair designed note after approval
+
+Tool:
+
+```text
+repair_note_design
+```
+
+Acceptance:
+
+```text
+repair plan shown
+approval required
+repair executes safely
+```
+
+## 11.E — Support flashcards without neglecting notes
+
+Tools/workflows:
+
+```text
+create_card_set_from_note
+create_flashcards_from_markdown
+create_cloze_cards_from_note
+verify_card_set
+repair_card_set
+```
+
+Acceptance:
+
+```text
+notes remain primary workflow
+flashcards are available and clean
+```
+
+## 11.F — Add queue-aware card helpers later
+
+Tasks:
+
+```text
+Use queue APIs only after SDK upgrade and live verification.
+Support reviewing current card context only if user asks.
+Do not interfere with RemNote's scheduler.
+```
+
+Acceptance:
+
+```text
+card helpers respect RemNote study workflow
+```
+
+---
+
+# Goal 12 — Build User-Grade UI, Access, Logo, Auth Plan, and Release Path
+
+## Purpose
+
+Turn the bridge into a public-user-ready RemNote plugin.
+
+## 12.A — Rebuild plugin UI
+
+Default UI:
+
+```text
+connection status
+setup wizard
+writing mode
+focused Rem / approved root
+template selector
+pending approval
+last result
+health check button
+```
+
+Advanced UI:
+
+```text
+diagnostics
+tool health
+tool tier
+copy debug bundle
+server status
+raw registry
+```
+
+Acceptance:
+
+```text
+new user understands setup in 30 seconds
+debug clutter is hidden by default
+```
+
+## 12.B — Add easy access commands
+
+Commands:
+
+```text
+Open RemnoteMCP
+Run RemnoteMCP Health Check
+Save Focused Note as Design Template
+Use Focused Rem as Approved Root
+Copy MCP URL
+Copy Diagnostics
+Open RemnoteMCP Settings
+```
+
+Acceptance:
+
+```text
+bridge can be opened and controlled from RemNote UI
+```
+
+## 12.C — Replace logo and branding
+
+Tasks:
+
+```text
+Replace socket logo.
+Create RemnoteMCP icon.
+Update manifest name/description.
+Add support/changelog/project URLs before release.
+Use logo in widget/sidebar.
+```
+
+Acceptance:
+
+```text
+plugin branding looks user-grade
+```
+
+## 12.D — Plan secure public-user auth
+
+Current:
+
+```text
+local token mode
+```
+
+Future:
+
+```text
+hosted account
+device pairing
+scoped session token
+template sync
+revocation UI
+audit log
+no note-body logging
+```
+
+Acceptance:
+
+```text
+hosted mode is not faked
+auth plan exists
+local token mode remains secure
+```
+
+## 12.E — Public release checklist
+
+Checklist:
+
+```text
+privacy policy
+support link
+setup docs
+security notes
+sandbox health check
+5-second benchmark attempt
+known limitations
+RemNote marketplace metadata
+logo/icon
+public docs
+unlisted beta release plan
+rollback plan
+```
+
+Acceptance:
+
+```text
+project has a release-readiness checklist
+```
+
+## 12.F — Update manifest for public readiness
+
+Tasks:
+
+```text
+Change name to RemnoteMCP when branding assets are ready.
+Update description under 200 characters.
+Set author correctly.
+Add projectUrl.
+Add supportUrl.
+Add changelogUrl.
+Review requestNative.
+Review requiredScopes.
+Review enableOnMobile honestly.
+```
+
+Acceptance:
+
+```text
+manifest is ready for review or unlisted beta
+```
+
+---
+
+## 5. Extra Gaps Added in This Second-Pass Revision
+
+The previous roadmap was useful, but these gaps are now explicit requirements.
+
+### Gap A — Official RemNote docs link for agents
+
+Agents now have direct docs links at the top of this file.
+
+### Gap B — Manifest and marketplace readiness
+
+The previous plan mentioned logo and branding, but did not specify manifest fields and public release checks clearly enough.
+
+Now included:
+
+```text
+projectUrl
+supportUrl
+changelogUrl
+description length
+author
+requestNative review
+permission scope review
+unlisted beta plan
+```
+
+### Gap C — SDK docs notes file
+
+Agents must create a local `docs/REMNOTE_SDK_NOTES.md` after SDK upgrade so future work does not rediscover the same changelog facts.
+
+### Gap D — Capability detection beyond the first few APIs
+
+Now includes:
+
+```text
+transaction
+waitForInitialSync
+markdown tree creation
+table APIs
+reader APIs
+queue APIs
+```
+
+### Gap E — Dynamic permission and manifest alignment
+
+The roadmap now requires mapping internal tiers to RemNote Permission Levels and Permission Scopes.
+
+### Gap F — Tool registry documentation generation
+
+The registry must become source of truth for docs and diagnostics.
+
+### Gap G — Style regression tests
+
+Heading/color/math bugs must have regression tests, not only manual fixes.
+
+### Gap H — Template import/export
+
+Public users need a way to back up and share safe design templates.
+
+### Gap I — Queue-aware flashcard helpers
+
+Flashcards are still secondary, but RemNote users care about studying. Queue-aware helpers are planned after SDK upgrade.
+
+### Gap J — Performance failure policy
+
+Slow success must be reported as `success_with_performance_warning`, not treated as clean success.
+
+### Gap K — Public-user diagnostic summaries
+
+Normal users need simple diagnostics; developers need redacted debug bundles.
+
+### Gap L — Module boundaries for the write engine
+
+The old `write.ts` is too large. The write engine must be split into plan, execute, verify, rollback, and types.
+
+---
+
+## 6. Recommended Codex Goal Prompts
+
+### First Codex goal
+
+```text
+Read Agents.md fully and complete Goal 1 only. Upgrade @remnote/plugin-sdk to the current stable version, fix all resulting type/build/validation errors, add SDK capability diagnostics including sdkVersion and initialSyncComplete, call waitForInitialSync when available before bridge readiness, and create docs/REMNOTE_SDK_NOTES.md with links to https://plugins.remnote.com/ and https://plugins.remnote.com/CHANGELOG. Do not add new product tools, do not redesign UI, and do not change dangerous-tool behavior in this pass.
+```
+
+### Second Codex goal
+
+```text
+Read Agents.md fully and complete Goal 2 only. Refactor existing RemNote tools to use the modern SDK where appropriate, especially simple markdown creation and tree creation. Preserve the advanced structured writer. Add SDK_UNSUPPORTED capability checks for unsupported APIs and update diagnostics so tools never claim success unless the SDK operation actually succeeded.
+```
+
+### Third Codex goal
+
+```text
+Read Agents.md fully and complete Goal 3 only. Fix tool truth, exposure, and diagnostics so declared, registered, listed, callable, liveVerified, hidden, blockedByTier, blockedByScope, sdkUnsupported, and gatewayBlocked states are separate. Resolve the delete_rem_by_id mismatch so it is either callable under the correct tier or honestly hidden.
+```
+
+### Fourth Codex goal
+
+```text
+Read Agents.md fully and complete Goal 4 only. Build a transactional write engine with dry-run operation plans, transaction-backed execution when supported by the SDK, safe replacement behavior, partial failure reporting, idempotency, and clear write-engine module boundaries. Do not redesign the UI in this pass.
+```
+
+### Fifth Codex goal
+
+```text
+Read Agents.md fully and complete Goal 5 only. Build a Markdown-to-Rem hierarchy pipeline so markdown headings, bullets, formulas, tables, and worked examples become clean RemNote-native structure instead of visible markdown text. Include preview and create tools, but preserve existing simple append tools.
+```
+
+### Sixth Codex goal
+
+```text
+Read Agents.md fully and complete Goal 6 only. Fix heading/style/color/math correctness, especially the set_rem_heading_level Size → H1/H3 pollution bug. Add regression tests proving style changes do not create child Rems and that red H1, blue H3, inline math, and block math verify correctly.
+```
+
+### Seventh Codex goal
+
+```text
+Read Agents.md fully and complete Goal 7 only. Add performance budgets, benchmark suite, payload chunking fallback, and a success_with_performance_warning result state. Target under 5 seconds for medium notes and report bottlenecks by layer when the target is missed.
+```
+
+### Eighth Codex goal
+
+```text
+Read Agents.md fully and complete Goal 8 only. Redesign operation permission tiers, scope tiers, and tool access tiers. Make tier changes live without reconnecting unless server URL or token changes. Align the model with RemNote manifest Permission Levels and Scopes, and add clear Danger Zone warnings for both user and ChatGPT.
+```
+
+---
+
+## 7. What Agents Must Not Do
+
+Do not:
+
+```text
+skip SDK upgrade
+add random new tools before fixing core write path
+claim all tools work because they are listed
+remove safety approval
+enable hosted mode without real auth
+let Danger Zone become default
+hide partial failures
+delete or replace user notes silently
+create note designs by dumping raw Markdown into one Rem
+ship UI that looks like a debug console
+forget flashcards entirely
+ignore the under-5-second performance target
+ignore official RemNote plugin docs
+leave manifest as prototype branding for public release
+keep tool registry metadata shallow
+```
+
+---
+
+## 8. Definition of User-Grade
+
+RemnoteMCP is user-grade only when all of these are true:
+
+```text
+A public RemNote user can install and understand it.
+The setup wizard explains writing mode clearly.
+The default writing mode is safe and useful.
+Medium note creation targets under 5 seconds.
+Generated notes are clean RemNote-native hierarchy.
+Math renders as RemNote math.
+Headings/styles do not pollute the note.
+Design templates can be saved and reused.
+Flashcards are supported enough for real users.
+Diagnostics are truthful.
+Dangerous tools require clear confirmation.
+The UI is clean and not a developer dump.
+Auth/security plan is honest and not fake.
+The manifest is public-release ready.
+Official RemNote plugin docs are linked and followed.
+```
+
+---
+
+## 9. Final Public-Readiness Gate
+
+Do not call RemnoteMCP public-ready until all of these pass:
+
+```text
 npm run check-types
 npm run validate
 npm run build
 npm run server:build
 npm run server:smoke
-npm run server:test:tool-profile
-npm run server:test:health-check-routing
-npm run server:test:structured-depth
-npm run server:test:style-schema
-npm run server:test:markdown-importer
-npm run server:test:source-fidelity
-npm run server:test:performance
-npm run server:test:security
-npm run server:test:boundaries
+npm run bridge:live-test
+style regression live test
+markdown hierarchy live test
+designed note benchmark
+flashcard set benchmark
+danger tool dry-run/guard test
+diagnostics redaction test
+manifest review
+security review
+privacy review
+setup wizard review
 ```
 
-## Server-Only Build Test
-
-This must pass separately:
-
-```bash
-cd server
-npm install
-npm run build
-```
-
-This must work without root `node_modules` and without `@remnote/plugin-sdk` installed in `server`.
-
-## Required Test Areas
-
-### Build Boundary
-
-Test that server build does not compile or import plugin SDK files.
-
-### Tool Registry
-
-Test that registry, metadata, protocol, map, and docs stay consistent.
-
-### Markdown Importer
-
-Test:
-
-```text
-H1 root
-8 H3 sections
-blank spacers
-paragraphs
-nested bullets
-numbered lists
-inline math
-block math
-code block
-table
-formula-heavy section
-source order
-source fidelity
-pollution Rem detection
-```
-
-### Structured Depth
-
-Test realistic 5-level notes and unsafe extreme trees.
-
-### Style Schema
-
-Test canonical style and legacy alias normalization.
-
-### Health Check
-
-Test local direct and hosted paired behavior separately.
-
-### Boundaries
-
-Test:
-
-```text
-server does not import plugin SDK
-shared does not import plugin SDK
-plugin does not import server internals
-server dist does not contain plugin runtime files
-```
-
-### Security
-
-Test:
-
-```text
-missing token
-expired token
-wrong audience
-insufficient scope
-missing trusted write
-destructive tool without delete scope
-hosted diagnostics without admin auth
-```
-
-### Performance
-
-Test parser and dry-run plan generation without live RemNote.
-
-## Acceptance Criteria
-
-1. All required scripts exist.
-2. All required scripts pass.
-3. Tests do not require live RemNote unless clearly named as live tests.
-4. Live tests are optional and documented separately.
-
----
-
-# Goal 13 — Manual Golden Test
-
-After automated tests pass, perform the manual golden test if live RemNote bridge access is available.
-
-## Setup
-
-Focus this Rem:
-
-```text
-Plugin Test
-```
-
-## Tool Call
-
-Use:
-
-```text
-create_or_replace_note_from_markdown
-```
-
-## Sample Note Must Include
-
-```text
-1 H1 title
-at least 8 H3 sections
-blank spacers between sections
-multiple paragraphs per section
-nested bullets
-numbered list
-inline math
-block math
-code block
-table
-formula-heavy section
-```
-
-## Expected Result
-
-```text
-one MCP write call
-one approval
-H1 root
-H3 section headings
-empty spacer Rems between major sections
-all paragraphs preserved
-all formulas preserved
-all bullets preserved
-code block preserved
-table preserved as plain text if needed
-no Size/H1/H2/H3/normal pollution Rems
-verification passed
-rootRemId returned
-createdRemIds returned
-```
-
-## If Live RemNote Is Not Available
-
-Do not fake the result.
-
-Report:
-
-```text
-Live RemNote manual test not run because live plugin access was unavailable.
-Automated dry-run/parser tests passed.
-Manual test remains required before production release.
-```
-
----
-
-
-# Goal 14 — Deployment, CI, and Dependency Reliability
-
-## Purpose
-
-Make deployment predictable and prevent dependency-boundary regressions.
-
-## Requirements
-
-1. Decide whether root and server use separate lockfiles or a workspace. Document it.
-2. Prefer deterministic installs:
-   - `npm ci` when lockfiles exist
-   - otherwise document why `npm install` is used
-3. Ensure TypeScript build has dev dependencies available in Render.
-4. Add `engines.node` if Render/Node version matters.
-5. Ensure `server/start` path matches emitted build output.
-6. Ensure `render.yaml` rootDir/build/start settings match the actual package layout.
-7. Ensure hosted env vars satisfy `validateConfig`.
-8. Document required Render environment variables in `docs/deployment/render.md`.
-
-## Acceptance Criteria
-
-1. Render build command is correct.
-2. Render start command is correct.
-3. Hosted config does not fail validation from missing flags.
-4. Server build is reproducible from a clean checkout.
-5. Deployment failure troubleshooting is documented.
-
----
-
-# Goal 15 — Error Taxonomy, Observability, and Recovery
-
-## Purpose
-
-Make failures understandable and recoverable instead of vague.
-
-## Required Error Taxonomy
-
-Standardize errors across server/plugin/shared:
-
-```text
-INVALID_ARGS
-PERMISSION_DENIED
-INSUFFICIENT_SCOPE
-TRUSTED_WRITE_REQUIRED
-PLUGIN_NOT_CONNECTED
-HOSTED_SESSION_MISSING
-NO_PAIRED_PLUGIN_SESSION
-SDK_UNSUPPORTED
-SDK_ERROR
-TIMEOUT
-PARTIAL_FAILURE
-ROLLBACK_FAILED
-SOURCE_FIDELITY_FAILED
-TOOL_UNSUPPORTED
-TOOL_HIDDEN_BY_PROFILE
-```
-
-## Requirements
-
-1. Errors must include:
-   - code
-   - user-safe message
-   - internal details only in protected diagnostics
-   - recovery suggestion where useful
-2. Long writes must report partial state.
-3. Diagnostics must not overclaim runtime verification.
-4. Add a recent-request ring buffer with redacted args.
-5. Add optional request IDs to correlate server route request, MCP tool call, and plugin WebSocket request.
-
-## Acceptance Criteria
-
-1. Common failures are easy to diagnose.
-2. No secrets appear in error details.
-3. Partial failures are actionable.
-4. Health check and importer errors use the standard taxonomy.
-
----
-
-# Goal 16 — Release Discipline and Branch Hygiene
-
-## Purpose
-
-Prevent giant unstable patches from becoming the normal workflow.
-
-## Requirements
-
-1. Keep the stabilization branch focused.
-2. Do not mix unrelated hosted OAuth redesign, plugin UI redesign, and Markdown importer rewrites unless required by the architecture boundary.
-3. Commit in logical chunks:
-   - build boundary
-   - shared layer migration
-   - registry cleanup
-   - write module split
-   - importer tests
-   - security hardening
-   - docs
-4. Each chunk should build before moving to the next when practical.
-5. If a task is too large, leave a clearly documented follow-up instead of half-implementing it.
-
-## Acceptance Criteria
-
-1. Final report groups changes by goal.
-2. Remaining limitations are explicit.
-3. No speculative docs claim unfinished features are complete.
-
----
-
-# Final Acceptance Criteria
-
-The project is fixed only when all conditions below are true.
-
-## Build
-
-1. Root plugin build passes.
-2. Server build passes.
-3. Server build does not compile plugin SDK code.
-4. Render config matches deployment mode.
-5. Hosted startup config validation passes.
-
-## Architecture
-
-1. Shared/server/plugin boundaries are clean.
-2. God files are split.
-3. Empty/placeholder files are removed.
-4. Unsupported tools are hidden or removed.
-5. Docs reflect actual implementation.
-
-## Tooling
-
-1. Tool registry has one source of truth.
-2. Tool profile output is consistent.
-3. Dangerous legacy delete tools are absent.
-4. `delete_rem_by_id` is guarded and dry-run by default.
-5. `create_or_replace_note_from_markdown` is preferred for long notes.
-
-## Markdown Import
-
-1. Long Markdown import works in one MCP call.
-2. Source fidelity is enforced.
-3. Verification detects missing content.
-4. Partial failures are clearly reported.
-5. No styling pollution Rems are created.
-
-## Security
-
-1. Hosted auth validates tokens, scopes, audience, and expiration.
-2. Trusted write mode is enforced.
-3. Destructive tools require delete scope and approval.
-4. Dashboard/debug details are protected.
-5. Secrets are redacted.
-
-## Testing
-
-1. All required commands pass.
-2. Audit Turn 1 report exists.
-3. Audit Turn 2 report exists.
-4. Test output is documented.
-5. Remaining limitations are honest and specific.
-
----
-
-# Final Output Required From Codex
-
-When finished, provide a clear report with:
-
-1. Current branch and commit.
-2. Summary of Audit Turn 1 findings.
-3. Summary of implementation changes.
-4. Exact files changed.
-5. Exact files removed.
-6. New architecture/module structure.
-7. Build commands run and results.
-8. Test commands run and results.
-9. Security fixes completed.
-10. Markdown importer verification result.
-11. Tool registry/tool profile result.
-12. Health-check routing result.
-13. Manual golden test result or reason it was not run.
-14. Remaining limitations.
-15. Boundary test result.
-16. Deployment config verification.
-17. Final deployment verdict:
-
-```text
-READY_TO_DEPLOY
-```
-
-or
-
-```text
-NOT_READY_TO_DEPLOY
-```
-
-Do not mark ready unless build, tests, security, and architecture checks all pass.
+The release can still happen as an unlisted beta before full public listing, but the UI must say beta clearly.

@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,

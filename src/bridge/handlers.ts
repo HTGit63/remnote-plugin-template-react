@@ -4,6 +4,7 @@ import {
   type ApprovalResolution,
   type BridgeLifecycleEvent,
   type BridgeLifecyclePhase,
+  type BridgePluginRuntimeInfo,
   type BridgeRequest,
   type BridgeResponse,
   type PendingApprovalRequest,
@@ -85,6 +86,7 @@ export interface BridgeHandlerContext {
   permissionMode: PermissionMode;
   permissionScope: PermissionScope;
   approvedRootRemId: string | null;
+  pluginRuntime?: BridgePluginRuntimeInfo;
   requestApproval: (request: PendingApprovalRequest) => Promise<ApprovalResolution>;
 }
 
@@ -439,6 +441,13 @@ export async function handleBridgeRequest(
           permissionScope: context.permissionScope,
           approvedRootRemId: context.approvedRootRemId,
           focusedRem: await getFocusedRemStatus(plugin),
+          pluginRuntime: context.pluginRuntime,
+          sdkVersion: context.pluginRuntime?.sdkVersion,
+          supportedSdkCapabilities: context.pluginRuntime?.supportedSdkCapabilities,
+          unsupportedSdkCapabilities: context.pluginRuntime?.unsupportedSdkCapabilities,
+          initialSyncComplete: context.pluginRuntime?.initialSyncComplete,
+          initialSyncTimedOut: context.pluginRuntime?.initialSyncTimedOut,
+          initialSyncWarning: context.pluginRuntime?.initialSyncWarning,
         });
         break;
       case 'get_focused_rem': {

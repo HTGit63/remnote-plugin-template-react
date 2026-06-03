@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -82,7 +82,7 @@ import {
 import { RemnoteWriteError, getPartialExecutionDetails, getSdkErrorMessage, mapFormattingError, runSdkOperation } from './writeErrors';
 import { STRUCTURED_BATCH_RESULT_CACHE, STYLED_TREE_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
-import { applyRemStyle, buildRichTextFromSpans, buildStyledText, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemPlainString } from './remnoteSdkHelpers';
+import { applyRemStyle, buildRichTextFromSpans, buildStyledText, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemPlainString, getRemRichText } from './remnoteSdkHelpers';
 import { assertTreeLimits, collectStyledTreePlan, normalizeStyledNode } from './writeValidation';
 import { createFlashcardRem } from './cardWrites';
 
@@ -188,7 +188,7 @@ export async function structuredWriteEngine(
       if (start >= 0) {
         let next: RichTextInterface;
         try {
-          next = (await applyClozeToRange(plugin, created.text, start, start + clozeText.length)).richText;
+          next = (await applyClozeToRange(plugin, getRemRichText(created), start, start + clozeText.length)).richText;
         } catch (error: unknown) {
           throw mapFormattingError(error);
         }

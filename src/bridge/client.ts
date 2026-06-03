@@ -1,6 +1,7 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
   type BridgePluginHello,
+  type BridgePluginRuntimeInfo,
   type BridgePluginRegister,
   type BridgeCancelRequest,
   type BridgeRequest,
@@ -16,6 +17,7 @@ import {
 import { type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
 import type { HostedPairingSession } from './pairing';
+import { getBridgePluginRuntimeInfo } from '../remnote/sdkCapabilities';
 
 const PROTOCOL_VERSION = 1;
 const INITIAL_RECONNECT_MS = 500;
@@ -40,6 +42,7 @@ export class BrowserBridgeClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectDelayMs = INITIAL_RECONNECT_MS;
   private cancelledRequestIds = new Set<string>();
+  private pluginRuntimeInfo: BridgePluginRuntimeInfo | undefined;
   private serverInfo: Pick<
     BridgeStatusSnapshot,
     | 'toolProfile'
@@ -70,6 +73,13 @@ export class BrowserBridgeClient {
     | 'hiddenTools'
     | 'requiresConnectorRefresh'
     | 'serverStartedAt'
+    | 'pluginRuntime'
+    | 'sdkVersion'
+    | 'supportedSdkCapabilities'
+    | 'unsupportedSdkCapabilities'
+    | 'initialSyncComplete'
+    | 'initialSyncTimedOut'
+    | 'initialSyncWarning'
   > = {};
 
   constructor(private readonly options: BrowserBridgeClientOptions) {}
@@ -125,6 +135,13 @@ export class BrowserBridgeClient {
       | 'hiddenTools'
       | 'requiresConnectorRefresh'
       | 'serverStartedAt'
+      | 'pluginRuntime'
+      | 'sdkVersion'
+      | 'supportedSdkCapabilities'
+      | 'unsupportedSdkCapabilities'
+      | 'initialSyncComplete'
+      | 'initialSyncTimedOut'
+      | 'initialSyncWarning'
     > = this.serverInfo
   ) {
     this.options.onStatus({
@@ -166,7 +183,11 @@ export class BrowserBridgeClient {
     this.ws.addEventListener('open', () => {
       this.reconnectDelayMs = INITIAL_RECONNECT_MS;
       this.updateStatus('connecting', 'WebSocket opened. Registering RemNote plugin...');
-      this.sendHello();
+      this.sendHello().catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.updateStatus('error', 'Failed to prepare RemNote plugin registration.', message);
+        this.scheduleReconnect('Retrying after RemNote plugin registration failure.');
+      });
     });
 
     this.ws.addEventListener('message', (event) => {
@@ -185,7 +206,27 @@ export class BrowserBridgeClient {
     });
   }
 
-  private sendHello() {
+  private async getRuntimeInfoForHello(): Promise<BridgePluginRuntimeInfo> {
+    if (this.pluginRuntimeInfo?.initialSyncComplete) {
+      return this.pluginRuntimeInfo;
+    }
+
+    this.updateStatus('connecting', 'Checking RemNote SDK capabilities and initial sync status.');
+    this.pluginRuntimeInfo = await getBridgePluginRuntimeInfo(this.options.plugin);
+    if (this.pluginRuntimeInfo.initialSyncComplete) {
+      this.updateStatus('connecting', 'RemNote initial sync complete. Registering bridge.');
+    } else {
+      this.updateStatus(
+        'connecting',
+        'Registering bridge with initial-sync diagnostic warning.',
+        this.pluginRuntimeInfo.initialSyncWarning
+      );
+    }
+    return this.pluginRuntimeInfo;
+  }
+
+  private async sendHello() {
+    const pluginRuntime = await this.getRuntimeInfoForHello();
     const hostedSession = this.options.hostedSession;
     if (hostedSession?.sessionSecret) {
       const register: BridgePluginRegister = {
@@ -195,6 +236,7 @@ export class BrowserBridgeClient {
         sessionSecret: hostedSession.sessionSecret,
         workspaceLabel: hostedSession.deviceName || 'Active RemNote workspace',
         supportedTools: [...BRIDGE_TOOL_NAMES],
+        pluginRuntime,
         accessScope: hostedSession.accessScope,
         trustedWriteMode: hostedSession.trustedWriteMode,
         toolTier: hostedSession.toolTier,
@@ -207,6 +249,7 @@ export class BrowserBridgeClient {
       type: 'plugin_hello',
       protocolVersion: PROTOCOL_VERSION,
       clientName: 'remnote-plugin',
+      pluginRuntime,
       ...(hostedSession
         ? {
             deploymentMode: 'hosted' as const,
@@ -273,6 +316,18 @@ export class BrowserBridgeClient {
         hiddenTools: parsed.hiddenTools,
         requiresConnectorRefresh: parsed.requiresConnectorRefresh,
         serverStartedAt: parsed.serverStartedAt,
+        pluginRuntime: parsed.pluginRuntime ?? this.pluginRuntimeInfo ?? null,
+        sdkVersion: parsed.sdkVersion ?? this.pluginRuntimeInfo?.sdkVersion,
+        supportedSdkCapabilities:
+          parsed.supportedSdkCapabilities ?? this.pluginRuntimeInfo?.supportedSdkCapabilities,
+        unsupportedSdkCapabilities:
+          parsed.unsupportedSdkCapabilities ?? this.pluginRuntimeInfo?.unsupportedSdkCapabilities,
+        initialSyncComplete:
+          parsed.initialSyncComplete ?? this.pluginRuntimeInfo?.initialSyncComplete,
+        initialSyncTimedOut:
+          parsed.initialSyncTimedOut ?? this.pluginRuntimeInfo?.initialSyncTimedOut,
+        initialSyncWarning:
+          parsed.initialSyncWarning ?? this.pluginRuntimeInfo?.initialSyncWarning,
       };
       this.updateStatus('connected', 'Connected to companion server.');
       return;
@@ -297,6 +352,7 @@ export class BrowserBridgeClient {
         permissionMode: this.options.getPermissionMode(),
         permissionScope: this.options.getPermissionScope(),
         approvedRootRemId: this.options.getApprovedRootRemId(),
+        pluginRuntime: this.pluginRuntimeInfo,
         requestApproval: this.options.requestApproval,
       });
     } catch (error: unknown) {

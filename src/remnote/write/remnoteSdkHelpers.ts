@@ -1,5 +1,5 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -80,6 +80,16 @@ import {
 } from '../richTextFormatting';
 import { RemnoteWriteError, mapFormattingError, runSdkOperation, wrapPartialCreateError } from './writeErrors';
 import { COLOR_FORMATS, type ParentLookupCode } from './writeTypes';
+
+const EMPTY_RICH_TEXT: RichTextInterface = [];
+
+export function getRemRichText(rem: Rem): RichTextInterface {
+  return rem.text ?? EMPTY_RICH_TEXT;
+}
+
+export function getRemChildCount(rem: Rem): number {
+  return rem.children?.length ?? 0;
+}
 
 export async function parseMarkdownToRichText(plugin: RNPlugin, markdown: string): Promise<RichTextInterface> {
   return runSdkOperation('richText.parseFromMarkdown', () =>
@@ -418,7 +428,7 @@ export function normalizeRemStyleInput(style: RemStyleInput | undefined): RemSty
 }
 
 export async function getRemPlainString(plugin: RNPlugin, rem: Rem): Promise<string> {
-  return runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
+  return runSdkOperation('richText.toString', () => plugin.richText.toString(getRemRichText(rem)));
 }
 
 export function validateTextRange(range: { start: number; end: number }, textLength: number) {
@@ -455,7 +465,7 @@ export async function setTextColorInRange(
   status: FormatRemResult['status']
 ): Promise<FormatRemResult> {
   try {
-    const formatted = await applyTextColorToRange(plugin, rem.text, range.start, range.end, color);
+    const formatted = await applyTextColorToRange(plugin, getRemRichText(rem), range.start, range.end, color);
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
     return {
       remId: rem._id,
@@ -483,7 +493,7 @@ export async function setTextHighlightInRange(
   color: string
 ): Promise<FormatRemResult> {
   try {
-    const formatted = await applyTextHighlightToRange(plugin, rem.text, range.start, range.end, color);
+    const formatted = await applyTextHighlightToRange(plugin, getRemRichText(rem), range.start, range.end, color);
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
     return {
       remId: rem._id,
@@ -610,7 +620,7 @@ export async function createRemWithRichText(
 }
 
 export function getInsertIndex(parent: Rem, position: 'start' | 'end' | undefined): number {
-  return position === 'start' ? 0 : parent.children.length;
+  return position === 'start' ? 0 : getRemChildCount(parent);
 }
 
 export async function getFreshInsertIndex(
@@ -667,18 +677,17 @@ export async function getRemApprovalContext(
   childCount: number;
 }> {
   const rem = await findRequiredRem(plugin, remId, label, code);
-  const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
+  const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(getRemRichText(rem)));
 
   return {
     remId: rem._id,
     title: title.trim() || rem._id,
-    hasChildren: rem.children.length > 0,
-    childCount: rem.children.length,
+    hasChildren: getRemChildCount(rem) > 0,
+    childCount: getRemChildCount(rem),
   };
 }
 
 export async function getRemTitle(plugin: RNPlugin, rem: Rem): Promise<string> {
-  const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(rem.text));
+  const title = await runSdkOperation('richText.toString', () => plugin.richText.toString(getRemRichText(rem)));
   return title.trim() || rem._id;
 }
-

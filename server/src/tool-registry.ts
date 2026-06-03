@@ -136,7 +136,7 @@ export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: strin
   for (const tool of STATIC_SDK_UNSUPPORTED_TOOLS) {
     hidden.push({
       name: tool,
-      reason: 'Tool is unsupported by the installed RemNote SDK and is not public or callable.',
+      reason: 'Tool is hidden until the modern RemNote SDK path is live-verified.',
     });
   }
   return hidden;
@@ -268,7 +268,7 @@ export function getToolRegistrySummary(
         recommendedFallback: policy.replacement ?? null,
         schemaWarningStatus: sdkUnsupported || !metadata.sdkSupported ? 'sdk_unsupported' : 'ok',
         schemaWarnings: sdkUnsupported || !metadata.sdkSupported
-          ? ['Tool is not exposed because the installed RemNote SDK cannot support it safely.']
+          ? ['Tool is not exposed until the RemNote SDK path is live-verified.']
           : [],
       };
     }),

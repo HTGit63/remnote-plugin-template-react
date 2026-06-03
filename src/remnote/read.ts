@@ -1,4 +1,4 @@
-import type { Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   DetectedContentType,
   GetChildrenArgs,
@@ -150,7 +150,7 @@ async function summarizeRem(
     plainText,
     breadcrumbs: await buildRemBreadcrumbs(plugin, rem),
     index,
-    hasChildren: rem.children.length > 0,
+    hasChildren: (rem.children?.length ?? 0) > 0,
     type: await getRemStructureType(rem),
   };
 }
@@ -577,7 +577,9 @@ export async function debugGetRawRichText(
     return undefined;
   }
 
-  const richLength = await plugin.richText.length(rem.text).catch(() => undefined);
+  const richLength = rem.text
+    ? await plugin.richText.length(rem.text).catch(() => undefined)
+    : undefined;
   const backRichLength = rem.backText
     ? await plugin.richText.length(rem.backText).catch(() => undefined)
     : undefined;

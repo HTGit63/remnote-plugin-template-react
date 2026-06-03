@@ -1,4 +1,8 @@
-import type { BridgeToolPolicy, BridgeToolProfile } from '../../shared/bridge/protocol';
+import type {
+  BridgePluginRuntimeInfo,
+  BridgeToolPolicy,
+  BridgeToolProfile,
+} from '../../shared/bridge/protocol';
 
 export type BridgeConnectionState =
   | 'not_paired'
@@ -54,6 +58,13 @@ export interface BridgeStatusSnapshot {
   hiddenTools?: Array<{ name: string; reason: string }>;
   requiresConnectorRefresh?: boolean;
   serverStartedAt?: string;
+  pluginRuntime?: BridgePluginRuntimeInfo | null;
+  sdkVersion?: string;
+  supportedSdkCapabilities?: BridgePluginRuntimeInfo['supportedSdkCapabilities'];
+  unsupportedSdkCapabilities?: BridgePluginRuntimeInfo['unsupportedSdkCapabilities'];
+  initialSyncComplete?: boolean;
+  initialSyncTimedOut?: boolean;
+  initialSyncWarning?: string;
 }
 
 export const DEFAULT_BRIDGE_SERVER_URL = 'ws://localhost:47391/remnote-bridge';

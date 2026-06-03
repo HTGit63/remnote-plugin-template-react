@@ -96,7 +96,7 @@ export function normalizeTextColor(input: string): RichTextFormatName {
   if (!INSTALLED_TEXT_COLOR_SET.has(official)) {
     throw new RichTextFormattingError(
       'SDK_UNSUPPORTED',
-      `Text color "${official}" is not exposed by installed @remnote/plugin-sdk 0.0.14 typings.`,
+      `Text color "${official}" is not exposed by the current @remnote/plugin-sdk formatter typings.`,
       {
         requestedColor: input,
         normalizedColor: official,
