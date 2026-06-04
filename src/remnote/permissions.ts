@@ -23,6 +23,7 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'get_rem_breadcrumbs',
   'search_rems',
   'get_document_or_folder_tree',
+  'preview_markdown_note_tree',
   'verify_note_design',
 ]);
 
@@ -49,6 +50,8 @@ const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'apply_structured_note_batch',
   'create_polished_note_tree',
   'create_or_replace_note_from_markdown',
+  'create_note_from_markdown_tree',
+  'append_markdown_as_rem_tree',
   'apply_style_plan',
   'create_basic_flashcard',
   'create_concept_card',

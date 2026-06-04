@@ -22,9 +22,11 @@
     "test:tool-profile": "tsx src/area1-smoke.ts tool-profile && tsx src/area3-certification.ts all",
     "test:health-check-routing": "tsx src/area3-certification.ts health-routing",
     "test:structured-depth": "tsx src/area1-smoke.ts structured-depth",
-    "test:style-schema": "tsx src/area1-smoke.ts style-schema",
+    "test:style-schema": "tsx src/area1-smoke.ts style-schema && tsx ../src/remnote/write/style-correctness-regression.ts",
     "test:nuclear-physics-style-preset": "tsx src/area1-smoke.ts nuclear-physics-style-preset",
     "test:markdown-importer": "tsx src/area1-smoke.ts markdown-importer && tsx src/area3-certification.ts markdown-importer",
+    "test:markdown-pipeline-benchmark": "tsx src/markdown-pipeline-benchmark.ts",
+    "test:performance-benchmark": "tsx src/performance-benchmark.ts",
     "test:source-fidelity": "tsx src/area1-smoke.ts source-fidelity",
     "test:direct-write-trusted-mode-regression": "tsx src/area1-smoke.ts direct-write-trusted-mode-regression",
     "test:tool-schemas": "tsx src/area1-smoke.ts schemas && tsx src/area3-certification.ts schemas",
@@ -33,10 +35,10 @@
     "test:area2": "tsx src/area2-smoke.ts",
     "test:area3": "tsx src/area3-certification.ts all",
     "test:idempotency": "tsx src/area1-smoke.ts idempotency && tsx src/area3-certification.ts idempotency",
-    "test:performance": "tsx src/area1-smoke.ts performance && tsx src/area3-certification.ts performance",
+    "test:performance": "tsx src/area1-smoke.ts performance && tsx src/area3-certification.ts performance && tsx src/performance-benchmark.ts",
     "test:e2e-hosted-smoke": "tsx src/routing-smoke.ts && tsx src/area2-smoke.ts && tsx src/area3-certification.ts hosted",
-    "smoke": "tsx src/local-mode-smoke.ts && tsx src/smoke.ts",
-    "live-test": "tsx src/live-test.ts"
+    "smoke": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/local-mode-smoke.ts && tsx src/smoke.ts",
+    "live-test": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/live-test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

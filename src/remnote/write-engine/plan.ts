@@ -1,4 +1,5 @@
 import type { StyledRemTreeNode } from '../../../shared/bridge/protocol';
+import { DEFAULT_WRITE_PERFORMANCE_BUDGET_MS } from '../../../shared/bridge/performance';
 import type { BuildWriteOperationPlanInput, WriteOperationPlan, WriteTreeMetrics } from './types';
 
 const CARD_NODE_TYPES = new Set([
@@ -137,6 +138,7 @@ export function buildWriteOperationPlan(input: BuildWriteOperationPlanInput): Wr
     estimatedOperationCount,
     estimatedTimeBudgetMs:
       input.estimatedTimeBudgetMs ?? Math.max(750, Math.min(5000, estimatedOperationCount * 75)),
+    performanceBudgetMs: DEFAULT_WRITE_PERFORMANCE_BUDGET_MS,
     transaction: {
       requested: true,
       supported: false,

@@ -2,6 +2,7 @@ import type {
   ApplyStructuredNoteBatchArgs,
   ExpectedStyleMapEntry,
   MarkdownDuplicatePolicy,
+  MarkdownFlashcardOptions,
   MarkdownImportMode,
   PracticeDirection,
   RemColorName,
@@ -14,6 +15,7 @@ import type {
   StylingPlanOperation,
 } from './protocol-write-args.js';
 import type { BridgeErrorCode } from './protocol-core.js';
+import type { WritePerformanceBudgetMs, WritePerformanceReport } from './performance.js';
 
 export interface WriteOperationPlan {
   operationId: string;
@@ -37,6 +39,7 @@ export interface WriteOperationPlan {
   estimatedPayloadSize: number;
   estimatedOperationCount: number;
   estimatedTimeBudgetMs: number;
+  performanceBudgetMs: WritePerformanceBudgetMs;
   transaction: {
     requested: boolean;
     supported: boolean;
@@ -189,6 +192,7 @@ export interface FormatRemResult {
 
 export interface ApplyRemnoteCommandResult {
   remId: string;
+  createdRemId?: string;
   command: RemnoteCommandName;
   status: 'command_applied' | 'already_applied' | 'dry_run';
   dryRun?: boolean;
@@ -208,7 +212,7 @@ export interface CreateStyledRemTreeResult {
   }>;
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
-  status: 'created_styled_tree' | 'dry_run' | 'already_applied';
+  status: 'created_styled_tree' | 'dry_run' | 'already_applied' | 'success_with_performance_warning';
   dryRun?: boolean;
   idempotencyKey?: string;
   plannedNodeCount?: number;
@@ -219,6 +223,7 @@ export interface CreateStyledRemTreeResult {
   styleOperationCount?: number;
   mathNodeCount?: number;
   cardNodeCount?: number;
+  performance?: WritePerformanceReport;
 }
 
 export interface StructuredNoteBatchVerification {
@@ -244,9 +249,45 @@ export interface MarkdownImportVerification {
   pollutionRems: string[];
 }
 
+export interface MarkdownFormulaValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export interface PreviewMarkdownNoteTreeResult {
+  ok: true;
+  status: 'previewed';
+  dryRun: true;
+  tree: StyledRemTreeNode;
+  nodeCount: number;
+  maxDepth: number;
+  sourceHash: string;
+  outputHash: string;
+  outputText: string;
+  formulaValidation: MarkdownFormulaValidationResult;
+  flashcardOptions?: Required<MarkdownFlashcardOptions>;
+  verification: MarkdownImportVerification;
+  plan: {
+    previewOutline: string[];
+    headingCount: number;
+    mathBlockCount: number;
+    inlineMathCount: number;
+    codeBlockCount: number;
+    tableCount: number;
+    tableRowCount: number;
+    tableCellCount: number;
+    paragraphCount: number;
+    bulletCount: number;
+    calloutCount: number;
+    workedExampleCount: number;
+    flashcardCount: number;
+    splitChunkCount: number;
+  };
+}
+
 export interface ApplyStructuredNoteBatchResult {
   operationId?: string;
-  status: 'dry_run' | 'applied' | 'already_applied';
+  status: 'dry_run' | 'applied' | 'already_applied' | 'success_with_performance_warning';
   targetRemId?: string;
   parentId?: string;
   operation?: StructuredNoteOperation;
@@ -275,6 +316,7 @@ export interface ApplyStructuredNoteBatchResult {
     removedRemIds?: string[];
     failedRemIds?: string[];
   };
+  performance?: WritePerformanceReport;
 }
 
 export interface ApplyStylePlanResult {
@@ -347,7 +389,8 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
     | 'replaced'
     | 'skipped'
     | 'already_applied'
-    | 'partial_failure';
+    | 'partial_failure'
+    | 'success_with_performance_warning';
   mode: MarkdownImportMode;
   duplicatePolicy: MarkdownDuplicatePolicy;
   plan?: {
@@ -357,10 +400,26 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
     inlineMathCount: number;
     codeBlockCount: number;
     tableCount: number;
+    tableRowCount: number;
+    tableCellCount: number;
     paragraphCount: number;
     bulletCount: number;
+    calloutCount: number;
+    workedExampleCount: number;
+    flashcardCount: number;
+    splitChunkCount: number;
+  };
+  performance?: WritePerformanceReport;
+  fallback?: {
+    used: boolean;
+    reason?: string;
+    chunkCount?: number;
+    strategy?: 'one_shot' | 'section_chunks';
   };
 }
+
+export type CreateNoteFromMarkdownTreeResult = CreateOrReplaceNoteFromMarkdownResult;
+export type AppendMarkdownAsRemTreeResult = CreateOrReplaceNoteFromMarkdownResult;
 
 export interface VerifyNoteDesignResult {
   rootRemId: string;
@@ -385,6 +444,12 @@ export interface VerifyNoteDesignResult {
     remId: string;
     type: string;
     reason: string;
+  }>;
+  repairSuggestions?: Array<{
+    remId: string;
+    tool: string;
+    reason: string;
+    args?: Record<string, unknown>;
   }>;
 }
 

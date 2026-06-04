@@ -80,6 +80,8 @@ const RICH_TEXT_COLOR_NUMBERS: Record<string, number> = {
   purple: 5,
   blue: 6,
 };
+const STYLE_CONTROL_POLLUTION_TEXTS = new Set(['Size', 'H1', 'H2', 'H3', 'normal']);
+const VISIBLE_DISPLAY_MATH_DELIMITER_PATTERN = /\$\$|\\\[|\\\]/;
 
 export function richTextHasSpanField(
   richText: RichTextInterface | undefined,
@@ -146,6 +148,38 @@ function richTextLooksLikeMath(richText: RichTextInterface | undefined): boolean
 
   const serialized = JSON.stringify(richText).toLowerCase();
   return serialized.includes('latex') || serialized.includes('math');
+}
+
+function richTextMathSpans(richText: RichTextInterface | undefined): Array<{ latex: string; block: boolean }> {
+  if (!richText) {
+    return [];
+  }
+  const spans: Array<{ latex: string; block: boolean }> = [];
+  for (const item of richText) {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+      continue;
+    }
+    const record = item as Record<string, unknown>;
+    const isMath =
+      record.i === 'x' ||
+      record.type === 'inlineMath' ||
+      record.type === 'mathBlock' ||
+      record.latex !== undefined;
+    if (!isMath) {
+      continue;
+    }
+    const latex =
+      typeof record.text === 'string'
+        ? record.text
+        : typeof record.latex === 'string'
+          ? record.latex
+          : '';
+    spans.push({
+      latex,
+      block: record.block === true || record.type === 'mathBlock',
+    });
+  }
+  return spans;
 }
 
 function isSpacerPlainText(text: string): boolean {
@@ -292,6 +326,7 @@ export async function verifyNoteDesign(
   const checkedRemIds: string[] = [];
   const mismatches: VerifyNoteDesignResult['mismatches'] = [];
   const unsupportedChecks: VerifyNoteDesignResult['unsupportedChecks'] = [];
+  const repairSuggestions: NonNullable<VerifyNoteDesignResult['repairSuggestions']> = [];
   const entries = Object.entries(args.expectedStyleMap ?? {}) as Array<[string, ExpectedStyleMapEntry]>;
   const idsToCheck: Array<[string, ExpectedStyleMapEntry]> = entries.length
     ? entries
@@ -422,6 +457,87 @@ export async function verifyNoteDesign(
         });
       }
     }
+
+    const children = await rem.getChildrenRem().catch(() => []);
+    if (expected.expectedChildCount !== undefined && children.length !== expected.expectedChildCount) {
+      mismatches.push({
+        remId,
+        type: 'childCount',
+        expected: expected.expectedChildCount,
+        actual: children.length,
+        message: 'Direct child count mismatch.',
+        fixSuggestion: 'Inspect child creation path and rerun the high-level note writer if needed.',
+      });
+    }
+
+    const forbiddenChildTexts = new Set([
+      ...STYLE_CONTROL_POLLUTION_TEXTS,
+      ...(expected.forbiddenChildTexts ?? []),
+    ]);
+    for (const child of children) {
+      checkedRemIds.push(child._id);
+      const childText = (await getRemPlainString(plugin, child)).trim();
+      if (forbiddenChildTexts.has(childText)) {
+        mismatches.push({
+          remId: child._id,
+          type: 'pollutionRem',
+          expected: 'no style-control child Rem',
+          actual: childText,
+          message: `Detected pollution Rem "${childText}".`,
+          fixSuggestion: 'Remove the pollution child Rem after approval; style tools must use SDK style APIs only.',
+        });
+        repairSuggestions.push({
+          remId: child._id,
+          tool: 'delete_rem_by_id',
+          reason: `Style-control pollution Rem "${childText}" detected.`,
+          args: {
+            remId: child._id,
+            expectedParentId: remId,
+            confirmTitle: childText,
+            dryRun: true,
+          },
+        });
+      }
+    }
+
+    const visibleMathForbidden =
+      expected.noVisibleMathDelimiters === true || expected.allowVisibleMathDelimiters !== true;
+    if (visibleMathForbidden && VISIBLE_DISPLAY_MATH_DELIMITER_PATTERN.test(plainText)) {
+      mismatches.push({
+        remId,
+        type: 'brokenFormulaText',
+        expected: 'RemNote math node',
+        actual: plainText,
+        message: 'Visible display-math delimiters found in plain text.',
+        fixSuggestion: 'Use update_rem_rich, create_polished_note_tree, or Markdown tree import with math spans.',
+      });
+      repairSuggestions.push({
+        remId,
+        tool: 'update_rem_rich',
+        reason: 'Visible display-math delimiters should become RemNote math rich-text nodes.',
+      });
+    }
+
+    for (const expectedMath of expected.mathSpans ?? []) {
+      const actualSpans = richTextMathSpans(rem.text);
+      const found = actualSpans.some((span) => {
+        const latexMatches = expectedMath.latex === undefined || span.latex === expectedMath.latex;
+        const blockMatches = expectedMath.block === undefined || span.block === expectedMath.block;
+        return latexMatches && blockMatches;
+      });
+      if (!found) {
+        mismatches.push({
+          remId,
+          type: 'mathType',
+          expected: expectedMath,
+          actual: actualSpans,
+          message: 'Expected RemNote math rich-text span was not found.',
+          fixSuggestion: expectedMath.block
+            ? 'Create a separate mathBlock Rem or use update_rem_rich with a block math span.'
+            : 'Use update_rem_rich or Markdown tree import with an inline math span.',
+        });
+      }
+    }
   }
 
   return {
@@ -431,5 +547,6 @@ export async function verifyNoteDesign(
     checkedRemIds,
     mismatches,
     unsupportedChecks,
+    repairSuggestions,
   };
 }

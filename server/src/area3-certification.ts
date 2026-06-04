@@ -317,10 +317,11 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         maxNodeCount: 5,
         idempotencyKey: idempotencyKey(tool),
       };
-    case 'create_or_replace_note_from_markdown':
-      return {
-        parentRemId: parentId,
-        markdownText: [
+    case 'preview_markdown_note_tree':
+    case 'create_note_from_markdown_tree':
+    case 'append_markdown_as_rem_tree':
+    case 'create_or_replace_note_from_markdown': {
+      const markdownText = [
           '# Area 3 Markdown Import',
           '',
           '### Section One',
@@ -335,7 +336,23 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
           '',
           '- bullet',
           '  - nested bullet',
-        ].join('\n'),
+          '',
+          '| Quantity | Symbol |',
+          '| --- | --- |',
+          '| Energy | $E$ |',
+        ].join('\n');
+      if (tool === 'preview_markdown_note_tree') {
+        return {
+          markdownText,
+          limits: {
+            maxDepth: 8,
+            maxNodes: 200,
+          },
+        };
+      }
+      return {
+        ...(tool === 'append_markdown_as_rem_tree' ? { targetRemId } : { parentRemId: parentId }),
+        markdownText,
         mode: 'create_child',
         duplicatePolicy: 'create_new',
         safetyOptions: {
@@ -349,6 +366,7 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
           maxNodes: 200,
         },
       };
+    }
     case 'apply_style_plan':
       return {
         operations: [{ remId: targetRemId, type: 'heading', headingLevel: 'H2' }],
@@ -517,6 +535,9 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'apply_structured_note_batch':
     case 'create_polished_note_tree':
     case 'create_or_replace_note_from_markdown':
+    case 'preview_markdown_note_tree':
+    case 'create_note_from_markdown_tree':
+    case 'append_markdown_as_rem_tree':
     case 'apply_style_plan':
     case 'verify_note_design':
     case 'create_basic_flashcard':
@@ -708,6 +729,11 @@ function assertIdempotencyAndDryRun(publicTools: readonly string[], seen: readon
       const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
       assert(safetyOptions?.dryRun === true, 'create_or_replace_note_from_markdown certification must use safetyOptions.dryRun=true.');
       assert(typeof safetyOptions.idempotencyKey === 'string', 'create_or_replace_note_from_markdown certification must pass nested idempotencyKey.');
+    }
+    if (request.tool === 'create_note_from_markdown_tree' || request.tool === 'append_markdown_as_rem_tree') {
+      const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
+      assert(safetyOptions?.dryRun === true, `${request.tool} certification must use safetyOptions.dryRun=true.`);
+      assert(typeof safetyOptions.idempotencyKey === 'string', `${request.tool} certification must pass nested idempotencyKey.`);
     }
     if (metadata.requiresDelete) {
       assert(request.args.dryRun === true, `${publicName} delete certification must use dryRun=true.`);

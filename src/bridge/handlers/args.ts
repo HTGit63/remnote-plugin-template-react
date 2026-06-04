@@ -1,7 +1,10 @@
 import type {
   BridgeToolArgs,
   BridgeToolName,
+  AppendMarkdownAsRemTreeArgs,
+  CreateNoteFromMarkdownTreeArgs,
   CreateOrReplaceNoteFromMarkdownArgs,
+  PreviewMarkdownNoteTreeArgs,
   VerifyNoteDesignArgs,
 } from '../../../shared/bridge/protocol';
 
@@ -253,32 +256,154 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         maxDepth: optionalBoundedNumber(args, 'maxDepth'),
         maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
       } as BridgeToolArgs[TTool];
+    case 'preview_markdown_note_tree':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        markdownText: requiredMarkdownText(args),
+        headingMapping: isPlainObject(raw.headingMapping)
+          ? (raw.headingMapping as PreviewMarkdownNoteTreeArgs['headingMapping'])
+          : undefined,
+        remnoteLayout: isPlainObject(raw.remnoteLayout)
+          ? (raw.remnoteLayout as PreviewMarkdownNoteTreeArgs['remnoteLayout'])
+          : undefined,
+        mathOptions: isPlainObject(raw.mathOptions)
+          ? (raw.mathOptions as PreviewMarkdownNoteTreeArgs['mathOptions'])
+          : undefined,
+        fidelityOptions: isPlainObject(raw.fidelityOptions)
+          ? (raw.fidelityOptions as PreviewMarkdownNoteTreeArgs['fidelityOptions'])
+          : undefined,
+        flashcardOptions: isPlainObject(raw.flashcardOptions)
+          ? (raw.flashcardOptions as PreviewMarkdownNoteTreeArgs['flashcardOptions'])
+          : undefined,
+        limits: isPlainObject(raw.limits)
+          ? (raw.limits as PreviewMarkdownNoteTreeArgs['limits'])
+          : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as PreviewMarkdownNoteTreeArgs['stylePreset'],
+        course: getStringField(args, 'course'),
+        rootHeadingLevel: getStringField(args, 'rootHeadingLevel') as PreviewMarkdownNoteTreeArgs['rootHeadingLevel'],
+        sectionHeadingLevel: getStringField(args, 'sectionHeadingLevel') as PreviewMarkdownNoteTreeArgs['sectionHeadingLevel'],
+        insertSiblingSpacers: optionalBoolean(args, 'insertSiblingSpacers'),
+        spacerText: getStringField(args, 'spacerText'),
+        majorFormulaMode: getStringField(args, 'majorFormulaMode') as PreviewMarkdownNoteTreeArgs['majorFormulaMode'],
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'create_note_from_markdown_tree':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        parentRemId: requiredRemId(args, 'parentRemId'),
+        markdownText: requiredMarkdownText(args),
+        duplicatePolicy: getStringField(args, 'duplicatePolicy') as CreateNoteFromMarkdownTreeArgs['duplicatePolicy'],
+        headingMapping: isPlainObject(raw.headingMapping)
+          ? (raw.headingMapping as CreateNoteFromMarkdownTreeArgs['headingMapping'])
+          : undefined,
+        remnoteLayout: isPlainObject(raw.remnoteLayout)
+          ? (raw.remnoteLayout as CreateNoteFromMarkdownTreeArgs['remnoteLayout'])
+          : undefined,
+        mathOptions: isPlainObject(raw.mathOptions)
+          ? (raw.mathOptions as CreateNoteFromMarkdownTreeArgs['mathOptions'])
+          : undefined,
+        fidelityOptions: isPlainObject(raw.fidelityOptions)
+          ? (raw.fidelityOptions as CreateNoteFromMarkdownTreeArgs['fidelityOptions'])
+          : undefined,
+        flashcardOptions: isPlainObject(raw.flashcardOptions)
+          ? (raw.flashcardOptions as CreateNoteFromMarkdownTreeArgs['flashcardOptions'])
+          : undefined,
+        safetyOptions: isPlainObject(raw.safetyOptions)
+          ? (raw.safetyOptions as CreateNoteFromMarkdownTreeArgs['safetyOptions'])
+          : undefined,
+        limits: isPlainObject(raw.limits)
+          ? (raw.limits as CreateNoteFromMarkdownTreeArgs['limits'])
+          : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as CreateNoteFromMarkdownTreeArgs['stylePreset'],
+        course: getStringField(args, 'course'),
+        rootHeadingLevel: getStringField(args, 'rootHeadingLevel') as CreateNoteFromMarkdownTreeArgs['rootHeadingLevel'],
+        sectionHeadingLevel: getStringField(args, 'sectionHeadingLevel') as CreateNoteFromMarkdownTreeArgs['sectionHeadingLevel'],
+        insertSiblingSpacers: optionalBoolean(args, 'insertSiblingSpacers'),
+        spacerText: getStringField(args, 'spacerText'),
+        majorFormulaMode: getStringField(args, 'majorFormulaMode') as CreateNoteFromMarkdownTreeArgs['majorFormulaMode'],
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'append_markdown_as_rem_tree':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        targetRemId: requiredRemId(args, 'targetRemId'),
+        markdownText: requiredMarkdownText(args),
+        headingMapping: isPlainObject(raw.headingMapping)
+          ? (raw.headingMapping as AppendMarkdownAsRemTreeArgs['headingMapping'])
+          : undefined,
+        remnoteLayout: isPlainObject(raw.remnoteLayout)
+          ? (raw.remnoteLayout as AppendMarkdownAsRemTreeArgs['remnoteLayout'])
+          : undefined,
+        mathOptions: isPlainObject(raw.mathOptions)
+          ? (raw.mathOptions as AppendMarkdownAsRemTreeArgs['mathOptions'])
+          : undefined,
+        fidelityOptions: isPlainObject(raw.fidelityOptions)
+          ? (raw.fidelityOptions as AppendMarkdownAsRemTreeArgs['fidelityOptions'])
+          : undefined,
+        flashcardOptions: isPlainObject(raw.flashcardOptions)
+          ? (raw.flashcardOptions as AppendMarkdownAsRemTreeArgs['flashcardOptions'])
+          : undefined,
+        safetyOptions: isPlainObject(raw.safetyOptions)
+          ? (raw.safetyOptions as AppendMarkdownAsRemTreeArgs['safetyOptions'])
+          : undefined,
+        limits: isPlainObject(raw.limits)
+          ? (raw.limits as AppendMarkdownAsRemTreeArgs['limits'])
+          : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as AppendMarkdownAsRemTreeArgs['stylePreset'],
+        course: getStringField(args, 'course'),
+        rootHeadingLevel: getStringField(args, 'rootHeadingLevel') as AppendMarkdownAsRemTreeArgs['rootHeadingLevel'],
+        sectionHeadingLevel: getStringField(args, 'sectionHeadingLevel') as AppendMarkdownAsRemTreeArgs['sectionHeadingLevel'],
+        insertSiblingSpacers: optionalBoolean(args, 'insertSiblingSpacers'),
+        spacerText: getStringField(args, 'spacerText'),
+        majorFormulaMode: getStringField(args, 'majorFormulaMode') as AppendMarkdownAsRemTreeArgs['majorFormulaMode'],
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+      } as BridgeToolArgs[TTool];
+    }
     case 'create_or_replace_note_from_markdown':
+    {
+      const raw = isPlainObject(args) ? args : {};
       return {
         parentRemId: optionalRemId(args, 'parentRemId') ?? undefined,
         targetRemId: optionalRemId(args, 'targetRemId') ?? undefined,
         markdownText: requiredMarkdownText(args),
         mode: getStringField(args, 'mode') as CreateOrReplaceNoteFromMarkdownArgs['mode'],
         duplicatePolicy: getStringField(args, 'duplicatePolicy') as CreateOrReplaceNoteFromMarkdownArgs['duplicatePolicy'],
-        headingMapping: isPlainObject(args) && isPlainObject(args.headingMapping)
-          ? (args.headingMapping as CreateOrReplaceNoteFromMarkdownArgs['headingMapping'])
+        headingMapping: isPlainObject(raw.headingMapping)
+          ? (raw.headingMapping as CreateOrReplaceNoteFromMarkdownArgs['headingMapping'])
           : undefined,
-        remnoteLayout: isPlainObject(args) && isPlainObject(args.remnoteLayout)
-          ? (args.remnoteLayout as CreateOrReplaceNoteFromMarkdownArgs['remnoteLayout'])
+        remnoteLayout: isPlainObject(raw.remnoteLayout)
+          ? (raw.remnoteLayout as CreateOrReplaceNoteFromMarkdownArgs['remnoteLayout'])
           : undefined,
-        mathOptions: isPlainObject(args) && isPlainObject(args.mathOptions)
-          ? (args.mathOptions as CreateOrReplaceNoteFromMarkdownArgs['mathOptions'])
+        mathOptions: isPlainObject(raw.mathOptions)
+          ? (raw.mathOptions as CreateOrReplaceNoteFromMarkdownArgs['mathOptions'])
           : undefined,
-        fidelityOptions: isPlainObject(args) && isPlainObject(args.fidelityOptions)
-          ? (args.fidelityOptions as CreateOrReplaceNoteFromMarkdownArgs['fidelityOptions'])
+        fidelityOptions: isPlainObject(raw.fidelityOptions)
+          ? (raw.fidelityOptions as CreateOrReplaceNoteFromMarkdownArgs['fidelityOptions'])
           : undefined,
-        safetyOptions: isPlainObject(args) && isPlainObject(args.safetyOptions)
-          ? (args.safetyOptions as CreateOrReplaceNoteFromMarkdownArgs['safetyOptions'])
+        flashcardOptions: isPlainObject(raw.flashcardOptions)
+          ? (raw.flashcardOptions as CreateOrReplaceNoteFromMarkdownArgs['flashcardOptions'])
           : undefined,
-        limits: isPlainObject(args) && isPlainObject(args.limits)
-          ? (args.limits as CreateOrReplaceNoteFromMarkdownArgs['limits'])
+        safetyOptions: isPlainObject(raw.safetyOptions)
+          ? (raw.safetyOptions as CreateOrReplaceNoteFromMarkdownArgs['safetyOptions'])
           : undefined,
+        limits: isPlainObject(raw.limits)
+          ? (raw.limits as CreateOrReplaceNoteFromMarkdownArgs['limits'])
+          : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as CreateOrReplaceNoteFromMarkdownArgs['stylePreset'],
+        course: getStringField(args, 'course'),
+        rootHeadingLevel: getStringField(args, 'rootHeadingLevel') as CreateOrReplaceNoteFromMarkdownArgs['rootHeadingLevel'],
+        sectionHeadingLevel: getStringField(args, 'sectionHeadingLevel') as CreateOrReplaceNoteFromMarkdownArgs['sectionHeadingLevel'],
+        insertSiblingSpacers: optionalBoolean(args, 'insertSiblingSpacers'),
+        spacerText: getStringField(args, 'spacerText'),
+        majorFormulaMode: getStringField(args, 'majorFormulaMode') as CreateOrReplaceNoteFromMarkdownArgs['majorFormulaMode'],
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
       } as BridgeToolArgs[TTool];
+    }
     case 'apply_style_plan':
       return {
         operations: requiredStyleOperations(args),
@@ -293,6 +418,15 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         expectedStyleMap: requiredExpectedStyleMap(args),
         expectations: isPlainObject(args) && Array.isArray(args.expectations) ? (args.expectations as VerifyNoteDesignArgs['expectations']) : undefined,
         expectedStyles: isPlainObject(args) && Array.isArray(args.expectedStyles) ? (args.expectedStyles as VerifyNoteDesignArgs['expectedStyles']) : undefined,
+        expected: isPlainObject(args) && isPlainObject(args.expected) ? (args.expected as VerifyNoteDesignArgs['expected']) : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as VerifyNoteDesignArgs['stylePreset'],
+        course: getStringField(args, 'course'),
+        rootHeadingLevel: getStringField(args, 'rootHeadingLevel') as VerifyNoteDesignArgs['rootHeadingLevel'],
+        sectionHeadingLevel: getStringField(args, 'sectionHeadingLevel') as VerifyNoteDesignArgs['sectionHeadingLevel'],
+        insertSiblingSpacers: optionalBoolean(args, 'insertSiblingSpacers'),
+        spacerText: getStringField(args, 'spacerText'),
+        majorFormulaMode: getStringField(args, 'majorFormulaMode') as VerifyNoteDesignArgs['majorFormulaMode'],
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
       } as VerifyNoteDesignArgs as BridgeToolArgs[TTool];
     case 'create_basic_flashcard':
     case 'create_concept_card':

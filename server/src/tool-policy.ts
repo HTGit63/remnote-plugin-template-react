@@ -46,7 +46,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'core';
-export const TOOL_SCHEMA_VERSION = '2026-06-02.markdown-importer';
+export const TOOL_SCHEMA_VERSION = '2026-06-04.markdown-tree';
 
 export const CORE_TIER_TOOLS = [
   'get_bridge_status',
@@ -78,6 +78,9 @@ export const ADVANCED_NOTES_TIER_TOOLS = [
   'create_styled_rem_tree',
   'create_polished_note_tree',
   'create_or_replace_note_from_markdown',
+  'preview_markdown_note_tree',
+  'create_note_from_markdown_tree',
+  'append_markdown_as_rem_tree',
   'apply_structured_note_batch',
   'apply_style_plan',
   'verify_note_design',
@@ -107,6 +110,21 @@ const ADVANCED_SET = new Set<string>(ADVANCED_NOTES_TIER_TOOLS);
 const DEVELOPER_SET = new Set<string>(DEVELOPER_DIAGNOSTICS_TIER_TOOLS);
 
 export const TOOL_POLICY_ENTRIES = [
+  {
+    name: 'create_note_from_markdown_tree',
+    policy: 'preferred',
+    preferredFor: ['new Markdown notes', 'clean Rem hierarchy', 'formula-heavy notes', 'tables and worked examples'],
+  },
+  {
+    name: 'append_markdown_as_rem_tree',
+    policy: 'preferred',
+    preferredFor: ['appending Markdown as child Rem hierarchy', 'structured note extension'],
+  },
+  {
+    name: 'preview_markdown_note_tree',
+    policy: 'preferred',
+    preferredFor: ['dry-run Markdown import preview', 'checking formulas and hierarchy before writing'],
+  },
   {
     name: 'create_or_replace_note_from_markdown',
     policy: 'preferred',
@@ -302,6 +320,13 @@ export const TOOL_METADATA = [
   meta('create_styled_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_polished_note_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_or_replace_note_from_markdown', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('preview_markdown_note_tree', 'batch', 'low', {
+    requiresWrite: false,
+    supportsDryRun: true,
+    supportsIdempotency: true,
+  }),
+  meta('create_note_from_markdown_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('append_markdown_as_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_structured_note_batch', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_style_plan', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('verify_note_design', 'read', 'low'),

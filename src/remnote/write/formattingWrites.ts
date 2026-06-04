@@ -81,15 +81,40 @@ import {
 import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeErrors';
 import { REMNOTE_COMMAND_RESULT_CACHE, STYLE_PLAN_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
-import { buildRichTextFromSpans, findRequiredRem, getColorFormat, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
+import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getColorFormat, getFreshInsertIndex, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
+
+async function getDirectChildIds(rem: Rem): Promise<string[]> {
+  return (await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem())).map((child) => child._id);
+}
+
+function withNoChildMutationProof(
+  result: FormatRemResult,
+  beforeChildIds: readonly string[],
+  afterChildIds: readonly string[]
+): FormatRemResult {
+  return {
+    ...result,
+    verification: {
+      ...(result.verification ?? {}),
+      childCountBefore: beforeChildIds.length,
+      childCountAfter: afterChildIds.length,
+      childIdsBefore: [...beforeChildIds],
+      childIdsAfter: [...afterChildIds],
+      noChildrenCreated: afterChildIds.length === beforeChildIds.length &&
+        afterChildIds.every((id) => beforeChildIds.includes(id)),
+    },
+  };
+}
 
 export async function setRemHeadingLevel(
   plugin: RNPlugin,
   args: SetRemHeadingLevelArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const beforeChildIds = await getDirectChildIds(rem);
   await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(args.level)));
-  return { remId: rem._id, status: 'heading_set' };
+  const afterChildIds = await getDirectChildIds(rem);
+  return withNoChildMutationProof({ remId: rem._id, status: 'heading_set', ok: true }, beforeChildIds, afterChildIds);
 }
 
 export async function setRemTextColor(
@@ -98,21 +123,27 @@ export async function setRemTextColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   try {
+    const beforeChildIds = await getDirectChildIds(rem);
     const formatted = await applyTextColorToAllText(plugin, getRemRichText(rem), args.color);
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
+    const afterChildIds = await getDirectChildIds(rem);
     const plain = await getRemPlainString(plugin, rem);
-    return {
-      remId: rem._id,
-      status: 'text_color_set',
-      ok: true,
-      requestedColor: formatted.requestedColor,
-      normalizedColor: formatted.normalizedColor,
-      methodUsed: formatted.methodUsed,
-      verification: {
-        plainText: plain,
-        textLength: plain.length,
+    return withNoChildMutationProof(
+      {
+        remId: rem._id,
+        status: 'text_color_set',
+        ok: true,
+        requestedColor: formatted.requestedColor,
+        normalizedColor: formatted.normalizedColor,
+        methodUsed: formatted.methodUsed,
+        verification: {
+          plainText: plain,
+          textLength: plain.length,
+        },
       },
-    };
+      beforeChildIds,
+      afterChildIds
+    );
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -124,6 +155,7 @@ export async function setTextSpanColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   try {
+    const beforeChildIds = await getDirectChildIds(rem);
     const range = await resolveRangeFromPlainText(
       plugin,
       getRemRichText(rem),
@@ -132,7 +164,9 @@ export async function setTextSpanColor(
       rangeInputFromArgs(args).text,
       rangeInputFromArgs(args).occurrence ?? 1
     );
-    return setTextColorInRange(plugin, rem, range, args.color, 'span_color_set');
+    const result = await setTextColorInRange(plugin, rem, range, args.color, 'span_color_set');
+    const afterChildIds = await getDirectChildIds(rem);
+    return withNoChildMutationProof(result, beforeChildIds, afterChildIds);
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -145,6 +179,7 @@ export async function setTextSpanHighlight(
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const rangeArgs = rangeInputFromArgs(args);
   try {
+    const beforeChildIds = await getDirectChildIds(rem);
     const range = await resolveRangeFromPlainText(
       plugin,
       getRemRichText(rem),
@@ -153,7 +188,9 @@ export async function setTextSpanHighlight(
       rangeArgs.text,
       rangeArgs.occurrence ?? 1
     );
-    return setTextHighlightInRange(plugin, rem, range, args.color);
+    const result = await setTextHighlightInRange(plugin, rem, range, args.color);
+    const afterChildIds = await getDirectChildIds(rem);
+    return withNoChildMutationProof(result, beforeChildIds, afterChildIds);
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -164,6 +201,7 @@ export async function setRemHighlightColor(
   args: SetRemHighlightColorArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const beforeChildIds = await getDirectChildIds(rem);
   const color = remColorNameFromString(args.color);
   const format = getColorFormat(color);
   if (!format) {
@@ -177,7 +215,8 @@ export async function setRemHighlightColor(
     rem.setHighlightColor(format as never)
   );
 
-  return { remId: rem._id, status: 'highlight_set' };
+  const afterChildIds = await getDirectChildIds(rem);
+  return withNoChildMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, beforeChildIds, afterChildIds);
 }
 
 export async function setRemType(
@@ -316,17 +355,34 @@ async function appendMathToRem(
   block: boolean,
   prefixText?: string
 ) {
+  const currentRichText = JSON.parse(JSON.stringify(getRemRichText(rem))) as RichTextInterface;
   const currentText = await getRemPlainString(plugin, rem);
-  const spans: RichTextSpanInput[] = [];
+  const appendSpans: RichTextSpanInput[] = [];
   if (currentText) {
-    spans.push({ text: `${currentText} ` });
+    appendSpans.push({ text: ' ' });
   }
+  if (prefixText?.trim()) {
+    appendSpans.push({ text: `${prefixText.trim()} ` });
+  }
+  appendSpans.push({ type: block ? 'mathBlock' : 'inlineMath', latex });
+  const appended = await buildRichTextFromSpans(plugin, appendSpans);
+  await runSdkOperation('rem.setText', () => rem.setText([...currentRichText, ...appended] as RichTextInterface));
+}
+
+async function createMathBlockChildRem(
+  plugin: RNPlugin,
+  parent: Rem,
+  latex: string,
+  prefixText?: string
+): Promise<Rem> {
+  const spans: RichTextSpanInput[] = [];
   if (prefixText?.trim()) {
     spans.push({ text: `${prefixText.trim()} ` });
   }
-  spans.push({ type: block ? 'mathBlock' : 'inlineMath', latex });
+  spans.push({ type: 'mathBlock', latex });
   const richText = await buildRichTextFromSpans(plugin, spans);
-  await runSdkOperation('rem.setText', () => rem.setText(richText));
+  const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
+  return createRemWithRichText(plugin, richText, parent, insertIndex);
 }
 
 export async function applyRemnoteCommand(
@@ -399,14 +455,24 @@ export async function applyRemnoteCommand(
         'SDK_UNSUPPORTED',
         'The installed RemNote SDK does not expose a reliable reset to normal Rem type.'
       );
-    case 'insert_inline_math':
+    case 'insert_inline_math': {
+      const latex = args.args?.latex?.trim();
+      if (!latex) {
+        throw new RemnoteWriteError('INVALID_ARGS', `${command} requires args.latex.`);
+      }
+      await appendMathToRem(plugin, rem, latex, false, args.args?.text);
+      break;
+    }
     case 'insert_math_block': {
       const latex = args.args?.latex?.trim();
       if (!latex) {
         throw new RemnoteWriteError('INVALID_ARGS', `${command} requires args.latex.`);
       }
-      await appendMathToRem(plugin, rem, latex, command === 'insert_math_block', args.args?.text);
-      break;
+      const created = await createMathBlockChildRem(plugin, rem, latex, args.args?.text);
+      const result = resultForCommand(rem, command, idempotencyKey);
+      result.createdRemId = created._id;
+      rememberRemnoteCommandResult(idempotencyKey, result);
+      return result;
     }
     default:
       throw new RemnoteWriteError('INVALID_ARGS', `Unsupported RemNote command "${command}".`);

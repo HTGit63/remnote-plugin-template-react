@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
+  APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA,
   COLOR_SCHEMA,
+  CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA,
   CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA,
   DELETE_CONFIRM_SCHEMA,
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
@@ -14,6 +16,7 @@ import {
   NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   PERMISSION_SCOPE_SCHEMA,
   POSITION_SCHEMA,
+  PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA,
   PRACTICE_DIRECTION_SCHEMA,
   REM_ID_SCHEMA,
   REM_TREE_NODE_SCHEMA,
@@ -271,6 +274,57 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
       bridgeToolResult(
         () => callPlugin('apply_remnote_command', { target, command, args, dryRun, idempotencyKey }),
         'Applied RemNote command.'
+      )
+  );
+
+  registerTool(
+    'preview_markdown_note_tree',
+    {
+      title: 'Preview Markdown note tree',
+      description:
+        'Parse Markdown into the exact RemNote-native hierarchy plan without writing. Use before creating long notes, formula-heavy notes, tables, or flashcard-marker content.',
+      inputSchema: PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('preview_markdown_note_tree'),
+    },
+    async (args) =>
+      bridgeToolResult(
+        () => callPlugin('preview_markdown_note_tree', args),
+        'Markdown note tree preview generated.'
+      )
+  );
+
+  registerTool(
+    'create_note_from_markdown_tree',
+    {
+      title: 'Create note from Markdown tree',
+      description:
+        'Preferred safe writer for creating a clean RemNote-native hierarchy from Markdown. Headings, bullets, formulas, tables, and worked examples become Rem structure instead of visible Markdown syntax.',
+      inputSchema: CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('create_note_from_markdown_tree'),
+    },
+    async (args) =>
+      bridgeToolResult(
+        () => callPlugin('create_note_from_markdown_tree', args),
+        'Markdown hierarchy create request processed.'
+      )
+  );
+
+  registerTool(
+    'append_markdown_as_rem_tree',
+    {
+      title: 'Append Markdown as Rem tree',
+      description:
+        'Append Markdown under an existing Rem as clean child Rem hierarchy. Use instead of append_to_rem when user expects structured notes, bullets, formulas, or tables.',
+      inputSchema: APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: annotationsFor('append_markdown_as_rem_tree'),
+    },
+    async (args) =>
+      bridgeToolResult(
+        () => callPlugin('append_markdown_as_rem_tree', args),
+        'Markdown hierarchy append request processed.'
       )
   );
 

@@ -18,6 +18,7 @@ import type {
   CreateFlashcardArgs,
   CreateFolderArgs,
   CreateListAnswerCardArgs,
+  CreateNoteFromMarkdownTreeArgs,
   CreateMultipleChoiceCardArgs,
   CreateOrReplaceNoteFromMarkdownArgs,
   CreatePolishedNoteTreeArgs,
@@ -25,7 +26,9 @@ import type {
   CreateRemTreeArgs,
   CreateStyledRemTreeArgs,
   DeleteRemByIdArgs,
+  AppendMarkdownAsRemTreeArgs,
   MoveRemArgs,
+  PreviewMarkdownNoteTreeArgs,
   ReplaceRemArgs,
   ReorderChildrenArgs,
   SetHideBulletArgs,
@@ -72,6 +75,7 @@ import type {
   CreateDocumentResult,
   CreateFlashcardResult,
   CreateFolderResult,
+  CreateNoteFromMarkdownTreeResult,
   CreateOrReplaceNoteFromMarkdownResult,
   CreatePolishedNoteTreeResult,
   CreateRemResult,
@@ -80,7 +84,9 @@ import type {
   DeletePreview,
   DeleteRemByIdResult,
   FormatRemResult,
+  AppendMarkdownAsRemTreeResult,
   MoveRemResult,
+  PreviewMarkdownNoteTreeResult,
   ReplaceRemResult,
   ReorderChildrenResult,
   UpdateRemResult,
@@ -122,6 +128,9 @@ export interface BridgeToolArgs {
   apply_structured_note_batch: ApplyStructuredNoteBatchArgs;
   create_polished_note_tree: CreatePolishedNoteTreeArgs;
   create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownArgs;
+  preview_markdown_note_tree: PreviewMarkdownNoteTreeArgs;
+  create_note_from_markdown_tree: CreateNoteFromMarkdownTreeArgs;
+  append_markdown_as_rem_tree: AppendMarkdownAsRemTreeArgs;
   apply_style_plan: ApplyStylePlanArgs;
   verify_note_design: VerifyNoteDesignArgs;
   create_basic_flashcard: CreateFlashcardArgs;
@@ -169,6 +178,9 @@ export interface BridgeToolResults {
   apply_structured_note_batch: ApplyStructuredNoteBatchResult;
   create_polished_note_tree: CreatePolishedNoteTreeResult;
   create_or_replace_note_from_markdown: CreateOrReplaceNoteFromMarkdownResult;
+  preview_markdown_note_tree: PreviewMarkdownNoteTreeResult;
+  create_note_from_markdown_tree: CreateNoteFromMarkdownTreeResult;
+  append_markdown_as_rem_tree: AppendMarkdownAsRemTreeResult;
   apply_style_plan: ApplyStylePlanResult;
   verify_note_design: VerifyNoteDesignResult;
   create_basic_flashcard: CreateFlashcardResult;

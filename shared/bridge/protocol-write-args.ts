@@ -349,6 +349,7 @@ export type MarkdownRootHeadingMode = 'first_h1' | 'title_from_first_line' | 'ex
 export type MarkdownParagraphMode = 'child_rem_per_paragraph' | 'merge_paragraphs_under_heading';
 export type MarkdownBulletMode = 'preserve_markdown_bullets' | 'plain_child_rems';
 export type MarkdownFormulaMode = 'preserve' | 'force_block_for_display_math';
+export type MarkdownFlashcardMarkerMode = 'double_colon' | 'cloze' | 'both';
 
 export interface MarkdownImportHeadingMapping {
   rootHeading?: MarkdownRootHeadingMode;
@@ -380,6 +381,12 @@ export interface MarkdownImportFidelityOptions {
   failOnContentLoss?: boolean;
 }
 
+export interface MarkdownFlashcardOptions {
+  enabled?: boolean;
+  marker?: MarkdownFlashcardMarkerMode;
+  defaultDirection?: PracticeDirection;
+}
+
 export interface MarkdownImportSafetyOptions {
   dryRun?: boolean;
   verifyAfterWrite?: boolean;
@@ -403,6 +410,42 @@ export interface CreateOrReplaceNoteFromMarkdownArgs extends NoteStylePresetFiel
   remnoteLayout?: MarkdownImportRemnoteLayout;
   mathOptions?: MarkdownMathOptions;
   fidelityOptions?: MarkdownImportFidelityOptions;
+  flashcardOptions?: MarkdownFlashcardOptions;
+  safetyOptions?: MarkdownImportSafetyOptions;
+  limits?: MarkdownImportLimits;
+}
+
+export interface PreviewMarkdownNoteTreeArgs extends NoteStylePresetFields {
+  markdownText: string;
+  headingMapping?: MarkdownImportHeadingMapping;
+  remnoteLayout?: MarkdownImportRemnoteLayout;
+  mathOptions?: MarkdownMathOptions;
+  fidelityOptions?: MarkdownImportFidelityOptions;
+  flashcardOptions?: MarkdownFlashcardOptions;
+  limits?: MarkdownImportLimits;
+}
+
+export interface CreateNoteFromMarkdownTreeArgs extends NoteStylePresetFields {
+  parentRemId: string;
+  markdownText: string;
+  duplicatePolicy?: MarkdownDuplicatePolicy;
+  headingMapping?: MarkdownImportHeadingMapping;
+  remnoteLayout?: MarkdownImportRemnoteLayout;
+  mathOptions?: MarkdownMathOptions;
+  fidelityOptions?: MarkdownImportFidelityOptions;
+  flashcardOptions?: MarkdownFlashcardOptions;
+  safetyOptions?: MarkdownImportSafetyOptions;
+  limits?: MarkdownImportLimits;
+}
+
+export interface AppendMarkdownAsRemTreeArgs extends NoteStylePresetFields {
+  targetRemId: string;
+  markdownText: string;
+  headingMapping?: MarkdownImportHeadingMapping;
+  remnoteLayout?: MarkdownImportRemnoteLayout;
+  mathOptions?: MarkdownMathOptions;
+  fidelityOptions?: MarkdownImportFidelityOptions;
+  flashcardOptions?: MarkdownFlashcardOptions;
   safetyOptions?: MarkdownImportSafetyOptions;
   limits?: MarkdownImportLimits;
 }
@@ -421,6 +464,14 @@ export interface ExpectedStyleMapEntry {
   hideBullet?: boolean;
   remType?: RemTypeName;
   wholeRemHighlight?: RemColorName | string;
+  expectedChildCount?: number;
+  forbiddenChildTexts?: string[];
+  noVisibleMathDelimiters?: boolean;
+  allowVisibleMathDelimiters?: boolean;
+  mathSpans?: Array<{
+    latex?: string;
+    block?: boolean;
+  }>;
   textColorSpans?: Array<{
     text?: string;
     start?: number;

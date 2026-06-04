@@ -44,6 +44,9 @@ export type BridgeToolName =
   | 'apply_structured_note_batch'
   | 'create_polished_note_tree'
   | 'create_or_replace_note_from_markdown'
+  | 'preview_markdown_note_tree'
+  | 'create_note_from_markdown_tree'
+  | 'append_markdown_as_rem_tree'
   | 'apply_style_plan'
   | 'verify_note_design'
   | 'create_basic_flashcard'
@@ -66,6 +69,7 @@ export type ReadOnlyBridgeToolName =
   | 'get_rem_breadcrumbs'
   | 'search_rems'
   | 'get_document_or_folder_tree'
+  | 'preview_markdown_note_tree'
   | 'verify_note_design';
 export type SafeWriteBridgeToolName =
   | 'create_rem'
@@ -90,6 +94,8 @@ export type SafeWriteBridgeToolName =
   | 'apply_structured_note_batch'
   | 'create_polished_note_tree'
   | 'create_or_replace_note_from_markdown'
+  | 'create_note_from_markdown_tree'
+  | 'append_markdown_as_rem_tree'
   | 'apply_style_plan'
   | 'create_basic_flashcard'
   | 'create_concept_card'
@@ -168,4 +174,3 @@ export interface BridgeLifecycleEvent {
   at: string;
   message?: string;
 }
-

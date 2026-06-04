@@ -297,7 +297,7 @@ export const MARKDOWN_REMNOTE_LAYOUT_SCHEMA = z.object({
   spacerText: z.string().max(100).default('').optional(),
   preserveBlankLines: z.boolean().default(true).optional(),
   paragraphMode: z.enum(['child_rem_per_paragraph', 'merge_paragraphs_under_heading']).default('child_rem_per_paragraph').optional(),
-  bulletMode: z.enum(['preserve_markdown_bullets', 'plain_child_rems']).default('preserve_markdown_bullets').optional(),
+  bulletMode: z.enum(['preserve_markdown_bullets', 'plain_child_rems']).default('plain_child_rems').optional(),
 });
 
 export const MARKDOWN_MATH_OPTIONS_SCHEMA = z.object({
@@ -312,6 +312,12 @@ export const MARKDOWN_FIDELITY_OPTIONS_SCHEMA = z.object({
   allowWhitespaceNormalization: z.boolean().default(true).optional(),
   preserveSourceOrder: z.boolean().default(true).optional(),
   failOnContentLoss: z.boolean().default(true).optional(),
+});
+
+export const MARKDOWN_FLASHCARD_OPTIONS_SCHEMA = z.object({
+  enabled: z.boolean().default(false).optional().describe('False keeps flashcard-looking markers as plain Rem text.'),
+  marker: z.enum(['double_colon', 'cloze', 'both']).default('both').optional(),
+  defaultDirection: PRACTICE_DIRECTION_SCHEMA.optional(),
 });
 
 export const MARKDOWN_SAFETY_OPTIONS_SCHEMA = z.object({
@@ -341,6 +347,45 @@ export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
   mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
   fidelityOptions: MARKDOWN_FIDELITY_OPTIONS_SCHEMA.optional(),
+  flashcardOptions: MARKDOWN_FLASHCARD_OPTIONS_SCHEMA.optional(),
+  safetyOptions: MARKDOWN_SAFETY_OPTIONS_SCHEMA.optional(),
+  limits: MARKDOWN_IMPORT_LIMITS_SCHEMA.optional(),
+});
+
+export const PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA = z.object({
+  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Preview parses only and never writes.'),
+  headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
+  remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
+  mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
+  fidelityOptions: MARKDOWN_FIDELITY_OPTIONS_SCHEMA.optional(),
+  flashcardOptions: MARKDOWN_FLASHCARD_OPTIONS_SCHEMA.optional(),
+  limits: MARKDOWN_IMPORT_LIMITS_SCHEMA.optional(),
+});
+
+export const CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA = z.object({
+  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  parentRemId: REM_ID_SCHEMA.describe('Parent Rem ID for the created Markdown hierarchy root.'),
+  markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved as clean Rem hierarchy.'),
+  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).default('create_new').optional(),
+  headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
+  remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
+  mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
+  fidelityOptions: MARKDOWN_FIDELITY_OPTIONS_SCHEMA.optional(),
+  flashcardOptions: MARKDOWN_FLASHCARD_OPTIONS_SCHEMA.optional(),
+  safetyOptions: MARKDOWN_SAFETY_OPTIONS_SCHEMA.optional(),
+  limits: MARKDOWN_IMPORT_LIMITS_SCHEMA.optional(),
+});
+
+export const APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA = z.object({
+  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  targetRemId: REM_ID_SCHEMA.describe('Existing Rem ID that receives the parsed Markdown tree as children.'),
+  markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown to append as clean child Rem hierarchy.'),
+  headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
+  remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
+  mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
+  fidelityOptions: MARKDOWN_FIDELITY_OPTIONS_SCHEMA.optional(),
+  flashcardOptions: MARKDOWN_FLASHCARD_OPTIONS_SCHEMA.optional(),
   safetyOptions: MARKDOWN_SAFETY_OPTIONS_SCHEMA.optional(),
   limits: MARKDOWN_IMPORT_LIMITS_SCHEMA.optional(),
 });
@@ -452,6 +497,19 @@ export const EXPECTED_STYLE_MAP_ENTRY_SCHEMA = z.object({
   hideBullet: z.boolean().optional(),
   remType: REM_TYPE_SCHEMA.optional(),
   wholeRemHighlight: COLOR_SCHEMA.optional(),
+  expectedChildCount: z.number().int().min(0).max(1000).optional(),
+  forbiddenChildTexts: z.array(z.string().trim().min(1).max(1000)).max(50).optional(),
+  noVisibleMathDelimiters: z.boolean().default(false).optional(),
+  allowVisibleMathDelimiters: z.boolean().default(false).optional(),
+  mathSpans: z
+    .array(
+      z.object({
+        latex: z.string().trim().min(1).max(5000).optional(),
+        block: z.boolean().optional(),
+      })
+    )
+    .max(50)
+    .optional(),
   textColorSpans: z
     .array(
       z.object({

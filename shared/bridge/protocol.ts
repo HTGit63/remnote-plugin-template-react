@@ -5,3 +5,4 @@ export * from './protocol-write-results.js';
 export * from './protocol-messages.js';
 export * from './protocol-registry.js';
 export * from './style-presets.js';
+export * from './performance.js';

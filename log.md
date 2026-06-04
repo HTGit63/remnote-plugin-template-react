@@ -374,3 +374,82 @@ This log tracks all changes, structural enhancements, and tests performed for th
 - `npm run server:test:markdown-importer` passed.
 - `npm run server:test:source-fidelity` passed.
 - `git diff --check` passed.
+
+# 2026-06-04 Goal 5 Markdown-to-Rem hierarchy pipeline
+
+## Status
+
+- Goal 5 implemented at repo/build/test level.
+- Live RemNote write proof remains pending because it requires a running RemNote client/plugin runtime.
+
+## What Changed
+
+- Added public tools `preview_markdown_note_tree`, `create_note_from_markdown_tree`, and `append_markdown_as_rem_tree`.
+- Kept preview read-only; create/append are safe-write tools with `dryRun: true` defaults and trusted-write policy coverage.
+- Expanded the Markdown parser for root titles, H3 headings, nested bullets, ordered lists, blank spacer Rems, inline math spans, block math Rems, tables, worked examples, opt-in flashcard markers, and callout/admonition blocks.
+- Changed default bullet conversion to plain child Rems so imported bullets do not carry visible dash pollution.
+- Added formula delimiter validation and formula-safe text chunking so long formula-heavy sections do not split inside inline math.
+- Added Markdown pipeline benchmarks for small, 5.9 nuclear-style, formula-heavy, and tables/cards cases.
+- Updated SDK notes with Goal 5 behavior and live-test boundary.
+
+## Validation
+
+- `npm run check-types` passed.
+- `npm run server:build` passed.
+- `npm run server:test:tool-schemas` passed.
+- `npm run server:test:markdown-importer` passed.
+- `npm run server:test:markdown-pipeline-benchmark` passed.
+- `npm run server:test:idempotency` passed.
+- `npm run validate` passed.
+- `npm run server:test:source-fidelity` passed.
+- `npm run server:test:structured-depth` passed.
+- `npm run build` passed with existing webpack asset-size warnings.
+- `npm run server:smoke` passed.
+- `npm run server:test:area3` passed.
+- `npm run server:test:tools-diagnostics` passed.
+
+# 2026-06-04 Goal 6 and Goal 7 correctness/performance pass
+
+## Status
+
+- Goal 6 implemented at repo/build/test level.
+- Goal 7 implemented at repo/build/test level.
+- Ready for ChatGPT + live RemNote testing; live proof still requires running MCP server plus connected RemNote plugin.
+
+## What Changed
+
+- Fixed style mutation proof for heading, text color, span color, whole-Rem highlight, and span highlight tools; each records before/after child IDs and verifies no style child Rems were created.
+- Kept heading changes on the SDK font-size path, avoiding the old `Size` -> `H1`/`H3` child pollution failure mode.
+- Separated font color from highlight and span highlight from whole-Rem highlight.
+- Fixed inline math insertion to preserve existing rich-text styling while adding a real inline math rich node.
+- Fixed block math insertion to create a separate math child Rem and return its created Rem ID.
+- Expanded `verify_note_design` to catch heading/color/highlight mismatch, child pollution, wrong child count/order, visible math delimiters, math type mismatch, and broken formula text.
+- Added repair suggestions for detected pollution, including dry-run `delete_rem_by_id` suggestions.
+- Added style regression coverage and wired it into smoke/live-test paths.
+- Added shared write performance budgets: planning 500 ms, single write execution 3000 ms, verification 1000 ms, total 5000 ms.
+- Added write performance reports with phase timings, call counts, fallback status, warnings, and bottleneck-layer classification.
+- Added `success_with_performance_warning` for slow successful writes.
+- Added large Markdown payload section-chunk fallback that only triggers past safe thresholds and does not split inside math/card/section boundaries.
+- Added performance benchmarks for small notes, medium 5.9-style notes, large formula-heavy notes, flashcards, tables, repair, and templates.
+- Updated SDK notes with Goal 6/7 behavior and live-test boundary.
+
+## Validation
+
+- `npm run check-types` passed.
+- `npm run test:style-correctness` passed.
+- `npm run server:test:style-schema` passed.
+- `npm run server:test:performance-benchmark` passed.
+- `npm run server:test:performance` passed.
+- `npm run server:build` passed.
+- `npm run server:test:tool-schemas` passed.
+- `npm run server:test:markdown-importer` passed.
+- `npm run server:test:idempotency` passed.
+- `npm run validate` passed.
+- `npm run build` passed with existing webpack asset-size warnings.
+- `npm run server:test:markdown-pipeline-benchmark` passed.
+- `npm run server:test:source-fidelity` passed.
+- `npm run server:smoke` passed.
+- `npm run server:test:area3` passed.
+- `npm run server:test:tools-diagnostics` passed.
+- `npm run server:test:structured-depth` passed.
+- `git diff --check` passed.

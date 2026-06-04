@@ -87,6 +87,7 @@ import {
   verifyCreatedRems,
 } from './structuredBatch';
 import { applyStylePlan } from './formattingWrites';
+import { buildWritePerformanceReport } from '../../../shared/bridge/performance';
 import {
   collectCreatedTreeRemIds,
   createRemTreeWithMarkdownApi,
@@ -222,6 +223,7 @@ export async function createPolishedNoteTree(
   plugin: RNPlugin,
   args: CreatePolishedNoteTreeArgs
 ): Promise<CreatePolishedNoteTreeResult> {
+  const startedAt = Date.now();
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'polished-tree');
   if (!args.dryRun) {
     const cached = POLISHED_TREE_RESULT_CACHE.get(idempotencyKey);
@@ -270,9 +272,12 @@ export async function createPolishedNoteTree(
       },
     })
   );
+  const planningDurationMs = Date.now() - startedAt;
 
   let createdRemIdsForRollback: string[] = [];
+  let verificationDurationMs = 0;
   try {
+    const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
       const created = await createStyledRemTree(
         plugin,
@@ -313,9 +318,12 @@ export async function createPolishedNoteTree(
           }
         );
       }
-      const verification = args.verifyAfterWrite
-        ? await verifyCreatedRems(plugin, created.createdRemIds, created.rootCreatedRemId)
-        : undefined;
+      let verification: CreatePolishedNoteTreeResult['verification'];
+      if (args.verifyAfterWrite) {
+        const verificationStartedAt = Date.now();
+        verification = await verifyCreatedRems(plugin, created.createdRemIds, created.rootCreatedRemId);
+        verificationDurationMs += Date.now() - verificationStartedAt;
+      }
       if (!args.dryRun && verification && !verification.ok) {
         throw new RemnoteWriteError(
           'PARTIAL_FAILURE',
@@ -357,10 +365,25 @@ export async function createPolishedNoteTree(
       };
       return result;
     });
+    const executionDurationMs = Date.now() - executionStartedAt;
+    const performance = buildWritePerformanceReport({
+      phaseDurationsMs: {
+        planning: planningDurationMs,
+        singleWriteExecution: Math.max(0, executionDurationMs - verificationDurationMs),
+        verification: verificationDurationMs,
+        total: Date.now() - startedAt,
+      },
+      primaryToolCallCount: 1,
+      sdkOperationCount: operationPlan.estimatedOperationCount,
+    });
     const result = {
       ...executed.result,
+      status: performance.status === 'success_with_performance_warning'
+        ? 'success_with_performance_warning' as const
+        : executed.result.status,
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
+      performance,
     };
 
     if (!args.dryRun) {

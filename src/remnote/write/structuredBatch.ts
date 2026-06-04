@@ -110,6 +110,7 @@ import {
 import { assertTreeLimits, collectStyledTreePlan, normalizeStyledNode } from './writeValidation';
 import { createFlashcardRem } from './cardWrites';
 import { buildWriteOperationPlan } from '../write-engine/plan';
+import { buildWritePerformanceReport } from '../../../shared/bridge/performance';
 import {
   executeWriteOperation,
   finalizeWriteOperationPlan,
@@ -127,6 +128,7 @@ export async function structuredWriteEngine(
   args: CreateStyledRemTreeArgs,
   options: { skipTransaction?: boolean } = {}
 ): Promise<CreateStyledRemTreeResult> {
+  const startedAt = Date.now();
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'styled-tree');
   if (!args.dryRun) {
     const cached = STYLED_TREE_RESULT_CACHE.get(idempotencyKey);
@@ -181,11 +183,22 @@ export async function structuredWriteEngine(
     }),
     { skipTransaction: options.skipTransaction }
   );
+  const planningDurationMs = Date.now() - startedAt;
   const createdRemIds: string[] = [];
   const createdNodes: CreateStyledRemTreeResult['createdNodes'] = [];
   const idMap: Record<string, string> = {};
 
   if (args.dryRun) {
+    const performance = buildWritePerformanceReport({
+      phaseDurationsMs: {
+        planning: planningDurationMs,
+        singleWriteExecution: 0,
+        verification: 0,
+        total: Date.now() - startedAt,
+      },
+      primaryToolCallCount: 1,
+      sdkOperationCount: 0,
+    });
     return {
       rootCreatedRemId: '',
       createdNodeCount: 0,
@@ -202,6 +215,7 @@ export async function structuredWriteEngine(
       cardNodeCount: plan.cardNodeCount,
       operationPlan,
       writeEngine: writeEngineExecutionFromPlan(operationPlan),
+      performance,
     };
   }
 
@@ -324,6 +338,7 @@ export async function structuredWriteEngine(
   }
 
   try {
+    const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(
       plugin,
       operationPlan,
@@ -352,10 +367,25 @@ export async function structuredWriteEngine(
       },
       { skipTransaction: options.skipTransaction }
     );
+    const executionDurationMs = Date.now() - executionStartedAt;
+    const performance = buildWritePerformanceReport({
+      phaseDurationsMs: {
+        planning: planningDurationMs,
+        singleWriteExecution: executionDurationMs,
+        verification: 0,
+        total: Date.now() - startedAt,
+      },
+      primaryToolCallCount: 1,
+      sdkOperationCount: operationPlan.estimatedOperationCount,
+    });
     const result = {
       ...executed.result,
+      status: performance.status === 'success_with_performance_warning'
+        ? 'success_with_performance_warning' as const
+        : executed.result.status,
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
+      performance,
     };
     rememberStyledTreeResult(idempotencyKey, result);
     return result;
@@ -462,6 +492,7 @@ export async function applyStructuredNoteBatch(
   plugin: RNPlugin,
   args: ApplyStructuredNoteBatchArgs
 ): Promise<ApplyStructuredNoteBatchResult> {
+  const startedAt = Date.now();
   const operation = args.operation ?? 'create_child_tree';
   const target = args.target ?? {
     mode: 'parent_child' as const,
@@ -609,8 +640,19 @@ export async function applyStructuredNoteBatch(
       },
     })
   );
+  const planningDurationMs = Date.now() - startedAt;
 
   if (args.dryRun) {
+    const performance = buildWritePerformanceReport({
+      phaseDurationsMs: {
+        planning: planningDurationMs,
+        singleWriteExecution: 0,
+        verification: 0,
+        total: Date.now() - startedAt,
+      },
+      primaryToolCallCount: 1,
+      sdkOperationCount: 0,
+    });
     return {
       operationId: operationPlan.operationId,
       status: 'dry_run',
@@ -635,6 +677,7 @@ export async function applyStructuredNoteBatch(
         attempted: false,
         completed: false,
       },
+      performance,
     };
   }
 
@@ -644,6 +687,7 @@ export async function applyStructuredNoteBatch(
   const movedRemIds: string[] = [];
   const stagedRemIds: string[] = [];
   const backupRemIds: string[] = [];
+  let verificationDurationMs = 0;
 
   async function updateExistingRoot(rem: Rem, node: StyledRemTreeNode) {
     const richText =
@@ -765,6 +809,7 @@ export async function applyStructuredNoteBatch(
   }
 
   try {
+    const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
       let rootCreatedRemId: string | undefined;
       let rootInsertIndex: number | undefined;
@@ -815,13 +860,16 @@ export async function applyStructuredNoteBatch(
         }
       }
 
-      const verification = verifyAfterWrite
-        ? await verifyCreatedRems(
-            plugin,
-            Array.from(new Set([...createdRemIds, ...updatedRemIds])),
-            rootCreatedRemId ?? parent._id
-          )
-        : undefined;
+      let verification: ApplyStructuredNoteBatchResult['verification'];
+      if (verifyAfterWrite) {
+        const verificationStartedAt = Date.now();
+        verification = await verifyCreatedRems(
+          plugin,
+          Array.from(new Set([...createdRemIds, ...updatedRemIds])),
+          rootCreatedRemId ?? parent._id
+        );
+        verificationDurationMs += Date.now() - verificationStartedAt;
+      }
       if (verification && !verification.ok) {
         throw new RemnoteWriteError(
           'PARTIAL_FAILURE',
@@ -874,10 +922,25 @@ export async function applyStructuredNoteBatch(
       };
       return result;
     });
+    const executionDurationMs = Date.now() - executionStartedAt;
+    const performance = buildWritePerformanceReport({
+      phaseDurationsMs: {
+        planning: planningDurationMs,
+        singleWriteExecution: Math.max(0, executionDurationMs - verificationDurationMs),
+        verification: verificationDurationMs,
+        total: Date.now() - startedAt,
+      },
+      primaryToolCallCount: 1,
+      sdkOperationCount: operationPlan.estimatedOperationCount,
+    });
     const result = {
       ...executed.result,
+      status: performance.status === 'success_with_performance_warning'
+        ? 'success_with_performance_warning' as const
+        : executed.result.status,
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
+      performance,
     };
 
     rememberStructuredBatchResult(idempotencyKey, result);

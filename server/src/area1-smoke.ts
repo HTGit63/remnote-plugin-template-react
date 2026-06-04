@@ -14,6 +14,9 @@ import {
 } from './tool-policy.js';
 import {
   CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA,
+  PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA,
+  CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA,
+  APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA,
   EXPECTED_STYLE_EXPECTATION_SCHEMA,
   REM_STYLE_SCHEMA,
   REORDER_CHILDREN_INPUT_SCHEMA,
@@ -26,6 +29,8 @@ import {
   markdownImportOutputTextFromTree,
   normalizeMarkdownImportArgs,
   parseMarkdownImportPlan,
+  splitTextFormulaSafe,
+  validateMarkdownMathDelimiters,
   verifyMarkdownSourceFidelity,
 } from '../../shared/bridge/markdown-importer.js';
 import {
@@ -34,6 +39,10 @@ import {
   NUCLEAR_PHYSICS_STYLE_PRESET,
   type CreateOrReplaceNoteFromMarkdownArgs,
 } from '../../shared/bridge/protocol.js';
+import {
+  DEFAULT_WRITE_PERFORMANCE_BUDGET_MS,
+  buildWritePerformanceReport,
+} from '../../shared/bridge/performance.js';
 import {
   getLastTrustedWriteDecision,
   validateMcpToolPermission,
@@ -124,6 +133,9 @@ function checkSchemas() {
   assert(REM_STYLE_SCHEMA.safeParse({ headingLevel: 'H3', color: 'blue', highlight: 'yellow', type: 'descriptor' }).success, 'style schema should accept legacy aliases for internal normalization.');
   assert(CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA.safeParse(markdownImportArgs(true)).success, 'markdown importer schema should accept required bulk note shape.');
   assert(CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA.safeParse({ ...markdownImportArgs(true), stylePreset: NUCLEAR_PHYSICS_STYLE_PRESET }).success, 'markdown importer schema should accept nuclear physics preset.');
+  assert(PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA.safeParse({ markdownText: markdownSample() }).success, 'preview markdown tree schema should accept parser-only request.');
+  assert(CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA.safeParse({ parentRemId: 'parent-1', markdownText: markdownSample(), safetyOptions: { dryRun: true } }).success, 'create markdown tree schema should accept clean hierarchy request.');
+  assert(APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA.safeParse({ targetRemId: 'target-1', markdownText: markdownSample(), safetyOptions: { dryRun: true } }).success, 'append markdown tree schema should accept clean hierarchy request.');
   assert(TREE_DEPTH_SCHEMA.parse(undefined) === 8, 'tree maxDepth default should be 8.');
   assert(MAX_TREE_NODE_COUNT_SCHEMA.parse(undefined) === 200, 'tree maxNodeCount default should be 200.');
 }
@@ -151,6 +163,18 @@ function markdownSample(): string {
     '- preserve first bullet',
     '  - preserve nested bullet',
     '- preserve second bullet',
+    '',
+    '| Quantity | Symbol | Meaning |',
+    '| --- | --- | --- |',
+    '| Energy | $E$ | Work capacity |',
+    '| Temperature | $T$ | Thermal scale |',
+    '',
+    '> [!note] Worked warning',
+    '> Keep Coulomb barrier and thermal estimates separate.',
+    '',
+    'Worked example: Estimate the scale using \\(kT \\approx E\\).',
+    '',
+    'Card marker:: stays plain unless flashcards are enabled',
     '',
     '### Formula Heavy Section',
     '',
@@ -185,12 +209,24 @@ function markdownImportArgs(dryRun: boolean): CreateOrReplaceNoteFromMarkdownArg
 function checkMarkdownImporter() {
   const plan = parseMarkdownImportPlan(markdownSample());
   assert(plan.tree.text === '5.9 - Coulomb Barrier and Temperature Estimate for Fusion', 'markdown importer should use first H1 as root.');
+  assert(plan.formulaValidation.valid, 'markdown importer should validate balanced math delimiters.');
   assert(plan.stats.headingCount >= 5, 'markdown importer should preserve root plus H3 headings.');
   assert(plan.stats.mathBlockCount >= 1, 'markdown importer should preserve block math.');
-  assert(plan.stats.inlineMathCount >= 0, 'markdown importer stats should include inline math field.');
+  assert(plan.stats.inlineMathCount >= 2, 'markdown importer should convert inline math to rich text spans.');
   assert(plan.stats.codeBlockCount === 1, 'markdown importer should preserve code blocks as text Rems.');
   assert(plan.stats.bulletCount >= 3, 'markdown importer should preserve nested bullet list nodes.');
+  assert(plan.stats.tableCount === 1, 'markdown importer should convert markdown table to table hierarchy.');
+  assert(plan.stats.tableCellCount >= 9, 'markdown importer should preserve table cell content.');
+  assert(plan.stats.calloutCount === 1, 'markdown importer should convert blockquote admonition to callout Rem.');
+  assert(plan.stats.workedExampleCount === 1, 'markdown importer should detect worked examples.');
+  assert(plan.stats.flashcardCount === 0, 'markdown importer must not create flashcards unless requested.');
   const output = markdownImportOutputTextFromTree(plan.tree);
+  assert(!output.split('\n').some((line) => /^[-*+]\s+/.test(line.trim()) || /^\d+[.)]\s+/.test(line.trim())), 'markdown importer should not leave visible markdown bullet markers.');
+  assert(!output.includes('| --- |'), 'markdown importer should not leave visible markdown table separator rows.');
+  const inlineMathNode = (plan.tree.children ?? [])
+    .flatMap((child) => child.children ?? [])
+    .find((child) => child.richText?.some((span) => span.type === 'inlineMath'));
+  assert(inlineMathNode, 'markdown importer should emit richText inlineMath spans.');
   for (const forbidden of ['Size', 'H1', 'H2', 'H3']) {
     assert(!output.split('\n').some((line) => line.trim() === forbidden), `markdown importer created style-control Rem ${forbidden}.`);
   }
@@ -205,6 +241,15 @@ function checkMarkdownImporter() {
     rejectedBadMode = true;
   }
   assert(rejectedBadMode, 'markdown importer should reject unknown import modes before execution.');
+  const flashcardPlan = parseMarkdownImportPlan('Question:: Answer', {
+    flashcardOptions: { enabled: true, marker: 'double_colon' },
+    headingMapping: { explicitTitle: 'Cards', rootHeading: 'explicit_title' },
+  });
+  assert(flashcardPlan.stats.flashcardCount === 1, 'flashcard markers should create cards only when enabled.');
+  assert(validateMarkdownMathDelimiters('Valid inline \\(x+y\\) and block $$z$$').valid, 'math delimiter validator should accept common delimiters.');
+  assert(!validateMarkdownMathDelimiters('Broken inline $x+y').valid, 'math delimiter validator should reject unclosed inline dollar math.');
+  const formulaChunks = splitTextFormulaSafe(`Lead ${'word '.repeat(1200)} \\(${`x+${'y+'.repeat(200)}z`}\\) tail`, 200);
+  assert(formulaChunks.every((chunk) => !(chunk.includes('\\(') && !chunk.includes('\\)'))), 'formula-safe splitter must not split inside inline math.');
 }
 
 function nuclearStyleSample(): string {
@@ -303,6 +348,8 @@ function checkDirectWriteTrustedModeRegression() {
     ['create_rem', { parentId: 'parent-1', markdown: 'direct create' }],
     ['apply_structured_note_batch', { target: { mode: 'parent_child', parentId: 'parent-1' }, operation: 'create_child_tree', root: { text: 'Batch root' }, dryRun: false }],
     ['create_polished_note_tree', { parentId: 'parent-1', tree: { text: 'Polished root' }, dryRun: false }],
+    ['create_note_from_markdown_tree', { parentRemId: 'parent-1', markdownText: '# Direct Markdown', safetyOptions: { dryRun: false } }],
+    ['append_markdown_as_rem_tree', { targetRemId: 'child-1', markdownText: '### Appended', safetyOptions: { dryRun: false } }],
     ['apply_style_plan', { operations: [{ remId: 'child-1', type: 'heading', value: 'H3' }], dryRun: false }],
     ['apply_remnote_command', { target: { mode: 'rem_id', remId: 'child-1' }, command: 'heading_3', dryRun: false }],
   ] as const;
@@ -417,6 +464,9 @@ function checkIdempotency() {
     'create_rem_tree',
     'create_styled_rem_tree',
     'create_polished_note_tree',
+    'preview_markdown_note_tree',
+    'create_note_from_markdown_tree',
+    'append_markdown_as_rem_tree',
     'apply_structured_note_batch',
     'apply_style_plan',
     'apply_remnote_command',
@@ -429,7 +479,7 @@ function checkIdempotency() {
     const metadata = getToolMetadata(tool);
     assert(metadata.supportsIdempotency, `${tool} must advertise idempotency.`);
   }
-  for (const tool of ['delete_rem_by_id', 'apply_structured_note_batch', 'create_polished_note_tree', 'apply_style_plan', 'reorder_children']) {
+  for (const tool of ['delete_rem_by_id', 'preview_markdown_note_tree', 'create_note_from_markdown_tree', 'append_markdown_as_rem_tree', 'apply_structured_note_batch', 'create_polished_note_tree', 'apply_style_plan', 'reorder_children']) {
     const metadata = getToolMetadata(tool);
     assert(metadata.supportsDryRun, `${tool} must advertise dry-run support.`);
   }
@@ -442,6 +492,20 @@ function checkPerformance() {
   const summary = getToolRegistrySummary(false, 'full');
   assert(summary.registryCache.enabled, 'registry summary must advertise cache dimensions.');
   assert(summary.registryCache.dimensions.includes('activeTier'), 'registry cache dimensions must include active tier.');
+  assert(DEFAULT_WRITE_PERFORMANCE_BUDGET_MS.planning === 500, 'planning budget must be 500ms.');
+  assert(DEFAULT_WRITE_PERFORMANCE_BUDGET_MS.singleWriteExecution === 3000, 'single write execution budget must be 3000ms.');
+  assert(DEFAULT_WRITE_PERFORMANCE_BUDGET_MS.verification === 1000, 'verification budget must be 1000ms.');
+  assert(DEFAULT_WRITE_PERFORMANCE_BUDGET_MS.total === 5000, 'total performance target must be 5000ms.');
+  const slow = buildWritePerformanceReport({
+    phaseDurationsMs: {
+      planning: 50,
+      singleWriteExecution: 3500,
+      verification: 100,
+      total: 3650,
+    },
+  });
+  assert(slow.status === 'success_with_performance_warning', 'slow success must report success_with_performance_warning.');
+  assert(slow.bottleneckLayer === 'remnote_sdk', 'single-write budget breach must classify RemNote SDK bottleneck.');
 }
 
 const checks: Record<string, () => void> = {

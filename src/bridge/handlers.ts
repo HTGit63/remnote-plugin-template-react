@@ -37,6 +37,7 @@ import {
 import {
   applyStructuredNoteBatch,
   applyStylePlan,
+  appendMarkdownAsRemTree,
   applyRemnoteCommand,
   appendMarkdownToRem,
   clearRemFormatting,
@@ -47,12 +48,14 @@ import {
   createListAnswerCard,
   createMultipleChoiceCard,
   createOrReplaceNoteFromMarkdown,
+  createNoteFromMarkdownTree,
   createPolishedNoteTree,
   createRemFromMarkdown,
   createRemTree,
   createStyledRemTree,
   deleteRemByIdSafe,
   moveRem,
+  previewMarkdownNoteTree,
   replaceRemMarkdown,
   reorderChildren,
   RemnoteWriteError,
@@ -124,6 +127,9 @@ function getRequestTargetRemId(request: BridgeRequest): string | undefined {
   }
   if (typeof args.parentRemId === 'string') {
     return args.parentRemId;
+  }
+  if (typeof args.targetRemId === 'string') {
+    return args.targetRemId;
   }
   if (typeof args.rootRemId === 'string') {
     return args.rootRemId;
@@ -615,6 +621,15 @@ export async function handleBridgeRequest(
         break;
       case 'create_or_replace_note_from_markdown':
         response = createBridgeSuccess(request, await createOrReplaceNoteFromMarkdown(plugin, request.args));
+        break;
+      case 'preview_markdown_note_tree':
+        response = createBridgeSuccess(request, previewMarkdownNoteTree(request.args));
+        break;
+      case 'create_note_from_markdown_tree':
+        response = createBridgeSuccess(request, await createNoteFromMarkdownTree(plugin, request.args));
+        break;
+      case 'append_markdown_as_rem_tree':
+        response = createBridgeSuccess(request, await appendMarkdownAsRemTree(plugin, request.args));
         break;
       case 'apply_style_plan':
         response = createBridgeSuccess(request, await applyStylePlan(plugin, request.args));

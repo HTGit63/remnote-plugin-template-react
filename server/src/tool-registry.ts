@@ -13,7 +13,7 @@ import {
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 import { TOOL_PERMISSIONS } from './tool-permissions.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-04.tool-truth';
+export const TOOL_REGISTRY_VERSION = '2026-06-04.markdown-tree';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -101,6 +101,9 @@ export const MCP_TOOL_REGISTRY = [
   { name: 'apply_structured_note_batch', exposure: 'public' },
   { name: 'create_polished_note_tree', exposure: 'public' },
   { name: 'create_or_replace_note_from_markdown', exposure: 'public' },
+  { name: 'preview_markdown_note_tree', exposure: 'public' },
+  { name: 'create_note_from_markdown_tree', exposure: 'public' },
+  { name: 'append_markdown_as_rem_tree', exposure: 'public' },
   { name: 'apply_style_plan', exposure: 'public' },
   { name: 'verify_note_design', exposure: 'public' },
   { name: 'create_concept_card', exposure: 'public' },

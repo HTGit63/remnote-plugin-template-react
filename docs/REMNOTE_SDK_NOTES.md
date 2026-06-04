@@ -101,11 +101,45 @@ Optional APIs must be checked through capability detection before tool code depe
 - Replacement modes stage new content first, verify staged Rems, then swap content so old children are preserved until the replacement is ready.
 - If a replacement fails after the swap starts, the response reports staged, moved, and backup Rem IDs for recovery.
 
+## Goal 5 Findings
+
+- Markdown hierarchy import now has three public tools: `preview_markdown_note_tree`, `create_note_from_markdown_tree`, and `append_markdown_as_rem_tree`.
+- Preview is read-only and parse-only; create and append are safe-write tools with `dryRun: true` defaults.
+- The parser handles root titles, H3 headings, nested bullets, ordered lists, blank spacer Rems, inline math spans, block math Rems, tables, worked examples, optional flashcard markers, and callout/admonition blocks.
+- Default bullet conversion is `plain_child_rems`, so list markers do not become visible dash text in RemNote.
+- Flashcard marker conversion is opt-in through `flashcardOptions.enabled`; `Front:: Back` stays plain text unless requested.
+- Formula-safe handling validates math delimiters and chunks long formula-heavy text without splitting inside inline math.
+- Markdown pipeline benchmarks cover small notes, the 5.9 nuclear-style note shape, formula-heavy notes, and tables/cards.
+
+## Goal 6 Findings
+
+- `set_rem_heading_level` uses the SDK font-size path and records child-count proof before and after mutation.
+- Public style tools verify they do not create `Size`, `H1`, `H2`, `H3`, or `normal` child Rem pollution.
+- Font color, span color, whole-Rem highlight, and span highlight remain separate style operations.
+- `insert_inline_math` writes inline math rich-text nodes while preserving existing text styles.
+- `insert_math_block` creates a separate child Rem containing block math rich text.
+- `verify_note_design` now checks heading/font size, text color, highlight, child count, child order, bullet visibility, math rich-text type, visible math delimiters, and pollution child Rems.
+- Verification returns repair signals for detected pollution, including dry-run `delete_rem_by_id` suggestions.
+- The style correctness regression suite runs in smoke and live-test scripts before bridge checks.
+
+## Goal 7 Findings
+
+- Default write performance budgets are planning 500 ms, single write execution 3000 ms, verification 1000 ms, and total 5000 ms.
+- High-level write results can include a performance report with phase timings, primary tool call count, internal write count, fallback status, warnings, and bottleneck layer.
+- Slow successful writes return `success_with_performance_warning` instead of hidden success.
+- Markdown tree create/append paths plan one optimized write first and use automatic section chunking only when payload size crosses safe thresholds.
+- Section chunking keeps hierarchy intact and avoids splitting inside math blocks, card syntax, and section subtrees.
+- The benchmark suite covers small notes, medium 5.9-style notes, large formula-heavy notes, flashcard sets, table notes, repair passes, and template-based notes.
+- Bottlenecks are classified as model payload, MCP transport, server, bridge WebSocket, RemNote SDK, verification, or approval wait.
+
 ## Must Live-Test Before Goal 2+ Use
 
 - `plugin.app.transaction` rollback behavior with multi-step writes
 - `createSingleRemWithMarkdown` exact parent/index behavior in a live RemNote client
 - `createTreeWithMarkdown` hierarchy behavior and returned Rem ordering in a live RemNote client
+- `preview_markdown_note_tree`, `create_note_from_markdown_tree`, and `append_markdown_as_rem_tree` against a live RemNote client with real math, tables, and callouts
+- Style and math tools against a live RemNote client: red H1, blue H3, span highlight, inline math, block math, and no child pollution
+- Performance path through ChatGPT MCP plus live RemNote plugin WebSocket, including medium note timing and large-payload fallback behavior
 - `createTable`, `rem.isTable`, and table filter behavior
 - Reader APIs in PDF/web-reader contexts
 - Queue APIs while RemNote queue is open

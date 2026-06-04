@@ -16,6 +16,8 @@ import type {
   CreateStyledRemTreeArgs,
   CreatePolishedNoteTreeArgs,
   CreateOrReplaceNoteFromMarkdownArgs,
+  CreateNoteFromMarkdownTreeArgs,
+  AppendMarkdownAsRemTreeArgs,
   ApplyStylePlanArgs,
   VerifyNoteDesignArgs,
   ApplyRemnoteCommandArgs,
@@ -202,6 +204,10 @@ export function getStaticScopeTargetIds(request: BridgeRequest): string[] {
         (request.args as CreateOrReplaceNoteFromMarkdownArgs).parentRemId,
         (request.args as CreateOrReplaceNoteFromMarkdownArgs).targetRemId,
       ]);
+    case 'create_note_from_markdown_tree':
+      return uniqueRemIds([(request.args as CreateNoteFromMarkdownTreeArgs).parentRemId]);
+    case 'append_markdown_as_rem_tree':
+      return uniqueRemIds([(request.args as AppendMarkdownAsRemTreeArgs).targetRemId]);
     case 'apply_style_plan':
       return uniqueRemIds((request.args as ApplyStylePlanArgs).operations.map((operation) => operation.remId));
     case 'verify_note_design':
