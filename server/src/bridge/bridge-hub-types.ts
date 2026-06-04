@@ -57,6 +57,7 @@ export interface BridgeHubRequestSnapshot {
 export interface BridgeHubRequestOutcome {
   id: string;
   tool: BridgeToolName;
+  mcpTool?: string;
   startedAt: string;
   finishedAt: string;
   durationMs: number;

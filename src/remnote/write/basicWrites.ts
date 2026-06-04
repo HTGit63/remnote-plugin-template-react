@@ -67,7 +67,7 @@ import type {
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
 import { APPEND_RESULT_CACHE, CREATE_DOCUMENT_RESULT_CACHE, CREATE_REM_RESULT_CACHE, MOVE_RESULT_CACHE, REORDER_RESULT_CACHE, UPDATE_RESULT_CACHE, UPDATE_RICH_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult } from './writeCaches';
-import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
+import { buildRichTextFromSpans, createRemWithRichText, createSingleRemWithMarkdownApi, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, getRemSiblingIndex, hasRemSdkApi, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
 import { normalizeMarkdown } from './writeValidation';
 import { getDeleteTarget } from './deleteWrites';
 
@@ -84,14 +84,22 @@ export async function createRemFromMarkdown(
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
-  const richText = await parseMarkdownToRichText(plugin, markdown);
-  const insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
-  const createdRem = await createRemWithRichText(
-    plugin,
-    richText,
-    parent,
-    insertIndex
-  );
+  let insertIndex: number | undefined;
+  let createdRem: Rem;
+
+  if (hasRemSdkApi(plugin, 'createSingleRemWithMarkdown')) {
+    createdRem = await createSingleRemWithMarkdownApi(plugin, markdown, parent);
+    insertIndex = parent ? await getRemSiblingIndex(createdRem) : undefined;
+  } else {
+    const richText = await parseMarkdownToRichText(plugin, markdown);
+    insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
+    createdRem = await createRemWithRichText(
+      plugin,
+      richText,
+      parent,
+      insertIndex
+    );
+  }
 
   const result: CreateRemResult = {
     createdRemId: createdRem._id,
@@ -117,9 +125,17 @@ export async function createDocumentFromMarkdown(
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
-  const richText = await parseMarkdownToRichText(plugin, markdown);
-  const insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
-  const createdRem = await createRemWithRichText(plugin, richText, parent, insertIndex);
+  let insertIndex: number | undefined;
+  let createdRem: Rem;
+
+  if (hasRemSdkApi(plugin, 'createSingleRemWithMarkdown')) {
+    createdRem = await createSingleRemWithMarkdownApi(plugin, markdown, parent);
+    insertIndex = parent ? await getRemSiblingIndex(createdRem) : undefined;
+  } else {
+    const richText = await parseMarkdownToRichText(plugin, markdown);
+    insertIndex = parent ? await getFreshInsertIndex(plugin, parent, 'end') : undefined;
+    createdRem = await createRemWithRichText(plugin, richText, parent, insertIndex);
+  }
 
   await runSdkOperation('rem.setIsDocument', () => createdRem.setIsDocument(true));
 

@@ -10,6 +10,7 @@ import {
   STATIC_SDK_UNSUPPORTED_TOOLS,
 } from '../tool-registry.js';
 import { getDirectWritePolicySnapshot } from '../tool-permissions.js';
+import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diagnostics-redaction.js';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
   REM_ID_SCHEMA,
@@ -51,7 +52,7 @@ export function registerDiagnosticTools({
         new Set(
           diagnostics.recentRequests
             .filter((request) => request.ok)
-            .map((request) => publicMcpToolNameForBridgeTool(request.tool))
+            .map((request) => request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool))
         )
       );
       const sdkUnsupportedTools = Array.from(
@@ -59,7 +60,7 @@ export function registerDiagnosticTools({
           ...STATIC_SDK_UNSUPPORTED_TOOLS,
           ...diagnostics.recentRequests
             .filter((request) => request.errorCode === 'SDK_UNSUPPORTED' || request.sdkUnsupported)
-            .map((request) => publicMcpToolNameForBridgeTool(request.tool)),
+            .map((request) => request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool)),
         ])
       ).filter((tool) => registry.publicTools.includes(tool));
       const callableTools = Array.from(new Set([...serverLocalTools, ...successfulPluginTools]));
@@ -70,20 +71,63 @@ export function registerDiagnosticTools({
         .filter((request) => request.ok)
         .map((request) => ({
           ...request,
-          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+          mcpTool: request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool),
         }));
       const lastFailedToolCalls = diagnostics.recentRequests
         .filter((request) => !request.ok)
         .map((request) => ({
           ...request,
-          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+          mcpTool: request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool),
         }));
       const partialExecutions = diagnostics.recentRequests
         .filter((request) => request.partialExecution)
         .map((request) => ({
           ...request,
-          mcpTool: publicMcpToolNameForBridgeTool(request.tool),
+          mcpTool: request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool),
         }));
+      const lastFailedTool = diagnostics.recentRequests.find((request) => !request.ok);
+      const registryMismatchCount =
+        registry.registryMismatch.missing.length +
+        registry.registryMismatch.unexpected.length +
+        registry.registryToMcpListMismatch.listedButNotDeclared.length +
+        registry.mcpListToCallableMismatch.callableButNotListed.length;
+      const publicUserSummary = buildPublicUserDiagnosticSummary({
+        connected: diagnostics.status.connected,
+        pendingRequests: diagnostics.status.pendingRequests,
+        publicToolCount: registry.publicToolCount,
+        actualCallableToolCount: callableTools.length,
+        runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
+        sdkUnsupportedToolCount: sdkUnsupportedTools.length,
+        lastErrorCode: lastFailedTool?.errorCode ?? null,
+        deleteToolExposed: registry.deleteToolExposed,
+        registryMismatchCount,
+      });
+      const result = {
+        ...registry,
+        ...directWrite,
+        ...(runtimeInfo ?? {}),
+        ...diagnostics,
+        pendingRequests: diagnostics.status.pendingRequests,
+        pendingApproval: diagnostics.pending[0] ?? null,
+        recentErrors: diagnostics.recentRequests.filter((request) => !request.ok),
+        recentRequestLifecycle: diagnostics.recentRequests,
+        lastSuccessfulToolCalls,
+        lastFailedToolCalls,
+        partialExecutions,
+        lastPartialExecution: partialExecutions[0] ?? null,
+        serverLocalVerifiedTools: serverLocalTools,
+        serverLocalVerifiedToolCount: serverLocalTools.length,
+        realPluginVerifiedTools: successfulPluginTools,
+        verifiedToolCount: successfulPluginTools.length,
+        runtimeUnverifiedTools,
+        runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
+        sdkUnsupportedTools,
+        callableTools,
+        actualMcpCallableTools: callableTools,
+        unauthMcpCallableTools:
+          registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
+        publicUserSummary,
+      };
       return {
         content: [
           {
@@ -94,29 +138,12 @@ export function registerDiagnosticTools({
         structuredContent: {
           ok: true,
           result: {
-            ...registry,
-            ...directWrite,
-            ...(runtimeInfo ?? {}),
-            ...diagnostics,
-            pendingRequests: diagnostics.status.pendingRequests,
-            pendingApproval: diagnostics.pending[0] ?? null,
-            recentErrors: diagnostics.recentRequests.filter((request) => !request.ok),
-            recentRequestLifecycle: diagnostics.recentRequests,
-            lastSuccessfulToolCalls,
-            lastFailedToolCalls,
-            partialExecutions,
-            lastPartialExecution: partialExecutions[0] ?? null,
-            serverLocalVerifiedTools: serverLocalTools,
-            serverLocalVerifiedToolCount: serverLocalTools.length,
-            realPluginVerifiedTools: successfulPluginTools,
-            verifiedToolCount: successfulPluginTools.length,
-            runtimeUnverifiedTools,
-            runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
-            sdkUnsupportedTools,
-            callableTools,
-            actualMcpCallableTools: callableTools,
-            unauthMcpCallableTools:
-              registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
+            ...result,
+            developerDiagnosticBundle: {
+              copiedAt: new Date().toISOString(),
+              redacted: true,
+              payload: redactDiagnosticValue(result),
+            },
           },
         },
       };

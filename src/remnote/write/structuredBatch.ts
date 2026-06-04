@@ -1,5 +1,10 @@
 import { RemType, SetRemType } from '@remnote/plugin-sdk';
-import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type {
+  PluginRem as Rem,
+  RichTextFormatName,
+  RichTextInterface,
+  RNPlugin,
+} from '@remnote/plugin-sdk';
 import type {
   ApplyRemnoteCommandArgs,
   ApplyRemnoteCommandResult,
@@ -79,24 +84,71 @@ import {
   RICH_TEXT_HIGHLIGHT_FIELD,
   resolveRangeFromPlainText,
 } from '../richTextFormatting';
-import { RemnoteWriteError, getPartialExecutionDetails, getSdkErrorMessage, mapFormattingError, runSdkOperation } from './writeErrors';
-import { STRUCTURED_BATCH_RESULT_CACHE, STYLED_TREE_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
+import {
+  RemnoteWriteError,
+  getPartialExecutionDetails,
+  getSdkErrorMessage,
+  mapFormattingError,
+  runSdkOperation,
+} from './writeErrors';
+import {
+  STRUCTURED_BATCH_RESULT_CACHE,
+  STYLED_TREE_RESULT_CACHE,
+  getWriteIdempotencyKey,
+} from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
-import { applyRemStyle, buildRichTextFromSpans, buildStyledText, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemPlainString, getRemRichText } from './remnoteSdkHelpers';
+import {
+  applyRemStyle,
+  buildRichTextFromSpans,
+  buildStyledText,
+  createRemWithRichText,
+  findRequiredRem,
+  getFreshInsertIndex,
+  getRemPlainString,
+  getRemRichText,
+} from './remnoteSdkHelpers';
 import { assertTreeLimits, collectStyledTreePlan, normalizeStyledNode } from './writeValidation';
 import { createFlashcardRem } from './cardWrites';
+import { buildWriteOperationPlan } from '../write-engine/plan';
+import {
+  executeWriteOperation,
+  finalizeWriteOperationPlan,
+  writeEngineExecutionFromPlan,
+} from '../write-engine/execute';
+import { rollbackCreatedRems as rollbackCreatedRemsFromEngine } from '../write-engine/rollback';
+import {
+  verifyCreatedRems as verifyCreatedRemsFromEngine,
+  verifyStagedReplacement,
+} from '../write-engine/verify';
+import type { WriteOperationPlan } from '../write-engine/types';
 
 export async function structuredWriteEngine(
   plugin: RNPlugin,
-  args: CreateStyledRemTreeArgs
+  args: CreateStyledRemTreeArgs,
+  options: { skipTransaction?: boolean } = {}
 ): Promise<CreateStyledRemTreeResult> {
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'styled-tree');
   if (!args.dryRun) {
     const cached = STYLED_TREE_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
+      const replayPlan = finalizeWriteOperationPlan(
+        plugin,
+        cached.operationPlan ??
+          buildWriteOperationPlan({
+            toolName: 'create_styled_rem_tree',
+            operation: 'create_styled_rem_tree',
+            dryRun: false,
+            idempotencyKey,
+            target: { parentId: args.parentId },
+            nodesToCreate: cached.createdNodeCount,
+          }),
+        { idempotencyReplay: true, skipTransaction: options.skipTransaction }
+      );
       return {
         ...cached,
         status: 'already_applied',
+        operationPlan: replayPlan,
+        writeEngine: writeEngineExecutionFromPlan(replayPlan, { idempotencyReplay: true }),
       };
     }
   }
@@ -104,8 +156,31 @@ export async function structuredWriteEngine(
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const validationState: TreeValidationState = { nodeCount: 0 };
   const tree = normalizeStyledNode(applyStylePresetToTree(args.tree, args), 1, validationState);
-  assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Styled tree');
+  assertTreeLimits(
+    validationState,
+    { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount },
+    'Styled tree'
+  );
   const plan = collectStyledTreePlan(tree);
+  const operationPlan = finalizeWriteOperationPlan(
+    plugin,
+    buildWriteOperationPlan({
+      toolName: 'create_styled_rem_tree',
+      operation: 'create_styled_rem_tree',
+      dryRun: Boolean(args.dryRun),
+      idempotencyKey,
+      target: { parentId: parent._id },
+      nodes: [tree],
+      verificationChecks: args.dryRun ? ['validate_tree_limits'] : ['created_rems_exist'],
+      rollbackStrategy: 'delete_created_rems',
+      replacement: {
+        strategy: 'create_child_tree',
+        preservesExistingUntilVerified: true,
+        oldChildrenSnapshotRequired: false,
+      },
+    }),
+    { skipTransaction: options.skipTransaction }
+  );
   const createdRemIds: string[] = [];
   const createdNodes: CreateStyledRemTreeResult['createdNodes'] = [];
   const idMap: Record<string, string> = {};
@@ -125,6 +200,8 @@ export async function structuredWriteEngine(
       styleOperationCount: plan.styleOperationCount,
       mathNodeCount: plan.mathNodeCount,
       cardNodeCount: plan.cardNodeCount,
+      operationPlan,
+      writeEngine: writeEngineExecutionFromPlan(operationPlan),
     };
   }
 
@@ -139,7 +216,8 @@ export async function structuredWriteEngine(
     let childIds: string[] = [];
 
     if (type === 'basicFlashcard' || type === 'conceptCard' || type === 'descriptorCard') {
-      const remType = type === 'conceptCard' ? 'concept' : type === 'descriptorCard' ? 'descriptor' : undefined;
+      const remType =
+        type === 'conceptCard' ? 'concept' : type === 'descriptorCard' ? 'descriptor' : undefined;
       const card = await createFlashcardRem(
         plugin,
         nodeParent,
@@ -154,7 +232,10 @@ export async function structuredWriteEngine(
       childIds = card.childIds;
     } else if (type === 'multipleChoiceCard') {
       const choices = node.choices ?? [];
-      const back = [`Answer: ${node.correctChoice ?? node.answer ?? ''}`, ...choices.map((choice) => `Choice: ${choice}`)].join('\n');
+      const back = [
+        `Answer: ${node.correctChoice ?? node.answer ?? ''}`,
+        ...choices.map((choice) => `Choice: ${choice}`),
+      ].join('\n');
       const card = await createFlashcardRem(
         plugin,
         nodeParent,
@@ -188,7 +269,14 @@ export async function structuredWriteEngine(
       if (start >= 0) {
         let next: RichTextInterface;
         try {
-          next = (await applyClozeToRange(plugin, getRemRichText(created), start, start + clozeText.length)).richText;
+          next = (
+            await applyClozeToRange(
+              plugin,
+              getRemRichText(created),
+              start,
+              start + clozeText.length
+            )
+          ).richText;
         } catch (error: unknown) {
           throw mapFormattingError(error);
         }
@@ -199,7 +287,9 @@ export async function structuredWriteEngine(
         });
       }
       await runSdkOperation('rem.setEnablePractice', () => created.setEnablePractice(true));
-      await runSdkOperation('rem.setPracticeDirection', () => created.setPracticeDirection(node.direction ?? 'both'));
+      await runSdkOperation('rem.setPracticeDirection', () =>
+        created.setPracticeDirection(node.direction ?? 'both')
+      );
     } else {
       const richText =
         node.richText && node.richText.length
@@ -234,23 +324,38 @@ export async function structuredWriteEngine(
   }
 
   try {
-    const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
-    const root = await createNode(tree, parent, rootInsertIndex, 0);
+    const executed = await executeWriteOperation(
+      plugin,
+      operationPlan,
+      async (activePlan) => {
+        const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
+        const root = await createNode(tree, parent, rootInsertIndex, 0);
 
-    const result: CreateStyledRemTreeResult = {
-      rootCreatedRemId: root._id,
-      createdNodeCount: createdRemIds.length,
-      createdRemIds,
-      createdNodes,
-      rootInsertIndex,
-      rootInsertPosition: args.position ?? 'end',
-      status: 'created_styled_tree',
-      idempotencyKey,
-      idMap,
-      previewOutline: plan.previewOutline,
-      styleOperationCount: plan.styleOperationCount,
-      mathNodeCount: plan.mathNodeCount,
-      cardNodeCount: plan.cardNodeCount,
+        const result: CreateStyledRemTreeResult = {
+          rootCreatedRemId: root._id,
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          createdNodes,
+          rootInsertIndex,
+          rootInsertPosition: args.position ?? 'end',
+          status: 'created_styled_tree',
+          idempotencyKey,
+          idMap,
+          previewOutline: plan.previewOutline,
+          styleOperationCount: plan.styleOperationCount,
+          mathNodeCount: plan.mathNodeCount,
+          cardNodeCount: plan.cardNodeCount,
+          operationPlan: activePlan,
+          writeEngine: writeEngineExecutionFromPlan(activePlan),
+        };
+        return result;
+      },
+      { skipTransaction: options.skipTransaction }
+    );
+    const result = {
+      ...executed.result,
+      operationPlan: executed.operationPlan,
+      writeEngine: executed.writeEngine,
     };
     rememberStyledTreeResult(idempotencyKey, result);
     return result;
@@ -284,7 +389,10 @@ export async function structuredWriteEngine(
   }
 }
 
-export function rememberStructuredBatchResult(idempotencyKey: string, result: ApplyStructuredNoteBatchResult) {
+export function rememberStructuredBatchResult(
+  idempotencyKey: string,
+  result: ApplyStructuredNoteBatchResult
+) {
   STRUCTURED_BATCH_RESULT_CACHE.delete(idempotencyKey);
   STRUCTURED_BATCH_RESULT_CACHE.set(idempotencyKey, result);
 
@@ -297,8 +405,10 @@ export function rememberStructuredBatchResult(idempotencyKey: string, result: Ap
   }
 }
 
-
-export function rememberStyledTreeResult(idempotencyKey: string, result: CreateStyledRemTreeResult) {
+export function rememberStyledTreeResult(
+  idempotencyKey: string,
+  result: CreateStyledRemTreeResult
+) {
   STYLED_TREE_RESULT_CACHE.delete(idempotencyKey);
   STYLED_TREE_RESULT_CACHE.set(idempotencyKey, result);
 
@@ -312,42 +422,24 @@ export function rememberStyledTreeResult(idempotencyKey: string, result: CreateS
 }
 
 export function readCreatedRemIdsFromError(error: RemnoteWriteError): string[] {
-  const details = typeof error.details === 'object' && error.details !== null
-    ? (error.details as Record<string, unknown>)
-    : {};
+  const details =
+    typeof error.details === 'object' && error.details !== null
+      ? (error.details as Record<string, unknown>)
+      : {};
   const direct = Array.isArray(details.createdRemIds) ? details.createdRemIds : [];
   const partial = getPartialExecutionDetails(error.details);
   const partialIds = Array.isArray(partial.createdRemIds) ? partial.createdRemIds : [];
   return Array.from(
     new Set(
-      [...direct, ...partialIds].filter((id): id is string => typeof id === 'string' && id.length > 0)
+      [...direct, ...partialIds].filter(
+        (id): id is string => typeof id === 'string' && id.length > 0
+      )
     )
   );
 }
 
 export async function rollbackCreatedRems(plugin: RNPlugin, createdRemIds: string[]) {
-  const removedRemIds: string[] = [];
-  const failedRemIds: string[] = [];
-
-  for (const remId of [...createdRemIds].reverse()) {
-    const rem = await plugin.rem.findOne(remId);
-    if (!rem) {
-      continue;
-    }
-
-    try {
-      await runSdkOperation('rem.remove', () => rem.remove());
-      removedRemIds.push(remId);
-    } catch {
-      failedRemIds.push(remId);
-    }
-  }
-
-  return {
-    status: failedRemIds.length ? 'failed' as const : 'completed' as const,
-    removedRemIds,
-    failedRemIds,
-  };
+  return rollbackCreatedRemsFromEngine(plugin, createdRemIds);
 }
 
 export async function verifyCreatedRems(
@@ -355,38 +447,16 @@ export async function verifyCreatedRems(
   createdRemIds: string[],
   rootCreatedRemId?: string
 ): Promise<ApplyStructuredNoteBatchResult['verification']> {
-  const checkedRemIds: string[] = [];
-  const missingRemIds: string[] = [];
-  let rootPlainText: string | undefined;
-
-  for (const remId of createdRemIds) {
-    const rem = await plugin.rem.findOne(remId);
-    if (!rem) {
-      missingRemIds.push(remId);
-      continue;
-    }
-
-    checkedRemIds.push(remId);
-    if (rootCreatedRemId && remId === rootCreatedRemId) {
-      rootPlainText = await getRemPlainString(plugin, rem);
-    }
-  }
-
-  return {
-    ok: missingRemIds.length === 0,
-    checkedRemIds,
-    missingRemIds,
-    ...(rootPlainText !== undefined ? { rootPlainText } : {}),
-  };
+  return verifyCreatedRemsFromEngine(plugin, createdRemIds, rootCreatedRemId);
 }
 
 export async function createStyledRemTree(
   plugin: RNPlugin,
-  args: CreateStyledRemTreeArgs
+  args: CreateStyledRemTreeArgs,
+  options: { skipTransaction?: boolean } = {}
 ): Promise<CreateStyledRemTreeResult> {
-  return structuredWriteEngine(plugin, args);
+  return structuredWriteEngine(plugin, args, options);
 }
-
 
 export async function applyStructuredNoteBatch(
   plugin: RNPlugin,
@@ -401,9 +471,15 @@ export async function applyStructuredNoteBatch(
   const rawNoteChildren = args.note?.children;
   const noteChildren = Array.isArray(rawNoteChildren) ? rawNoteChildren : [];
   if (!noteRoot && !noteChildren.length) {
-    throw new RemnoteWriteError('INVALID_ARGS', 'Structured note batch requires root, note.root, or note.children.');
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Structured note batch requires root, note.root, or note.children.'
+    );
   }
-  if (!noteRoot && (operation === 'create_child_tree' || operation === 'update_root_and_replace_children')) {
+  if (
+    !noteRoot &&
+    (operation === 'create_child_tree' || operation === 'update_root_and_replace_children')
+  ) {
     throw new RemnoteWriteError('INVALID_ARGS', `${operation} requires root or note.root.`);
   }
 
@@ -420,18 +496,21 @@ export async function applyStructuredNoteBatch(
         args
       )
     : undefined;
-  const presetChildren = !noteRoot && args.stylePreset
-    ? applyStylePresetToTree({ type: 'rem', text: 'Preset root', children: noteChildren }, args).children ?? []
-    : noteChildren;
+  const presetChildren =
+    !noteRoot && args.stylePreset
+      ? (applyStylePresetToTree({ type: 'rem', text: 'Preset root', children: noteChildren }, args)
+          .children ?? [])
+      : noteChildren;
   const root = presetRootInput
-    ? normalizeStyledNode(
-        presetRootInput,
-        1,
-        validationState
-      )
+    ? normalizeStyledNode(presetRootInput, 1, validationState)
     : undefined;
-  const childNodes = root?.children ?? presetChildren.map((child) => normalizeStyledNode(child, 1, validationState));
-  assertTreeLimits(validationState, { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount }, 'Structured note batch');
+  const childNodes =
+    root?.children ?? presetChildren.map((child) => normalizeStyledNode(child, 1, validationState));
+  assertTreeLimits(
+    validationState,
+    { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount },
+    'Structured note batch'
+  );
   const batchStats = (root ? [root] : childNodes).reduce(
     (acc, node) => {
       const nodeStats = collectStyledTreePlan(node, 0, acc.previewOutline);
@@ -445,15 +524,35 @@ export async function applyStructuredNoteBatch(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'structured-batch');
   const rollbackOnFailure = args.rollbackOnFailure ?? true;
   const verifyAfterWrite = args.verifyAfterWrite ?? false;
-  const operationId = `structured-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   if (!args.dryRun) {
     const cached = STRUCTURED_BATCH_RESULT_CACHE.get(idempotencyKey);
     if (cached) {
+      const replayPlan = finalizeWriteOperationPlan(
+        plugin,
+        cached.operationPlan ??
+          buildWriteOperationPlan({
+            toolName: 'apply_structured_note_batch',
+            operation,
+            dryRun: false,
+            idempotencyKey,
+            target: {
+              parentId: cached.parentId,
+              targetRemId: cached.targetRemId,
+              rootRemId: cached.rootCreatedRemId,
+            },
+            nodesToCreate: cached.createdNodeCount,
+            nodesToUpdate: cached.updatedRemIds?.length ?? 0,
+            nodesToDelete: cached.deletedRemIds?.length ?? 0,
+          }),
+        { idempotencyReplay: true }
+      );
       return {
         ...cached,
         status: 'already_applied',
         dryRun: false,
+        operationPlan: replayPlan,
+        writeEngine: writeEngineExecutionFromPlan(replayPlan, { idempotencyReplay: true }),
       };
     }
   }
@@ -462,10 +561,13 @@ export async function applyStructuredNoteBatch(
   const requestedParentId = target.parentId ?? args.parentId ?? null;
   const parentId =
     operation === 'create_child_tree'
-      ? requestedParentId ?? targetRemId
-      : targetRemId ?? requestedParentId;
+      ? (requestedParentId ?? targetRemId)
+      : (targetRemId ?? requestedParentId);
   if (!parentId) {
-    throw new RemnoteWriteError('INVALID_ARGS', 'Structured note batch target did not resolve to a Rem ID.');
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Structured note batch target did not resolve to a Rem ID.'
+    );
   }
 
   const parent = await findRequiredRem(
@@ -474,10 +576,43 @@ export async function applyStructuredNoteBatch(
     operation === 'create_child_tree' ? 'Parent' : 'Target',
     operation === 'create_child_tree' ? 'PARENT_NOT_FOUND' : 'REM_NOT_FOUND'
   );
+  const replacementOperation =
+    operation === 'replace_children' || operation === 'update_root_and_replace_children';
+  const operationPlan = finalizeWriteOperationPlan(
+    plugin,
+    buildWriteOperationPlan({
+      toolName: 'apply_structured_note_batch',
+      operation,
+      dryRun: Boolean(args.dryRun),
+      idempotencyKey,
+      target:
+        operation === 'create_child_tree'
+          ? { parentId: parent._id }
+          : { targetRemId: parent._id, parentId: parent.parent ?? undefined },
+      nodes: root ? [root] : childNodes,
+      nodesToUpdate: operation === 'update_root_and_replace_children' ? 1 : 0,
+      nodesToDelete: replacementOperation ? (parent.children?.length ?? 0) : 0,
+      verificationChecks: [
+        'validate_tree_limits',
+        ...(verifyAfterWrite ? ['created_rems_exist'] : []),
+        ...(replacementOperation ? ['staged_replacement_verified_before_delete'] : []),
+      ],
+      rollbackStrategy: replacementOperation ? 'create_new_verify_swap' : 'delete_created_rems',
+      replacement: {
+        strategy: replacementOperation
+          ? 'create_new_verify_swap'
+          : operation === 'create_child_tree'
+            ? 'create_child_tree'
+            : 'direct_append',
+        preservesExistingUntilVerified: replacementOperation,
+        oldChildrenSnapshotRequired: replacementOperation,
+      },
+    })
+  );
 
   if (args.dryRun) {
     return {
-      operationId,
+      operationId: operationPlan.operationId,
       status: 'dry_run',
       targetRemId: operation === 'create_child_tree' ? undefined : parent._id,
       parentId: operation === 'create_child_tree' ? parent._id : undefined,
@@ -494,6 +629,8 @@ export async function applyStructuredNoteBatch(
       styleCount: batchStats.styleOperationCount,
       mathCount: batchStats.mathNodeCount,
       cardCount: batchStats.cardNodeCount,
+      operationPlan,
+      writeEngine: writeEngineExecutionFromPlan(operationPlan),
       rollback: {
         attempted: false,
         completed: false,
@@ -504,6 +641,9 @@ export async function applyStructuredNoteBatch(
   const createdRemIds: string[] = [];
   const updatedRemIds: string[] = [];
   const deletedRemIds: string[] = [];
+  const movedRemIds: string[] = [];
+  const stagedRemIds: string[] = [];
+  const backupRemIds: string[] = [];
 
   async function updateExistingRoot(rem: Rem, node: StyledRemTreeNode) {
     const richText =
@@ -519,96 +659,225 @@ export async function applyStructuredNoteBatch(
     updatedRemIds.push(rem._id);
   }
 
-  async function deleteDirectChildren(rem: Rem) {
-    const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
-    for (const child of children) {
-      const descendants = await runSdkOperation('rem.getDescendants', () => child.getDescendants());
-      deletedRemIds.push(child._id, ...descendants.map((descendant) => descendant._id));
-      await runSdkOperation('rem.remove', () => child.remove());
+  async function createChildNodes(rem: Rem, nodes: StyledRemTreeNode[]): Promise<string[]> {
+    const rootIds: string[] = [];
+    for (let index = 0; index < nodes.length; index += 1) {
+      const created = await structuredWriteEngine(
+        plugin,
+        {
+          parentId: rem._id,
+          position: 'end',
+          tree: nodes[index],
+        },
+        { skipTransaction: true }
+      );
+      createdRemIds.push(...created.createdRemIds);
+      rootIds.push(created.rootCreatedRemId);
+    }
+    return rootIds;
+  }
+
+  async function getDirectChildren(rem: Rem): Promise<Rem[]> {
+    return runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
+  }
+
+  async function createStagingRem(rem: Rem): Promise<Rem> {
+    const insertIndex = await getFreshInsertIndex(plugin, rem, 'end');
+    const staging = await createRemWithRichText(
+      plugin,
+      await buildStyledText(plugin, `RemnoteMCP staging ${operationPlan.operationId}`, {
+        hideBullet: true,
+      }),
+      rem,
+      insertIndex
+    );
+    stagedRemIds.push(staging._id);
+    return staging;
+  }
+
+  async function createBackupRem(rem: Rem): Promise<Rem> {
+    const insertIndex = await getFreshInsertIndex(plugin, rem, 'end');
+    const backup = await createRemWithRichText(
+      plugin,
+      await buildStyledText(plugin, `RemnoteMCP replacement backup ${operationPlan.operationId}`, {
+        hideBullet: true,
+      }),
+      rem,
+      insertIndex
+    );
+    backupRemIds.push(backup._id);
+    return backup;
+  }
+
+  async function stageReplacementChildren(rem: Rem, nodes: StyledRemTreeNode[]) {
+    const oldChildren = await getDirectChildren(rem);
+    if (!nodes.length) {
+      return { oldChildren, staging: null as Rem | null, stagedRootIds: [] as string[] };
+    }
+
+    const staging = await createStagingRem(rem);
+    const stagedRootIds = await createChildNodes(staging, nodes);
+    const verification = await verifyStagedReplacement(plugin, stagedRootIds);
+    if (!verification.ok) {
+      throw new RemnoteWriteError(
+        'PARTIAL_FAILURE',
+        'Replacement staging verification failed before deleting existing children.',
+        {
+          operationId: operationPlan.operationId,
+          idempotencyKey,
+          verification,
+          partialExecution: {
+            createdRemIds,
+            stagedRemIds,
+            failedStage: 'verify_staged_replacement',
+            rollbackStatus: 'not_attempted',
+            recovery: {
+              existingChildrenPreserved: true,
+              oldChildRemIds: oldChildren.map((child) => child._id),
+            },
+          },
+        }
+      );
+    }
+    return { oldChildren, staging, stagedRootIds };
+  }
+
+  async function moveStagedChildrenToTarget(staging: Rem, rem: Rem) {
+    const stagedChildren = await getDirectChildren(staging);
+    for (let index = 0; index < stagedChildren.length; index += 1) {
+      await runSdkOperation('rem.setParent', () => stagedChildren[index].setParent(rem, index));
+      movedRemIds.push(stagedChildren[index]._id);
+    }
+    await runSdkOperation('rem.remove', () => staging.remove());
+  }
+
+  async function moveChildrenToBackup(children: Rem[], backup: Rem) {
+    for (let index = 0; index < children.length; index += 1) {
+      await runSdkOperation('rem.setParent', () => children[index].setParent(backup, index));
+      movedRemIds.push(children[index]._id);
     }
   }
 
-  async function createChildNodes(rem: Rem, nodes: StyledRemTreeNode[]) {
-    for (let index = 0; index < nodes.length; index += 1) {
-      const created = await structuredWriteEngine(plugin, {
-        parentId: rem._id,
-        position: 'end',
-        tree: nodes[index],
-      });
-      createdRemIds.push(...created.createdRemIds);
-    }
+  async function removeBackupTree(backup: Rem) {
+    const descendants = await runSdkOperation('rem.getDescendants', () => backup.getDescendants());
+    deletedRemIds.push(...descendants.map((descendant) => descendant._id));
+    await runSdkOperation('rem.remove', () => backup.remove());
   }
 
   try {
-    let rootCreatedRemId: string | undefined;
-    let rootInsertIndex: number | undefined;
-    let rootInsertPosition: 'start' | 'end' | undefined;
+    const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
+      let rootCreatedRemId: string | undefined;
+      let rootInsertIndex: number | undefined;
+      let rootInsertPosition: 'start' | 'end' | undefined;
 
-    if (operation === 'create_child_tree') {
-      if (!root) {
-        throw new RemnoteWriteError('INVALID_ARGS', 'create_child_tree requires root or note.root.');
-      }
-      const created = await structuredWriteEngine(plugin, {
-        parentId: parent._id,
-        position: args.position ?? 'end',
-        tree: root,
-      });
-      createdRemIds.push(...created.createdRemIds);
-      rootCreatedRemId = created.rootCreatedRemId;
-      rootInsertIndex = created.rootInsertIndex;
-      rootInsertPosition = created.rootInsertPosition;
-    } else {
-      if (operation === 'update_root_and_replace_children') {
+      if (operation === 'create_child_tree') {
         if (!root) {
-          throw new RemnoteWriteError('INVALID_ARGS', 'update_root_and_replace_children requires root or note.root.');
+          throw new RemnoteWriteError(
+            'INVALID_ARGS',
+            'create_child_tree requires root or note.root.'
+          );
         }
-        await updateExistingRoot(parent, root);
-      }
-      if (operation === 'replace_children' || operation === 'update_root_and_replace_children') {
-        await deleteDirectChildren(parent);
-      }
-      if (
-        operation === 'append_children' ||
-        operation === 'replace_children' ||
-        operation === 'update_root_and_replace_children'
-      ) {
-        await createChildNodes(parent, childNodes);
-      }
-    }
-
-    const verification = verifyAfterWrite
-      ? await verifyCreatedRems(
+        const created = await structuredWriteEngine(
           plugin,
-          Array.from(new Set([...createdRemIds, ...updatedRemIds])),
-          rootCreatedRemId ?? parent._id
-        )
-      : undefined;
-    const result: ApplyStructuredNoteBatchResult = {
-      operationId,
-      status: 'applied',
-      targetRemId: operation === 'create_child_tree' ? rootCreatedRemId : parent._id,
-      parentId: operation === 'create_child_tree' ? parent._id : parent.parent ?? undefined,
-      operation,
-      plannedNodeCount: validationState.nodeCount,
-      createdNodeCount: createdRemIds.length,
-      createdRemIds,
-      updatedRemIds,
-      deletedRemIds: Array.from(new Set(deletedRemIds)),
-      rootCreatedRemId,
-      rootInsertIndex,
-      rootInsertPosition,
-      dryRun: false,
-      idempotencyKey,
-      rollbackOnFailure,
-      verifyAfterWrite,
-      styleCount: batchStats.styleOperationCount,
-      mathCount: batchStats.mathNodeCount,
-      cardCount: batchStats.cardNodeCount,
-      rollback: {
-        attempted: false,
-        completed: false,
-      },
-      ...(verification ? { verification } : {}),
+          {
+            parentId: parent._id,
+            position: args.position ?? 'end',
+            tree: root,
+          },
+          { skipTransaction: true }
+        );
+        createdRemIds.push(...created.createdRemIds);
+        rootCreatedRemId = created.rootCreatedRemId;
+        rootInsertIndex = created.rootInsertIndex;
+        rootInsertPosition = created.rootInsertPosition;
+      } else if (operation === 'append_children') {
+        await createChildNodes(parent, childNodes);
+      } else {
+        const staged = await stageReplacementChildren(parent, childNodes);
+        if (operation === 'update_root_and_replace_children') {
+          if (!root) {
+            throw new RemnoteWriteError(
+              'INVALID_ARGS',
+              'update_root_and_replace_children requires root or note.root.'
+            );
+          }
+          await updateExistingRoot(parent, root);
+        }
+        const backup = staged.oldChildren.length ? await createBackupRem(parent) : null;
+        if (backup) {
+          await moveChildrenToBackup(staged.oldChildren, backup);
+        }
+        if (staged.staging) {
+          await moveStagedChildrenToTarget(staged.staging, parent);
+        }
+        if (backup) {
+          await removeBackupTree(backup);
+        }
+      }
+
+      const verification = verifyAfterWrite
+        ? await verifyCreatedRems(
+            plugin,
+            Array.from(new Set([...createdRemIds, ...updatedRemIds])),
+            rootCreatedRemId ?? parent._id
+          )
+        : undefined;
+      if (verification && !verification.ok) {
+        throw new RemnoteWriteError(
+          'PARTIAL_FAILURE',
+          'Structured note batch verification failed.',
+          {
+            operationId: activePlan.operationId,
+            idempotencyKey,
+            verification,
+            partialExecution: {
+              createdRemIds,
+              updatedRemIds,
+              deletedRemIds: Array.from(new Set(deletedRemIds)),
+              movedRemIds,
+              stagedRemIds,
+              failedStage: 'verify_structured_note_batch',
+              rollbackStatus: 'not_attempted',
+            },
+          }
+        );
+      }
+      const result: ApplyStructuredNoteBatchResult = {
+        operationId: activePlan.operationId,
+        status: 'applied',
+        targetRemId: operation === 'create_child_tree' ? rootCreatedRemId : parent._id,
+        parentId: operation === 'create_child_tree' ? parent._id : (parent.parent ?? undefined),
+        operation,
+        plannedNodeCount: validationState.nodeCount,
+        createdNodeCount: createdRemIds.length,
+        createdRemIds,
+        updatedRemIds,
+        deletedRemIds: Array.from(new Set(deletedRemIds)),
+        movedRemIds,
+        rootCreatedRemId,
+        rootInsertIndex,
+        rootInsertPosition,
+        dryRun: false,
+        idempotencyKey,
+        rollbackOnFailure,
+        verifyAfterWrite,
+        styleCount: batchStats.styleOperationCount,
+        mathCount: batchStats.mathNodeCount,
+        cardCount: batchStats.cardNodeCount,
+        operationPlan: activePlan,
+        writeEngine: writeEngineExecutionFromPlan(activePlan),
+        rollback: {
+          attempted: false,
+          completed: false,
+        },
+        ...(verification ? { verification } : {}),
+      };
+      return result;
+    });
+    const result = {
+      ...executed.result,
+      operationPlan: executed.operationPlan,
+      writeEngine: executed.writeEngine,
     };
 
     rememberStructuredBatchResult(idempotencyKey, result);
@@ -620,39 +889,72 @@ export async function applyStructuredNoteBatch(
       for (const remId of nestedCreatedRemIds) {
         createdRemIds.push(remId);
       }
-      const uniqueCreatedRemIds = Array.from(new Set(createdRemIds));
-      const hasPartial = uniqueCreatedRemIds.length > 0 || updatedRemIds.length > 0 || deletedRemIds.length > 0;
-      const rollback = rollbackOnFailure && uniqueCreatedRemIds.length
-        ? await rollbackCreatedRems(plugin, uniqueCreatedRemIds)
-        : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
-      throw new RemnoteWriteError(hasPartial ? 'PARTIAL_FAILURE' : error.code, hasPartial ? 'Structured note batch failed after partial execution.' : error.message, {
-        originalDetails: error.details,
-        operationId,
-        idempotencyKey,
-        partialExecution: {
-          ...getPartialExecutionDetails(error.details),
-          createdNodeCount: uniqueCreatedRemIds.length,
-          createdRemIds: uniqueCreatedRemIds,
-          updatedRemIds,
-          deletedRemIds: Array.from(new Set(deletedRemIds)),
-          failedStage: 'apply_structured_note_batch',
-          rollbackStatus: rollback.status,
-          rollbackRemovedRemIds: rollback.removedRemIds,
-          rollbackFailedRemIds: rollback.failedRemIds,
-        },
-      });
+      const uniqueCreatedRemIds = Array.from(new Set([...createdRemIds, ...stagedRemIds]));
+      const hasPartial =
+        uniqueCreatedRemIds.length > 0 ||
+        updatedRemIds.length > 0 ||
+        deletedRemIds.length > 0 ||
+        movedRemIds.length > 0;
+      const rollback =
+        rollbackOnFailure && uniqueCreatedRemIds.length
+          ? await rollbackCreatedRems(plugin, uniqueCreatedRemIds)
+          : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
+      throw new RemnoteWriteError(
+        hasPartial ? 'PARTIAL_FAILURE' : error.code,
+        hasPartial ? 'Structured note batch failed after partial execution.' : error.message,
+        {
+          originalDetails: error.details,
+          operationId: operationPlan.operationId,
+          idempotencyKey,
+          operationPlan,
+          partialExecution: {
+            ...getPartialExecutionDetails(error.details),
+            createdNodeCount: uniqueCreatedRemIds.length,
+            createdRemIds: Array.from(new Set([...uniqueCreatedRemIds, ...stagedRemIds])),
+            updatedRemIds,
+            deletedRemIds: Array.from(new Set(deletedRemIds)),
+            movedRemIds,
+            stagedRemIds,
+            backupRemIds,
+            failedStage: 'apply_structured_note_batch',
+            rollbackStatus: rollback.status,
+            rollbackRemovedRemIds: rollback.removedRemIds,
+            rollbackFailedRemIds: rollback.failedRemIds,
+            recovery:
+              replacementOperation && backupRemIds.length
+                ? {
+                    oldContentMayBeInBackupRemIds: backupRemIds,
+                    reason:
+                      'Replacement keeps old children in backup until new children move succeeds.',
+                  }
+                : undefined,
+          },
+        }
+      );
     }
 
     throw new RemnoteWriteError('SDK_ERROR', 'Structured note batch failed.', {
       sdkMessage: getSdkErrorMessage(error),
-      operationId,
+      operationId: operationPlan.operationId,
       idempotencyKey,
+      operationPlan,
       partialExecution: {
-        createdRemIds,
+        createdRemIds: Array.from(new Set([...createdRemIds, ...stagedRemIds])),
         updatedRemIds,
         deletedRemIds: Array.from(new Set(deletedRemIds)),
+        movedRemIds,
+        stagedRemIds,
+        backupRemIds,
         failedStage: 'apply_structured_note_batch',
         rollbackStatus: 'not_attempted',
+        recovery:
+          replacementOperation && backupRemIds.length
+            ? {
+                oldContentMayBeInBackupRemIds: backupRemIds,
+                reason:
+                  'Replacement keeps old children in backup until new children move succeeds.',
+              }
+            : undefined,
       },
     });
   }

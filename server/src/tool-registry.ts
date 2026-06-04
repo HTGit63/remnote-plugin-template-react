@@ -10,8 +10,10 @@ import {
   TOOL_SCHEMA_VERSION,
   type ToolProfile,
 } from './tool-policy.js';
+import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
+import { TOOL_PERMISSIONS } from './tool-permissions.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-02.markdown-importer';
+export const TOOL_REGISTRY_VERSION = '2026-06-04.tool-truth';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -29,6 +31,30 @@ export interface McpToolRegistryEntry {
   name: string;
   exposure: McpToolExposure;
   hiddenReason?: string;
+}
+
+export interface ToolStateModelEntry {
+  name: string;
+  description: string;
+  category: string;
+  declared: boolean;
+  registered: boolean;
+  listed: boolean;
+  callable: boolean;
+  liveVerified: boolean;
+  sdkUnsupported: boolean;
+  hidden: boolean;
+  blockedByTier: boolean;
+  blockedByScope: boolean;
+  gatewayBlocked: boolean;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastErrorCode: string | null;
+  riskLevel: string;
+  operationTier: string;
+  toolAccessTier: string;
+  scopeRequirement: string;
+  sdkCapability: string | null;
 }
 
 export const MCP_TOOL_REGISTRY = [
@@ -85,6 +111,80 @@ export type RegisteredMcpToolName = (typeof MCP_TOOL_REGISTRY)[number]['name'];
 
 const allPublicToolCache = new Map<string, string[]>();
 const publicToolProfileCache = new Map<string, string[]>();
+
+const SDK_CAPABILITY_BY_TOOL: Record<string, string> = {
+  create_rem: 'plugin.rem.createSingleRemWithMarkdown',
+  create_document: 'plugin.rem.createSingleRemWithMarkdown',
+  create_rem_tree: 'plugin.rem.createTreeWithMarkdown',
+  create_folder: 'no_verified_folder_api',
+};
+
+function declaredToolNames(): string[] {
+  return Array.from(new Set([
+    ...MCP_TOOL_REGISTRY.map((tool) => tool.name),
+    ...STATIC_SDK_UNSUPPORTED_TOOLS,
+  ])).sort();
+}
+
+function toolDescription(name: string): string {
+  const metadata = getToolMetadata(name);
+  const policy = getToolPolicyEntry(name);
+  if (policy.preferredFor?.length) {
+    return `${metadata.category} tool; preferred for ${policy.preferredFor.join(', ')}.`;
+  }
+  if (policy.avoidWhen?.length) {
+    return `${metadata.category} tool; avoid when ${policy.avoidWhen.join(', ')}.`;
+  }
+  if (policy.replacement) {
+    return `${metadata.category} tool; fallback or gated path, replacement: ${policy.replacement}.`;
+  }
+  return `${metadata.category} tool in ${metadata.tier} tier.`;
+}
+
+function buildToolStateEntry(
+  name: string,
+  registeredTools: readonly string[],
+  publicTools: readonly string[],
+  allPublicTools: readonly string[],
+  serverLocalVerifiedTools: readonly string[],
+  sdkUnsupportedTools: readonly string[]
+): ToolStateModelEntry {
+  const metadata = getToolMetadata(name);
+  const policy = getToolPolicyEntry(name);
+  const history = getToolHistoryEntry(name);
+  const listed = publicTools.includes(name);
+  const registered = registeredTools.includes(name);
+  const liveVerified = Boolean(history.lastSuccessAt) || serverLocalVerifiedTools.includes(name);
+  const sdkUnsupported =
+    sdkUnsupportedTools.includes(name) ||
+    !metadata.sdkSupported ||
+    history.sdkUnsupportedCount > 0;
+  const blockedByTier = allPublicTools.includes(name) && !listed;
+  const hidden = !listed;
+  return {
+    name,
+    description: toolDescription(name),
+    category: metadata.category,
+    declared: declaredToolNames().includes(name),
+    registered,
+    listed,
+    callable: registered && !sdkUnsupported && (liveVerified || serverLocalVerifiedTools.includes(name)),
+    liveVerified,
+    sdkUnsupported,
+    hidden,
+    blockedByTier,
+    blockedByScope: history.scopeBlockCount > 0,
+    gatewayBlocked: history.gatewayBlockCount > 0,
+    lastSuccessAt: history.lastSuccessAt,
+    lastFailureAt: history.lastFailureAt,
+    lastErrorCode: history.lastErrorCode,
+    riskLevel: metadata.riskLevel,
+    operationTier: policy.policy,
+    toolAccessTier: String(metadata.tier),
+    scopeRequirement: TOOL_PERMISSIONS[name]?.requiredAccessScope ?? 'none',
+    sdkCapability: SDK_CAPABILITY_BY_TOOL[name] ?? null,
+  };
+}
 
 export function getAllPublicMcpToolNames(exposeDeleteTool = false): string[] {
   const cacheKey = `${TOOL_REGISTRY_VERSION}:${TOOL_SCHEMA_VERSION}:all-public:${exposeDeleteTool ? 'delete-on' : 'delete-off'}`;
@@ -194,9 +294,24 @@ export function getToolRegistrySummary(
   const serverLocalVerifiedTools = publicTools.filter((tool) =>
     (SERVER_LOCAL_MCP_TOOLS as readonly string[]).includes(tool)
   );
+  const liveVerifiedTools = publicTools.filter((tool) => Boolean(getToolHistoryEntry(tool).lastSuccessAt));
+  const actualMcpCallableTools = Array.from(new Set([...serverLocalVerifiedTools, ...liveVerifiedTools]));
   const runtimeUnverifiedTools = publicTools.filter(
-    (tool) => !sdkUnsupportedTools.includes(tool) && !serverLocalVerifiedTools.includes(tool)
+    (tool) => !sdkUnsupportedTools.includes(tool) && !actualMcpCallableTools.includes(tool)
   );
+  const sourceRegistryTools = declaredToolNames();
+  const toolStates = sourceRegistryTools.map((tool) =>
+    buildToolStateEntry(tool, registeredTools, publicTools, allPublicTools, serverLocalVerifiedTools, sdkUnsupportedTools)
+  );
+  const registryToMcpListMismatch = {
+    hiddenFromList: sourceRegistryTools.filter((tool) => !publicTools.includes(tool)),
+    listedButNotDeclared: publicTools.filter((tool) => !sourceRegistryTools.includes(tool)),
+  };
+  const mcpListToCallableMismatch = {
+    listedButNotCallable: publicTools.filter((tool) => !actualMcpCallableTools.includes(tool) && !sdkUnsupportedTools.includes(tool)),
+    callableButNotListed: actualMcpCallableTools.filter((tool) => !publicTools.includes(tool)),
+  };
+  const toolHistorySnapshot = getToolHistorySnapshot();
 
   return {
     serverVersion: SERVER_VERSION,
@@ -212,12 +327,14 @@ export function getToolRegistrySummary(
     lastDiscoveryRefreshAt: new Date().toISOString(),
     pluginProtocolVersion: BRIDGE_PLUGIN_PROTOCOL_VERSION,
     registeredTools,
+    sourceRegistryTools,
+    declaredToolNames: sourceRegistryTools,
     allPublicTools,
     allPublicToolCount: allPublicTools.length,
     publicToolCount: publicTools.length,
     publicTools,
     exposedTools: [...publicTools],
-    registryDeclaredTools: [...publicTools],
+    registryDeclaredTools: sourceRegistryTools,
     mcpRegisteredTools: [...registeredTools],
     mcpListedTools: [...publicTools],
     callabilitySource: 'runtime_matrix_not_live_execution' as const,
@@ -225,22 +342,29 @@ export function getToolRegistrySummary(
       'Registry lists discoverable tools. Runtime verification requires a recent successful server or plugin execution.',
     serverLocalVerifiedTools,
     serverLocalVerifiedToolCount: serverLocalVerifiedTools.length,
-    callableTools: [...serverLocalVerifiedTools],
+    callableTools: [...actualMcpCallableTools],
     discoverableTools: [...publicTools],
     unauthDiscoverableTools:
       auth?.discoveryAuthMode === 'no_auth_required' || !auth?.discoveryAuthMode ? [...publicTools] : [],
-    actualMcpCallableTools: [...serverLocalVerifiedTools],
+    actualMcpCallableTools: [...actualMcpCallableTools],
     unauthMcpCallableTools:
-      auth?.toolCallAuthMode === 'no_auth_allowed' || !auth?.toolCallAuthMode ? [...serverLocalVerifiedTools] : [],
+      auth?.toolCallAuthMode === 'no_auth_allowed' || !auth?.toolCallAuthMode ? [...actualMcpCallableTools] : [],
     unauthToolCallAllowedTools:
       auth?.toolCallAuthMode === 'no_auth_allowed' || !auth?.toolCallAuthMode ? [...publicTools] : [],
-    realPluginVerifiedTools: [],
-    verifiedToolCount: serverLocalVerifiedTools.length,
+    realPluginVerifiedTools: [...liveVerifiedTools],
+    verifiedToolCount: actualMcpCallableTools.length,
     runtimeUnverifiedTools,
     runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
     sdkUnsupportedTools,
     staticSdkUnsupportedTools: [...STATIC_SDK_UNSUPPORTED_TOOLS],
     unsupportedToolsAvailableOnlyAsDiagnostics: [...STATIC_SDK_UNSUPPORTED_TOOLS],
+    toolStateModelVersion: TOOL_REGISTRY_VERSION,
+    toolStates,
+    toolStateModel: Object.fromEntries(toolStates.map((tool) => [tool.name, tool])),
+    toolHistory: toolHistorySnapshot.toolHistory,
+    recentToolEvents: toolHistorySnapshot.recentToolEvents,
+    registryToMcpListMismatch,
+    mcpListToCallableMismatch,
     toolMetadata: Object.fromEntries(publicTools.map((tool) => [tool, getToolMetadata(tool)])),
     allToolMetadata: Object.fromEntries(TOOL_METADATA.map((tool) => [tool.name, tool])),
     toolTierSummary: getToolTierSummary(profile, exposeDeleteTool),
@@ -253,18 +377,38 @@ export function getToolRegistrySummary(
       return {
         ...metadata,
         toolName: tool,
+        description: toolDescription(tool),
+        declared: sourceRegistryTools.includes(tool),
         listed: true,
         registered,
+        callable: registered && !sdkUnsupported && (serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt)),
+        liveVerified: serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt),
+        hidden: false,
+        blockedByTier: false,
+        blockedByScope: getToolHistoryEntry(tool).scopeBlockCount > 0,
+        gatewayBlocked: getToolHistoryEntry(tool).gatewayBlockCount > 0,
+        lastSuccessAt: getToolHistoryEntry(tool).lastSuccessAt,
+        lastFailureAt: getToolHistoryEntry(tool).lastFailureAt,
         exposed: publicTools.includes(tool),
-        runtimeVerified: serverLocalVerified || Boolean(metadata.runtimeVerified),
+        runtimeVerified: serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt) || Boolean(metadata.runtimeVerified),
         runtimeVerifiedSource: serverLocalVerified ? 'server_local' : metadata.runtimeVerifiedSource,
-        lastSuccessTimestamp: null as string | null,
-        lastFailureTimestamp: null as string | null,
-        lastErrorCode: null as string | null,
-        averageLatencyMs: null as number | null,
+        lastSuccessTimestamp: getToolHistoryEntry(tool).lastSuccessAt,
+        lastFailureTimestamp: getToolHistoryEntry(tool).lastFailureAt,
+        lastErrorCode: getToolHistoryEntry(tool).lastErrorCode,
+        averageLatencyMs: getToolHistoryEntry(tool).averageDurationMs,
         p95LatencyMs: null as number | null,
         serverLocalVerified,
         sdkUnsupported,
+        operationTier: policy.policy,
+        toolAccessTier: String(metadata.tier),
+        scopeRequirement: TOOL_PERMISSIONS[tool]?.requiredAccessScope ?? 'none',
+        sdkCapability: SDK_CAPABILITY_BY_TOOL[tool] ?? null,
+        partialFailureCount: getToolHistoryEntry(tool).partialFailureCount,
+        gatewayBlockCount: getToolHistoryEntry(tool).gatewayBlockCount,
+        tierBlockCount: getToolHistoryEntry(tool).tierBlockCount,
+        scopeBlockCount: getToolHistoryEntry(tool).scopeBlockCount,
+        sdkUnsupportedCount: getToolHistoryEntry(tool).sdkUnsupportedCount,
+        lastBenchmarkRunAt: getToolHistoryEntry(tool).lastBenchmarkRunAt,
         recommendedFallback: policy.replacement ?? null,
         schemaWarningStatus: sdkUnsupported || !metadata.sdkSupported ? 'sdk_unsupported' : 'ok',
         schemaWarnings: sdkUnsupported || !metadata.sdkSupported

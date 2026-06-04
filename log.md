@@ -288,3 +288,89 @@ This log tracks all changes, structural enhancements, and tests performed for th
 - Removed empty `src/services/` directory.
 - Removed stale `docs/final-polish-*` phase notes superseded by `docs/audits/*` and current development/deployment docs.
 - Kept unsupported `create_folder` as SDK-unsupported protocol capability only; not public/callable.
+
+# 2026-06-04 Goal 2 modern SDK tool refactor
+
+## Status
+
+- Goal 1 rechecked before Goal 2: npm latest for `@remnote/plugin-sdk` is `0.0.46`; package and lockfile already pin `0.0.46`; SDK notes, diagnostics capability fields, and initial-sync fields already exist.
+- Goal 2 implemented at repo/build level; live RemNote client verification still required for exact SDK runtime behavior.
+
+## What Changed
+
+- `create_rem` now prefers `plugin.rem.createSingleRemWithMarkdown` when available, with old `createRem` + `parseFromMarkdown` fallback only when needed.
+- `create_document` now prefers `createSingleRemWithMarkdown`, then applies `setIsDocument(true)`.
+- `create_rem_tree` now prefers `plugin.rem.createTreeWithMarkdown` for simple unstyled trees when using normal end insertion; start insertion still uses existing structured fallback.
+- Advanced writing stays separate: `apply_structured_note_batch`, `create_styled_rem_tree`, `create_polished_note_tree`, and markdown-import paths were not collapsed into plain markdown.
+- Added internal table wrapper in `src/remnote/write/tableWrites.ts`; it calls `plugin.rem.createTable`, reports `SDK_UNSUPPORTED` if absent, and is not exposed as a public MCP tool.
+- Updated `docs/REMNOTE_SDK_NOTES.md` with Goal 2 notes and live-test boundaries.
+
+## Validation
+
+- `npm run check-types` passed.
+- `npm run validate` passed.
+- `npm run build` passed with existing webpack asset-size warnings.
+- `npm run server:build` passed.
+- `npm run server:smoke` passed.
+- `git diff --check` passed.
+
+# 2026-06-04 Goal 3 tool truth, exposure, and diagnostics
+
+## Status
+
+- Goal 3 implemented at repo/build/test level.
+- Live RemNote production proof remains environment-dependent; diagnostics now separates listed/callable/liveVerified instead of claiming registry-only tools work.
+
+## What Changed
+
+- Added tool state model fields for declared, registered, listed, callable, liveVerified, sdkUnsupported, hidden, blockedByTier, blockedByScope, gatewayBlocked, last success/failure/error, risk, operation tier, access tier, scope, and SDK capability.
+- Split source registry, MCP listed tools, actual callable tools, runtime-unverified tools, and live plugin-verified tools in diagnostics.
+- Added tool health history for success, failure, partial failure, gateway blocks, tier blocks, scope blocks, SDK unsupported, average duration, and last benchmark status.
+- Kept `delete_rem_by_id` honest: hidden unless delete exposure/full tier allows it; dry run stays default; real delete still requires delete scope, confirmation title, and parent/ancestor guard.
+- Added public-user diagnostic summaries plus redacted developer bundles in HTTP diagnostics, plugin diagnostics, health checks, and the bridge status UI copy buttons.
+- Updated hosted diagnostics smoke to assert the active registry count instead of stale hardcoded public tool totals.
+
+## Validation
+
+- `npm run check-types` passed.
+- `npm run validate` passed.
+- `npm run build` passed with existing webpack asset-size warnings.
+- `npm run server:build` passed.
+- `npm run server:smoke` passed.
+- `npm run server:test:area3` passed.
+- `npm run server:test:tools-diagnostics` passed.
+- `npm run server:test:tool-profile` passed.
+- `npm run server:test:health-check-routing` passed.
+- `npm run server:test:hosted-diagnostics` passed.
+- `git diff --check` passed.
+
+# 2026-06-04 Goal 4 transactional write engine and safe replacement
+
+## Status
+
+- Goal 4 implemented at repo/build/test level.
+- Live RemNote transaction rollback proof remains pending because it requires a running RemNote client/plugin runtime.
+
+## What Changed
+
+- Added `src/remnote/write-engine/` with plan, execute, verify, rollback, and type modules.
+- Added operation plans to complex write results with operation ID, idempotency key, target, create/update/delete/style/math/card counts, verification checks, rollback strategy, and payload/work estimates.
+- Wrapped `apply_structured_note_batch`, `create_styled_rem_tree`, `create_polished_note_tree`, and markdown import/write paths in runtime-detected `plugin.app.transaction` when available.
+- Kept dry runs mutation-free while returning the same operation plan shape used by real writes.
+- Made high-level idempotent replays return `already_applied` instead of creating duplicate trees.
+- Changed replacement flows to create and verify staged content before moving old children aside; partial failures now report staged, moved, and backup Rem IDs for recovery.
+- Documented the transaction boundary and remaining live-test requirements in `docs/REMNOTE_SDK_NOTES.md`.
+
+## Validation
+
+- `npm run check-types` passed.
+- `npm run validate` passed.
+- `npm run server:build` passed.
+- `npm run server:test:idempotency` passed.
+- `npm run server:test:structured-depth` passed.
+- `npm run build` passed with existing webpack asset-size warnings.
+- `npm run server:smoke` passed.
+- `npm run server:test:area3` passed.
+- `npm run server:test:markdown-importer` passed.
+- `npm run server:test:source-fidelity` passed.
+- `git diff --check` passed.

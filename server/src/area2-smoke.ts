@@ -7,6 +7,7 @@ import type {
   SerializedRem,
 } from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
+import { getToolRegistrySummary } from './tool-registry.js';
 
 const publicBaseUrl = 'https://remnote-plugin-template-react.onrender.com';
 const fakeRem: SerializedRem = {
@@ -129,6 +130,7 @@ const app = await startCompanionApp({
 });
 
 const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
+const expectedAdvancedNotesToolCount = getToolRegistrySummary(false, 'advanced_notes').publicToolCount;
 let ws: WebSocket | undefined;
 
 try {
@@ -238,7 +240,7 @@ try {
   if (
     dashboard.status !== 200 ||
     !dashboardText.includes('"deploymentMode":"hosted"') ||
-    !dashboardText.includes('"publicToolCount":41') ||
+    !dashboardText.includes(`"publicToolCount":${expectedAdvancedNotesToolCount}`) ||
     dashboardText.includes('"pid"') ||
     dashboardText.includes('"cwd"') ||
     dashboardText.includes('Session Stale')

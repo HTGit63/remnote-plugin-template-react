@@ -309,6 +309,56 @@ function lastRequestsFrom(report: Record<string, unknown> | null): Array<Record<
   return [];
 }
 
+const CLIENT_REDACT_KEYS = [
+  /token/i,
+  /secret/i,
+  /authorization/i,
+  /cookie/i,
+  /markdown/i,
+  /plainText/i,
+  /frontText/i,
+  /backText/i,
+  /rawText/i,
+  /richText/i,
+  /^args$/i,
+  /^content$/i,
+];
+
+function redactClientDiagnosticValue(value: unknown, depth = 0): unknown {
+  if (depth > 8) {
+    return '[REDACTED_DEPTH_LIMIT]';
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactClientDiagnosticValue(item, depth + 1));
+  }
+  if (typeof value !== 'object' || value === null) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+      key,
+      CLIENT_REDACT_KEYS.some((pattern) => pattern.test(key))
+        ? '[REDACTED]'
+        : redactClientDiagnosticValue(nested, depth + 1),
+    ])
+  );
+}
+
+function publicUserSummaryFrom(report: Record<string, unknown> | null): Record<string, unknown> | null {
+  const direct = report?.publicUserSummary;
+  if (typeof direct === 'object' && direct !== null && !Array.isArray(direct)) {
+    return direct as Record<string, unknown>;
+  }
+  const summary = report?.summary;
+  if (typeof summary === 'object' && summary !== null && !Array.isArray(summary)) {
+    const nested = (summary as Record<string, unknown>).publicUserSummary;
+    if (typeof nested === 'object' && nested !== null && !Array.isArray(nested)) {
+      return nested as Record<string, unknown>;
+    }
+  }
+  return null;
+}
+
 function DetailRow({
   label,
   value,
@@ -501,6 +551,7 @@ export function BridgeStatusWidget() {
     (toolTierState?.registry?.runtimeUnverifiedToolCount as number | undefined) ??
     bridgeStatus.runtimeUnverifiedTools?.length ??
     verificationMatrix.filter((tool) => tool.runtimeVerified !== true && tool.serverLocalVerified !== true).length;
+  const publicUserSummary = publicUserSummaryFrom(lastServerDiagnostics);
 
   useEffect(() => {
     permissionModeRef.current = permissionMode;
@@ -970,12 +1021,46 @@ export function BridgeStatusWidget() {
     };
 
     try {
-      await navigator.clipboard.writeText(JSON.stringify(diagnostics, null, 2));
+      await navigator.clipboard.writeText(JSON.stringify(redactClientDiagnosticValue(diagnostics), null, 2));
       setDebugCopyStatus('Diagnostics JSON copied.');
       await plugin.app.toast('Bridge diagnostics copied.');
     } catch {
       setDebugCopyStatus('Diagnostics copy failed.');
       await plugin.app.toast('Could not copy diagnostics from this RemNote surface.');
+    }
+  };
+
+  const handleCopyDeveloperDiagnosticBundle = async () => {
+    let hostedDiagnostics = lastServerDiagnostics;
+    if (effectiveHostedSession?.sessionSecret && !chatGptPairingDisabled) {
+      try {
+        hostedDiagnostics = await fetchHostedPluginDiagnostics(serverUrl, effectiveHostedSession);
+        setLastServerDiagnostics(hostedDiagnostics);
+      } catch (error: unknown) {
+        setDebugCopyStatus(error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const bundle =
+      (hostedDiagnostics?.developerDiagnosticBundle as unknown) ??
+      {
+        copiedAt: new Date().toISOString(),
+        redacted: true,
+        payload: redactClientDiagnosticValue({
+          bridge: bridgeStatus,
+          lastServerDiagnostics: hostedDiagnostics,
+          lastHealthCheck,
+          recentRequests: lastRequests.slice(0, 25),
+        }),
+      };
+
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(bundle, null, 2));
+      setDebugCopyStatus('Developer diagnostic bundle copied.');
+      await plugin.app.toast('Developer diagnostic bundle copied.');
+    } catch {
+      setDebugCopyStatus('Developer diagnostic bundle copy failed.');
+      await plugin.app.toast('Could not copy developer diagnostic bundle.');
     }
   };
 
@@ -1521,6 +1606,14 @@ export function BridgeStatusWidget() {
                   value={`${verificationMatrix.length} rows; ${runtimeVerifiedCount} verified`}
                 />
                 <DetailRow
+                  label="User Summary"
+                  value={
+                    publicUserSummary
+                      ? `${publicUserSummary.status ?? 'unknown'}: ${publicUserSummary.message ?? 'No message'}`
+                      : 'No fetched public summary yet'
+                  }
+                />
+                <DetailRow
                   label="Preferred Tools"
                   value={bridgeStatus.preferredTools?.join(', ') || 'Not reported'}
                 />
@@ -1570,6 +1663,9 @@ export function BridgeStatusWidget() {
               </div>
               <button type="button" onClick={handleCopyDiagnostics} className="bridge-button bridge-button-secondary bridge-button-full">
                 Copy Diagnostics
+              </button>
+              <button type="button" onClick={handleCopyDeveloperDiagnosticBundle} className="bridge-button bridge-button-secondary bridge-button-full">
+                Copy Developer Bundle
               </button>
               <button type="button" onClick={handleCopyFailedRequest} className="bridge-button bridge-button-secondary bridge-button-full">
                 Copy Failed Request

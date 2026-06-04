@@ -25,6 +25,8 @@ import type { BridgeHealthCheckResult } from './health-check-types.js';
 import { SessionRouter } from './bridge/session-router.js';
 import type { StorageProvider } from './storage/types.js';
 import { getToolRegistrySummary } from './tool-registry.js';
+import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
+import { recordToolHistoryEvent } from './tool-health-history.js';
 
 import {
   type PendingRequest,
@@ -230,6 +232,17 @@ export class BridgeHub {
 
   recordHealthCheck(result: BridgeHealthCheckResult) {
     this.lastHealthCheck = result;
+    for (const toolResult of result.results) {
+      recordToolHistoryEvent({
+        tool: toolResult.tool,
+        kind: 'health_check',
+        at: result.finishedAt,
+        durationMs: toolResult.durationMs,
+        errorCode: toolResult.status,
+        sdkUnsupported: toolResult.status === 'unsupported',
+        source: 'health_check',
+      });
+    }
   }
 
   private pluginRuntimeStatus() {
@@ -814,9 +827,20 @@ export class BridgeHub {
     pluginLifecycle?: BridgeLifecycleEvent[]
   ) {
     const evidence = getExecutionEvidence(response);
+    const mcpTool = publicMcpToolNameForBridgeTool(pending.tool);
+    recordToolHistoryEvent({
+      tool: mcpTool,
+      kind: response.ok ? 'success' : 'failure',
+      durationMs: Date.now() - pending.startedAt,
+      errorCode: response.ok ? undefined : response.error.code,
+      sdkUnsupported: !response.ok && response.error.code === 'SDK_UNSUPPORTED',
+      partialFailure: Boolean(evidence.partialExecution),
+      source: 'bridge',
+    });
     this.recentRequests.unshift({
       id,
       tool: pending.tool,
+      mcpTool,
       status: this.terminalStatus(response),
       startedAt: new Date(pending.startedAt).toISOString(),
       finishedAt: new Date().toISOString(),
@@ -864,9 +888,19 @@ export class BridgeHub {
     response: BridgeResponse,
     lifecycle: BridgeLifecycleEvent[]
   ) {
+    const mcpTool = publicMcpToolNameForBridgeTool(tool);
+    recordToolHistoryEvent({
+      tool: mcpTool,
+      kind: response.ok ? 'success' : 'failure',
+      durationMs: Date.now() - startedAt,
+      errorCode: response.ok ? undefined : response.error.code,
+      sdkUnsupported: !response.ok && response.error.code === 'SDK_UNSUPPORTED',
+      source: 'bridge',
+    });
     this.recentRequests.unshift({
       id,
       tool,
+      mcpTool,
       status: this.terminalStatus(response),
       startedAt: new Date(startedAt).toISOString(),
       finishedAt: new Date().toISOString(),

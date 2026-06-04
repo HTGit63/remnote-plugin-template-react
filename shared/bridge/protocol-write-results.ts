@@ -15,6 +15,54 @@ import type {
 } from './protocol-write-args.js';
 import type { BridgeErrorCode } from './protocol-core.js';
 
+export interface WriteOperationPlan {
+  operationId: string;
+  idempotencyKey?: string;
+  toolName: string;
+  operation: string;
+  dryRun: boolean;
+  target: {
+    parentId?: string | null;
+    targetRemId?: string | null;
+    rootRemId?: string | null;
+  };
+  nodesToCreate: number;
+  nodesToUpdate: number;
+  nodesToDelete: number;
+  stylesToApply: number;
+  mathBlocksToCreate: number;
+  cardsToCreate: number;
+  verificationChecks: string[];
+  rollbackStrategy: 'sdk_transaction' | 'delete_created_rems' | 'create_new_verify_swap' | 'none';
+  estimatedPayloadSize: number;
+  estimatedOperationCount: number;
+  estimatedTimeBudgetMs: number;
+  transaction: {
+    requested: boolean;
+    supported: boolean;
+    willUse: boolean;
+    reason?: string;
+  };
+  idempotency: {
+    required: boolean;
+    scope: 'plugin_memory' | 'hosted_persistent_planned';
+    replayStatus: 'new' | 'already_applied';
+  };
+  replacement?: {
+    strategy: 'create_new_verify_swap' | 'direct_append' | 'create_child_tree';
+    preservesExistingUntilVerified: boolean;
+    oldChildrenSnapshotRequired: boolean;
+  };
+}
+
+export interface WriteEngineExecution {
+  transactional: boolean;
+  transactionSupported: boolean;
+  transactionUsed: boolean;
+  idempotencyReplay: boolean;
+  persistentHostedIdempotencyPlanned: boolean;
+}
+
 export interface CreateRemResult {
   createdRemId: string;
   parentId: string | null;
@@ -164,6 +212,8 @@ export interface CreateStyledRemTreeResult {
   dryRun?: boolean;
   idempotencyKey?: string;
   plannedNodeCount?: number;
+  operationPlan?: WriteOperationPlan;
+  writeEngine?: WriteEngineExecution;
   idMap?: Record<string, string>;
   previewOutline?: string[];
   styleOperationCount?: number;
@@ -213,6 +263,8 @@ export interface ApplyStructuredNoteBatchResult {
   idempotencyKey?: string;
   rollbackOnFailure: boolean;
   verifyAfterWrite: boolean;
+  operationPlan?: WriteOperationPlan;
+  writeEngine?: WriteEngineExecution;
   verification?: StructuredNoteBatchVerification;
   styleCount?: number;
   mathCount?: number;
@@ -251,6 +303,8 @@ export interface CreatePolishedNoteTreeResult extends CreateStyledRemTreeResult 
   idempotencyKey?: string;
   rootRemId?: string;
   createdRemCount?: number;
+  operationPlan?: WriteOperationPlan;
+  writeEngine?: WriteEngineExecution;
   styleOperationsApplied?: number;
   rollback?: {
     attempted: boolean;
@@ -283,7 +337,17 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
   };
   dryRun?: boolean;
   idempotencyKey?: string;
-  status: 'dry_run' | 'created' | 'updated' | 'appended' | 'replaced' | 'skipped' | 'partial_failure';
+  operationPlan?: WriteOperationPlan;
+  writeEngine?: WriteEngineExecution;
+  status:
+    | 'dry_run'
+    | 'created'
+    | 'updated'
+    | 'appended'
+    | 'replaced'
+    | 'skipped'
+    | 'already_applied'
+    | 'partial_failure';
   mode: MarkdownImportMode;
   duplicatePolicy: MarkdownDuplicatePolicy;
   plan?: {

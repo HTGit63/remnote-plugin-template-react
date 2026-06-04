@@ -91,10 +91,122 @@ export function getRemChildCount(rem: Rem): number {
   return rem.children?.length ?? 0;
 }
 
+type RemNamespaceApi = {
+  createSingleRemWithMarkdown?: (markdown: string, parentId?: string) => Promise<Rem | undefined>;
+  createTreeWithMarkdown?: (markdown: string, parentId?: string) => Promise<Rem[]>;
+  createTable?: (existingTag?: string | Rem) => Promise<Rem | undefined>;
+};
+
+function remNamespaceApi(plugin: RNPlugin): RemNamespaceApi {
+  return plugin.rem as unknown as RemNamespaceApi;
+}
+
+export function hasRemSdkApi(plugin: RNPlugin, api: keyof RemNamespaceApi): boolean {
+  return typeof remNamespaceApi(plugin)[api] === 'function';
+}
+
+export async function getRemSiblingIndex(rem: Rem): Promise<number | undefined> {
+  const maybeIndex = (rem as unknown as { positionAmongstSiblings?: () => Promise<number | undefined> })
+    .positionAmongstSiblings;
+  if (typeof maybeIndex !== 'function') {
+    return undefined;
+  }
+
+  return maybeIndex.call(rem);
+}
+
 export async function parseMarkdownToRichText(plugin: RNPlugin, markdown: string): Promise<RichTextInterface> {
   return runSdkOperation('richText.parseFromMarkdown', () =>
     plugin.richText.parseFromMarkdown(markdown)
   );
+}
+
+export async function createSingleRemWithMarkdownApi(
+  plugin: RNPlugin,
+  markdown: string,
+  parent: Rem | null
+): Promise<Rem> {
+  const createSingle = remNamespaceApi(plugin).createSingleRemWithMarkdown;
+  if (typeof createSingle !== 'function') {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'plugin.rem.createSingleRemWithMarkdown is not available in this RemNote runtime.'
+    );
+  }
+
+  const createdRem = await runSdkOperation('rem.createSingleRemWithMarkdown', () =>
+    createSingle.call(plugin.rem, markdown, parent?._id)
+  );
+
+  if (!createdRem) {
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return a Rem from createSingleRemWithMarkdown.', {
+      operation: 'rem.createSingleRemWithMarkdown',
+    });
+  }
+
+  return createdRem;
+}
+
+export async function createRemTreeWithMarkdownApi(
+  plugin: RNPlugin,
+  markdown: string,
+  parent: Rem
+): Promise<Rem[]> {
+  const createTree = remNamespaceApi(plugin).createTreeWithMarkdown;
+  if (typeof createTree !== 'function') {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'plugin.rem.createTreeWithMarkdown is not available in this RemNote runtime.'
+    );
+  }
+
+  const createdRems = await runSdkOperation('rem.createTreeWithMarkdown', () =>
+    createTree.call(plugin.rem, markdown, parent._id)
+  );
+
+  if (!Array.isArray(createdRems) || createdRems.length === 0) {
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return Rems from createTreeWithMarkdown.', {
+      operation: 'rem.createTreeWithMarkdown',
+    });
+  }
+
+  return createdRems;
+}
+
+export async function collectCreatedTreeRemIds(roots: Rem[]): Promise<string[]> {
+  const ids = new Set<string>();
+
+  for (const root of roots) {
+    ids.add(root._id);
+    const descendants = await runSdkOperation('rem.getDescendants', () => root.getDescendants());
+    for (const descendant of descendants) {
+      ids.add(descendant._id);
+    }
+  }
+
+  return [...ids];
+}
+
+export async function createTableWithSdkApi(plugin: RNPlugin, existingTag?: string | Rem): Promise<Rem> {
+  const createTable = remNamespaceApi(plugin).createTable;
+  if (typeof createTable !== 'function') {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'plugin.rem.createTable is not available in this RemNote runtime.'
+    );
+  }
+
+  const tableRem = await runSdkOperation('rem.createTable', () =>
+    createTable.call(plugin.rem, existingTag)
+  );
+
+  if (!tableRem) {
+    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return a Rem from createTable.', {
+      operation: 'rem.createTable',
+    });
+  }
+
+  return tableRem;
 }
 
 export function getColorFormat(input: string): RichTextFormatName | undefined {

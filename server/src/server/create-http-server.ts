@@ -30,12 +30,14 @@ import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
 import { ConsoleAuditLogger } from '../sessions/audit-log.js';
 import type { AuditLogger } from '../sessions/types.js';
 import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from '../storage/index.js';
-import { getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
+import { getAllPublicMcpToolNames, getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
 import { validateMcpToolPermission } from '../tool-permissions.js';
 import { getToolPolicyEntry, normalizeToolProfile, TOOL_SCHEMA_VERSION, type ToolProfile } from '../tool-policy.js';
 import { runBridgeHealthCheck } from '../health-check.js';
 import type { BridgeHealthCheckMode } from '../health-check-types.js';
 import { renderDashboard } from '../dashboard/templates.js';
+import { recordToolHistoryEvent } from '../tool-health-history.js';
+import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diagnostics-redaction.js';
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
 
@@ -179,7 +181,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
 
   function runtimeVerificationMatrix(summary: ReturnType<typeof registrySummary>, diagnostics: ReturnType<BridgeHub['getDiagnostics']>) {
     return summary.runtimeVerificationMatrix.map((tool) => {
-      const recent = diagnostics.recentRequests.filter((request) => publicMcpToolNameForBridgeTool(request.tool) === tool.name);
+      const recent = diagnostics.recentRequests.filter((request) => (request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool)) === tool.name);
       const lastSuccess = recent.find((request) => request.ok);
       const lastFailure = recent.find((request) => !request.ok);
       return {
@@ -193,6 +195,8 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
             : tool.runtimeVerifiedSource,
         lastSuccessTimestamp: lastSuccess?.finishedAt ?? null,
         lastFailureTimestamp: lastFailure?.finishedAt ?? null,
+        lastSuccessAt: lastSuccess?.finishedAt ?? tool.lastSuccessAt ?? null,
+        lastFailureAt: lastFailure?.finishedAt ?? tool.lastFailureAt ?? null,
         lastErrorCode: lastFailure?.errorCode ?? null,
         averageLatencyMs: averageLatencyMs(recent),
         p95LatencyMs: p95LatencyMs(recent),
@@ -216,6 +220,35 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       lastFailedTool,
       averageLatencyMs: averageLatencyMs(diagnostics.recentRequests),
       pluginConnectionStatus: diagnostics.status.connected ? 'connected' : 'offline',
+    };
+  }
+
+  function publicSummaryFrom(summary: ReturnType<typeof registrySummary>, diagnostics: ReturnType<BridgeHub['getDiagnostics']>) {
+    const matrix = runtimeVerificationMatrix(summary, diagnostics);
+    const lastFailedTool = diagnostics.recentRequests.find((request) => !request.ok);
+    const registryMismatchCount =
+      summary.registryMismatch.missing.length +
+      summary.registryMismatch.unexpected.length +
+      summary.registryToMcpListMismatch.listedButNotDeclared.length +
+      summary.mcpListToCallableMismatch.callableButNotListed.length;
+    return buildPublicUserDiagnosticSummary({
+      connected: diagnostics.status.connected,
+      pendingRequests: diagnostics.status.pendingRequests,
+      publicToolCount: summary.publicToolCount,
+      actualCallableToolCount: summary.actualMcpCallableTools.length,
+      runtimeUnverifiedToolCount: matrix.filter((tool) => tool.runtimeVerified !== true && tool.serverLocalVerified !== true && tool.sdkUnsupported !== true).length,
+      sdkUnsupportedToolCount: summary.sdkUnsupportedTools.length,
+      lastErrorCode: lastFailedTool?.errorCode ?? null,
+      deleteToolExposed: summary.deleteToolExposed,
+      registryMismatchCount,
+    });
+  }
+
+  function developerDiagnosticBundle(payload: Record<string, unknown>) {
+    return {
+      copiedAt: new Date().toISOString(),
+      redacted: true,
+      payload: redactDiagnosticValue(payload),
     };
   }
 
@@ -326,9 +359,20 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return false;
     }
 
-    if (isPublicMcpToolName(request.params.name, config.enableDeleteTool, toolProfile)) {
+    const name = request.params.name;
+    if (isPublicMcpToolName(name, config.enableDeleteTool, toolProfile)) {
       return false;
     }
+
+    const blockedByTier = getAllPublicMcpToolNames(config.enableDeleteTool).includes(name);
+    recordToolHistoryEvent({
+      tool: name,
+      kind: blockedByTier ? 'tier_block' : 'gateway_block',
+      gatewayBlocked: true,
+      blockedByTier,
+      errorCode: 'UNKNOWN_TOOL',
+      source: 'mcp_gateway',
+    });
 
     writeJson(res, 200, {
       jsonrpc: '2.0',
@@ -337,14 +381,14 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         content: [
           {
             type: 'text',
-            text: `UNKNOWN_TOOL: Unknown MCP tool "${request.params.name}".`,
+            text: `UNKNOWN_TOOL: Unknown MCP tool "${name}".`,
           },
         ],
         structuredContent: {
           ok: false,
           error: {
             code: 'UNKNOWN_TOOL',
-            message: `Unknown MCP tool "${request.params.name}".`,
+            message: `Unknown MCP tool "${name}".`,
           },
         },
         isError: true,
@@ -631,8 +675,10 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       const registry = registrySummary(undefined, config.toolProfile);
       const bridge = hub.getDiagnostics();
       const pairing = await latestPairingSummary();
-
-      writeJson(res, 200, {
+      const summary = diagnosticsSummary(registry, bridge);
+      const publicUserSummary = publicSummaryFrom(registry, bridge);
+      const runtimeMatrix = runtimeVerificationMatrix(registry, bridge);
+      const payload = {
         ok: true,
         server: {
           name: 'remnote-chatgpt-bridge-server',
@@ -652,8 +698,13 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         registry,
         bridge,
         chatGptPairing: pairing,
-        summary: diagnosticsSummary(registry, bridge),
-        runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
+        summary,
+        publicUserSummary,
+        runtimeVerificationMatrix: runtimeMatrix,
+      };
+      writeJson(res, 200, {
+        ...payload,
+        developerDiagnosticBundle: developerDiagnosticBundle(payload),
       });
       return;
     }
@@ -728,7 +779,10 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         const registry = registrySummary(undefined, activeTier);
         const bridge = hub.getDiagnostics();
         const runtimeInfo = runtimeInfoForRequest(req);
-        writeJson(res, 200, {
+        const summary = diagnosticsSummary(registry, bridge);
+        const publicUserSummary = publicSummaryFrom(registry, bridge);
+        const runtimeMatrix = runtimeVerificationMatrix(registry, bridge);
+        const payload = {
           ok: true,
           level: 'standard',
           server: {
@@ -751,8 +805,13 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           },
           registry,
           bridge,
-          summary: diagnosticsSummary(registry, bridge),
-          runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
+          summary,
+          publicUserSummary,
+          runtimeVerificationMatrix: runtimeMatrix,
+        };
+        writeJson(res, 200, {
+          ...payload,
+          developerDiagnosticBundle: developerDiagnosticBundle(payload),
         });
         return;
       }
@@ -782,7 +841,10 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         });
         const registry = registrySummary(undefined, activeTier);
         const bridge = hub.getDiagnostics();
-        writeJson(res, 200, {
+        const summary = diagnosticsSummary(registry, bridge);
+        const publicUserSummary = publicSummaryFrom(registry, bridge);
+        const runtimeMatrix = runtimeVerificationMatrix(registry, bridge);
+        const payload = {
           ok: true,
           level,
           result,
@@ -794,8 +856,13 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           },
           registry,
           bridge,
-          summary: diagnosticsSummary(registry, bridge),
-          runtimeVerificationMatrix: runtimeVerificationMatrix(registry, bridge),
+          summary,
+          publicUserSummary,
+          runtimeVerificationMatrix: runtimeMatrix,
+        };
+        writeJson(res, 200, {
+          ...payload,
+          developerDiagnosticBundle: developerDiagnosticBundle(payload),
         });
         return;
       }
@@ -855,6 +922,21 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     const discoveryRequest = req.method === 'POST' && isMcpDiscoveryRequest(body);
     const auth = await authorizeMcpRequest(req, body, discoveryRequest);
     if (!auth.ok) {
+      const maybeTool =
+        typeof body === 'object' &&
+        body !== null &&
+        !Array.isArray(body) &&
+        (body as { method?: unknown; params?: { name?: unknown } }).method === 'tools/call' &&
+        typeof (body as { params?: { name?: unknown } }).params?.name === 'string'
+          ? String((body as { params?: { name?: unknown } }).params?.name)
+          : 'mcp_request';
+      recordToolHistoryEvent({
+        tool: maybeTool,
+        kind: 'gateway_block',
+        gatewayBlocked: true,
+        errorCode: auth.auditReason,
+        source: 'mcp_gateway',
+      });
       auditLogger?.record({
         type: 'mcp_request_rejected',
         timestamp: new Date().toISOString(),
@@ -878,6 +960,21 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
 
     const toolPermission = validateMcpToolPermission(body, auth.principal);
     if (!toolPermission.ok) {
+      const blockedTool =
+        typeof body === 'object' &&
+        body !== null &&
+        !Array.isArray(body) &&
+        typeof (body as { params?: { name?: unknown } }).params?.name === 'string'
+          ? String((body as { params?: { name?: unknown } }).params?.name)
+          : 'mcp_request';
+      recordToolHistoryEvent({
+        tool: blockedTool,
+        kind: toolPermission.code === 'OUT_OF_SCOPE' ? 'scope_block' : 'gateway_block',
+        gatewayBlocked: true,
+        blockedByScope: toolPermission.code === 'OUT_OF_SCOPE',
+        errorCode: toolPermission.code,
+        source: 'mcp_gateway',
+      });
       auditLogger?.record({
         type: 'mcp_request_rejected',
         timestamp: new Date().toISOString(),
