@@ -68,13 +68,14 @@ Hosted `/health` must show:
 The plugin can choose a tool tier:
 
 ```text
-core                  read/status/core cards/guarded delete
-advanced_notes        core plus note writing, styling, batch, verification
-developer_diagnostics core plus diagnostics and raw debug tools
-full                  all public supported tools
+basic       read/status only
+note_writer basic plus normal note writing, Markdown/tree imports, cards, verification
+power_user  note_writer plus formatting, move, reorder, and mutation tools
+developer   power_user plus diagnostics and raw debug tools
+danger      developer plus destructive tools when explicitly enabled
 ```
 
-If the plugin changes tier, access scope, or trusted write mode after ChatGPT approval, the session is marked stale and the UI must show a reconnect-required state.
+Tier, access scope, and write-mode changes sync live through the hosted session and should not force reconnect. Connector refresh is reserved for server URL, token, or session-secret changes.
 
 ## Runtime Matrix
 
@@ -120,7 +121,7 @@ Use `create_or_replace_note_from_markdown` for long copied Markdown/source notes
 
 ## Delete Safety
 
-Only `delete_rem_by_id` is public. Legacy focus/selection delete tools must not be exposed or kept as hidden/gated paths.
+Only `delete_rem_by_id` can become public, and only when `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and the active access tier is `danger`. Legacy focus/selection delete tools must not be exposed or kept as hidden/gated paths. `replace_rem` stays hidden until stronger guards are live-verified.
 
 Real deletion requires:
 

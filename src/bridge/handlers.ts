@@ -350,7 +350,8 @@ export async function handleBridgeRequest(
   try {
     approvalRequired =
       approvalRequired ||
-      (context.permissionMode === 'confirm_writes' && (await shouldForceApproval(plugin, request)));
+      ((context.permissionMode === 'read_create' || context.permissionMode === 'read_create_modify') &&
+        (await shouldForceApproval(plugin, request)));
     if (request.tool === 'delete_rem_by_id' && (request.args as DeleteRemByIdArgs).dryRun !== false) {
       approvalRequired = false;
     }

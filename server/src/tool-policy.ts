@@ -7,7 +7,8 @@ export type ToolPolicy =
   | 'dangerous'
   | 'unsupported';
 
-export type ToolTier = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+export type ToolTier = 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
+export type LegacyToolTier = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
 export type ToolProfile = ToolTier;
 export type ToolCategory =
   | 'status'
@@ -43,12 +44,13 @@ export interface ToolMetadata {
   runtimeVerifiedSource: 'server_local' | 'recent_plugin_call' | 'registry_only';
   exposedNormally: boolean;
   sdkSupported: boolean;
+  agentWarning?: string;
 }
 
-export const DEFAULT_TOOL_PROFILE: ToolProfile = 'core';
-export const TOOL_SCHEMA_VERSION = '2026-06-04.markdown-tree';
+export const DEFAULT_TOOL_PROFILE: ToolProfile = 'note_writer';
+export const TOOL_SCHEMA_VERSION = '2026-06-05.goal8-tier-model';
 
-export const CORE_TIER_TOOLS = [
+export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
   'get_plugin_status',
   'get_focused_rem',
@@ -57,24 +59,16 @@ export const CORE_TIER_TOOLS = [
   'get_rem_tree',
   'get_rem_breadcrumbs',
   'search_rems',
-  'create_basic_flashcard',
-  'create_cloze_card',
-  'create_multiple_choice_card',
-  'create_list_answer_card',
 ] as const;
 
-export const ADVANCED_NOTES_TIER_TOOLS = [
+export const NOTE_WRITER_TIER_TOOLS = [
   'get_current_selection',
   'get_rem_rich',
   'get_document_or_folder_tree',
   'create_rem',
   'create_document',
   'append_to_rem',
-  'update_rem',
-  'move_rem',
-  'reorder_children',
   'create_rem_tree',
-  'update_rem_rich',
   'create_styled_rem_tree',
   'create_polished_note_tree',
   'create_or_replace_note_from_markdown',
@@ -82,8 +76,21 @@ export const ADVANCED_NOTES_TIER_TOOLS = [
   'create_note_from_markdown_tree',
   'append_markdown_as_rem_tree',
   'apply_structured_note_batch',
-  'apply_style_plan',
   'verify_note_design',
+  'create_basic_flashcard',
+  'create_cloze_card',
+  'create_multiple_choice_card',
+  'create_list_answer_card',
+  'create_concept_card',
+  'create_descriptor_card',
+] as const;
+
+export const POWER_USER_TIER_TOOLS = [
+  'update_rem',
+  'move_rem',
+  'reorder_children',
+  'update_rem_rich',
+  'apply_style_plan',
   'apply_remnote_command',
   'set_rem_heading_level',
   'set_rem_text_color',
@@ -93,11 +100,9 @@ export const ADVANCED_NOTES_TIER_TOOLS = [
   'set_rem_type',
   'set_hide_bullet',
   'clear_rem_formatting',
-  'create_concept_card',
-  'create_descriptor_card',
 ] as const;
 
-export const DEVELOPER_DIAGNOSTICS_TIER_TOOLS = [
+export const DEVELOPER_TIER_TOOLS = [
   'ping_remnote_plugin',
   'get_bridge_diagnostics',
   'run_bridge_health_check',
@@ -105,9 +110,15 @@ export const DEVELOPER_DIAGNOSTICS_TIER_TOOLS = [
   'debug_get_raw_rich_text',
 ] as const;
 
-const CORE_SET = new Set<string>(CORE_TIER_TOOLS);
-const ADVANCED_SET = new Set<string>(ADVANCED_NOTES_TIER_TOOLS);
-const DEVELOPER_SET = new Set<string>(DEVELOPER_DIAGNOSTICS_TIER_TOOLS);
+export const DANGER_TIER_TOOLS = [
+  'delete_rem_by_id',
+] as const;
+
+const BASIC_SET = new Set<string>(BASIC_TIER_TOOLS);
+const NOTE_WRITER_SET = new Set<string>(NOTE_WRITER_TIER_TOOLS);
+const POWER_USER_SET = new Set<string>(POWER_USER_TIER_TOOLS);
+const DEVELOPER_SET = new Set<string>(DEVELOPER_TIER_TOOLS);
+const DANGER_SET = new Set<string>(DANGER_TIER_TOOLS);
 
 export const TOOL_POLICY_ENTRIES = [
   {
@@ -248,10 +259,12 @@ const TOOL_POLICY_BY_NAME: ReadonlyMap<string, ToolPolicyEntry> = new Map(
 );
 
 function tierForTool(name: string): ToolMetadata['tier'] {
-  if (CORE_SET.has(name)) return 'core';
-  if (ADVANCED_SET.has(name)) return 'advanced_notes';
-  if (DEVELOPER_SET.has(name)) return 'developer_diagnostics';
-  return name === 'create_folder' ? 'unsupported' : 'advanced_notes';
+  if (BASIC_SET.has(name)) return 'basic';
+  if (NOTE_WRITER_SET.has(name)) return 'note_writer';
+  if (POWER_USER_SET.has(name)) return 'power_user';
+  if (DEVELOPER_SET.has(name)) return 'developer';
+  if (DANGER_SET.has(name) || name === 'replace_rem') return 'danger';
+  return name === 'create_folder' ? 'unsupported' : 'note_writer';
 }
 
 function meta(
@@ -272,7 +285,7 @@ function meta(
     requiresDelete,
     supportsDryRun: flags.supportsDryRun ?? false,
     supportsIdempotency: flags.supportsIdempotency ?? false,
-    recommendedForNormalUse: flags.recommendedForNormalUse ?? (tierForTool(name) !== 'developer_diagnostics' && riskLevel !== 'dangerous'),
+    recommendedForNormalUse: flags.recommendedForNormalUse ?? (tierForTool(name) !== 'developer' && riskLevel !== 'dangerous'),
     runtimeVerified: flags.runtimeVerified ?? false,
     runtimeVerifiedSource: flags.runtimeVerifiedSource ?? 'registry_only',
     exposedNormally: flags.exposedNormally ?? tierForTool(name) !== 'unsupported',
@@ -298,6 +311,8 @@ export const TOOL_METADATA = [
     supportsDryRun: true,
     supportsIdempotency: true,
     recommendedForNormalUse: false,
+    agentWarning:
+      'DANGER: delete_rem_by_id is destructive. Default dryRun=true. Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId after user approval.',
   }),
   meta('get_current_selection', 'read', 'low'),
   meta('get_rem_rich', 'read', 'low'),
@@ -362,13 +377,19 @@ export function normalizeToolProfile(value: string | undefined): ToolProfile {
   switch (value) {
     case 'simple':
     case 'core':
-      return 'core';
+    case 'basic':
+      return 'basic';
     case 'advanced_notes':
-      return 'advanced_notes';
+    case 'note_writer':
+      return 'note_writer';
+    case 'power_user':
+      return 'power_user';
     case 'developer_diagnostics':
-      return 'developer_diagnostics';
+    case 'developer':
+      return 'developer';
     case 'full':
-      return 'full';
+    case 'danger':
+      return 'danger';
     default:
       return DEFAULT_TOOL_PROFILE;
   }
@@ -386,17 +407,20 @@ export function isToolVisibleInProfile(name: string, profile: ToolProfile): bool
   if (!getToolMetadata(name).exposedNormally) {
     return false;
   }
-  if (profile === 'full') {
+  if (profile === 'danger') {
     return true;
   }
-  if (CORE_SET.has(name)) {
+  if (BASIC_SET.has(name)) {
     return true;
   }
-  if (profile === 'advanced_notes') {
-    return ADVANCED_SET.has(name);
+  if (profile === 'note_writer') {
+    return NOTE_WRITER_SET.has(name);
   }
-  if (profile === 'developer_diagnostics') {
-    return DEVELOPER_SET.has(name);
+  if (profile === 'power_user') {
+    return NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name);
+  }
+  if (profile === 'developer') {
+    return NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name) || DEVELOPER_SET.has(name);
   }
   return false;
 }
@@ -424,7 +448,7 @@ export function groupToolsByPolicy(toolNames: readonly string[]) {
 }
 
 export function getProfileHiddenTools(allPublicTools: readonly string[], profile: ToolProfile) {
-  if (profile === 'full') {
+  if (profile === 'danger') {
     return [];
   }
 
@@ -443,14 +467,43 @@ export function getToolTierSummary(profile: ToolProfile, exposeDeleteTool = fals
   return {
     activeTier: profile,
     aliases: {
-      simple: 'core',
-      full: 'full',
+      simple: 'basic',
+      core: 'basic',
+      advanced_notes: 'note_writer',
+      developer_diagnostics: 'developer',
+      full: 'danger',
     },
     tiers: {
-      core: [...CORE_TIER_TOOLS],
-      advanced_notes: [...ADVANCED_NOTES_TIER_TOOLS],
-      developer_diagnostics: [...DEVELOPER_DIAGNOSTICS_TIER_TOOLS],
-      full: TOOL_METADATA.filter((tool) => tool.exposedNormally && (exposeDeleteTool || tool.name !== 'delete_rem_by_id')).map((tool) => tool.name),
+      basic: [...BASIC_TIER_TOOLS],
+      note_writer: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'note_writer'),
+      power_user: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'power_user'),
+      developer: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'developer'),
+      danger: TOOL_METADATA.filter((tool) => tool.exposedNormally && (exposeDeleteTool || tool.name !== 'delete_rem_by_id')).map((tool) => tool.name),
     },
   };
+}
+
+export function requiredOperationTierForTool(name: string): string {
+  const metadata = getToolMetadata(name);
+  if (metadata.requiresDelete || metadata.riskLevel === 'dangerous') {
+    return 'Full Control With Delete Approval';
+  }
+  if (!metadata.requiresWrite) {
+    return 'Read Only';
+  }
+  if (name === 'create_or_replace_note_from_markdown' || name === 'apply_structured_note_batch') {
+    return 'Read + Create + Modify';
+  }
+  if (metadata.category === 'write' || metadata.category === 'cards' || metadata.category === 'batch') {
+    if (
+      name.startsWith('create_') ||
+      name.startsWith('append_') ||
+      name === 'apply_structured_note_batch' ||
+      name === 'create_polished_note_tree' ||
+      name === 'create_or_replace_note_from_markdown'
+    ) {
+      return 'Read + Create';
+    }
+  }
+  return 'Read + Create + Modify';
 }

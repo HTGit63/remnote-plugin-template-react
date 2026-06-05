@@ -71,7 +71,7 @@ import type {
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
 import { applyStylePresetToTree } from '../../../shared/bridge/style-presets';
-import { RemnoteWriteError, getPartialExecutionDetails, getSdkErrorMessage } from './writeErrors';
+import { RemnoteWriteError, getPartialExecutionDetails, getSdkErrorMessage, runSdkOperation } from './writeErrors';
 import {
   CREATE_TREE_RESULT_CACHE,
   POLISHED_TREE_RESULT_CACHE,
@@ -79,7 +79,7 @@ import {
   rememberCachedResult,
 } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
-import { assertTreeLimits, simpleTreeToStyledNode, validateTreeNode } from './writeValidation';
+import { assertTreeLimits, collectStyledTreePlan, simpleTreeToStyledNode, validateTreeNode } from './writeValidation';
 import {
   createStyledRemTree,
   readCreatedRemIdsFromError,
@@ -90,6 +90,7 @@ import { applyStylePlan } from './formattingWrites';
 import { buildWritePerformanceReport } from '../../../shared/bridge/performance';
 import {
   collectCreatedTreeRemIds,
+  applyRemStyle,
   createRemTreeWithMarkdownApi,
   findRequiredRem,
   getRemSiblingIndex,
@@ -115,6 +116,51 @@ function simpleTreeNodeToMarkdownLines(node: ValidatedSimpleTreeNode, depth = 0)
 
 function simpleTreeNodeToMarkdown(node: ValidatedSimpleTreeNode): string {
   return simpleTreeNodeToMarkdownLines(node).join('\n');
+}
+
+function styledNodeText(node: StyledRemTreeNode): string {
+  return (node.text ?? node.title ?? '').replace(/\s+/g, ' ').trim();
+}
+
+function canUseMarkdownTreePath(node: StyledRemTreeNode): boolean {
+  const type = node.type ?? 'rem';
+  if (type !== 'rem') {
+    return false;
+  }
+  if (node.richText?.length || node.latex || node.front || node.back || node.answer || node.clozeText || node.choices?.length || node.items?.length) {
+    return false;
+  }
+  if (!styledNodeText(node)) {
+    return false;
+  }
+  return (node.children ?? []).every(canUseMarkdownTreePath);
+}
+
+function styledNodeToMarkdownLines(node: StyledRemTreeNode, depth = 0): string[] {
+  const text = styledNodeText(node);
+  return [
+    `${'  '.repeat(depth)}- ${text}`,
+    ...(node.children ?? []).flatMap((child) => styledNodeToMarkdownLines(child, depth + 1)),
+  ];
+}
+
+function flattenStyledNodes(node: StyledRemTreeNode): StyledRemTreeNode[] {
+  return [node, ...(node.children ?? []).flatMap(flattenStyledNodes)];
+}
+
+async function collectRemRecordsPreOrder(
+  roots: Rem[],
+  parentId: string,
+  depth = 0
+): Promise<Array<{ rem: Rem; parentId: string; depth: number; index: number }>> {
+  const records: Array<{ rem: Rem; parentId: string; depth: number; index: number }> = [];
+  for (let index = 0; index < roots.length; index += 1) {
+    const rem = roots[index];
+    records.push({ rem, parentId, depth, index });
+    const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
+    records.push(...(await collectRemRecordsPreOrder(children, rem._id, depth + 1)));
+  }
+  return records;
 }
 
 export async function createRemTree(
@@ -279,19 +325,74 @@ export async function createPolishedNoteTree(
   try {
     const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
-      const created = await createStyledRemTree(
-        plugin,
-        {
-          parentId: args.parentId,
-          position: 'end',
-          tree: presetTree,
-          dryRun: args.dryRun,
+      const canUseReliableMarkdownTree =
+        !args.dryRun &&
+        !args.stylingPlan?.operations?.length &&
+        hasRemSdkApi(plugin, 'createTreeWithMarkdown') &&
+        canUseMarkdownTreePath(presetTree);
+      let created: CreateStyledRemTreeResult;
+      if (canUseReliableMarkdownTree) {
+        const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
+        const roots = await createRemTreeWithMarkdownApi(
+          plugin,
+          styledNodeToMarkdownLines(presetTree).join('\n'),
+          parent
+        );
+        const records = await collectRemRecordsPreOrder(roots, parent._id);
+        const plannedNodes = flattenStyledNodes(presetTree);
+        for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
+          await applyRemStyle(plugin, records[index].rem, plannedNodes[index].style);
+        }
+        const root = roots[0];
+        const createdRemIds = await collectCreatedTreeRemIds(roots);
+        created = {
+          rootCreatedRemId: root._id,
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          createdNodes: records.map((record, index) => ({
+            remId: record.rem._id,
+            parentId: record.parentId,
+            depth: record.depth,
+            index: record.index,
+            type: plannedNodes[index]?.type ?? 'rem',
+          })),
+          rootInsertIndex: await getRemSiblingIndex(root),
+          rootInsertPosition: 'end',
+          status: 'created_styled_tree',
           idempotencyKey,
-          maxDepth: args.maxDepth,
-          maxNodeCount: args.maxNodeCount,
-        },
-        { skipTransaction: true }
-      );
+          idMap: Object.fromEntries(
+            plannedNodes
+              .map((node, index) => [node.clientNodeId, records[index]?.rem._id] as const)
+              .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1]))
+          ),
+          previewOutline: [presetTree].reduce((outline, node) => {
+            collectStyledTreePlan(node, 0, outline);
+            return outline;
+          }, [] as string[]),
+          styleOperationCount: plannedNodes.reduce(
+            (count, node) => count + (node.style ? Object.values(node.style).filter((value) => value !== undefined).length : 0),
+            0
+          ),
+          mathNodeCount: 0,
+          cardNodeCount: 0,
+          operationPlan: activePlan,
+          writeEngine: writeEngineExecutionFromPlan(activePlan),
+        };
+      } else {
+        created = await createStyledRemTree(
+          plugin,
+          {
+            parentId: args.parentId,
+            position: 'end',
+            tree: presetTree,
+            dryRun: args.dryRun,
+            idempotencyKey,
+            maxDepth: args.maxDepth,
+            maxNodeCount: args.maxNodeCount,
+          },
+          { skipTransaction: true }
+        );
+      }
       createdRemIdsForRollback = created.createdRemIds;
       const stylePlan = args.stylingPlan?.operations?.length
         ? await applyStylePlan(plugin, {

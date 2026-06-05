@@ -111,7 +111,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       accessScope: session.accessScope,
       trustedWriteMode: session.trustedWriteMode,
       toolTier: session.toolTier,
-      requiresConnectorRefresh: session.requiresConnectorRefresh,
+      requiresConnectorRefresh: false,
     };
   }
 
@@ -253,7 +253,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
   }
 
   function pluginSessionTierResponse(session: ChatGptPairingSession) {
-    const activeTier = session.toolTier ?? config.toolProfile ?? 'core';
+    const activeTier = session.toolTier ?? config.toolProfile;
     const summary = registrySummary(undefined, activeTier);
     return {
       ok: true,
@@ -269,8 +269,8 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       toolSchemaVersionAtApproval: session.toolSchemaVersionAtApproval ?? TOOL_SCHEMA_VERSION,
       toolSchemaVersion: TOOL_SCHEMA_VERSION,
       toolRegistryVersion: TOOL_REGISTRY_VERSION,
-      requiresConnectorRefresh: Boolean(session.requiresConnectorRefresh),
-      sessionStale: Boolean(session.requiresConnectorRefresh),
+      requiresConnectorRefresh: false,
+      sessionStale: false,
       publicToolCount: summary.publicToolCount,
       allPublicToolCount: summary.allPublicToolCount,
       toolCountsByTier: toolCountsByTier(summary),
@@ -293,11 +293,11 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     return {
       status: current?.status ?? 'none',
       connected: current?.status === 'connected',
-      stale: Boolean(current?.requiresConnectorRefresh),
+      stale: false,
       toolTier: current?.toolTier,
       accessScope: current?.accessScope,
       trustedWriteMode: current?.trustedWriteMode,
-      requiresConnectorRefresh: Boolean(current?.requiresConnectorRefresh),
+      requiresConnectorRefresh: false,
     };
   }
 
@@ -326,7 +326,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     body: unknown,
     url: URL
   ): ToolProfile {
-    return requestedToolProfile(req, body, url) ?? principal.toolTier ?? config.toolProfile ?? 'core';
+    return requestedToolProfile(req, body, url) ?? principal.toolTier ?? config.toolProfile;
   }
 
   function isMcpDiscoveryRequest(body: unknown): boolean {
@@ -756,18 +756,13 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         );
         const nextAccessScope = normalizePluginAccessScope(body.accessScope, auth.session.accessScope);
         const nextTrustedWriteMode = normalizePluginTrustedWriteMode(body.trustedWriteMode, auth.session.trustedWriteMode);
-        const previousTier = auth.session.toolTier ?? config.toolProfile;
-        const tierChanged = previousTier !== nextTier;
-        const accessChanged =
-          auth.session.accessScope !== nextAccessScope ||
-          auth.session.trustedWriteMode !== nextTrustedWriteMode;
         const updated = await storage.updateChatGptPairingSession(auth.session.pairingId, {
           toolTier: nextTier,
           toolTierVersion: TOOL_REGISTRY_VERSION,
-          toolTierChangedAt: tierChanged ? new Date().toISOString() : auth.session.toolTierChangedAt,
+          toolTierChangedAt: auth.session.toolTier !== nextTier ? new Date().toISOString() : auth.session.toolTierChangedAt,
           accessScope: nextAccessScope,
           trustedWriteMode: nextTrustedWriteMode,
-          requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh || tierChanged || accessChanged),
+          requiresConnectorRefresh: false,
           lastSeenAt: new Date().toISOString(),
         });
         writeJson(res, 200, pluginSessionTierResponse(updated));
@@ -775,7 +770,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       }
 
       if (url.pathname === '/api/plugin/diagnostics' && req.method === 'POST') {
-        const activeTier = auth.session.toolTier ?? config.toolProfile ?? 'core';
+        const activeTier = auth.session.toolTier ?? config.toolProfile;
         const registry = registrySummary(undefined, activeTier);
         const bridge = hub.getDiagnostics();
         const runtimeInfo = runtimeInfoForRequest(req);
@@ -801,7 +796,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
             accessScope: auth.session.accessScope,
             trustedWriteMode: auth.session.trustedWriteMode,
             toolTier: activeTier,
-            requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh),
+            requiresConnectorRefresh: false,
           },
           registry,
           bridge,
@@ -820,7 +815,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         const level = body.level === 'quick' || body.level === 'standard' || body.level === 'full'
           ? body.level
           : 'quick';
-        const activeTier = auth.session.toolTier ?? config.toolProfile ?? 'core';
+        const activeTier = auth.session.toolTier ?? config.toolProfile;
         const modeByLevel: Record<typeof level, BridgeHealthCheckMode> = {
           quick: 'read_only',
           standard: 'read_only',
@@ -852,7 +847,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
             pairingId: auth.session.pairingId,
             status: auth.session.status,
             toolTier: activeTier,
-            requiresConnectorRefresh: Boolean(auth.session.requiresConnectorRefresh),
+            requiresConnectorRefresh: false,
           },
           registry,
           bridge,

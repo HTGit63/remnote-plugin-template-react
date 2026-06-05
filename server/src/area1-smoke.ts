@@ -4,9 +4,10 @@ import {
   getToolRegistrySummary,
 } from './tool-registry.js';
 import {
-  ADVANCED_NOTES_TIER_TOOLS,
-  CORE_TIER_TOOLS,
-  DEVELOPER_DIAGNOSTICS_TIER_TOOLS,
+  BASIC_TIER_TOOLS,
+  NOTE_WRITER_TIER_TOOLS,
+  POWER_USER_TIER_TOOLS,
+  DEVELOPER_TIER_TOOLS,
   TOOL_METADATA,
   getToolMetadata,
   normalizeToolProfile,
@@ -73,39 +74,39 @@ function toolSet(profile: ToolProfile): Set<string> {
 }
 
 function checkCore() {
-  const tools = getPublicMcpToolNames(false, 'core');
-  assert(JSON.stringify(tools) === JSON.stringify([...CORE_TIER_TOOLS]), 'core tier must match Area 1 core list.');
-  assertNoRemovedTools(tools, 'core tier');
-  assert(!tools.includes('create_folder'), 'core tier must not expose unsupported create_folder.');
-  assert(normalizeToolProfile('simple') === 'core', 'simple alias must normalize to core.');
-  assert(normalizeToolProfile('full') === 'full', 'full alias must remain full.');
+  const tools = getPublicMcpToolNames(false, 'basic');
+  assert(JSON.stringify(tools) === JSON.stringify([...BASIC_TIER_TOOLS]), 'basic tier must match Area 1 basic list.');
+  assertNoRemovedTools(tools, 'basic tier');
+  assert(!tools.includes('create_folder'), 'basic tier must not expose unsupported create_folder.');
+  assert(normalizeToolProfile('simple') === 'basic', 'simple alias must normalize to basic.');
+  assert(normalizeToolProfile('core') === 'basic', 'core alias must normalize to basic.');
+  assert(normalizeToolProfile('advanced_notes') === 'note_writer', 'advanced_notes alias must normalize to note_writer.');
+  assert(normalizeToolProfile('full') === 'danger', 'full alias must normalize to danger.');
 }
 
 function checkAdvanced() {
-  const tools = toolSet('advanced_notes');
-  for (const tool of [...CORE_TIER_TOOLS, ...ADVANCED_NOTES_TIER_TOOLS]) {
-    assert(tools.has(tool), `advanced_notes tier missing ${tool}.`);
+  const tools = toolSet('note_writer');
+  for (const tool of [...BASIC_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS]) {
+    assert(tools.has(tool), `note_writer tier missing ${tool}.`);
   }
-  for (const tool of DEVELOPER_DIAGNOSTICS_TIER_TOOLS) {
-    assert(!tools.has(tool), `advanced_notes tier should not include diagnostics tool ${tool}.`);
+  for (const tool of [...POWER_USER_TIER_TOOLS, ...DEVELOPER_TIER_TOOLS]) {
+    assert(!tools.has(tool), `note_writer tier should not include higher-tier tool ${tool}.`);
   }
-  assertNoRemovedTools([...tools], 'advanced_notes tier');
+  assertNoRemovedTools([...tools], 'note_writer tier');
 }
 
 function checkDiagnostics() {
-  const tools = toolSet('developer_diagnostics');
-  for (const tool of [...CORE_TIER_TOOLS, ...DEVELOPER_DIAGNOSTICS_TIER_TOOLS]) {
-    assert(tools.has(tool), `developer_diagnostics tier missing ${tool}.`);
+  const tools = toolSet('developer');
+  for (const tool of [...BASIC_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS, ...POWER_USER_TIER_TOOLS, ...DEVELOPER_TIER_TOOLS]) {
+    assert(tools.has(tool), `developer tier missing ${tool}.`);
   }
-  for (const tool of ADVANCED_NOTES_TIER_TOOLS) {
-    assert(!tools.has(tool), `developer_diagnostics tier should not include advanced write tool ${tool}.`);
-  }
+  assert(!tools.has('delete_rem_by_id'), 'developer tier should not include danger tool.');
 }
 
 function checkFullAndMetadata() {
-  const tools = getPublicMcpToolNames(false, 'full');
-  assertNoRemovedTools(tools, 'full tier');
-  assert(!tools.includes('create_folder'), 'full tier must not expose unsupported create_folder.');
+  const tools = getPublicMcpToolNames(false, 'danger');
+  assertNoRemovedTools(tools, 'danger tier');
+  assert(!tools.includes('create_folder'), 'danger tier must not expose unsupported create_folder.');
   for (const tool of tools) {
     const metadata = getToolMetadata(tool);
     assert(metadata.name === tool, `metadata missing for ${tool}.`);
@@ -366,7 +367,7 @@ function checkDirectWriteTrustedModeRegression() {
     mcpBody('create_rem', { parentId: 'parent-1', markdown: 'confirm create' }),
     hostedPrincipal({ trustedWriteMode: 'ask-every-write' })
   );
-  assert(confirmResult.ok, 'confirm_writes direct route should reach plugin so RemNote approval can be requested.');
+  assert(confirmResult.ok, 'read_create_modify direct route should reach plugin so RemNote approval can be requested.');
 
   const outOfScope = validateMcpToolPermission(
     mcpBody('create_rem', { parentId: 'parent-1', markdown: 'out of scope' }),
@@ -434,22 +435,23 @@ function checkStyleSchema() {
 }
 
 function checkHostedDiagnostics() {
-  const summary = getToolRegistrySummary(false, 'full', undefined, {
+  const summary = getToolRegistrySummary(false, 'danger', undefined, {
     discoveryAuthMode: 'no_auth_required',
     toolCallAuthMode: 'hosted_oauth_required',
   });
   assert(summary.toolCallAuthMode === 'hosted_oauth_required', 'hosted registry summary must report hosted OAuth tool auth.');
-  assert(summary.activeToolTier === 'full', 'hosted registry summary must include active tier.');
+  assert(summary.activeToolTier === 'danger', 'hosted registry summary must include active tier.');
   assert(summary.legacyDeleteToolsRemoved === true, 'registry must flag legacy delete removal.');
   assert(summary.staticSdkUnsupportedTools.includes('create_folder'), 'hosted diagnostics must expose unsupported static tools.');
 }
 
 function checkTierSwitching() {
-  const tiers: ToolProfile[] = ['core', 'advanced_notes', 'developer_diagnostics', 'full'];
+  const tiers: ToolProfile[] = ['basic', 'note_writer', 'power_user', 'developer', 'danger'];
   const counts = tiers.map((tier) => getPublicMcpToolNames(false, tier).length);
-  assert(counts[0] < counts[1], 'advanced_notes should expose more tools than core.');
-  assert(counts[0] < counts[2], 'developer_diagnostics should expose more tools than core.');
-  assert(counts[3] > counts[1] && counts[3] > counts[2], 'full should expose the largest tool set.');
+  assert(counts[0] < counts[1], 'note_writer should expose more tools than basic.');
+  assert(counts[1] < counts[2], 'power_user should expose more tools than note_writer.');
+  assert(counts[2] < counts[3], 'developer should expose more tools than power_user.');
+  assert(counts[4] >= counts[3], 'danger should expose at least the developer tool set.');
 }
 
 function checkIdempotency() {
@@ -486,10 +488,10 @@ function checkIdempotency() {
 }
 
 function checkPerformance() {
-  const first = getPublicMcpToolNames(false, 'full');
-  const second = getPublicMcpToolNames(false, 'full');
+  const first = getPublicMcpToolNames(false, 'danger');
+  const second = getPublicMcpToolNames(false, 'danger');
   assert(JSON.stringify(first) === JSON.stringify(second), 'cached public tool list must be stable.');
-  const summary = getToolRegistrySummary(false, 'full');
+  const summary = getToolRegistrySummary(false, 'danger');
   assert(summary.registryCache.enabled, 'registry summary must advertise cache dimensions.');
   assert(summary.registryCache.dimensions.includes('activeTier'), 'registry cache dimensions must include active tier.');
   assert(DEFAULT_WRITE_PERFORMANCE_BUDGET_MS.planning === 500, 'planning budget must be 500ms.');

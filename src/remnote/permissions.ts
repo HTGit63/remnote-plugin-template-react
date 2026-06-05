@@ -1,7 +1,7 @@
 import type { BridgeToolName, PermissionMode, PermissionScope } from '../../shared/bridge/protocol';
 
-export const DEFAULT_PERMISSION_MODE: PermissionMode = 'confirm_writes';
-export const DEFAULT_PERMISSION_SCOPE: PermissionScope = 'focused_rem_only';
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'read_create_modify';
+export const DEFAULT_PERMISSION_SCOPE: PermissionScope = 'focused_rem_and_descendants';
 
 export interface PermissionDecision {
   allowed: boolean;
@@ -65,13 +65,38 @@ const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'delete_rem_by_id',
 ]);
 
+const CREATE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
+  'create_rem',
+  'append_to_rem',
+  'create_document',
+  'create_folder',
+  'create_rem_tree',
+  'create_styled_rem_tree',
+  'apply_structured_note_batch',
+  'create_polished_note_tree',
+  'create_or_replace_note_from_markdown',
+  'create_note_from_markdown_tree',
+  'append_markdown_as_rem_tree',
+  'create_basic_flashcard',
+  'create_concept_card',
+  'create_descriptor_card',
+  'create_cloze_card',
+  'create_multiple_choice_card',
+  'create_list_answer_card',
+]);
+
 export function normalizePermissionMode(value: string | undefined): PermissionMode {
   switch (value) {
     case 'read_only':
-    case 'confirm_writes':
-    case 'trusted_writes':
+    case 'read_create':
+    case 'read_create_modify':
+    case 'full_control_delete_approval':
     case 'danger_zone':
       return value;
+    case 'confirm_writes':
+      return 'read_create_modify';
+    case 'trusted_writes':
+      return 'full_control_delete_approval';
     default:
       return DEFAULT_PERMISSION_MODE;
   }
@@ -97,13 +122,16 @@ export function getPermissionModeLabel(mode: PermissionMode): string {
   switch (mode) {
     case 'read_only':
       return 'Read Only';
-    case 'trusted_writes':
-      return 'Trusted Writes';
+    case 'read_create':
+      return 'Read + Create';
+    case 'read_create_modify':
+      return 'Read + Create + Modify';
+    case 'full_control_delete_approval':
+      return 'Full Control With Delete Approval';
     case 'danger_zone':
       return 'Danger Zone';
-    case 'confirm_writes':
     default:
-      return 'Confirm Existing Writes';
+      return 'Read + Create + Modify';
   }
 }
 
@@ -148,6 +176,15 @@ export function getPermissionDecision(
   }
 
   if (DANGEROUS_TOOLS.has(tool)) {
+    if (mode !== 'full_control_delete_approval' && mode !== 'danger_zone') {
+      return {
+        allowed: false,
+        approvalRequired: false,
+        destructive: true,
+        reason: 'Current operation tier blocks destructive writes.',
+      };
+    }
+
     return {
       allowed: true,
       approvalRequired: true,
@@ -156,13 +193,24 @@ export function getPermissionDecision(
     };
   }
 
+  if (mode === 'read_create' && !CREATE_TOOLS.has(tool)) {
+    return {
+      allowed: false,
+      approvalRequired: false,
+      destructive: false,
+      reason: 'Read + Create blocks modifications to existing Rems.',
+    };
+  }
+
   if (SAFE_WRITE_TOOLS.has(tool)) {
     return {
       allowed: true,
-      approvalRequired: false,
+      approvalRequired: mode === 'read_create' || mode === 'read_create_modify',
       destructive: false,
       reason:
-        'Safe write is allowed by mode. The bridge still asks approval when the request creates inside, updates, moves, reorders, or deletes existing Rems.',
+        mode === 'full_control_delete_approval' || mode === 'danger_zone'
+          ? 'Safe write is allowed inside approved scope.'
+          : 'Safe write is allowed, with RemNote approval when request creates or mutates existing Rems.',
     };
   }
 

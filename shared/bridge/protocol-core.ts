@@ -1,4 +1,9 @@
-export type PermissionMode = 'read_only' | 'confirm_writes' | 'trusted_writes' | 'danger_zone';
+export type PermissionMode =
+  | 'read_only'
+  | 'read_create'
+  | 'read_create_modify'
+  | 'full_control_delete_approval'
+  | 'danger_zone';
 export type PermissionScope =
   | 'focused_rem_only'
   | 'focused_rem_and_descendants'

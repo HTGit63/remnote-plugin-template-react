@@ -60,7 +60,7 @@ export function renderDashboard(data: DashboardViewData): string {
     : config.bridgeToken
       ? 'LOCAL SECURE BEARER TOKEN'
       : 'UNAUTHENTICATED DEVELOPMENT';
-  const tierCountsText = ['core', 'advanced_notes', 'developer_diagnostics', 'full']
+  const tierCountsText = ['basic', 'note_writer', 'power_user', 'developer', 'danger']
     .map((tier) => `${tier}: ${toolCountsByTier[tier] ?? 0}`)
     .join(' / ');
   

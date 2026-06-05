@@ -54,7 +54,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           connected: true,
-          permissionMode: 'trusted_writes',
+          permissionMode: 'full_control_delete_approval',
           permissionScope: 'focused_rem_and_descendants',
           focusedRem: {
             found: true,
@@ -89,7 +89,7 @@ async function connectMockPlugin(wsUrl: string, register: BridgePluginRegister):
       const message = JSON.parse(raw.toString()) as BridgeServerHello | BridgeRequest;
       if ('type' in message && message.type === 'server_hello') {
         clearTimeout(timer);
-        if (message.activeToolTier !== 'advanced_notes') {
+        if (message.activeToolTier !== 'note_writer') {
           reject(new Error(`server_hello active tier mismatch: ${message.activeToolTier}`));
           return;
         }
@@ -130,7 +130,7 @@ const app = await startCompanionApp({
 });
 
 const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
-const expectedAdvancedNotesToolCount = getToolRegistrySummary(false, 'advanced_notes').publicToolCount;
+const expectedNoteWriterToolCount = getToolRegistrySummary(false, 'note_writer').publicToolCount;
 let ws: WebSocket | undefined;
 
 try {
@@ -140,7 +140,7 @@ try {
     redirectUri: 'https://chat.openai.com/aip/mock/remnote/callback',
     resource: publicBaseUrl,
     requestedScopes: ['bridge:read', 'bridge:write'],
-    toolTier: 'core',
+    toolTier: 'basic',
   });
   if (create.response.status !== 201 || !create.json?.pairingCode) {
     throw new Error(`pairing/create failed: ${create.response.status} ${create.text}`);
@@ -155,7 +155,7 @@ try {
     workspaceLabel: 'Area 2 smoke workspace',
     accessScope: 'focused-rem-only',
     trustedWriteMode: 'ask-every-write',
-    toolTier: 'core',
+    toolTier: 'basic',
   });
   if (approve.response.status !== 200 || !approve.json?.sessionSecret) {
     throw new Error(`pairing/approve failed: ${approve.response.status} ${approve.text}`);
@@ -165,21 +165,23 @@ try {
     'x-remnote-plugin-session-secret': approve.json.sessionSecret,
   };
   const initialTier = await getJson(`${baseUrl}/api/plugin/tool-tier`, headers);
-  if (initialTier.response.status !== 200 || initialTier.json?.toolTier !== 'core') {
+  if (initialTier.response.status !== 200 || initialTier.json?.toolTier !== 'basic') {
     throw new Error(`initial tool-tier failed: ${initialTier.response.status} ${initialTier.text}`);
   }
 
   const changedTier = await postJson(`${baseUrl}/api/plugin/tool-tier`, {
-    toolTier: 'advanced_notes',
+    toolTier: 'note_writer',
     accessScope: 'current-rem-tree',
     trustedWriteMode: 'trusted-inside-scope',
   }, headers);
   if (
     changedTier.response.status !== 200 ||
-    changedTier.json?.toolTier !== 'advanced_notes' ||
-    changedTier.json?.requiresConnectorRefresh !== true
+    changedTier.json?.toolTier !== 'note_writer' ||
+    changedTier.json?.publicToolCount !== expectedNoteWriterToolCount ||
+    changedTier.json?.sessionStale !== false ||
+    changedTier.json?.requiresConnectorRefresh !== false
   ) {
-    throw new Error(`tool tier change did not mark stale: ${changedTier.response.status} ${changedTier.text}`);
+    throw new Error(`tool tier change did not apply live: ${changedTier.response.status} ${changedTier.text}`);
   }
 
   const diagnostics = await postJson(`${baseUrl}/api/plugin/diagnostics`, {}, headers);
@@ -207,7 +209,7 @@ try {
       supportedTools: ['get_status', 'get_focused_rem', 'ping'],
       accessScope: 'current-rem-tree',
       trustedWriteMode: 'trusted-inside-scope',
-      toolTier: 'advanced_notes',
+      toolTier: 'note_writer',
     }
   );
 
@@ -215,9 +217,9 @@ try {
   if (
     connectedHealth.response.status !== 200 ||
     connectedHealth.json?.pluginConnectionStatus !== 'connected' ||
-    connectedHealth.json?.sessionStale !== true
+    connectedHealth.json?.sessionStale !== false
   ) {
-    throw new Error(`health missed connected stale plugin state: ${connectedHealth.response.status} ${connectedHealth.text}`);
+    throw new Error(`health missed connected live plugin state: ${connectedHealth.response.status} ${connectedHealth.text}`);
   }
 
   const quick = await postJson(`${baseUrl}/api/plugin/health-check`, { level: 'quick' }, headers);
@@ -240,7 +242,7 @@ try {
   if (
     dashboard.status !== 200 ||
     !dashboardText.includes('"deploymentMode":"hosted"') ||
-    !dashboardText.includes(`"publicToolCount":${expectedAdvancedNotesToolCount}`) ||
+    !dashboardText.includes(`"publicToolCount":${expectedNoteWriterToolCount}`) ||
     dashboardText.includes('"pid"') ||
     dashboardText.includes('"cwd"') ||
     dashboardText.includes('Session Stale')

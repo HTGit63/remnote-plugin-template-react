@@ -16,13 +16,13 @@ Incoming MCP Tool Request
   |
   +--> [2. Expiry Check]   -- Is token valid and unexpired?
   |
-  +--> [3. Registry Gating] -- Is tool allowed in active Profile?
+  +--> [3. Registry Gating] -- Is tool allowed in active access tier?
   |
   +--> [4. Scope Match]    -- Does token cover the requested Rem ID?
   |                         (focused-rem-only / current-rem-tree / full-kb)
   |
-  +--> [5. Operation Auth] -- For writes: requiresTrustedWrite checks?
-  |                         -- For deletes: requires delete scope + guard fields?
+  +--> [5. Operation Auth] -- Read / Read+Create / Read+Create+Modify / Delete checks
+  |                         -- For deletes: danger tier + delete scope + guard fields?
   |
   v
 Access Granted -> Forward to WebSocket Client
@@ -40,18 +40,25 @@ RemNote tokens restrict access to specific nodes within the Knowledge Base (KB).
 
 ---
 
-## 3. Trusted Write Modes
+## 3. Operation Permission Modes
 
-Write operations that modify formatting or structures have `requiresTrustedWrite: true` set in their policies. These actions are permitted only if:
+The plugin permission mode maps bridge operations to RemNote manifest permission levels:
 
-* The OAuth token includes the `bridge:trusted_write` scope.
-* **`trustedWriteMode`** is set to `'trusted-inside-scope'` (allowing background updates inside the active scope) or the user explicitly clicks an approval prompt in the plugin client.
+| Bridge mode | RemNote operation level |
+| :--- | :--- |
+| `read_only` | `Read` |
+| `read_create` | `ReadCreate` |
+| `read_create_modify` | `ReadCreateModify` |
+| `full_control_delete_approval` | `ReadCreateModifyDelete`, with per-delete approval |
+| `danger_zone` | `ReadCreateModifyDelete`, only for explicit destructive testing/admin |
+
+Write operations that modify formatting or structures still require either trusted mode inside the active scope or explicit plugin approval.
 
 ---
 
 ## 4. Destructive Operation Guards
 
-Destructive tools (`delete_rem_by_id` and `replace_rem`) require the `bridge:delete` OAuth scope.
+`delete_rem_by_id` requires the `danger` access tier, `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1`, the `bridge:delete` OAuth scope, and plugin delete approval. `replace_rem` stays hidden until stronger guards are live-verified.
 
 ### `delete_rem_by_id` Safety Check:
 * **Dry-Run Default**: `dryRun` defaults to `true`.

@@ -51,7 +51,7 @@ REMNOTE_BRIDGE_TOKEN=dev-secret-token-123
 
 # Allow test tools like delete_rem_by_id to be exposed
 REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1
-REMNOTE_BRIDGE_TOOL_PROFILE=full
+REMNOTE_BRIDGE_TOOL_PROFILE=danger
 ```
 
 ### Authentication Controls

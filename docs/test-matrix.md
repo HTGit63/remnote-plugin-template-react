@@ -15,10 +15,10 @@ Status: Areas 1-3 repo/local checks added. Hosted public launch still needs live
 | `npm run server:test:pairing` | pairing start/confirm/status/revoke and token non-leak |
 | `npm run server:test:routing` | public-hosted plugin session routing |
 | `npm run server:test:security` | OAuth security smoke alias |
-| `npm run server:test:tools-core` | core tier registry/schema checks plus MCP certification |
-| `npm run server:test:tools-advanced` | advanced_notes tier registry/schema checks plus MCP certification |
-| `npm run server:test:tools-diagnostics` | developer_diagnostics tier registry/schema checks plus MCP certification |
-| `npm run server:test:tool-profile` | full profile/tool count/profile consistency certification |
+| `npm run server:test:tools-core` | legacy core alias registry/schema checks plus basic MCP certification |
+| `npm run server:test:tools-advanced` | legacy advanced alias registry/schema checks plus note_writer MCP certification |
+| `npm run server:test:tools-diagnostics` | legacy diagnostics alias registry/schema checks plus developer MCP certification |
+| `npm run server:test:tool-profile` | all access-tier registry/tool-count/profile consistency certification |
 | `npm run server:test:health-check-routing` | local/direct health-check routing certification |
 | `npm run server:test:structured-depth` | 5-level study tree and safe extreme-depth rejection |
 | `npm run server:test:style-schema` | canonical style schema and no style-control Rem pollution |
@@ -32,7 +32,7 @@ Status: Areas 1-3 repo/local checks added. Hosted public launch still needs live
 | `npm run server:test:idempotency` | idempotency metadata plus MCP dry-run/delete guard certification |
 | `npm run server:test:performance` | registry cache checks plus MCP p95 latency report |
 | `npm run server:test:e2e-hosted-smoke` | hosted OAuth, plugin_register routing, hosted diagnostics, hosted matrix smoke |
-| `npm run server:test:area3` | full-tier MCP certification for every public supported tool |
+| `npm run server:test:area3` | danger-tier MCP certification for every public supported tool |
 | `npm audit` | dependency advisory scan |
 | `npm audit --omit=dev` | production dependency advisory scan |
 | `git diff --check` | whitespace/diff hygiene |

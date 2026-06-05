@@ -20,7 +20,7 @@ export interface AuthenticatedPrincipal {
   pluginInstanceId?: string;
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
-  toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+  toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
   requiresConnectorRefresh?: boolean;
 }
 

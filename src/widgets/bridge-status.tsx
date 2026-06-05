@@ -37,8 +37,6 @@ import {
   type HostedPairingSession,
   type PluginToolTierState,
   type ChatGptPairingPreview,
-  accessScopeForPermissionScope,
-  writeModeForPermissionMode,
 } from '../bridge/pairing';
 import {
   BridgeTaskBanner,
@@ -100,8 +98,9 @@ const permissionScopeOptions: Array<{ value: PermissionScope; description: strin
 
 const permissionModeOptions: Array<{ value: PermissionMode; label: string }> = [
   { value: 'read_only', label: 'Read only' },
-  { value: 'confirm_writes', label: 'Ask for existing notes' },
-  { value: 'trusted_writes', label: 'Trusted writes' },
+  { value: 'read_create', label: 'Read + create' },
+  { value: 'read_create_modify', label: 'Read + create + modify' },
+  { value: 'full_control_delete_approval', label: 'Full control + delete approval' },
   { value: 'danger_zone', label: 'Danger zone' },
 ];
 
@@ -112,28 +111,34 @@ const toolTierOptions: Array<{
   description: string;
 }> = [
   {
-    value: 'core',
-    label: 'Core',
+    value: 'basic',
+    label: 'Basic',
     risk: 'Lowest risk',
-    description: 'Status, reads, search, simple cards, guarded delete preview.',
+    description: 'Status and read tools.',
   },
   {
-    value: 'advanced_notes',
-    label: 'Advanced Notes',
+    value: 'note_writer',
+    label: 'Note Writer',
     risk: 'Writes inside scope',
-    description: 'Structured writing, styling, moving, replacing, batch workflows.',
+    description: 'Designed-note, Markdown, tree, and flashcard creation.',
   },
   {
-    value: 'developer_diagnostics',
-    label: 'Developer / Diagnostics',
+    value: 'power_user',
+    label: 'Power User',
+    risk: 'Existing-note changes',
+    description: 'Move, reorder, update, and style tools.',
+  },
+  {
+    value: 'developer',
+    label: 'Developer',
     risk: 'Debug only',
     description: 'Bridge diagnostics, health checks, raw rich-text inspection.',
   },
   {
-    value: 'full',
-    label: 'Full',
-    risk: 'All supported tools',
-    description: 'Everything non-removed and SDK-supported.',
+    value: 'danger',
+    label: 'Danger',
+    risk: 'Destructive',
+    description: 'Danger-tier tools such as guarded delete when server enables them.',
   },
 ];
 
@@ -188,7 +193,7 @@ function summarizeToolAvailability(publicTools: string[] | undefined, mode: Perm
       gated += 1;
     } else if (mode === 'read_only') {
       blocked += 1;
-    } else if (mode === 'confirm_writes') {
+    } else if (mode === 'read_create' || mode === 'read_create_modify') {
       gated += 1;
     } else {
       free += 1;
@@ -410,7 +415,7 @@ export function BridgeStatusWidget() {
   const [lastServerDiagnostics, setLastServerDiagnostics] = useState<Record<string, unknown> | null>(null);
   const [debugCopyStatus, setDebugCopyStatus] = useState('No debug copy yet.');
   const [hostedSession, setHostedSession] = useState<HostedPairingSession | null>(null);
-  const [selectedToolTier, setSelectedToolTier] = useState<BridgeToolProfile>('core');
+  const [selectedToolTier, setSelectedToolTier] = useState<BridgeToolProfile>('note_writer');
   const [toolTierState, setToolTierState] = useState<PluginToolTierState | null>(null);
   const [pairingEvent, setPairingEvent] = useState('Open ChatGPT connector auth, then enter the Render pairing code here.');
   const [chatGptPairingCode, setChatGptPairingCode] = useState('');
@@ -419,8 +424,8 @@ export function BridgeStatusWidget() {
   const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
-  const permissionModeRef = useRef<PermissionMode>('confirm_writes');
-  const permissionScopeRef = useRef<PermissionScope>('focused_rem_only');
+  const permissionModeRef = useRef<PermissionMode>('read_create_modify');
+  const permissionScopeRef = useRef<PermissionScope>('focused_rem_and_descendants');
   const approvedRootRemIdRef = useRef<string | null>(null);
   const clientRef = useRef<BrowserBridgeClient | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -430,11 +435,24 @@ export function BridgeStatusWidget() {
     Promise.all([
       loadHostedPairingSession(plugin),
       plugin.storage.getLocal<BridgeToolProfile>(TOOL_TIER_STORAGE_KEY),
+      plugin.settings.getSetting<string>('bridge-tool-access-tier'),
+      plugin.storage.getLocal<PermissionMode>('bridge-permission-mode'),
+      plugin.storage.getLocal<PermissionScope>('bridge-permission-scope'),
+      plugin.storage.getLocal<string>('bridge-approved-root-rem-id'),
     ])
-      .then(([session, storedTier]) => {
+      .then(([session, storedTier, settingTier, storedMode, storedScope, storedRoot]) => {
         if (alive) {
           setHostedSession(session);
-          setSelectedToolTier(normalizeBridgeToolTier(storedTier ?? session?.toolTier));
+          setSelectedToolTier(normalizeBridgeToolTier(storedTier ?? settingTier ?? session?.toolTier));
+          if (storedMode) {
+            setRuntimePermissionMode(normalizePermissionMode(storedMode));
+          }
+          if (storedScope) {
+            setRuntimePermissionScope(normalizePermissionScope(storedScope));
+          }
+          if (storedRoot) {
+            setRuntimeApprovedRootRemId(storedRoot);
+          }
         }
       })
       .catch((error: unknown) => {
@@ -522,20 +540,11 @@ export function BridgeStatusWidget() {
     reportedDeploymentMode === 'local' ||
     reportedHostedPairingEnabled === false;
   const effectiveHostedSession = chatGptPairingDisabled ? null : hostedSession;
-  const selectedAccessScope = accessScopeForPermissionScope(permissionScope);
-  const selectedWriteMode = writeModeForPermissionMode(permissionMode);
   const storedSessionStale =
     Boolean(effectiveHostedSession?.requiresConnectorRefresh) ||
     Boolean(bridgeStatus.requiresConnectorRefresh) ||
     Boolean(toolTierState?.requiresConnectorRefresh);
-  const localScopeChanged =
-    Boolean(effectiveHostedSession?.sessionSecret) &&
-    (effectiveHostedSession?.accessScope !== selectedAccessScope ||
-      effectiveHostedSession?.trustedWriteMode !== selectedWriteMode);
-  const localTierChanged =
-    Boolean(effectiveHostedSession?.sessionSecret) &&
-    normalizeBridgeToolTier(effectiveHostedSession?.toolTier) !== selectedToolTier;
-  const sessionStale = storedSessionStale || localScopeChanged || localTierChanged;
+  const sessionStale = storedSessionStale;
   const activeServerToolTier =
     toolTierState?.activeToolTier ??
     bridgeStatus.activeToolTier ??
@@ -731,7 +740,7 @@ export function BridgeStatusWidget() {
     plugin,
     serverUrl,
     bridgeToken,
-    effectiveHostedSession,
+    effectiveHostedSession?.sessionSecret,
     requestApproval,
     cancelApproval,
     bridgeEnabled,
@@ -782,14 +791,13 @@ export function BridgeStatusWidget() {
     };
     setHostedSession(nextSession);
     await saveHostedPairingSession(plugin, nextSession);
-    if (state.requiresConnectorRefresh) {
-      setPairingEvent('Reconnect required: ChatGPT was approved with an older permission scope or tool tier.');
-    }
+    setPairingEvent('Access updated live. No reconnect needed.');
   };
 
   const handleScopeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const nextScope = event.target.value as PermissionScope;
     setRuntimePermissionScope(nextScope);
+    await plugin.storage.setLocal('bridge-permission-scope', nextScope);
     try {
       await pushHostedToolConfig(selectedToolTier, nextScope, permissionMode);
       await plugin.app.toast(`Bridge access changed to ${getPermissionScopeLabel(nextScope)}.`);
@@ -802,6 +810,7 @@ export function BridgeStatusWidget() {
   const handleModeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
     const nextMode = event.target.value as PermissionMode;
     setRuntimePermissionMode(nextMode);
+    await plugin.storage.setLocal('bridge-permission-mode', nextMode);
     try {
       await pushHostedToolConfig(selectedToolTier, permissionScope, nextMode);
       await plugin.app.toast(`Write mode changed to ${getPermissionModeLabel(nextMode)}.`);
@@ -815,11 +824,12 @@ export function BridgeStatusWidget() {
     const nextTier = normalizeBridgeToolTier(event.target.value);
     setSelectedToolTier(nextTier);
     await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, nextTier);
+    await plugin.storage.setLocal('bridge-tool-access-tier', nextTier);
     try {
       await pushHostedToolConfig(nextTier, permissionScope, permissionMode);
       await plugin.app.toast(
         effectiveHostedSession?.sessionSecret
-          ? 'Tool tier updated. Reconnect ChatGPT if requested.'
+          ? 'Tool tier updated live.'
           : 'Tool tier stored. It will apply when ChatGPT is paired.'
       );
     } catch (error: unknown) {
@@ -835,14 +845,17 @@ export function BridgeStatusWidget() {
     }
 
     setRuntimeApprovedRootRemId(focusedRemStatus.remId);
+    await plugin.storage.setLocal('bridge-approved-root-rem-id', focusedRemStatus.remId);
     await plugin.app.toast('Approved root set to focused Rem.');
   };
 
   const handleUseRecommendedNoteMode = async () => {
     const nextScope: PermissionScope = 'focused_rem_and_descendants';
-    const nextMode: PermissionMode = 'trusted_writes';
+    const nextMode: PermissionMode = 'read_create_modify';
     setRuntimePermissionScope(nextScope);
     setRuntimePermissionMode(nextMode);
+    await plugin.storage.setLocal('bridge-permission-scope', nextScope);
+    await plugin.storage.setLocal('bridge-permission-mode', nextMode);
     try {
       await pushHostedToolConfig(selectedToolTier, nextScope, nextMode);
       await plugin.app.toast('Recommended note mode enabled.');
@@ -880,18 +893,23 @@ export function BridgeStatusWidget() {
       });
       setHostedSession(session);
       setToolTierState(null);
-      setRuntimePermissionScope(
+      const nextSessionScope: PermissionScope =
         session.accessScope === 'full-kb'
           ? 'workspace_allowed'
           : session.accessScope === 'current-rem-tree'
             ? 'focused_rem_and_descendants'
-            : 'focused_rem_only'
-      );
-      setRuntimePermissionMode(
-        session.trustedWriteMode === 'trusted-inside-scope' ? 'trusted_writes' : 'confirm_writes'
-      );
+            : 'focused_rem_only';
+      const nextSessionMode: PermissionMode =
+        session.trustedWriteMode === 'trusted-inside-scope'
+          ? 'full_control_delete_approval'
+          : 'read_create_modify';
+      setRuntimePermissionScope(nextSessionScope);
+      setRuntimePermissionMode(nextSessionMode);
       setSelectedToolTier(normalizeBridgeToolTier(session.toolTier));
+      await plugin.storage.setLocal('bridge-permission-scope', nextSessionScope);
+      await plugin.storage.setLocal('bridge-permission-mode', nextSessionMode);
       await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, normalizeBridgeToolTier(session.toolTier));
+      await plugin.storage.setLocal('bridge-tool-access-tier', normalizeBridgeToolTier(session.toolTier));
       setPairingEvent(`Connected to ${session.connectedLabel || 'ChatGPT session'}.`);
       setChatGptPairingCode('');
       setChatGptPairingPreview(null);
@@ -1114,9 +1132,9 @@ export function BridgeStatusWidget() {
   const bridgeNextAction = waitingForPairing
     ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
     : sessionStale
-      ? 'Reconnect ChatGPT connector to refresh the selected permission scope or tool tier.'
+      ? 'Refresh pairing only if server URL or token changed.'
     : getBridgeNextAction(bridgeStatus);
-  const statusLabel = sessionStale ? 'Reconnect Required' : waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
+  const statusLabel = sessionStale ? 'Refresh Needed' : waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
   const taskTitle = needsAction
     ? 'Action Needed'
     : sessionStale
@@ -1129,7 +1147,7 @@ export function BridgeStatusWidget() {
   const taskCopy = needsAction
     ? 'Review this write before RemNote changes.'
     : sessionStale
-      ? 'Reconnect required: ChatGPT was approved with an older permission scope or tool tier.'
+      ? 'Refresh required only for server URL/token changes.'
     : ready
       ? 'ChatGPT can use the connected RemNote tools.'
       : waitingForPairing
@@ -1293,14 +1311,14 @@ export function BridgeStatusWidget() {
             <DetailRow label="Access Scope" value={getPermissionScopeLabel(permissionScope)} />
             <DetailRow label="Write Mode" value={getPermissionModeLabel(permissionMode)} />
             <DetailRow label="Tool Tier" value={toolTierOptions.find((tier) => tier.value === selectedToolTier)?.label ?? selectedToolTier} />
-            <DetailRow label="Session Stale" value={sessionStale ? 'Yes - reconnect ChatGPT connector' : 'No'} />
+            <DetailRow label="Session Refresh" value={sessionStale ? 'Needed' : 'Not needed'} />
             <DetailRow
               label="Pairing Status"
               value={
                 chatGptPairingDisabled
                   ? LOCAL_PAIRING_DISABLED_MESSAGE
                   : sessionStale
-                    ? 'Reconnect required: ChatGPT was approved with an older permission scope or tool tier.'
+                    ? 'Refresh required only for server URL/token changes.'
                     : pairingEvent
               }
             />
@@ -1362,10 +1380,10 @@ export function BridgeStatusWidget() {
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
               <h3>Tool Tier</h3>
-              <p>Choose available ChatGPT tools. Reconnect ChatGPT when schema scope changes.</p>
+              <p>Choose available ChatGPT tools. Changes apply live without reconnect.</p>
             </div>
             <span className={sessionStale ? 'bridge-pill bridge-pill-warning' : 'bridge-pill bridge-pill-success'}>
-              {sessionStale ? 'Reconnect needed' : 'Current'}
+              {sessionStale ? 'Refresh needed' : 'Live'}
             </span>
           </div>
           <label className="bridge-field">
@@ -1401,7 +1419,7 @@ export function BridgeStatusWidget() {
                   <p>{count || 0} tools. {option.risk}. {option.description}</p>
                   {selected && sessionStale && (
                     <p className="bridge-tier-warning">
-                      Reconnect required: ChatGPT was approved with an older permission scope or tool tier.
+                      Refresh required only for server URL/token changes.
                     </p>
                   )}
                 </div>
@@ -1414,7 +1432,7 @@ export function BridgeStatusWidget() {
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
               <h3>Recommended Mode</h3>
-              <p>Best for normal note writing: focused Rem and descendants with trusted writes.</p>
+              <p>Best for normal note writing: focused Rem and descendants with create/modify approval.</p>
             </div>
             <span className="bridge-pill bridge-pill-success">Recommended</span>
           </div>
@@ -1429,14 +1447,14 @@ export function BridgeStatusWidget() {
             <RecommendedModeCard tone="success" badge="Green" title="Focused Rem + Descendants">
               Vivy can work inside current note and children it creates under it.
             </RecommendedModeCard>
-            <RecommendedModeCard tone="success" badge="Green" title="Trusted Writes">
-              Safe write tools run without repeated RemNote approval prompts.
+            <RecommendedModeCard tone="success" badge="Green" title="Read + Create + Modify">
+              Note-writing tools can create and modify inside the approved scope.
             </RecommendedModeCard>
             <RecommendedModeCard tone="warning" badge="Caution" title="Workspace Allowed">
               Broad testing/search mode. Does not fix unsupported tools.
             </RecommendedModeCard>
             <RecommendedModeCard tone="danger" badge="Danger" title="Danger Zone">
-              High-risk mode. Delete and replace still require approval.
+              High-risk mode. Guarded delete requires approval; replace stays hidden.
             </RecommendedModeCard>
           </div>
           <button type="button" className="bridge-button bridge-button-approve bridge-button-full" onClick={handleUseRecommendedNoteMode}>

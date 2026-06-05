@@ -26,13 +26,14 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   await plugin.settings.registerDropdownSetting({
     id: 'bridge-permission-mode',
-    title: 'Bridge Permission Mode',
-    description: 'Controls whether incoming bridge requests can read, write with approval, or use trusted writes.',
-    defaultValue: 'confirm_writes',
+    title: 'Bridge Operation Tier',
+    description: 'Controls whether incoming bridge requests can read, create, modify, or use delete approval.',
+    defaultValue: 'read_create_modify',
     options: [
       { key: 'read_only', label: 'Read Only', value: 'read_only' },
-      { key: 'confirm_writes', label: 'Confirm Writes', value: 'confirm_writes' },
-      { key: 'trusted_writes', label: 'Trusted Writes', value: 'trusted_writes' },
+      { key: 'read_create', label: 'Read + Create', value: 'read_create' },
+      { key: 'read_create_modify', label: 'Read + Create + Modify', value: 'read_create_modify' },
+      { key: 'full_control_delete_approval', label: 'Full Control With Delete Approval', value: 'full_control_delete_approval' },
       { key: 'danger_zone', label: 'Danger Zone', value: 'danger_zone' },
     ],
   });
@@ -41,7 +42,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     id: 'bridge-permission-scope',
     title: 'Bridge Permission Scope',
     description: 'Limits which Rems ChatGPT can read or change through the local bridge.',
-    defaultValue: 'focused_rem_only',
+    defaultValue: 'focused_rem_and_descendants',
     options: [
       { key: 'focused_rem_only', label: 'Focused Rem Only', value: 'focused_rem_only' },
       {
@@ -57,6 +58,20 @@ async function onActivate(plugin: ReactRNPlugin) {
       },
       { key: 'approved_document_or_folder', label: 'Approved Document or Folder', value: 'approved_document_or_folder' },
       { key: 'workspace_allowed', label: 'Workspace Allowed', value: 'workspace_allowed' },
+    ],
+  });
+
+  await plugin.settings.registerDropdownSetting({
+    id: 'bridge-tool-access-tier',
+    title: 'Bridge Tool Access Tier',
+    description: 'Controls which ChatGPT tools are visible without changing the server URL or token.',
+    defaultValue: 'note_writer',
+    options: [
+      { key: 'basic', label: 'Basic', value: 'basic' },
+      { key: 'note_writer', label: 'Note Writer', value: 'note_writer' },
+      { key: 'power_user', label: 'Power User', value: 'power_user' },
+      { key: 'developer', label: 'Developer', value: 'developer' },
+      { key: 'danger', label: 'Danger', value: 'danger' },
     ],
   });
 

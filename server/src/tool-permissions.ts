@@ -102,7 +102,9 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
 };
 
 function permissionModeForPrincipal(principal: AuthenticatedPrincipal): PermissionMode {
-  return principal.trustedWriteMode === 'trusted-inside-scope' ? 'trusted_writes' : 'confirm_writes';
+  return principal.trustedWriteMode === 'trusted-inside-scope'
+    ? 'full_control_delete_approval'
+    : 'read_create_modify';
 }
 
 function permissionScopeForPrincipal(principal: AuthenticatedPrincipal): PermissionScope {
@@ -131,8 +133,8 @@ export function getLastTrustedWriteDecision(): TrustedWriteDecision | null {
 }
 
 export function getDirectWritePolicySnapshot(principal?: AuthenticatedPrincipal) {
-  const permissionMode = principal ? permissionModeForPrincipal(principal) : 'confirm_writes';
-  const permissionScope = principal ? permissionScopeForPrincipal(principal) : 'focused_rem_only';
+  const permissionMode = principal ? permissionModeForPrincipal(principal) : 'read_create_modify';
+  const permissionScope = principal ? permissionScopeForPrincipal(principal) : 'focused_rem_and_descendants';
   const scopeGrants = new Set(principal?.scopeGrants ?? []);
   const trustedWriteModeEffective = principal?.trustedWriteMode === 'trusted-inside-scope';
   return {
@@ -212,9 +214,9 @@ export function validateMcpToolPermission(
       reason: allowed
         ? trustedWriteModeEffective
           ? hasTrustedWriteScope
-            ? 'trusted_writes permits safe write inside approved scope'
-            : 'paired plugin trusted_writes permits safe write inside approved scope; connector should refresh to request bridge:trusted_write scope'
-          : 'confirm_writes direct route allowed; RemNote plugin approval may be required'
+            ? 'Full Control With Delete Approval permits safe write inside approved scope'
+            : 'Full Control With Delete Approval permits safe write inside approved scope; bridge:trusted_write scope is recommended'
+          : 'Read + Create + Modify direct route allowed; RemNote plugin approval may be required'
         : 'SERVER_POLICY_BLOCKED: Direct safe write requires bridge:write scope.',
       permissionMode: permissionModeForPrincipal(principal),
       permissionScope: permissionScopeForPrincipal(principal),

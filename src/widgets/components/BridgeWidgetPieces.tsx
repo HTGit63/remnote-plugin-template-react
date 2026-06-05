@@ -91,7 +91,7 @@ export function ToolProfileSummary({
   const total = allPublicToolCount ?? publicToolCount;
   return (
     <div className="bridge-profile-summary" aria-label="Tool profile summary">
-      <span>{toolProfile ?? 'core'} profile</span>
+      <span>{toolProfile ?? 'note_writer'} profile</span>
       <span>{publicToolCount ?? 0}{total ? `/${total}` : ''} exposed</span>
       <span>{preferredToolCount} preferred</span>
       <span>{hiddenByProfileCount} profile-hidden</span>

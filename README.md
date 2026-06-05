@@ -68,20 +68,30 @@ ADMIN_DEBUG_SECRET for protected diagnostics
 
 Render config is documented in `docs/deployment/render.md`.
 
-## Tool Profiles
+## Tool Access Tiers
 
-Canonical profile term: `toolProfile`.
+Canonical setting: `toolProfile`.
 
 Allowed values:
 
 ```text
-core
-advanced_notes
-developer_diagnostics
-full
+basic
+note_writer
+power_user
+developer
+danger
 ```
 
-`toolTier` can appear as a compatibility alias in responses only.
+Legacy aliases still normalize for compatibility:
+
+```text
+core -> basic
+advanced_notes -> note_writer
+developer_diagnostics -> developer
+full -> danger
+```
+
+`toolTier` can appear as a compatibility alias in responses only. The default is `note_writer`, so normal note-writing tools are public and callable without switching to diagnostics or danger access.
 
 Tool counts are generated from the registry at runtime. Check:
 
@@ -89,7 +99,7 @@ Tool counts are generated from the registry at runtime. Check:
 npm run server:test:tool-profile
 ```
 
-`delete_rem_by_id` is gated by `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and full profile. It defaults to `dryRun=true`; real delete requires `dryRun=false`, `confirmTitle`, and `expectedParentId` or `expectedAncestorId`.
+`delete_rem_by_id` is gated by `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and the `danger` access tier. It defaults to `dryRun=true`; real delete requires `dryRun=false`, `confirmTitle`, and `expectedParentId` or `expectedAncestorId`.
 
 `create_folder` is not public/callable in this pass. Modern SDK typings expose folder APIs, but this bridge keeps the tool hidden until the Goal 2 refactor live-verifies the safe path.
 

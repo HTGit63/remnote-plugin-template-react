@@ -395,7 +395,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           connected: true,
-          permissionMode: 'trusted_writes',
+          permissionMode: 'full_control_delete_approval',
           permissionScope: 'focused_rem_and_descendants',
           approvedRootRemId: parentId,
           focusedRem: {
@@ -675,7 +675,7 @@ function assertMatrixShape(matrix: readonly Record<string, unknown>[], tools: re
   }
 }
 
-function assertSchemaQuality(profile: ToolProfile = 'full') {
+function assertSchemaQuality(profile: ToolProfile = 'danger') {
   const publicTools = getPublicMcpToolNames(false, profile);
   assert(!publicTools.includes('create_folder'), `${profile} exposed unsupported create_folder.`);
   const removedDeleteTools = [
@@ -694,13 +694,13 @@ function assertSchemaQuality(profile: ToolProfile = 'full') {
     assert(metadata.exposedNormally === true, `${tool} must be normally exposed metadata.`);
     assert(metadata.sdkSupported === true, `${tool} must be SDK-supported or removed from public exposure.`);
     assert(['low', 'medium', 'high', 'dangerous'].includes(metadata.riskLevel), `${tool} risk metadata invalid.`);
-    assert(['core', 'advanced_notes', 'developer_diagnostics'].includes(String(metadata.tier)), `${tool} tier metadata invalid.`);
+    assert(['basic', 'note_writer', 'power_user', 'developer', 'danger'].includes(String(metadata.tier)), `${tool} tier metadata invalid.`);
     if (policy.policy === 'unsupported') {
       throw new Error(`${tool} has unsupported policy while public.`);
     }
   }
 
-  const unsupported = getToolRegistrySummary(false, 'full').staticSdkUnsupportedTools;
+  const unsupported = getToolRegistrySummary(false, 'danger').staticSdkUnsupportedTools;
   assert(unsupported.includes('create_folder'), 'create_folder must remain in static unsupported diagnostics.');
   assert((STATIC_SDK_UNSUPPORTED_TOOLS as readonly string[]).includes('create_folder'), 'create_folder unsupported constant missing.');
 
@@ -806,39 +806,39 @@ async function certifyProfile(profile: ToolProfile) {
 }
 
 async function certifyHealthRouting() {
-  await certifyProfile('developer_diagnostics');
+  await certifyProfile('developer');
 }
 
 async function certifyMarkdownImporter() {
-  assertSchemaQuality('advanced_notes');
-  await certifyProfile('advanced_notes');
+  assertSchemaQuality('note_writer');
+  await certifyProfile('note_writer');
 }
 
 const checks: Record<string, () => Promise<void> | void> = {
   all: async () => {
-    assertSchemaQuality('full');
-    await certifyProfile('full');
+    assertSchemaQuality('danger');
+    await certifyProfile('danger');
   },
-  core: () => certifyProfile('core'),
-  advanced: () => certifyProfile('advanced_notes'),
-  diagnostics: () => certifyProfile('developer_diagnostics'),
-  schemas: () => assertSchemaQuality('full'),
+  core: () => certifyProfile('basic'),
+  advanced: () => certifyProfile('note_writer'),
+  diagnostics: () => certifyProfile('developer'),
+  schemas: () => assertSchemaQuality('danger'),
   'health-routing': certifyHealthRouting,
   'markdown-importer': certifyMarkdownImporter,
   hosted: () => {
-    const summary = getToolRegistrySummary(false, 'full', undefined, {
+    const summary = getToolRegistrySummary(false, 'danger', undefined, {
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode: 'hosted_oauth_required',
     });
     assert(summary.toolCallAuthMode === 'hosted_oauth_required', 'hosted matrix must use hosted_oauth_required.');
     assert(summary.unauthMcpCallableTools.length === 0, 'hosted matrix must not claim unauthenticated MCP callability.');
-    assertSchemaQuality('full');
+    assertSchemaQuality('danger');
   },
   idempotency: async () => {
-    assertSchemaQuality('full');
-    await certifyProfile('full');
+    assertSchemaQuality('danger');
+    await certifyProfile('danger');
   },
-  performance: () => certifyProfile('full'),
+  performance: () => certifyProfile('danger'),
 };
 
 const check = checks[mode];

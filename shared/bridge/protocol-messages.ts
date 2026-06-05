@@ -267,7 +267,7 @@ export interface BridgePluginRegister {
   toolTier?: BridgeToolProfile;
 }
 
-export type BridgeToolProfile = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+export type BridgeToolProfile = 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
 export type BridgeToolPolicy =
   | 'preferred'
   | 'fallback'

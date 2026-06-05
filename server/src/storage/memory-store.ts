@@ -11,6 +11,7 @@ import type {
   User,
 } from './types.js';
 import { hashToken } from './crypto-utils.js';
+import { normalizeToolProfile } from '../tool-policy.js';
 
 export class MemoryStorageProvider implements StorageProvider {
   private users = new Map<string, User>();
@@ -293,6 +294,8 @@ export class MemoryStorageProvider implements StorageProvider {
       ...session,
       requestedScopes: [...session.requestedScopes],
       approvedScopes: [...session.approvedScopes],
+      toolTier: normalizeToolProfile(session.toolTier),
+      requiresConnectorRefresh: false,
     };
   }
 }

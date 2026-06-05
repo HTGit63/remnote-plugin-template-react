@@ -124,7 +124,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           connected: true,
-          permissionMode: 'confirm_writes',
+          permissionMode: 'read_create_modify',
           permissionScope: 'workspace_allowed',
           focusedRem: {
             found: true,
@@ -248,7 +248,7 @@ async function runLocalBearerMode(): Promise<void> {
     bridgePort: 0,
     mcpPort: 0,
     bridgeToken: token,
-    toolProfile: 'full',
+    toolProfile: 'danger',
     allowNoToken: false,
     allowRemote: false,
     allowCors: false,
@@ -426,7 +426,7 @@ async function runDisconnectedLocalMode(): Promise<void> {
     bridgePort: 0,
     mcpPort: 0,
     bridgeToken: token,
-    toolProfile: 'full',
+    toolProfile: 'danger',
     allowNoToken: false,
     allowRemote: false,
     allowCors: false,

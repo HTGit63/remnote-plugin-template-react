@@ -69,10 +69,11 @@ export type ChatGptTrustedWriteMode =
   | 'trusted-inside-scope';
 
 export type ChatGptToolTier =
-  | 'core'
-  | 'advanced_notes'
-  | 'developer_diagnostics'
-  | 'full';
+  | 'basic'
+  | 'note_writer'
+  | 'power_user'
+  | 'developer'
+  | 'danger';
 
 export interface ChatGptPairingSession {
   pairingId: string;

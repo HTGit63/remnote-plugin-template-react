@@ -80,7 +80,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           connected: true,
-          permissionMode: 'confirm_writes',
+          permissionMode: 'read_create_modify',
           permissionScope: 'workspace_allowed',
           approvedRootRemId: null,
           focusedRem: {
@@ -835,7 +835,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 50,
-    toolProfile: 'full',
+    toolProfile: 'danger',
   });
   const timeoutWs = await connectMockPlugin(
     `ws://127.0.0.1:${timeoutApp.bridgePort}${timeoutApp.config.bridgePath}`,
@@ -866,7 +866,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
-    toolProfile: 'full',
+    toolProfile: 'danger',
     enableDeleteTool: true,
   });
   const disconnectWs = await connectMockPlugin(
@@ -901,7 +901,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
-    toolProfile: 'full',
+    toolProfile: 'danger',
   });
   let retryReadSecondaryWs: WebSocket | undefined;
   let retryReadFirstRequest = true;
@@ -953,7 +953,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
-    toolProfile: 'full',
+    toolProfile: 'danger',
   });
   const unknownWriteWs = await connectMockPlugin(
     `ws://127.0.0.1:${unknownWriteApp.bridgePort}${unknownWriteApp.config.bridgePath}`,
@@ -1000,7 +1000,7 @@ async function runReliabilitySmoke() {
     allowRemote: false,
     allowCors: false,
     requestTimeoutMs: 5000,
-    toolProfile: 'full',
+    toolProfile: 'danger',
     enableDeleteTool: true,
   });
   const unknownDeleteWs = await connectMockPlugin(
@@ -1096,7 +1096,7 @@ async function runProfileAndSinglePortSmoke() {
     bridgePort: 0,
     mcpPort: 0,
     singlePort: true,
-    toolProfile: 'core',
+    toolProfile: 'basic',
     bridgeToken: token,
     allowRemote: false,
     allowCors: false,
@@ -1116,7 +1116,7 @@ async function runProfileAndSinglePortSmoke() {
 
     await initializeMcp(singlePortMcp);
     const toolNames = getToolNamesFromList(await listMcpTools(singlePortMcp));
-    const expectedToolNames = getPublicMcpToolNames(false, 'core');
+    const expectedToolNames = getPublicMcpToolNames(false, 'basic');
     if (!sameStringSet(toolNames, expectedToolNames)) {
       throw new Error(
         `Core tier tools/list mismatch. Expected ${expectedToolNames.join(', ')}, got ${toolNames.join(', ')}.`
@@ -1152,8 +1152,8 @@ async function runProfileAndSinglePortSmoke() {
       | undefined;
     if (
       !statusResult ||
-      statusResult.toolProfile !== 'core' ||
-      statusResult.toolTier !== 'core' ||
+      statusResult.toolProfile !== 'basic' ||
+      statusResult.toolTier !== 'basic' ||
       statusResult.publicToolCount !== expectedToolNames.length ||
       !statusResult.allPublicToolCount ||
       statusResult.allPublicToolCount <= statusResult.publicToolCount ||
@@ -1164,7 +1164,7 @@ async function runProfileAndSinglePortSmoke() {
 
     const hiddenToolCall = JSON.stringify(await callMcpTool(singlePortMcp, 'append_to_rem', {
       remId: fakeRem.remId,
-      markdown: 'hidden by core tier',
+      markdown: 'hidden by basic tier',
     }));
     if (!hiddenToolCall.includes('UNKNOWN_TOOL')) {
       throw new Error('Core tier hidden tool call did not return UNKNOWN_TOOL.');
@@ -1179,7 +1179,7 @@ const app = await startCompanionApp({
   bridgePort: 0,
   mcpPort: 0,
   bridgeToken: token,
-  toolProfile: 'full',
+  toolProfile: 'danger',
   enableDeleteTool: true,
   allowRemote: false,
   allowCors: false,
@@ -1316,7 +1316,7 @@ try {
   }
 
   const pluginStatus = JSON.stringify(await callMcpTool(mcp, 'get_plugin_status', {}));
-  if (!pluginStatus.includes('confirm_writes')) {
+  if (!pluginStatus.includes('read_create_modify')) {
     throw new Error('get_plugin_status did not return the mock permission mode.');
   }
 

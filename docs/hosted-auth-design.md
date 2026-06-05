@@ -60,9 +60,9 @@ Plugin starts pairing with `POST /api/pair/start`. Dashboard confirms with `POST
 
 Public-hosted `BridgeHub.callPlugin` requires an authenticated OAuth principal. It routes only to the active plugin connection registered for that principal's `userId`. Invalid plugin session tokens, expired sessions, revoked sessions, and mismatched device IDs are rejected before a socket can route calls.
 
-## Trusted Writes
+## Operation Tiers
 
-Plugin remains final authority for RemNote scope. Server OAuth scopes can grant `bridge:trusted_write`, but the plugin still enforces `permissionMode` and `permissionScope`. Destructive tools still require approval.
+Plugin remains final authority for RemNote scope. Server OAuth scopes can grant write/delete capability, but the plugin still enforces `permissionMode` and `permissionScope`. Operation tiers are `read_only`, `read_create`, `read_create_modify`, `full_control_delete_approval`, and `danger_zone`. Destructive tools still require explicit approval.
 
 ## Idempotency
 

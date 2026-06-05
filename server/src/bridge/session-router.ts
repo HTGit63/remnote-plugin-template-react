@@ -76,7 +76,7 @@ interface PluginRegisterMessage {
   supportedTools?: string[];
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
-  toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+  toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
 }
 
 type PluginRegistrationMessage = PluginHelloMessage | PluginRegisterMessage;
@@ -106,7 +106,7 @@ export class SessionRouter {
     | {
         ok: true;
         connection: PluginConnection;
-        toolTier?: 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
+        toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
         requiresConnectorRefresh?: boolean;
       }
     | { ok: false; error: SessionRouterErrorCode; message: string }
@@ -188,14 +188,10 @@ export class SessionRouter {
         toolTier: hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier,
         toolTierVersion: TOOL_REGISTRY_VERSION,
         toolSchemaVersionAtApproval: pairingSession.toolSchemaVersionAtApproval ?? TOOL_SCHEMA_VERSION,
-        requiresConnectorRefresh:
-          Boolean(pairingSession.requiresConnectorRefresh) ||
-          Boolean(hello.toolTier && pairingSession.toolTier && normalizeToolProfile(hello.toolTier) !== pairingSession.toolTier),
+        requiresConnectorRefresh: false,
       });
       const toolTier = hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier;
-      const requiresConnectorRefresh =
-        Boolean(pairingSession.requiresConnectorRefresh) ||
-        Boolean(hello.toolTier && pairingSession.toolTier && normalizeToolProfile(hello.toolTier) !== pairingSession.toolTier);
+      const requiresConnectorRefresh = false;
       return { ok: true, connection: conn, toolTier, requiresConnectorRefresh };
     }
 

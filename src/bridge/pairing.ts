@@ -38,9 +38,24 @@ const SESSION_KEY = 'bridge-hosted-session';
 export const TOOL_TIER_STORAGE_KEY = 'bridge-tool-tier';
 
 export function normalizeBridgeToolTier(value: unknown): BridgeToolProfile {
-  return value === 'advanced_notes' || value === 'developer_diagnostics' || value === 'full'
-    ? value
-    : 'core';
+  switch (value) {
+    case 'basic':
+    case 'core':
+      return 'basic';
+    case 'note_writer':
+    case 'advanced_notes':
+      return 'note_writer';
+    case 'power_user':
+      return 'power_user';
+    case 'developer':
+    case 'developer_diagnostics':
+      return 'developer';
+    case 'danger':
+    case 'full':
+      return 'danger';
+    default:
+      return 'note_writer';
+  }
 }
 
 export async function getOrCreateDeviceId(plugin: RNPlugin): Promise<string> {
@@ -114,7 +129,7 @@ export function accessScopeForPermissionScope(
 export function writeModeForPermissionMode(
   mode: PermissionMode
 ): 'ask-every-write' | 'trusted-inside-scope' {
-  return mode === 'trusted_writes' || mode === 'danger_zone'
+  return mode === 'full_control_delete_approval' || mode === 'danger_zone'
     ? 'trusted-inside-scope'
     : 'ask-every-write';
 }
@@ -206,7 +221,7 @@ export async function lookupChatGptPairing(
 
 function hostedPluginHeaders(session: HostedPairingSession): Record<string, string> {
   if (!session.sessionSecret) {
-    throw new Error('Missing hosted plugin session secret. Reconnect ChatGPT pairing.');
+    throw new Error('Missing hosted plugin session secret. Pair ChatGPT again.');
   }
   return {
     accept: 'application/json',

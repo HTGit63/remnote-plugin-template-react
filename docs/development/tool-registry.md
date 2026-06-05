@@ -1,29 +1,32 @@
 # Tool Registry & Profile Guide
 
-This guide describes how the Model Context Protocol (MCP) tools are declared, cataloged, restricted by profiles, and exposed to clients at runtime.
+This guide describes how the Model Context Protocol (MCP) tools are declared, cataloged, restricted by access tiers, and exposed to clients at runtime.
 
 ---
 
 ## Code Files Architecture
 
 1. **`shared/bridge/protocol.ts`**: Declares the JSON RPC message types, response models, validation schemas, and lists of allowed tools.
-2. **`server/src/tool-policy.ts`**: Defines the security tiers, profile assignments (`core`, `advanced_notes`, `developer_diagnostics`, `full`), and canonical profiles.
+2. **`server/src/tool-policy.ts`**: Defines the security tiers, access-tier assignments (`basic`, `note_writer`, `power_user`, `developer`, `danger`), and legacy aliases.
 3. **`server/src/tool-registry.ts`**: Registers the tool schema configurations, implements filtering rules based on the active profile, and generates public tools catalogs.
 4. **`server/src/mcp-tool-map.ts`**: Routes incoming JSON RPC requests to their respective target handlers.
 5. **`server/src/tools/`**: Holds implementation-specific parameters and utilities.
 
 ---
 
-## Tool Profile Categories
+## Tool Access Tiers
 
-The companion server supports four profiles, configured using `REMNOTE_BRIDGE_TOOL_PROFILE`:
+The companion server supports five access tiers, configured using `REMNOTE_BRIDGE_TOOL_PROFILE`:
 
-| Profile | Target Audience | Allowed Operations |
+| Tier | Target Audience | Allowed Operations |
 | :--- | :--- | :--- |
-| `core` | General users | Read/write basic notes, tags, child trees. Safe operations only. |
-| `advanced_notes` | Advanced layouts | Apply style plans, concept card generation, raw markdown imports. |
-| `developer_diagnostics` | Debugging / QA | Raw rich text inspection, status polling, diagnostic records. |
-| `full` | Admins & Power users | All tools, including destructive operations (`delete_rem_by_id`). |
+| `basic` | Read-only/status clients | Bridge status, focused Rem, Rem trees, breadcrumbs, search. |
+| `note_writer` | Normal note writing | Basic plus create/import, Markdown/tree imports, batch note creation, cards, verification. |
+| `power_user` | Scoped power editing | Note writer plus rich updates, style plans, move/reorder, formatting commands. |
+| `developer` | Debugging / QA | Power user plus diagnostics, health checks, capability guide, raw rich text inspection. |
+| `danger` | Explicit destructive testing/admin | Developer plus destructive operations, currently only `delete_rem_by_id` when enabled. |
+
+Legacy aliases still normalize: `core -> basic`, `advanced_notes -> note_writer`, `developer_diagnostics -> developer`, `full -> danger`.
 
 ---
 
@@ -42,16 +45,16 @@ export type BridgeToolName =
 Define the argument payload contract and verification checks inside `protocol.ts` using `zod` or TypeScript interface guards.
 
 ### Step 2: Configure Policy & Tier
-Open `server/src/tool-policy.ts`. Associate the tool with a classification category (e.g., `'read'`, `'write'`, `'dangerous'`), profile tier, and specify if it requires trusted authorization:
+Open `server/src/tool-policy.ts`. Put the tool in the smallest correct tier list, then add metadata for category, risk, dry-run/idempotency support, and whether it requires write/delete authorization:
 ```typescript
-export const TOOL_POLICIES: Record<BridgeToolName, ToolPolicy> = {
-  my_new_tool: {
-    category: 'write',
-    requiresTrustedWrite: true,
-    profiles: ['advanced_notes', 'full'],
-  },
-  ...
-};
+export const NOTE_WRITER_TIER_TOOLS = [
+  'my_new_tool',
+] as const;
+
+meta('my_new_tool', 'write', 'medium', {
+  supportsDryRun: true,
+  supportsIdempotency: true,
+});
 ```
 
 ### Step 3: Register Tool Metadata

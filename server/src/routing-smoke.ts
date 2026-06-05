@@ -105,7 +105,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         ok: true,
         result: {
           connected: true,
-          permissionMode: 'trusted_writes',
+          permissionMode: 'full_control_delete_approval',
           permissionScope: 'focused_rem_and_descendants',
           focusedRem: {
             found: true,
