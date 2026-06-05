@@ -11,11 +11,16 @@ export type BridgeDeploymentMode =
 export type ToolCallAuthMode =
   | 'no_auth_allowed'
   | 'local_bearer_required'
+  | 'connector_compat_no_auth_tools'
   | 'hosted_oauth_required';
 
 export interface BridgeRuntimeInfo {
   deploymentMode: BridgeDeploymentMode;
   toolCallAuthMode: ToolCallAuthMode;
+  mcpDiscoveryAuth: 'no_auth_required';
+  mcpToolCallAuth: ToolCallAuthMode;
+  connectorCompatibilityMode: boolean;
+  browserGetMcpIsNotConnectorTest: true;
   mcpEndpoint: string;
   bridgeEndpoint: string;
   hostedPairingEnabled: boolean;
@@ -60,6 +65,7 @@ export interface CompanionServerConfig {
   bridgeToken: string;
   toolProfile: ToolProfile;
   allowNoToken: boolean;
+  connectorCompatNoAuthTools: boolean;
   allowRemote: boolean;
   allowCors: boolean;
   enableDeleteTool: boolean;
@@ -180,6 +186,10 @@ function deploymentModeFromEnv(env: NodeJS.ProcessEnv): BridgeDeploymentMode {
 }
 
 export function getToolCallAuthMode(config: CompanionServerConfig): ToolCallAuthMode {
+  if (config.connectorCompatNoAuthTools) {
+    return 'connector_compat_no_auth_tools';
+  }
+
   if (config.deploymentMode === 'hosted') {
     return 'hosted_oauth_required';
   }
@@ -225,6 +235,10 @@ export function getRuntimeInfo(
     return {
       deploymentMode: config.deploymentMode,
       toolCallAuthMode: getToolCallAuthMode(config),
+      mcpDiscoveryAuth: 'no_auth_required',
+      mcpToolCallAuth: getToolCallAuthMode(config),
+      connectorCompatibilityMode: config.connectorCompatNoAuthTools,
+      browserGetMcpIsNotConnectorTest: true,
       mcpEndpoint: publicEndpoint(publicBaseUrl, 'http', config.mcpPath),
       bridgeEndpoint: publicEndpoint(publicBaseUrl, 'ws', config.bridgePath),
       hostedPairingEnabled: isHostedPairingEnabled(config),
@@ -239,6 +253,10 @@ export function getRuntimeInfo(
   return {
     deploymentMode: config.deploymentMode,
     toolCallAuthMode: getToolCallAuthMode(config),
+    mcpDiscoveryAuth: 'no_auth_required',
+    mcpToolCallAuth: getToolCallAuthMode(config),
+    connectorCompatibilityMode: config.connectorCompatNoAuthTools,
+    browserGetMcpIsNotConnectorTest: true,
     mcpEndpoint: `${httpProtocol}://${host}:${ports.mcpPort}${config.mcpPath}`,
     bridgeEndpoint: `${wsProtocol}://${host}:${ports.bridgePort}${config.bridgePath}`,
     hostedPairingEnabled: isHostedPairingEnabled(config),
@@ -309,6 +327,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   const allowNoToken =
     boolFromEnv(env.REMNOTE_BRIDGE_ALLOW_NO_TOKEN) ||
     (nodeEnv === 'development' && boolFromEnv(env.ALLOW_DEV_NO_AUTH));
+  const connectorCompatNoAuthTools = boolFromEnv(env.REMNOTE_BRIDGE_CONNECTOR_COMPAT_NO_AUTH_TOOLS);
   const bridgeToken = env.REMNOTE_BRIDGE_TOKEN?.trim() ?? '';
   const bindHost = env.REMNOTE_BRIDGE_HOST?.trim() || '127.0.0.1';
   const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
@@ -374,6 +393,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     bridgeToken,
     toolProfile: normalizeToolProfile(env.REMNOTE_BRIDGE_TOOL_PROFILE ?? DEFAULT_TOOL_PROFILE),
     allowNoToken,
+    connectorCompatNoAuthTools,
     allowRemote,
     allowCors,
     enableDeleteTool: boolFromEnv(env.REMNOTE_BRIDGE_ENABLE_DELETE_TOOL),

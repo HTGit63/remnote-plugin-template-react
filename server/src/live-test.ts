@@ -42,6 +42,36 @@ function getToolNames(response: unknown): string[] {
     : [];
 }
 
+function isToolErrorResponse(response: unknown): boolean {
+  if (typeof response !== 'object' || response === null) {
+    return false;
+  }
+  const result = (response as { result?: unknown; error?: unknown }).result;
+  if ((response as { error?: unknown }).error) {
+    return true;
+  }
+  if (typeof result !== 'object' || result === null) {
+    return false;
+  }
+  if ((result as { isError?: unknown }).isError === true) {
+    return true;
+  }
+  const structuredContent = (result as { structuredContent?: unknown }).structuredContent;
+  if (typeof structuredContent !== 'object' || structuredContent === null) {
+    return false;
+  }
+  return (structuredContent as { ok?: unknown }).ok === false;
+}
+
+function withToolTier(options: McpClientOptions, toolTier: string): McpClientOptions {
+  const url = new URL(options.url);
+  url.searchParams.set('tool_tier', toolTier);
+  return {
+    ...options,
+    url: url.toString(),
+  };
+}
+
 async function runTool(
   mcp: McpClientOptions,
   tool: string,
@@ -51,7 +81,7 @@ async function runTool(
   try {
     const response = await callMcpTool(mcp, tool, args);
     const text = JSON.stringify(response);
-    if (text.includes('"ok":false') || text.includes('"isError":true')) {
+    if (isToolErrorResponse(response)) {
       results.push({ tool, status: 'failed', error: text.slice(0, 1000) });
       return response;
     }
@@ -112,6 +142,7 @@ const results: ToolStatus[] = [];
 try {
   await initializeMcp(mcp);
   const listed = getToolNames(await listMcpTools(mcp));
+  const diagnosticMcp = withToolTier(mcp, 'developer');
   results.push({
     tool: 'tools/list',
     status: listed.length >= 40 ? 'passed' : 'failed',
@@ -119,8 +150,8 @@ try {
   });
 
   await runTool(mcp, 'get_bridge_status', {}, results);
-  await runTool(mcp, 'get_bridge_diagnostics', {}, results);
-  await runTool(mcp, 'ping_remnote_plugin', { message: 'live-test' }, results);
+  await runTool(diagnosticMcp, 'get_bridge_diagnostics', {}, results);
+  await runTool(diagnosticMcp, 'ping_remnote_plugin', { message: 'live-test' }, results);
   await runTool(mcp, 'get_plugin_status', {}, results);
   await runTool(mcp, 'get_focused_rem', {}, results);
 

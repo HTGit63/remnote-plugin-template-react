@@ -170,7 +170,7 @@ export function validateMcpToolPermission(
   body: unknown,
   principal: AuthenticatedPrincipal
 ): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; decision?: TrustedWriteDecision } {
-  if (principal.authMode !== 'hosted_oauth') {
+  if (principal.authMode !== 'hosted_oauth' && principal.authMode !== 'connector_compat_noauth') {
     return { ok: true };
   }
 

@@ -33,7 +33,7 @@ export interface CreateMcpServerOptions {
   toolProfile?: ToolProfile;
   requestSignal?: AbortSignal;
   discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required' | 'hosted_oauth_required';
-  toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'hosted_oauth_required';
+  toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'connector_compat_no_auth_tools' | 'hosted_oauth_required';
   runtimeInfo?: BridgeRuntimeInfo;
   principal?: AuthenticatedPrincipal;
 }

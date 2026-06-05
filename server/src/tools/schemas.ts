@@ -49,6 +49,16 @@ export const NOTE_STYLE_PRESET_FIELDS_SCHEMA = {
   majorFormulaMode: z.literal('mathBlockRem').default('mathBlockRem').optional(),
   verifyAfterWrite: z.boolean().default(true).optional(),
 };
+export const CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA = {
+  stylePreset: NOTE_STYLE_PRESET_SCHEMA.optional().describe('Reusable note style preset.'),
+  course: z.string().trim().min(1).max(120).optional(),
+  rootHeadingLevel: z.literal('H1').optional(),
+  sectionHeadingLevel: z.literal('H3').optional(),
+  insertSiblingSpacers: z.boolean().optional(),
+  spacerText: z.string().max(10).optional(),
+  majorFormulaMode: z.literal('mathBlockRem').optional(),
+  verifyAfterWrite: z.boolean().optional(),
+};
 export const REM_TYPE_SCHEMA = z.enum(['normal', 'concept', 'descriptor']);
 export const REM_STYLE_SCHEMA = z
   .object({
@@ -63,6 +73,7 @@ export const REM_STYLE_SCHEMA = z
   })
   .describe('Canonical style shape. Legacy aliases normalize internally and never create child Rems such as Size/H1/H3.');
 export const PRACTICE_DIRECTION_SCHEMA = z.enum(['forward', 'backward', 'none', 'both']).default('both');
+export const CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA = z.enum(['forward', 'backward', 'none', 'both']);
 export const REMNOTE_COMMAND_SCHEMA = z.enum([
   'heading_1',
   'heading_2',
@@ -118,8 +129,8 @@ export const PERMISSION_SCOPE_SCHEMA = z
   .default('current_permission_scope');
 export const BRIDGE_TOOL_OUTPUT_SCHEMA = z.object({
   ok: z.boolean(),
-  result: z.unknown().optional(),
-  error: z.unknown().optional(),
+  result: z.any().optional(),
+  error: z.any().optional(),
 });
 export const REMNOTE_GUIDE_SECTION_SCHEMA = z
   .enum([
@@ -284,27 +295,98 @@ export const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.
   })
 );
 
+const SIMPLE_COUNT_MAP_SCHEMA = z.record(z.string(), z.number().int().min(0).max(100000));
+
+export const CONNECTOR_SAFE_EXPECTED_STYLE_SCHEMA = z.object({
+  plainText: z.string().max(5000).optional(),
+  headingLevel: HEADING_LEVEL_SCHEMA.optional(),
+  hideBullet: z.boolean().optional(),
+  remType: REM_TYPE_SCHEMA.optional(),
+  wholeRemHighlight: COLOR_SCHEMA.optional(),
+  expectedChildCount: z.number().int().min(0).max(1000).optional(),
+  forbiddenChildTexts: z.array(z.string().trim().min(1).max(1000)).max(50).optional(),
+  noVisibleMathDelimiters: z.boolean().optional(),
+  allowVisibleMathDelimiters: z.boolean().optional(),
+});
+
+export const CONNECTOR_SAFE_EXPECTED_STYLE_MAP_SCHEMA = z.record(
+  z.string(),
+  CONNECTOR_SAFE_EXPECTED_STYLE_SCHEMA
+);
+
 export const DESIGN_TEMPLATE_RULES_SCHEMA = z
   .object({
-    headingPattern: z.record(z.string(), z.unknown()).default({}).optional(),
-    colorPattern: z.record(z.string(), z.unknown()).default({}).optional(),
-    spacingPattern: z.record(z.string(), z.unknown()).default({}).optional(),
-    mathPattern: z.record(z.string(), z.unknown()).default({}).optional(),
-    bulletNesting: z.record(z.string(), z.unknown()).default({}).optional(),
-    formulaPlacement: z.record(z.string(), z.unknown()).default({}).optional(),
-    tableStyle: z.record(z.string(), z.unknown()).default({}).optional(),
-    cardStyle: z.record(z.string(), z.unknown()).default({}).optional(),
-    workedExampleStyle: z.record(z.string(), z.unknown()).default({}).optional(),
-    expectedStyleMap: z.record(z.string(), z.unknown()).optional(),
+    headingPattern: z
+      .object({
+        rootHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
+        sectionHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
+        headingCounts: SIMPLE_COUNT_MAP_SCHEMA.optional(),
+        directChildHeadingCounts: SIMPLE_COUNT_MAP_SCHEMA.optional(),
+      })
+      .optional(),
+    colorPattern: z
+      .object({
+        textColors: SIMPLE_COUNT_MAP_SCHEMA.optional(),
+        highlightColors: SIMPLE_COUNT_MAP_SCHEMA.optional(),
+        wholeRemHighlights: SIMPLE_COUNT_MAP_SCHEMA.optional(),
+      })
+      .optional(),
+    spacingPattern: z
+      .object({
+        spacerCount: z.number().int().min(0).max(10000).optional(),
+        spacerTexts: z.array(z.string().max(100)).max(50).optional(),
+        blankRemCount: z.number().int().min(0).max(10000).optional(),
+        siblingSpacerLikely: z.boolean().optional(),
+      })
+      .optional(),
+    mathPattern: z
+      .object({
+        inlineMathCount: z.number().int().min(0).max(10000).optional(),
+        blockMathCount: z.number().int().min(0).max(10000).optional(),
+        visibleDelimiterCount: z.number().int().min(0).max(10000).optional(),
+        malformedMathLikely: z.boolean().optional(),
+      })
+      .optional(),
+    bulletNesting: z
+      .object({
+        maxDepth: z.number().int().min(0).max(100).optional(),
+        maxChildrenPerRem: z.number().int().min(0).max(10000).optional(),
+        averageChildrenPerNonLeaf: z.number().min(0).max(10000).optional(),
+      })
+      .optional(),
+    formulaPlacement: z
+      .object({
+        displayFormulasAsSeparateRems: z.boolean().optional(),
+        inlineFormulasInsideText: z.boolean().optional(),
+        rawDisplayDelimitersVisible: z.boolean().optional(),
+      })
+      .optional(),
+    tableStyle: z
+      .object({
+        tableLikeRemCount: z.number().int().min(0).max(10000).optional(),
+        markdownTableCount: z.number().int().min(0).max(10000).optional(),
+        tableHeadings: z.array(z.string().max(500)).max(100).optional(),
+      })
+      .optional(),
+    cardStyle: z
+      .object({
+        cardLikeRemCount: z.number().int().min(0).max(10000).optional(),
+        clozeLikeRemCount: z.number().int().min(0).max(10000).optional(),
+        doubleColonMarkerCount: z.number().int().min(0).max(10000).optional(),
+      })
+      .optional(),
+    workedExampleStyle: z
+      .object({
+        workedExampleCount: z.number().int().min(0).max(10000).optional(),
+        labels: z.array(z.string().max(200)).max(100).optional(),
+      })
+      .optional(),
+    expectedStyleMap: CONNECTOR_SAFE_EXPECTED_STYLE_MAP_SCHEMA.optional(),
     stylePreset: z.string().trim().min(1).max(120).optional(),
   })
-  .passthrough()
   .describe('Reusable note design rules. Destructive operation rules are rejected by the plugin before storage/import.');
 
-export const DESIGNED_NOTE_CONTENT_SCHEMA = z.union([
-  LONG_MARKDOWN_SCHEMA,
-  STYLED_REM_TREE_NODE_SCHEMA,
-]);
+export const DESIGNED_NOTE_CONTENT_SCHEMA = LONG_MARKDOWN_SCHEMA;
 
 export const CARD_REPAIR_CARD_SCHEMA = z.object({
   front: z.string().trim().min(1).max(5000),
@@ -312,64 +394,63 @@ export const CARD_REPAIR_CARD_SCHEMA = z.object({
 });
 
 export const MARKDOWN_HEADING_MAPPING_SCHEMA = z.object({
-  rootHeading: z.enum(['first_h1', 'title_from_first_line', 'explicit_title']).default('first_h1').optional(),
+  rootHeading: z.enum(['first_h1', 'title_from_first_line', 'explicit_title']).optional(),
   explicitTitle: z.string().trim().min(1).max(1000).optional(),
-  rootHeadingLevel: HEADING_LEVEL_SCHEMA.default('H1').optional(),
-  sectionHeadingLevel: HEADING_LEVEL_SCHEMA.default('H3').optional(),
-  subsectionHeadingLevel: HEADING_LEVEL_SCHEMA.default('H3').optional(),
+  rootHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
+  sectionHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
+  subsectionHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
 });
 
 export const MARKDOWN_REMNOTE_LAYOUT_SCHEMA = z.object({
-  insertSpacerBetweenSections: z.boolean().default(true).optional(),
-  spacerText: z.string().max(100).default('').optional(),
-  preserveBlankLines: z.boolean().default(true).optional(),
-  paragraphMode: z.enum(['child_rem_per_paragraph', 'merge_paragraphs_under_heading']).default('child_rem_per_paragraph').optional(),
-  bulletMode: z.enum(['preserve_markdown_bullets', 'plain_child_rems']).default('plain_child_rems').optional(),
+  insertSpacerBetweenSections: z.boolean().optional(),
+  spacerText: z.string().max(100).optional(),
+  preserveBlankLines: z.boolean().optional(),
+  paragraphMode: z.enum(['child_rem_per_paragraph', 'merge_paragraphs_under_heading']).optional(),
+  bulletMode: z.enum(['preserve_markdown_bullets', 'plain_child_rems']).optional(),
 });
 
 export const MARKDOWN_MATH_OPTIONS_SCHEMA = z.object({
-  inlineMathDelimiters: z.union([z.tuple([z.literal('$'), z.literal('$')]), z.tuple([z.literal('\\('), z.literal('\\)')]), z.literal('both')]).default('both').optional(),
-  blockMathDelimiters: z.union([z.tuple([z.literal('$$'), z.literal('$$')]), z.tuple([z.literal('\\['), z.literal('\\]')]), z.literal('both')]).default('both').optional(),
-  formulaMode: z.enum(['preserve', 'force_block_for_display_math']).default('preserve').optional(),
-  rejectMalformedMath: z.boolean().default(true).optional(),
+  inlineMathDelimiters: z.literal('both').optional(),
+  blockMathDelimiters: z.literal('both').optional(),
+  formulaMode: z.enum(['preserve', 'force_block_for_display_math']).optional(),
+  rejectMalformedMath: z.boolean().optional(),
 });
 
 export const MARKDOWN_FIDELITY_OPTIONS_SCHEMA = z.object({
-  requireExactText: z.boolean().default(true).optional(),
-  allowWhitespaceNormalization: z.boolean().default(true).optional(),
-  preserveSourceOrder: z.boolean().default(true).optional(),
-  failOnContentLoss: z.boolean().default(true).optional(),
+  requireExactText: z.boolean().optional(),
+  allowWhitespaceNormalization: z.boolean().optional(),
+  preserveSourceOrder: z.boolean().optional(),
+  failOnContentLoss: z.boolean().optional(),
 });
 
 export const MARKDOWN_FLASHCARD_OPTIONS_SCHEMA = z.object({
-  enabled: z.boolean().default(false).optional().describe('False keeps flashcard-looking markers as plain Rem text.'),
-  marker: z.enum(['double_colon', 'cloze', 'both']).default('both').optional(),
-  defaultDirection: PRACTICE_DIRECTION_SCHEMA.optional(),
+  enabled: z.boolean().optional().describe('False keeps flashcard-looking markers as plain Rem text.'),
+  marker: z.enum(['double_colon', 'cloze', 'both']).optional(),
+  defaultDirection: CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA.optional(),
 });
 
 export const MARKDOWN_SAFETY_OPTIONS_SCHEMA = z.object({
-  dryRun: z.boolean().default(false).optional(),
-  verifyAfterWrite: z.boolean().default(true).optional(),
-  rollbackOnFailure: z.boolean().default(true).optional(),
+  dryRun: z.boolean().optional(),
+  verifyAfterWrite: z.boolean().optional(),
+  rollbackOnFailure: z.boolean().optional(),
   idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional(),
 });
 
 export const MARKDOWN_IMPORT_LIMITS_SCHEMA = z.object({
-  maxMarkdownChars: z.number().int().min(1).max(120000).default(120000).optional(),
-  maxDepth: TREE_DEPTH_SCHEMA.optional(),
-  maxNodes: MAX_TREE_NODE_COUNT_SCHEMA.optional(),
+  maxMarkdownChars: z.number().int().min(1).max(120000).optional(),
+  maxDepth: z.number().int().min(1).max(12).optional(),
+  maxNodes: z.number().int().min(1).max(1000).optional(),
 });
 
 export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
-  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  ...CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   parentRemId: REM_ID_SCHEMA.optional().describe('Parent Rem ID for mode=create_child.'),
   targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for append/replace/update modes.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved; no summarization or compression.'),
   mode: z
     .enum(['create_child', 'replace_target_children', 'update_target_and_replace_children', 'append_to_target'])
-    .default('create_child')
     .describe('Bulk import mode. create_child creates one root under parentRemId; target modes write under targetRemId.'),
-  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).default('create_new').optional(),
+  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).optional(),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
   mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
@@ -380,7 +461,7 @@ export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
 });
 
 export const PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA = z.object({
-  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  ...CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Preview parses only and never writes.'),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
@@ -391,10 +472,10 @@ export const PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA = z.object({
 });
 
 export const CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA = z.object({
-  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  ...CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   parentRemId: REM_ID_SCHEMA.describe('Parent Rem ID for the created Markdown hierarchy root.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved as clean Rem hierarchy.'),
-  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).default('create_new').optional(),
+  duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).optional(),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
   mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),
@@ -405,7 +486,7 @@ export const CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA = z.object({
 });
 
 export const APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA = z.object({
-  ...NOTE_STYLE_PRESET_FIELDS_SCHEMA,
+  ...CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   targetRemId: REM_ID_SCHEMA.describe('Existing Rem ID that receives the parsed Markdown tree as children.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown to append as clean child Rem hierarchy.'),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),

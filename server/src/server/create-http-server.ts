@@ -349,6 +349,28 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     });
   }
 
+  function isMcpToolCallRequest(body: unknown): boolean {
+    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
+      return false;
+    }
+
+    const request = body as { method?: unknown };
+    return request.method === 'tools/call';
+  }
+
+  function connectorCompatPrincipal(): AuthenticatedPrincipal {
+    return {
+      subject: 'chatgpt-connector-compat',
+      userId: '__connector_compat__',
+      authMode: 'connector_compat_noauth',
+      scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
+      accessScope: 'current-rem-tree',
+      trustedWriteMode: 'ask-every-write',
+      toolTier: config.toolProfile,
+      requiresConnectorRefresh: false,
+    };
+  }
+
   function writeUnknownToolCall(body: unknown, res: ServerResponse, toolProfile: ToolProfile): boolean {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return false;
@@ -431,6 +453,13 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           authMode: 'mcp_discovery_noauth',
           scopeGrants: ['bridge:read'],
         },
+      };
+    }
+
+    if (config.connectorCompatNoAuthTools && isMcpToolCallRequest(body)) {
+      return {
+        ok: true,
+        principal: connectorCompatPrincipal(),
       };
     }
 
@@ -897,6 +926,36 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
 
     if (!['POST', 'GET', 'DELETE'].includes(req.method || '')) {
       writeText(res, 405, 'Method Not Allowed');
+      return;
+    }
+
+    const acceptHeader = typeof req.headers.accept === 'string' ? req.headers.accept : '';
+    if (
+      req.method === 'POST' &&
+      (!acceptHeader ||
+        acceptHeader.trim() === '*/*' ||
+        !acceptHeader.includes('application/json') ||
+        !acceptHeader.includes('text/event-stream'))
+    ) {
+      req.headers.accept = 'application/json, text/event-stream';
+      for (let index = req.rawHeaders.length - 2; index >= 0; index -= 2) {
+        if (req.rawHeaders[index]?.toLowerCase() === 'accept') {
+          req.rawHeaders.splice(index, 2);
+        }
+      }
+      req.rawHeaders.push('Accept', 'application/json, text/event-stream');
+    }
+
+    if (req.method === 'GET') {
+      writeJson(res, 200, {
+        ok: true,
+        message: 'MCP endpoint is alive. Use POST initialize/tools/list for connector discovery.',
+        mcpPath: config.mcpPath,
+        discoveryAuth: 'no_auth_required',
+        toolCallAuth: toolCallAuthMode,
+        connectorCompatibilityMode: config.connectorCompatNoAuthTools,
+        browserGetMcpIsNotConnectorTest: true,
+      });
       return;
     }
 

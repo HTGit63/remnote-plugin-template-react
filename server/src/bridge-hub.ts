@@ -20,7 +20,7 @@ import {
   createBridgeFailure,
 } from '../../shared/bridge/protocol.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
-import type { CompanionServerConfig } from './config.js';
+import { getToolCallAuthMode, type CompanionServerConfig } from './config.js';
 import type { BridgeHealthCheckResult } from './health-check-types.js';
 import { SessionRouter } from './bridge/session-router.js';
 import type { StorageProvider } from './storage/types.js';
@@ -658,12 +658,7 @@ export class BridgeHub {
         this.replacePluginSocket(socket);
       }
 
-      const toolCallAuthMode =
-        this.config.deploymentMode === 'hosted'
-          ? 'hosted_oauth_required'
-          : this.config.bridgeToken && !this.config.allowNoToken
-            ? 'local_bearer_required'
-            : 'no_auth_allowed';
+      const toolCallAuthMode = getToolCallAuthMode(this.config);
       const serverHello: BridgeServerHello = {
         type: 'server_hello',
         protocolVersion: 1,
