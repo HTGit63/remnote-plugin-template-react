@@ -6,15 +6,13 @@ import {
   getToolMetadata,
   groupToolsByPolicy,
   getToolTierSummary,
-  requiredOperationTierForTool,
   TOOL_METADATA,
   TOOL_SCHEMA_VERSION,
   type ToolProfile,
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
-import { TOOL_PERMISSIONS } from './tool-permissions.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-04.markdown-tree';
+export const TOOL_REGISTRY_VERSION = '2026-06-05.goal9-catalog';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
@@ -38,6 +36,7 @@ export interface ToolStateModelEntry {
   name: string;
   description: string;
   category: string;
+  userFacingName: string;
   declared: boolean;
   registered: boolean;
   listed: boolean;
@@ -45,6 +44,11 @@ export interface ToolStateModelEntry {
   liveVerified: boolean;
   sdkUnsupported: boolean;
   hidden: boolean;
+  isPublic: boolean;
+  isDebug: boolean;
+  isDangerous: boolean;
+  liveVerificationRequired: boolean;
+  performanceBudgetMs: number;
   blockedByTier: boolean;
   blockedByScope: boolean;
   gatewayBlocked: boolean;
@@ -58,76 +62,21 @@ export interface ToolStateModelEntry {
   sdkCapability: string | null;
 }
 
-export const MCP_TOOL_REGISTRY = [
-  { name: 'get_bridge_status', exposure: 'public' },
-  { name: 'get_bridge_diagnostics', exposure: 'public' },
-  { name: 'run_bridge_health_check', exposure: 'public' },
-  { name: 'get_remnote_capability_guide', exposure: 'public' },
-  { name: 'ping_remnote_plugin', exposure: 'public' },
-  { name: 'get_plugin_status', exposure: 'public' },
-  { name: 'get_focused_rem', exposure: 'public' },
-  { name: 'get_rem', exposure: 'public' },
-  { name: 'get_children', exposure: 'public' },
-  { name: 'get_rem_tree', exposure: 'public' },
-  { name: 'get_rem_breadcrumbs', exposure: 'public' },
-  { name: 'search_rems', exposure: 'public' },
-  { name: 'create_basic_flashcard', exposure: 'public' },
-  { name: 'create_cloze_card', exposure: 'public' },
-  { name: 'create_multiple_choice_card', exposure: 'public' },
-  { name: 'create_list_answer_card', exposure: 'public' },
-  { name: 'delete_rem_by_id', exposure: 'gated', hiddenReason: 'Delete tool is gated by REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 and the Danger access tier.' },
-  { name: 'get_rem_rich', exposure: 'public' },
-  { name: 'debug_get_raw_rich_text', exposure: 'public' },
-  { name: 'get_current_selection', exposure: 'public' },
-  { name: 'get_document_or_folder_tree', exposure: 'public' },
-  { name: 'create_rem', exposure: 'public' },
-  { name: 'create_document', exposure: 'public' },
-  { name: 'append_to_rem', exposure: 'public' },
-  { name: 'update_rem', exposure: 'public' },
-  { name: 'replace_rem', exposure: 'gated', hiddenReason: 'replace_rem is hidden until replacement guards and readback verification are proven safe.' },
-  { name: 'move_rem', exposure: 'public' },
-  { name: 'reorder_children', exposure: 'public' },
-  { name: 'create_rem_tree', exposure: 'public' },
-  { name: 'update_rem_rich', exposure: 'public' },
-  { name: 'set_rem_heading_level', exposure: 'public' },
-  { name: 'set_rem_text_color', exposure: 'public' },
-  { name: 'set_rem_highlight_color', exposure: 'public' },
-  { name: 'set_text_span_color', exposure: 'public' },
-  { name: 'set_text_span_highlight', exposure: 'public' },
-  { name: 'set_rem_type', exposure: 'public' },
-  { name: 'set_hide_bullet', exposure: 'public' },
-  { name: 'clear_rem_formatting', exposure: 'public' },
-  { name: 'create_styled_rem_tree', exposure: 'public' },
-  { name: 'apply_remnote_command', exposure: 'public' },
-  { name: 'apply_structured_note_batch', exposure: 'public' },
-  { name: 'create_polished_note_tree', exposure: 'public' },
-  { name: 'create_or_replace_note_from_markdown', exposure: 'public' },
-  { name: 'preview_markdown_note_tree', exposure: 'public' },
-  { name: 'create_note_from_markdown_tree', exposure: 'public' },
-  { name: 'append_markdown_as_rem_tree', exposure: 'public' },
-  { name: 'apply_style_plan', exposure: 'public' },
-  { name: 'verify_note_design', exposure: 'public' },
-  { name: 'create_concept_card', exposure: 'public' },
-  { name: 'create_descriptor_card', exposure: 'public' },
-] as const satisfies readonly McpToolRegistryEntry[];
+export const MCP_TOOL_REGISTRY = TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported).map(
+  (tool): McpToolRegistryEntry => ({
+    name: tool.name,
+    exposure: tool.name === 'delete_rem_by_id' ? 'gated' : 'public',
+    hiddenReason: tool.hiddenReason,
+  })
+) satisfies readonly McpToolRegistryEntry[];
 
 export type RegisteredMcpToolName = (typeof MCP_TOOL_REGISTRY)[number]['name'];
 
 const allPublicToolCache = new Map<string, string[]>();
 const publicToolProfileCache = new Map<string, string[]>();
 
-const SDK_CAPABILITY_BY_TOOL: Record<string, string> = {
-  create_rem: 'plugin.rem.createSingleRemWithMarkdown',
-  create_document: 'plugin.rem.createSingleRemWithMarkdown',
-  create_rem_tree: 'plugin.rem.createTreeWithMarkdown',
-  create_folder: 'no_verified_folder_api',
-};
-
 function declaredToolNames(): string[] {
-  return Array.from(new Set([
-    ...MCP_TOOL_REGISTRY.map((tool) => tool.name),
-    ...STATIC_SDK_UNSUPPORTED_TOOLS,
-  ])).sort();
+  return Array.from(new Set(TOOL_METADATA.map((tool) => tool.name))).sort();
 }
 
 function toolDescription(name: string): string {
@@ -169,6 +118,7 @@ function buildToolStateEntry(
     name,
     description: toolDescription(name),
     category: metadata.category,
+    userFacingName: metadata.userFacingName,
     declared: declaredToolNames().includes(name),
     registered,
     listed,
@@ -176,6 +126,11 @@ function buildToolStateEntry(
     liveVerified,
     sdkUnsupported,
     hidden,
+    isPublic: metadata.isPublic,
+    isDebug: metadata.isDebug,
+    isDangerous: metadata.isDangerous,
+    liveVerificationRequired: metadata.liveVerificationRequired,
+    performanceBudgetMs: metadata.performanceBudgetMs,
     blockedByTier,
     blockedByScope: history.scopeBlockCount > 0,
     gatewayBlocked: history.gatewayBlockCount > 0,
@@ -183,10 +138,10 @@ function buildToolStateEntry(
     lastFailureAt: history.lastFailureAt,
     lastErrorCode: history.lastErrorCode,
     riskLevel: metadata.riskLevel,
-    operationTier: requiredOperationTierForTool(name),
-    toolAccessTier: String(metadata.tier),
-    scopeRequirement: TOOL_PERMISSIONS[name]?.requiredAccessScope ?? 'none',
-    sdkCapability: SDK_CAPABILITY_BY_TOOL[name] ?? null,
+    operationTier: metadata.operationTier,
+    toolAccessTier: String(metadata.toolAccessTier),
+    scopeRequirement: metadata.scopeRequirement,
+    sdkCapability: metadata.sdkCapability,
   };
 }
 
@@ -229,21 +184,26 @@ export function isPublicMcpToolName(
 
 export function getHiddenMcpTools(exposeDeleteTool = false): Array<{ name: string; reason: string }> {
   const hidden: Array<{ name: string; reason: string }> = [];
-  for (const tool of MCP_TOOL_REGISTRY) {
-    if (tool.exposure === 'gated' && !(exposeDeleteTool && tool.name === 'delete_rem_by_id')) {
+  for (const tool of TOOL_METADATA) {
+    if (tool.name === 'delete_rem_by_id' && !exposeDeleteTool) {
       hidden.push({
         name: tool.name,
         reason: tool.hiddenReason ?? 'Tool is gated by server configuration.',
       });
+      continue;
+    }
+    if (!tool.isPublic || !tool.exposedNormally || !tool.sdkSupported) {
+      hidden.push({
+        name: tool.name,
+        reason:
+          tool.hiddenReason ??
+          (!tool.sdkSupported
+            ? 'Tool is hidden until the modern RemNote SDK path is live-verified.'
+            : 'Tool is hidden from the public MCP surface.'),
+      });
     }
   }
-  for (const tool of STATIC_SDK_UNSUPPORTED_TOOLS) {
-    hidden.push({
-      name: tool,
-      reason: 'Tool is hidden until the modern RemNote SDK path is live-verified.',
-    });
-  }
-  return hidden;
+  return Array.from(new Map(hidden.map((tool) => [tool.name, tool])).values());
 }
 
 export function getRegistryMismatch(
@@ -446,10 +406,10 @@ export function getToolRegistrySummary(
         p95LatencyMs: null as number | null,
         serverLocalVerified,
         sdkUnsupported,
-        operationTier: requiredOperationTierForTool(tool),
-        toolAccessTier: String(metadata.tier),
-        scopeRequirement: TOOL_PERMISSIONS[tool]?.requiredAccessScope ?? 'none',
-        sdkCapability: SDK_CAPABILITY_BY_TOOL[tool] ?? null,
+        operationTier: metadata.operationTier,
+        toolAccessTier: String(metadata.toolAccessTier),
+        scopeRequirement: metadata.scopeRequirement,
+        sdkCapability: metadata.sdkCapability,
         agentWarning: metadata.agentWarning ?? null,
         partialFailureCount: getToolHistoryEntry(tool).partialFailureCount,
         gatewayBlockCount: getToolHistoryEntry(tool).gatewayBlockCount,

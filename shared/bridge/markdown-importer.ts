@@ -850,7 +850,9 @@ function treeOutputText(node: StyledRemTreeNode): string {
     node.type === 'basicFlashcard' || node.type === 'conceptCard' || node.type === 'descriptorCard'
       ? [node.front, node.back ?? node.answer].filter(Boolean).join('\n')
       : node.richText?.length
-        ? node.richText.map((span: any) => span.latex ?? span.text ?? '').join('')
+        ? node.richText.map((span: any) =>
+            span.type === 'inlineMath' ? `\\(${span.latex ?? span.text ?? ''}\\)` : span.latex ?? span.text ?? ''
+          ).join('')
         : nodeText(node);
   return [self, ...(node.children ?? []).map((child: StyledRemTreeNode) => treeOutputText(child))].join('\n');
 }
@@ -1194,9 +1196,15 @@ export function verifyMarkdownSourceFidelity(
     ...options,
   };
   const haystack = fidelity.allowWhitespaceNormalization ? normalizeWhitespace(outputText) : outputText;
+  const comparableHaystack = fidelity.allowWhitespaceNormalization
+    ? normalizeWhitespace(stripMarkdownInline(outputText))
+    : stripMarkdownInline(outputText);
   const missingTextSnippets = sourceSnippets.filter((snippet) => {
     const needle = fidelity.allowWhitespaceNormalization ? normalizeWhitespace(snippet) : snippet;
-    return Boolean(needle) && !haystack.includes(needle);
+    const comparableNeedle = fidelity.allowWhitespaceNormalization
+      ? normalizeWhitespace(stripMarkdownInline(snippet))
+      : stripMarkdownInline(snippet);
+    return Boolean(needle) && !haystack.includes(needle) && !comparableHaystack.includes(comparableNeedle);
   });
   const pollutionRems = outputText
     .split(/\r?\n/)
@@ -1206,9 +1214,11 @@ export function verifyMarkdownSourceFidelity(
   if (fidelity.preserveSourceOrder) {
     let cursor = 0;
     for (const snippet of sourceSnippets) {
-      const needle = fidelity.allowWhitespaceNormalization ? normalizeWhitespace(snippet) : snippet;
+      const needle = fidelity.allowWhitespaceNormalization
+        ? normalizeWhitespace(stripMarkdownInline(snippet))
+        : stripMarkdownInline(snippet);
       if (!needle) continue;
-      const index = haystack.indexOf(needle, cursor);
+      const index = comparableHaystack.indexOf(needle, cursor);
       if (index < 0) continue;
       if (index < cursor) {
         structureMismatches.push(`Source order mismatch near "${needle.slice(0, 80)}".`);

@@ -35,6 +35,14 @@ import {
   searchRems,
 } from '../remnote/read';
 import {
+  analyzeNoteDesign,
+  exportNoteDesignTemplate,
+  importNoteDesignTemplate,
+  listNoteDesignTemplates,
+  previewNoteDesignPlan,
+  saveNoteDesignTemplate,
+} from '../remnote/templates/designTemplates';
+import {
   applyStructuredNoteBatch,
   applyStylePlan,
   appendMarkdownAsRemTree,
@@ -42,8 +50,12 @@ import {
   appendMarkdownToRem,
   clearRemFormatting,
   createBasicFlashcard,
+  createCardSetFromNote,
   createClozeCard,
+  createClozeCardsFromNote,
+  createDesignedNoteTree,
   createDocumentFromMarkdown,
+  createFlashcardsFromMarkdown,
   createFolderFromMarkdown,
   createListAnswerCard,
   createMultipleChoiceCard,
@@ -56,6 +68,8 @@ import {
   deleteRemByIdSafe,
   moveRem,
   previewMarkdownNoteTree,
+  repairCardSet,
+  repairNoteDesign,
   replaceRemMarkdown,
   reorderChildren,
   RemnoteWriteError,
@@ -67,8 +81,11 @@ import {
   setTextSpanColor,
   setTextSpanHighlight,
   updateRemRich,
+  updateNoteWithDesign,
   updateRemMarkdown,
+  verifyCardSet,
   verifyNoteDesign,
+  verifyNoteAgainstDesign,
 } from '../remnote/write';
 
 import { MAX_REQUEST_ID_CHARS, isPlainObject } from './handlers/validation';
@@ -637,6 +654,51 @@ export async function handleBridgeRequest(
         break;
       case 'verify_note_design':
         response = createBridgeSuccess(request, await verifyNoteDesign(plugin, request.args));
+        break;
+      case 'analyze_note_design':
+        response = createBridgeSuccess(request, await analyzeNoteDesign(plugin, request.args));
+        break;
+      case 'save_note_design_template':
+        response = createBridgeSuccess(request, await saveNoteDesignTemplate(plugin, request.args));
+        break;
+      case 'list_note_design_templates':
+        response = createBridgeSuccess(request, await listNoteDesignTemplates(plugin, request.args));
+        break;
+      case 'preview_note_design_plan':
+        response = createBridgeSuccess(request, await previewNoteDesignPlan(plugin, request.args));
+        break;
+      case 'export_note_design_template':
+        response = createBridgeSuccess(request, await exportNoteDesignTemplate(plugin, request.args));
+        break;
+      case 'import_note_design_template':
+        response = createBridgeSuccess(request, await importNoteDesignTemplate(plugin, request.args));
+        break;
+      case 'create_designed_note_tree':
+        response = createBridgeSuccess(request, await createDesignedNoteTree(plugin, request.args));
+        break;
+      case 'update_note_with_design':
+        response = createBridgeSuccess(request, await updateNoteWithDesign(plugin, request.args));
+        break;
+      case 'verify_note_against_design':
+        response = createBridgeSuccess(request, await verifyNoteAgainstDesign(plugin, request.args));
+        break;
+      case 'repair_note_design':
+        response = createBridgeSuccess(request, await repairNoteDesign(plugin, request.args));
+        break;
+      case 'create_card_set_from_note':
+        response = createBridgeSuccess(request, await createCardSetFromNote(plugin, request.args));
+        break;
+      case 'create_flashcards_from_markdown':
+        response = createBridgeSuccess(request, await createFlashcardsFromMarkdown(plugin, request.args));
+        break;
+      case 'create_cloze_cards_from_note':
+        response = createBridgeSuccess(request, await createClozeCardsFromNote(plugin, request.args));
+        break;
+      case 'verify_card_set':
+        response = createBridgeSuccess(request, await verifyCardSet(plugin, request.args));
+        break;
+      case 'repair_card_set':
+        response = createBridgeSuccess(request, await repairCardSet(plugin, request.args));
         break;
       case 'create_basic_flashcard':
         response = createBridgeSuccess(request, await createBasicFlashcard(plugin, request.args));

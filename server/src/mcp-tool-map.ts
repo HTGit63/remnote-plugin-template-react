@@ -1,4 +1,7 @@
 import type { BridgeToolName } from '../../shared/bridge/protocol.js';
+import { BRIDGE_TOOL_NAMES } from '../../shared/bridge/protocol-registry.js';
+
+const BRIDGE_TOOL_NAME_SET = new Set<string>(BRIDGE_TOOL_NAMES);
 
 export function publicMcpToolNameForBridgeTool(tool: BridgeToolName): string {
   switch (tool) {
@@ -17,53 +20,7 @@ export function bridgeToolNameForPublicMcpTool(tool: string): BridgeToolName | u
       return 'ping';
     case 'get_plugin_status':
       return 'get_status';
-    case 'get_focused_rem':
-    case 'get_rem':
-    case 'get_rem_tree':
-    case 'get_rem_rich':
-    case 'debug_get_raw_rich_text':
-    case 'get_current_selection':
-    case 'get_children':
-    case 'get_rem_breadcrumbs':
-    case 'search_rems':
-    case 'get_document_or_folder_tree':
-    case 'create_rem':
-    case 'append_to_rem':
-    case 'create_document':
-    case 'create_folder':
-    case 'update_rem':
-    case 'move_rem':
-    case 'reorder_children':
-    case 'create_rem_tree':
-    case 'update_rem_rich':
-    case 'set_rem_heading_level':
-    case 'set_rem_text_color':
-    case 'set_rem_highlight_color':
-    case 'set_text_span_color':
-    case 'set_text_span_highlight':
-    case 'set_rem_type':
-    case 'set_hide_bullet':
-    case 'clear_rem_formatting':
-    case 'create_styled_rem_tree':
-    case 'apply_remnote_command':
-    case 'apply_structured_note_batch':
-    case 'create_polished_note_tree':
-    case 'create_or_replace_note_from_markdown':
-    case 'preview_markdown_note_tree':
-    case 'create_note_from_markdown_tree':
-    case 'append_markdown_as_rem_tree':
-    case 'apply_style_plan':
-    case 'verify_note_design':
-    case 'create_basic_flashcard':
-    case 'create_concept_card':
-    case 'create_descriptor_card':
-    case 'create_cloze_card':
-    case 'create_multiple_choice_card':
-    case 'create_list_answer_card':
-    case 'replace_rem':
-    case 'delete_rem_by_id':
-      return tool;
     default:
-      return undefined;
+      return BRIDGE_TOOL_NAME_SET.has(tool) ? (tool as BridgeToolName) : undefined;
   }
 }

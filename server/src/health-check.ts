@@ -10,7 +10,7 @@ import {
 import {
   bridgeToolNameForPublicMcpTool,
 } from './mcp-tool-map.js';
-import { DEFAULT_TOOL_PROFILE, type ToolProfile } from './tool-policy.js';
+import { DEFAULT_TOOL_PROFILE, TOOL_METADATA, type ToolProfile } from './tool-policy.js';
 import type {
   BridgeHealthCheckMode,
   BridgeHealthCheckResult,
@@ -33,57 +33,19 @@ export interface RunBridgeHealthCheckOptions {
 
 const DIRECT_SERVER_TOOLS = new Set<string>(SERVER_LOCAL_MCP_TOOLS);
 
-const WRITE_TOOLS = new Set([
-  'create_rem',
-  'create_document',
-  'create_folder',
-  'append_to_rem',
-  'update_rem',
-  'replace_rem',
-  'move_rem',
-  'reorder_children',
-  'create_rem_tree',
-  'update_rem_rich',
-  'set_rem_heading_level',
-  'set_rem_text_color',
-  'set_rem_highlight_color',
-  'set_text_span_color',
-  'set_text_span_highlight',
-  'set_rem_type',
-  'set_hide_bullet',
-  'clear_rem_formatting',
-  'create_styled_rem_tree',
-  'apply_remnote_command',
-  'apply_structured_note_batch',
-  'create_or_replace_note_from_markdown',
-  'create_basic_flashcard',
-  'create_concept_card',
-  'create_descriptor_card',
-  'create_cloze_card',
-  'create_multiple_choice_card',
-  'create_list_answer_card',
-  'create_polished_note_tree',
-]);
+const WRITE_TOOLS = new Set(
+  TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported && tool.requiresWrite).map((tool) => tool.name)
+);
 
-const EXISTING_REM_MUTATION_TOOLS = new Set([
-  'update_rem',
-  'replace_rem',
-  'move_rem',
-  'reorder_children',
-  'update_rem_rich',
-  'set_rem_heading_level',
-  'set_rem_text_color',
-  'set_rem_highlight_color',
-  'set_text_span_color',
-  'set_text_span_highlight',
-  'set_rem_type',
-  'set_hide_bullet',
-  'clear_rem_formatting',
-  'apply_remnote_command',
-  'apply_style_plan',
-]);
+const EXISTING_REM_MUTATION_TOOLS = new Set(
+  TOOL_METADATA.filter(
+    (tool) => tool.isPublic && tool.sdkSupported && (tool.category === 'repair' || tool.category === 'danger')
+  ).map((tool) => tool.name)
+);
 
-const DESTRUCTIVE_TOOLS = new Set(['delete_rem_by_id']);
+const DESTRUCTIVE_TOOLS = new Set(
+  TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported && tool.isDangerous).map((tool) => tool.name)
+);
 
 function nowMs(): number {
   return Date.now();
@@ -492,6 +454,166 @@ function healthCheckArgsFor(
             },
           }
         : undefined;
+    case 'analyze_note_design':
+      return targetRemId ? { rootRemId: targetRemId, maxDepth: 2, maxNodes: 50 } : undefined;
+    case 'save_note_design_template':
+      return targetRemId
+        ? {
+            templateId: `health-template-${targetRemId}`,
+            name: 'Bridge health design template',
+            rootRemId: targetRemId,
+            overwrite: true,
+          }
+        : undefined;
+    case 'list_note_design_templates':
+      return { includeRules: false };
+    case 'preview_note_design_plan':
+      return {
+        rules: {
+          headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+          colorPattern: {},
+          spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+          mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+          bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+          formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+          tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+          cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+          workedExampleStyle: { workedExampleCount: 0, labels: [] },
+        },
+        parentId,
+        targetRemId,
+        title: 'Bridge health design preview',
+        content: 'Bridge health preview content',
+        mode: targetRemId ? 'repair' : 'create',
+      };
+    case 'export_note_design_template':
+      return options.includeWrites && targetRemId ? { templateId: `health-template-${targetRemId}` } : undefined;
+    case 'import_note_design_template':
+      return {
+        templateJson: JSON.stringify({
+          template: {
+            schemaVersion: 1,
+            templateId: 'health-import-template',
+            name: 'Bridge health imported template',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1,
+            conflictBehavior: 'versioned_reject',
+            localOnly: true,
+            rules: {
+              headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+              colorPattern: {},
+              spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+              mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+              bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+              formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+              tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+              cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+              workedExampleStyle: { workedExampleCount: 0, labels: [] },
+            },
+          },
+        }),
+        overwrite: true,
+      };
+    case 'create_designed_note_tree':
+      return parentId
+        ? {
+            parentId,
+            title: 'Bridge health designed note',
+            content: '# Bridge health designed note\n\nContent',
+            writingMode: 'markdown',
+            dryRun: !options.includeWrites,
+            verifyAfterWrite: Boolean(options.includeWrites),
+            performanceTargetMs: 5000,
+            idempotencyKey: `health-designed-${Date.now()}`,
+          }
+        : undefined;
+    case 'update_note_with_design':
+      return targetRemId
+        ? {
+            targetRemId,
+            mode: 'append_sections',
+            markdownText: '### Bridge health append\n\nContent',
+            dryRun: true,
+            approved: false,
+            verifyAfterWrite: false,
+            idempotencyKey: `health-update-design-${Date.now()}`,
+          }
+        : undefined;
+    case 'verify_note_against_design':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            rules: {
+              headingPattern: {},
+              colorPattern: {},
+              spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+              mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+              bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+              formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+              tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+              cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+              workedExampleStyle: { workedExampleCount: 0, labels: [] },
+            },
+          }
+        : undefined;
+    case 'repair_note_design':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            dryRun: true,
+            approved: false,
+            verifyAfterWrite: false,
+            idempotencyKey: `health-repair-design-${Date.now()}`,
+          }
+        : undefined;
+    case 'create_card_set_from_note':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            parentId: parentId ?? targetRemId,
+            maxCards: 5,
+            dryRun: !options.includeWrites,
+            direction: 'both',
+            idempotencyKey: `health-card-set-${Date.now()}`,
+          }
+        : undefined;
+    case 'create_flashcards_from_markdown':
+      return parentId
+        ? {
+            parentId,
+            markdownText: 'Bridge health front:: Bridge health back',
+            marker: 'both',
+            maxCards: 5,
+            dryRun: !options.includeWrites,
+            direction: 'both',
+            idempotencyKey: `health-cards-markdown-${Date.now()}`,
+          }
+        : undefined;
+    case 'create_cloze_cards_from_note':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            parentId: parentId ?? targetRemId,
+            maxCards: 5,
+            dryRun: !options.includeWrites,
+            direction: 'both',
+            idempotencyKey: `health-cloze-note-${Date.now()}`,
+          }
+        : undefined;
+    case 'verify_card_set':
+      return targetRemId ? { rootRemId: targetRemId, maxCards: 5 } : undefined;
+    case 'repair_card_set':
+      return targetRemId
+        ? {
+            rootRemId: targetRemId,
+            cards: [{ front: 'Bridge health front', back: 'Bridge health back' }],
+            dryRun: true,
+            approved: false,
+            direction: 'both',
+            idempotencyKey: `health-repair-cards-${Date.now()}`,
+          }
+        : undefined;
     case 'apply_remnote_command':
       return options.includeExistingRemMutations && targetRemId
         ? {
@@ -600,13 +722,18 @@ function healthCheckArgsFor(
       return options.includeExistingRemMutations && targetRemId ? { remId: targetRemId } : undefined;
     case 'move_rem':
       return options.includeExistingRemMutations && parentId && targetRemId
-        ? { remId: targetRemId, newParentId: parentId, index: 0 }
+        ? { remId: targetRemId, newParentId: parentId, expectedParentId: parentId, index: 0 }
         : undefined;
     case 'reorder_children':
       return undefined;
     case 'replace_rem':
       return options.includeExistingRemMutations && targetRemId
-        ? { remId: targetRemId, markdown: 'Bridge health check replaced disposable Rem' }
+        ? {
+            remId: targetRemId,
+            markdown: 'Bridge health check replaced disposable Rem',
+            expectedPlainText: 'Bridge health disposable mutation target',
+            dryRun: true,
+          }
         : undefined;
     case 'delete_rem_by_id':
       return options.mode === 'destructive_on_disposable_rem' && parentId && targetRemId

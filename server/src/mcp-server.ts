@@ -9,9 +9,14 @@ import {
   getToolRegistrySummary,
   type RegisteredMcpToolName,
 } from './tool-registry.js';
-import { DEFAULT_TOOL_PROFILE, type ToolProfile } from './tool-policy.js';
+import { DEFAULT_TOOL_PROFILE, getToolMetadata, type ToolProfile } from './tool-policy.js';
 import { registerCardTools } from './tools/register-card-tools.js';
 import { registerDeleteTools } from './tools/register-delete-tools.js';
+import {
+  registerDesignedNoteTools,
+  registerDesignTemplateTools,
+  registerHighLevelCardWorkflowTools,
+} from './tools/register-design-tools.js';
 import { registerDiagnosticTools } from './tools/register-diagnostic-tools.js';
 import { registerFormattingTools, registerStyleVerificationTools } from './tools/register-formatting-tools.js';
 import { registerReadTools } from './tools/register-read-tools.js';
@@ -104,6 +109,9 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   registerFormattingTools(context);
   registerHighLevelWriteTools(context);
   registerStyleVerificationTools(context);
+  registerDesignTemplateTools(context);
+  registerDesignedNoteTools(context);
+  registerHighLevelCardWorkflowTools(context);
   registerCardTools(context);
 
   assertRegisteredToolsMatchRegistry(Boolean(options.exposeDeleteTool), registeredToolNames, toolProfile);
@@ -112,20 +120,12 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
 }
 
 function requiredOAuthScopesForTool(name: string): string[] {
-  if (name === 'delete_rem_by_id' || name === 'replace_rem') {
+  const metadata = getToolMetadata(name);
+  if (metadata.requiresDelete || metadata.isDangerous) {
     return ['bridge:read', 'bridge:write', 'bridge:delete'];
   }
 
-  if (
-    name.startsWith('create_') ||
-    name.startsWith('update_') ||
-    name.startsWith('append_') ||
-    name.startsWith('move_') ||
-    name.startsWith('reorder_') ||
-    name.startsWith('set_') ||
-    name.startsWith('clear_') ||
-    name.startsWith('apply_')
-  ) {
+  if (metadata.requiresWrite) {
     return ['bridge:read', 'bridge:write', 'bridge:trusted_write'];
   }
 

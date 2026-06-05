@@ -720,6 +720,198 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           unsupportedChecks: [],
         },
       };
+    case 'analyze_note_design':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'analyzed',
+          reusable: true,
+          sourceRemId: request.args.rootRemId ?? fakeRem.remId,
+          analyzedNodeCount: 2,
+          maxDepth: request.args.maxDepth ?? 2,
+          rules: {
+            headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+            colorPattern: {},
+            spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+            mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+            bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+            formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+            tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+            cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+            workedExampleStyle: { workedExampleCount: 0, labels: [] },
+          },
+          summary: ['smoke template rules'],
+        },
+      };
+    case 'save_note_design_template':
+    case 'import_note_design_template':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: request.tool === 'save_note_design_template' ? 'saved' : 'imported',
+          template: {
+            schemaVersion: 1,
+            templateId: request.tool === 'save_note_design_template' ? request.args.templateId ?? 'smoke-template' : 'imported-smoke-template',
+            name: request.tool === 'save_note_design_template' ? request.args.name : 'Imported smoke template',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1,
+            conflictBehavior: 'versioned_reject',
+            localOnly: true,
+            rules: {
+              headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+              colorPattern: {},
+              spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+              mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+              bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+              formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+              tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+              cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+              workedExampleStyle: { workedExampleCount: 0, labels: [] },
+            },
+          },
+          templateCount: 1,
+        },
+      };
+    case 'list_note_design_templates':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'listed',
+          count: 1,
+          templates: [{ templateId: 'smoke-template', name: 'Smoke template', updatedAt: new Date().toISOString(), version: 1 }],
+        },
+      };
+    case 'preview_note_design_plan':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'previewed',
+          dryRun: true,
+          templateId: request.args.templateId,
+          targetRemId: request.args.targetRemId,
+          parentId: request.args.parentId,
+          title: request.args.title,
+          mode: request.args.mode ?? 'create',
+          plannedChanges: ['smoke design preview'],
+          warnings: [],
+          rules: request.args.rules ?? {},
+        },
+      };
+    case 'export_note_design_template':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'exported',
+          templateId: request.args.templateId,
+          templateJson: JSON.stringify({ template: { schemaVersion: 1, templateId: request.args.templateId, name: 'Smoke template' } }),
+          template: { schemaVersion: 1, templateId: request.args.templateId, name: 'Smoke template' },
+        },
+      };
+    case 'create_designed_note_tree':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: request.args.dryRun ? 'dry_run' : 'created',
+          ok: true,
+          dryRun: Boolean(request.args.dryRun),
+          parentId: request.args.parentId,
+          rootRemId: request.args.dryRun ? undefined : 'rem-designed-root-1',
+          createdRemIds: request.args.dryRun ? [] : ['rem-designed-root-1'],
+          createdNodeCount: request.args.dryRun ? 0 : 1,
+          templateId: request.args.templateId,
+          writingMode: request.args.writingMode ?? 'markdown',
+        },
+      };
+    case 'update_note_with_design':
+    case 'repair_note_design':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: request.args.dryRun !== false ? 'dry_run' : 'repaired',
+          ok: true,
+          dryRun: request.args.dryRun !== false,
+          approved: Boolean(request.args.approved),
+          targetRemId: request.tool === 'update_note_with_design' ? request.args.targetRemId : request.args.rootRemId,
+          rootRemId: request.tool === 'repair_note_design' ? request.args.rootRemId : undefined,
+          mode: request.tool === 'update_note_with_design' ? request.args.mode : undefined,
+          plan: ['smoke repair/update plan'],
+          verificationBefore: request.tool === 'repair_note_design'
+            ? {
+                status: 'verified',
+                rootRemId: request.args.rootRemId,
+                ok: true,
+                checkedRemIds: [request.args.rootRemId],
+                designIssues: [],
+                mismatches: [],
+                unsupportedChecks: [],
+                baseVerification: {
+                  rootRemId: request.args.rootRemId,
+                  ok: true,
+                  checkedRemIds: [request.args.rootRemId],
+                  mismatches: [],
+                  unsupportedChecks: [],
+                },
+              }
+            : undefined,
+        },
+      };
+    case 'verify_note_against_design':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: 'verified',
+          rootRemId: request.args.rootRemId,
+          templateId: request.args.templateId,
+          ok: true,
+          checkedRemIds: [request.args.rootRemId],
+          designIssues: [],
+          mismatches: [],
+          unsupportedChecks: [],
+          baseVerification: {
+            rootRemId: request.args.rootRemId,
+            ok: true,
+            checkedRemIds: [request.args.rootRemId],
+            mismatches: [],
+            unsupportedChecks: [],
+          },
+        },
+      };
+    case 'create_card_set_from_note':
+    case 'create_flashcards_from_markdown':
+    case 'create_cloze_cards_from_note':
+    case 'verify_card_set':
+    case 'repair_card_set':
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          status: request.tool === 'verify_card_set'
+            ? 'verified'
+            : request.args.dryRun !== false
+              ? 'dry_run'
+              : request.tool === 'repair_card_set'
+                ? 'repaired'
+                : 'created',
+          ok: true,
+          dryRun: 'dryRun' in request.args ? request.args.dryRun !== false : undefined,
+          rootRemId: 'rootRemId' in request.args ? request.args.rootRemId : undefined,
+          parentId: 'parentId' in request.args ? request.args.parentId : fakeRem.remId,
+          cardCount: 1,
+          cards: [{ front: 'Smoke front', back: 'Smoke back', cardType: 'basic' }],
+          createdRemIds: 'dryRun' in request.args && request.args.dryRun === false ? ['rem-workflow-card-1'] : [],
+          issues: [],
+          repairPlan: request.tool === 'repair_card_set' ? ['Smoke repair card'] : undefined,
+        },
+      };
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':

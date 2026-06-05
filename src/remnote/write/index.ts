@@ -1,6 +1,7 @@
 export * from './basicWrites';
 export * from './cardWrites';
 export * from './deleteWrites';
+export * from './designedNoteTools';
 export * from './formattingWrites';
 export * from './markdownImportExecutor';
 export * from './remnoteSdkHelpers';

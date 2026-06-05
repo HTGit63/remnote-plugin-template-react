@@ -4,6 +4,9 @@ import type {
   MarkdownDuplicatePolicy,
   MarkdownFlashcardOptions,
   MarkdownImportMode,
+  NoteDesignRules,
+  NoteDesignTemplate,
+  NoteDesignTemplateSummary,
   PracticeDirection,
   RemColorName,
   RemHeadingLevel,
@@ -452,6 +455,137 @@ export interface VerifyNoteDesignResult {
     args?: Record<string, unknown>;
   }>;
 }
+
+export interface AnalyzeNoteDesignResult {
+  status: 'analyzed';
+  reusable: true;
+  sourceRemId: string;
+  analyzedNodeCount: number;
+  maxDepth: number;
+  rules: NoteDesignRules;
+  summary: string[];
+  warnings?: string[];
+}
+
+export interface SaveNoteDesignTemplateResult {
+  status: 'saved' | 'already_exists';
+  template: NoteDesignTemplate;
+  templateCount: number;
+}
+
+export interface ListNoteDesignTemplatesResult {
+  status: 'listed';
+  count: number;
+  templates: NoteDesignTemplateSummary[] | NoteDesignTemplate[];
+}
+
+export interface PreviewNoteDesignPlanResult {
+  status: 'previewed';
+  dryRun: true;
+  templateId?: string;
+  targetRemId?: string;
+  parentId?: string;
+  title?: string;
+  mode: 'create' | 'append' | 'replace_children' | 'repair';
+  plannedChanges: string[];
+  warnings: string[];
+  rules: NoteDesignRules;
+}
+
+export interface ExportNoteDesignTemplateResult {
+  status: 'exported';
+  templateId: string;
+  templateJson: string;
+  template: NoteDesignTemplate;
+}
+
+export interface ImportNoteDesignTemplateResult {
+  status: 'imported' | 'already_exists';
+  template: NoteDesignTemplate;
+  templateCount: number;
+  warnings?: string[];
+}
+
+export interface CreateDesignedNoteTreeResult {
+  status: 'dry_run' | 'created' | 'success_with_performance_warning';
+  ok: boolean;
+  dryRun: boolean;
+  parentId: string;
+  rootRemId?: string;
+  createdRemIds: string[];
+  createdNodeCount: number;
+  templateId?: string;
+  writingMode: 'markdown' | 'styled_tree';
+  verification?: unknown;
+  performance?: WritePerformanceReport;
+  markdownResult?: CreateOrReplaceNoteFromMarkdownResult;
+  polishedTreeResult?: CreatePolishedNoteTreeResult;
+}
+
+export interface UpdateNoteWithDesignResult {
+  status: 'dry_run' | 'appended' | 'replaced' | 'repaired';
+  ok: boolean;
+  dryRun: boolean;
+  approved: boolean;
+  targetRemId: string;
+  mode: string;
+  templateId?: string;
+  plan: string[];
+  result?: CreateOrReplaceNoteFromMarkdownResult | ApplyStylePlanResult;
+}
+
+export interface VerifyNoteAgainstDesignResult {
+  status: 'verified';
+  rootRemId: string;
+  templateId?: string;
+  ok: boolean;
+  checkedRemIds: string[];
+  designIssues: string[];
+  mismatches: VerifyNoteDesignResult['mismatches'];
+  unsupportedChecks: VerifyNoteDesignResult['unsupportedChecks'];
+  repairSuggestions?: VerifyNoteDesignResult['repairSuggestions'];
+  baseVerification: VerifyNoteDesignResult;
+}
+
+export interface RepairNoteDesignResult {
+  status: 'dry_run' | 'repaired';
+  ok: boolean;
+  dryRun: boolean;
+  approved: boolean;
+  rootRemId: string;
+  templateId?: string;
+  plan: string[];
+  verificationBefore: VerifyNoteAgainstDesignResult;
+  result?: ApplyStylePlanResult;
+}
+
+export interface CardWorkflowCardPlan {
+  front: string;
+  back?: string;
+  text?: string;
+  clozeText?: string;
+  sourceRemId?: string;
+  cardType: 'basic' | 'cloze';
+}
+
+export interface CardWorkflowResult {
+  status: 'dry_run' | 'created' | 'verified' | 'repaired';
+  ok: boolean;
+  dryRun?: boolean;
+  rootRemId?: string;
+  parentId?: string;
+  cardCount: number;
+  cards: CardWorkflowCardPlan[];
+  createdRemIds?: string[];
+  issues?: string[];
+  repairPlan?: string[];
+}
+
+export type CreateCardSetFromNoteResult = CardWorkflowResult;
+export type CreateFlashcardsFromMarkdownResult = CardWorkflowResult;
+export type CreateClozeCardsFromNoteResult = CardWorkflowResult;
+export type VerifyCardSetResult = CardWorkflowResult;
+export type RepairCardSetResult = CardWorkflowResult;
 
 export interface CreateFlashcardResult {
   createdRemId: string;

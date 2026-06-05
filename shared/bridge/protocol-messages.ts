@@ -9,14 +9,20 @@ import type {
 } from './protocol-core.js';
 import type {
   AppendToRemArgs,
+  AnalyzeNoteDesignArgs,
   ApplyRemnoteCommandArgs,
   ApplyStructuredNoteBatchArgs,
   ApplyStylePlanArgs,
   ClearRemFormattingArgs,
+  CreateCardSetFromNoteArgs,
+  CreateClozeCardsFromNoteArgs,
+  CreateDesignedNoteTreeArgs,
   CreateClozeCardArgs,
   CreateDocumentArgs,
+  CreateFlashcardsFromMarkdownArgs,
   CreateFlashcardArgs,
   CreateFolderArgs,
+  ExportNoteDesignTemplateArgs,
   CreateListAnswerCardArgs,
   CreateNoteFromMarkdownTreeArgs,
   CreateMultipleChoiceCardArgs,
@@ -27,10 +33,16 @@ import type {
   CreateStyledRemTreeArgs,
   DeleteRemByIdArgs,
   AppendMarkdownAsRemTreeArgs,
+  ImportNoteDesignTemplateArgs,
+  ListNoteDesignTemplatesArgs,
   MoveRemArgs,
+  PreviewNoteDesignPlanArgs,
   PreviewMarkdownNoteTreeArgs,
+  RepairCardSetArgs,
+  RepairNoteDesignArgs,
   ReplaceRemArgs,
   ReorderChildrenArgs,
+  SaveNoteDesignTemplateArgs,
   SetHideBulletArgs,
   SetRemHeadingLevelArgs,
   SetRemHighlightColorArgs,
@@ -40,7 +52,10 @@ import type {
   SetTextSpanHighlightArgs,
   UpdateRemArgs,
   UpdateRemRichArgs,
+  UpdateNoteWithDesignArgs,
+  VerifyCardSetArgs,
   VerifyNoteDesignArgs,
+  VerifyNoteAgainstDesignArgs,
 } from './protocol-write-args.js';
 import type {
   DebugGetRawRichTextArgs,
@@ -69,12 +84,18 @@ import type {
 } from './protocol-read.js';
 import type {
   AppendToRemResult,
+  AnalyzeNoteDesignResult,
   ApplyRemnoteCommandResult,
   ApplyStructuredNoteBatchResult,
   ApplyStylePlanResult,
+  CreateCardSetFromNoteResult,
+  CreateClozeCardsFromNoteResult,
+  CreateDesignedNoteTreeResult,
   CreateDocumentResult,
+  CreateFlashcardsFromMarkdownResult,
   CreateFlashcardResult,
   CreateFolderResult,
+  ExportNoteDesignTemplateResult,
   CreateNoteFromMarkdownTreeResult,
   CreateOrReplaceNoteFromMarkdownResult,
   CreatePolishedNoteTreeResult,
@@ -85,11 +106,20 @@ import type {
   DeleteRemByIdResult,
   FormatRemResult,
   AppendMarkdownAsRemTreeResult,
+  ImportNoteDesignTemplateResult,
+  ListNoteDesignTemplatesResult,
   MoveRemResult,
+  PreviewNoteDesignPlanResult,
   PreviewMarkdownNoteTreeResult,
+  RepairCardSetResult,
+  RepairNoteDesignResult,
   ReplaceRemResult,
   ReorderChildrenResult,
+  SaveNoteDesignTemplateResult,
   UpdateRemResult,
+  UpdateNoteWithDesignResult,
+  VerifyCardSetResult,
+  VerifyNoteAgainstDesignResult,
   VerifyNoteDesignResult,
 } from './protocol-write-results.js';
 
@@ -133,6 +163,21 @@ export interface BridgeToolArgs {
   append_markdown_as_rem_tree: AppendMarkdownAsRemTreeArgs;
   apply_style_plan: ApplyStylePlanArgs;
   verify_note_design: VerifyNoteDesignArgs;
+  analyze_note_design: AnalyzeNoteDesignArgs;
+  save_note_design_template: SaveNoteDesignTemplateArgs;
+  list_note_design_templates: ListNoteDesignTemplatesArgs;
+  preview_note_design_plan: PreviewNoteDesignPlanArgs;
+  export_note_design_template: ExportNoteDesignTemplateArgs;
+  import_note_design_template: ImportNoteDesignTemplateArgs;
+  create_designed_note_tree: CreateDesignedNoteTreeArgs;
+  update_note_with_design: UpdateNoteWithDesignArgs;
+  verify_note_against_design: VerifyNoteAgainstDesignArgs;
+  repair_note_design: RepairNoteDesignArgs;
+  create_card_set_from_note: CreateCardSetFromNoteArgs;
+  create_flashcards_from_markdown: CreateFlashcardsFromMarkdownArgs;
+  create_cloze_cards_from_note: CreateClozeCardsFromNoteArgs;
+  verify_card_set: VerifyCardSetArgs;
+  repair_card_set: RepairCardSetArgs;
   create_basic_flashcard: CreateFlashcardArgs;
   create_concept_card: CreateFlashcardArgs;
   create_descriptor_card: CreateFlashcardArgs;
@@ -183,6 +228,21 @@ export interface BridgeToolResults {
   append_markdown_as_rem_tree: AppendMarkdownAsRemTreeResult;
   apply_style_plan: ApplyStylePlanResult;
   verify_note_design: VerifyNoteDesignResult;
+  analyze_note_design: AnalyzeNoteDesignResult;
+  save_note_design_template: SaveNoteDesignTemplateResult;
+  list_note_design_templates: ListNoteDesignTemplatesResult;
+  preview_note_design_plan: PreviewNoteDesignPlanResult;
+  export_note_design_template: ExportNoteDesignTemplateResult;
+  import_note_design_template: ImportNoteDesignTemplateResult;
+  create_designed_note_tree: CreateDesignedNoteTreeResult;
+  update_note_with_design: UpdateNoteWithDesignResult;
+  verify_note_against_design: VerifyNoteAgainstDesignResult;
+  repair_note_design: RepairNoteDesignResult;
+  create_card_set_from_note: CreateCardSetFromNoteResult;
+  create_flashcards_from_markdown: CreateFlashcardsFromMarkdownResult;
+  create_cloze_cards_from_note: CreateClozeCardsFromNoteResult;
+  verify_card_set: VerifyCardSetResult;
+  repair_card_set: RepairCardSetResult;
   create_basic_flashcard: CreateFlashcardResult;
   create_concept_card: CreateFlashcardResult;
   create_descriptor_card: CreateFlashcardResult;

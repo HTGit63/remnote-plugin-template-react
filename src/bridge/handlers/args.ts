@@ -2,9 +2,14 @@ import type {
   BridgeToolArgs,
   BridgeToolName,
   AppendMarkdownAsRemTreeArgs,
+  CreateDesignedNoteTreeArgs,
+  CreateFlashcardsFromMarkdownArgs,
   CreateNoteFromMarkdownTreeArgs,
   CreateOrReplaceNoteFromMarkdownArgs,
+  PreviewNoteDesignPlanArgs,
   PreviewMarkdownNoteTreeArgs,
+  UpdateNoteWithDesignArgs,
+  VerifyNoteAgainstDesignArgs,
   VerifyNoteDesignArgs,
 } from '../../../shared/bridge/protocol';
 
@@ -428,6 +433,164 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         majorFormulaMode: getStringField(args, 'majorFormulaMode') as VerifyNoteDesignArgs['majorFormulaMode'],
         verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
       } as VerifyNoteDesignArgs as BridgeToolArgs[TTool];
+    case 'analyze_note_design':
+      return {
+        rootRemId: optionalRemId(args, 'rootRemId') ?? undefined,
+        sampleRemId: optionalRemId(args, 'sampleRemId') ?? undefined,
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        maxNodes: optionalBoundedNumber(args, 'maxNodes'),
+      } as BridgeToolArgs[TTool];
+    case 'save_note_design_template':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        name: requiredTextField(args, 'name'),
+        description: getStringField(args, 'description')?.trim() || undefined,
+        sourceRemId: optionalRemId(args, 'sourceRemId') ?? undefined,
+        rootRemId: optionalRemId(args, 'rootRemId') ?? undefined,
+        rules: isPlainObject(raw.rules) ? (raw.rules as unknown as BridgeToolArgs['save_note_design_template']['rules']) : undefined,
+        overwrite: optionalBoolean(args, 'overwrite'),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'list_note_design_templates':
+      return {
+        includeRules: optionalBoolean(args, 'includeRules'),
+      } as BridgeToolArgs[TTool];
+    case 'preview_note_design_plan':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        templateJson: getStringField(args, 'templateJson'),
+        targetRemId: optionalRemId(args, 'targetRemId') ?? undefined,
+        parentId: optionalParentId(args) ?? undefined,
+        title: getStringField(args, 'title')?.trim() || undefined,
+        content: getStringField(args, 'content'),
+        mode: getStringField(args, 'mode') as PreviewNoteDesignPlanArgs['mode'],
+        rules: isPlainObject(raw.rules) ? (raw.rules as unknown as PreviewNoteDesignPlanArgs['rules']) : undefined,
+      } as BridgeToolArgs[TTool];
+    }
+    case 'export_note_design_template':
+      return {
+        templateId: requiredTextField(args, 'templateId'),
+      } as BridgeToolArgs[TTool];
+    case 'import_note_design_template':
+      return {
+        templateJson: requiredTextField(args, 'templateJson'),
+        overwrite: optionalBoolean(args, 'overwrite'),
+      } as BridgeToolArgs[TTool];
+    case 'create_designed_note_tree':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      const rawContent = raw.content;
+      return {
+        parentId: requiredParentId(args),
+        title: requiredTextField(args, 'title'),
+        content: typeof rawContent === 'string' || isPlainObject(rawContent)
+          ? rawContent as CreateDesignedNoteTreeArgs['content']
+          : requiredTextField(args, 'content'),
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        writingMode: getStringField(args, 'writingMode') as CreateDesignedNoteTreeArgs['writingMode'],
+        dryRun: optionalBoolean(args, 'dryRun'),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        performanceTargetMs: optionalBoundedNumber(args, 'performanceTargetMs'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        maxNodeCount: optionalBoundedNumber(args, 'maxNodeCount'),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'update_note_with_design':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      const rawContent = raw.content;
+      return {
+        targetRemId: requiredRemId(args, 'targetRemId'),
+        mode: requiredTextField(args, 'mode') as UpdateNoteWithDesignArgs['mode'],
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        content: typeof rawContent === 'string' || isPlainObject(rawContent)
+          ? rawContent as UpdateNoteWithDesignArgs['content']
+          : undefined,
+        markdownText: getStringField(args, 'markdownText'),
+        styleOperations: Array.isArray(raw.styleOperations)
+          ? raw.styleOperations as UpdateNoteWithDesignArgs['styleOperations']
+          : undefined,
+        dryRun: optionalBoolean(args, 'dryRun'),
+        approved: optionalBoolean(args, 'approved'),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'verify_note_against_design':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        rules: isPlainObject(raw.rules) ? (raw.rules as unknown as VerifyNoteAgainstDesignArgs['rules']) : undefined,
+        expectedStyleMap: isPlainObject(raw.expectedStyleMap)
+          ? (raw.expectedStyleMap as VerifyNoteAgainstDesignArgs['expectedStyleMap'])
+          : undefined,
+      } as BridgeToolArgs[TTool];
+    }
+    case 'repair_note_design':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        templateId: getStringField(args, 'templateId')?.trim() || undefined,
+        operations: Array.isArray(raw.operations) ? raw.operations as BridgeToolArgs['repair_note_design']['operations'] : undefined,
+        dryRun: optionalBoolean(args, 'dryRun', true),
+        approved: optionalBoolean(args, 'approved'),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite'),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    }
+    case 'create_card_set_from_note':
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        parentId: optionalParentId(args) ?? undefined,
+        maxCards: optionalBoundedNumber(args, 'maxCards'),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_flashcards_from_markdown':
+      return {
+        parentId: requiredParentId(args),
+        markdownText: requiredMarkdownText(args),
+        marker: getStringField(args, 'marker') as CreateFlashcardsFromMarkdownArgs['marker'],
+        maxCards: optionalBoundedNumber(args, 'maxCards'),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'create_cloze_cards_from_note':
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        parentId: optionalParentId(args) ?? undefined,
+        maxCards: optionalBoundedNumber(args, 'maxCards'),
+        dryRun: optionalBoolean(args, 'dryRun'),
+        direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'verify_card_set':
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        maxCards: optionalBoundedNumber(args, 'maxCards'),
+      } as BridgeToolArgs[TTool];
+    case 'repair_card_set':
+    {
+      const raw = isPlainObject(args) ? args : {};
+      return {
+        rootRemId: requiredRemId(args, 'rootRemId'),
+        cards: Array.isArray(raw.cards) ? raw.cards as BridgeToolArgs['repair_card_set']['cards'] : undefined,
+        dryRun: optionalBoolean(args, 'dryRun', true),
+        approved: optionalBoolean(args, 'approved'),
+        direction: optionalPracticeDirection(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    }
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':

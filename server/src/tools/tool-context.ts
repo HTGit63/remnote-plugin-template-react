@@ -12,6 +12,8 @@ import type { AuthenticatedPrincipal } from '../auth/types.js';
 import type { BridgeRuntimeInfo } from '../config.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 import type { ToolProfile } from '../tool-policy.js';
+import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
+import { getToolPerformanceBudgetMs } from '../performance/tool-budgets.js';
 
 export type McpToolResult = {
   content: Array<{
@@ -50,7 +52,9 @@ export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {
 
 export function defaultTimeoutForTool(tool: BridgeToolName): number {
   const annotations = annotationsFor(tool);
-  return annotations.destructiveHint === true ? 20000 : 12000;
+  const budgetMs = getToolPerformanceBudgetMs(publicMcpToolNameForBridgeTool(tool));
+  const baseTimeoutMs = Math.max(budgetMs + 5000, 6000);
+  return annotations.destructiveHint === true ? Math.max(baseTimeoutMs, 20000) : baseTimeoutMs;
 }
 
 export function failureToToolResult(failure: BridgeFailure): McpToolResult {

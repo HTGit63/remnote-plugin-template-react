@@ -284,6 +284,33 @@ export const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.
   })
 );
 
+export const DESIGN_TEMPLATE_RULES_SCHEMA = z
+  .object({
+    headingPattern: z.record(z.string(), z.unknown()).default({}).optional(),
+    colorPattern: z.record(z.string(), z.unknown()).default({}).optional(),
+    spacingPattern: z.record(z.string(), z.unknown()).default({}).optional(),
+    mathPattern: z.record(z.string(), z.unknown()).default({}).optional(),
+    bulletNesting: z.record(z.string(), z.unknown()).default({}).optional(),
+    formulaPlacement: z.record(z.string(), z.unknown()).default({}).optional(),
+    tableStyle: z.record(z.string(), z.unknown()).default({}).optional(),
+    cardStyle: z.record(z.string(), z.unknown()).default({}).optional(),
+    workedExampleStyle: z.record(z.string(), z.unknown()).default({}).optional(),
+    expectedStyleMap: z.record(z.string(), z.unknown()).optional(),
+    stylePreset: z.string().trim().min(1).max(120).optional(),
+  })
+  .passthrough()
+  .describe('Reusable note design rules. Destructive operation rules are rejected by the plugin before storage/import.');
+
+export const DESIGNED_NOTE_CONTENT_SCHEMA = z.union([
+  LONG_MARKDOWN_SCHEMA,
+  STYLED_REM_TREE_NODE_SCHEMA,
+]);
+
+export const CARD_REPAIR_CARD_SCHEMA = z.object({
+  front: z.string().trim().min(1).max(5000),
+  back: z.string().trim().min(1).max(5000),
+});
+
 export const MARKDOWN_HEADING_MAPPING_SCHEMA = z.object({
   rootHeading: z.enum(['first_h1', 'title_from_first_line', 'explicit_title']).default('first_h1').optional(),
   explicitTitle: z.string().trim().min(1).max(1000).optional(),

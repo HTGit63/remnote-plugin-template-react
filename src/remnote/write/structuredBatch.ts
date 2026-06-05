@@ -101,7 +101,10 @@ import {
   applyRemStyle,
   buildRichTextFromSpans,
   buildStyledText,
+  createRemTreeWithMarkdownApi,
   createRemWithRichText,
+  getRemSiblingIndex,
+  hasRemSdkApi,
   findRequiredRem,
   getFreshInsertIndex,
   getRemPlainString,
@@ -122,6 +125,72 @@ import {
   verifyStagedReplacement,
 } from '../write-engine/verify';
 import type { WriteOperationPlan } from '../write-engine/types';
+
+function styledNodeMarkdownText(node: StyledRemTreeNode): string {
+  const direct = node.text ?? node.title;
+  if (direct) {
+    return direct.replace(/\s+/g, ' ').trim();
+  }
+  if (node.richText?.length) {
+    return node.richText
+      .map((span) => span.text ?? span.latex ?? '')
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+  if (node.latex) {
+    return node.latex.replace(/\s+/g, ' ').trim();
+  }
+  return '';
+}
+
+function canUseMarkdownTreeFastPath(node: StyledRemTreeNode): boolean {
+  const type = node.type ?? 'rem';
+  if (type !== 'rem' && type !== 'mathBlock' && type !== 'inlineMath') {
+    return false;
+  }
+  if (
+    node.front ||
+    node.back ||
+    node.answer ||
+    node.clozeText ||
+    node.choices?.length ||
+    node.items?.length
+  ) {
+    return false;
+  }
+  if (!styledNodeMarkdownText(node)) {
+    return false;
+  }
+  return (node.children ?? []).every(canUseMarkdownTreeFastPath);
+}
+
+function styledNodeToMarkdownLines(node: StyledRemTreeNode, depth = 0): string[] {
+  const text = styledNodeMarkdownText(node);
+  return [
+    `${'  '.repeat(depth)}- ${text}`,
+    ...(node.children ?? []).flatMap((child) => styledNodeToMarkdownLines(child, depth + 1)),
+  ];
+}
+
+function flattenStyledNodes(node: StyledRemTreeNode): StyledRemTreeNode[] {
+  return [node, ...(node.children ?? []).flatMap(flattenStyledNodes)];
+}
+
+async function collectRemRecordsPreOrder(
+  roots: Rem[],
+  parentId: string,
+  depth = 0
+): Promise<Array<{ rem: Rem; parentId: string; depth: number; index: number }>> {
+  const records: Array<{ rem: Rem; parentId: string; depth: number; index: number }> = [];
+  for (let index = 0; index < roots.length; index += 1) {
+    const rem = roots[index];
+    records.push({ rem, parentId, depth, index });
+    const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
+    records.push(...(await collectRemRecordsPreOrder(children, rem._id, depth + 1)));
+  }
+  return records;
+}
 
 export async function structuredWriteEngine(
   plugin: RNPlugin,
@@ -343,6 +412,64 @@ export async function structuredWriteEngine(
       plugin,
       operationPlan,
       async (activePlan) => {
+        const canUseBulkMarkdownTree =
+          (args.position ?? 'end') === 'end' &&
+          hasRemSdkApi(plugin, 'createTreeWithMarkdown') &&
+          canUseMarkdownTreeFastPath(tree);
+        if (canUseBulkMarkdownTree) {
+          const roots = await createRemTreeWithMarkdownApi(
+            plugin,
+            styledNodeToMarkdownLines(tree).join('\n'),
+            parent
+          );
+          const records = await collectRemRecordsPreOrder(roots, parent._id);
+          const plannedNodes = flattenStyledNodes(tree);
+          for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
+            const node = plannedNodes[index];
+            const record = records[index];
+            if (node.richText?.length) {
+              const richText = await buildRichTextFromSpans(plugin, node.richText);
+              await runSdkOperation('rem.setText', () => record.rem.setText(richText));
+            } else if (node.type === 'mathBlock' || node.type === 'inlineMath') {
+              const richText = await buildRichTextFromSpans(plugin, [
+                { type: node.type, latex: node.latex ?? node.text ?? node.title ?? '' },
+              ]);
+              await runSdkOperation('rem.setText', () => record.rem.setText(richText));
+            }
+            await applyRemStyle(plugin, record.rem, node.style);
+            if (node.clientNodeId) {
+              idMap[node.clientNodeId] = record.rem._id;
+            }
+            createdRemIds.push(record.rem._id);
+            createdNodes.push({
+              remId: record.rem._id,
+              parentId: record.parentId,
+              depth: record.depth,
+              index: record.index,
+              type: node.type ?? 'rem',
+            });
+          }
+          const root = roots[0];
+          const result: CreateStyledRemTreeResult = {
+            rootCreatedRemId: root._id,
+            createdNodeCount: createdRemIds.length,
+            createdRemIds,
+            createdNodes,
+            rootInsertIndex: await getRemSiblingIndex(root),
+            rootInsertPosition: 'end',
+            status: 'created_styled_tree',
+            idempotencyKey,
+            idMap,
+            previewOutline: plan.previewOutline,
+            styleOperationCount: plan.styleOperationCount,
+            mathNodeCount: plan.mathNodeCount,
+            cardNodeCount: plan.cardNodeCount,
+            operationPlan: activePlan,
+            writeEngine: writeEngineExecutionFromPlan(activePlan),
+          };
+          return result;
+        }
+
         const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
         const root = await createNode(tree, parent, rootInsertIndex, 0);
 

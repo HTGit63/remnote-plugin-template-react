@@ -56,6 +56,19 @@ const removedDeleteTools = [
   ['delete', 'focused', 'rem'].join('_'),
   ['delete', 'selected', 'rem'].join('_'),
 ];
+const goal9ToolCategories = new Set([
+  'system',
+  'read',
+  'simple_write',
+  'markdown_note',
+  'structured_note',
+  'design_template',
+  'study_card',
+  'table',
+  'repair',
+  'debug',
+  'danger',
+]);
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -105,8 +118,10 @@ function checkDiagnostics() {
 
 function checkFullAndMetadata() {
   const tools = getPublicMcpToolNames(false, 'danger');
+  const metadataNames = new Set<string>();
   assertNoRemovedTools(tools, 'danger tier');
   assert(!tools.includes('create_folder'), 'danger tier must not expose unsupported create_folder.');
+  assert(!tools.includes('replace_rem'), 'danger tier must not expose hidden replace_rem.');
   for (const tool of tools) {
     const metadata = getToolMetadata(tool);
     assert(metadata.name === tool, `metadata missing for ${tool}.`);
@@ -114,9 +129,28 @@ function checkFullAndMetadata() {
     assert(typeof metadata.supportsDryRun === 'boolean', `metadata supportsDryRun missing for ${tool}.`);
     assert(typeof metadata.runtimeVerified === 'boolean', `metadata runtimeVerified missing for ${tool}.`);
   }
+  for (const metadata of TOOL_METADATA) {
+    assert(!metadataNames.has(metadata.name), `duplicate metadata for ${metadata.name}.`);
+    metadataNames.add(metadata.name);
+    assert(goal9ToolCategories.has(metadata.category), `${metadata.name} has non-Goal9 category ${metadata.category}.`);
+    assert(typeof metadata.operationTier === 'string', `${metadata.name} missing operationTier.`);
+    assert(typeof metadata.scopeRequirement === 'string', `${metadata.name} missing scopeRequirement.`);
+    assert(typeof metadata.toolAccessTier === 'string', `${metadata.name} missing toolAccessTier.`);
+    assert(typeof metadata.sdkCapability === 'string' || metadata.sdkCapability === null, `${metadata.name} missing sdkCapability.`);
+    assert(typeof metadata.isPublic === 'boolean', `${metadata.name} missing isPublic.`);
+    assert(typeof metadata.isDebug === 'boolean', `${metadata.name} missing isDebug.`);
+    assert(typeof metadata.isDangerous === 'boolean', `${metadata.name} missing isDangerous.`);
+    assert(typeof metadata.liveVerificationRequired === 'boolean', `${metadata.name} missing liveVerificationRequired.`);
+    assert(typeof metadata.performanceBudgetMs === 'number' && metadata.performanceBudgetMs > 0, `${metadata.name} missing performanceBudgetMs.`);
+    assert(typeof metadata.userFacingName === 'string' && metadata.userFacingName.length > 0, `${metadata.name} missing userFacingName.`);
+  }
   assert(
     TOOL_METADATA.some((tool) => tool.name === 'create_folder' && tool.exposedNormally === false && tool.sdkSupported === false),
     'create_folder must be metadata-only unsupported.'
+  );
+  assert(
+    TOOL_METADATA.some((tool) => tool.name === 'replace_rem' && tool.isPublic === false && tool.exposedNormally === false),
+    'replace_rem must stay explicitly hidden from the public MCP surface.'
   );
   assert(STATIC_SDK_UNSUPPORTED_TOOLS.includes('create_folder'), 'static SDK unsupported list must retain create_folder.');
 }

@@ -37,6 +37,7 @@
     "test:idempotency": "tsx src/area1-smoke.ts idempotency && tsx src/area3-certification.ts idempotency",
     "test:performance": "tsx src/area1-smoke.ts performance && tsx src/area3-certification.ts performance && tsx src/performance-benchmark.ts",
     "test:e2e-hosted-smoke": "tsx src/routing-smoke.ts && tsx src/area2-smoke.ts && tsx src/area3-certification.ts hosted",
+    "generate-tool-reference": "tsx src/diagnostics/tool-reference-generator.ts",
     "smoke": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/local-mode-smoke.ts && tsx src/smoke.ts",
     "live-test": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/live-test.ts"
   },

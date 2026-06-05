@@ -11,16 +11,30 @@ export type ToolTier = 'basic' | 'note_writer' | 'power_user' | 'developer' | 'd
 export type LegacyToolTier = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
 export type ToolProfile = ToolTier;
 export type ToolCategory =
-  | 'status'
+  | 'system'
   | 'read'
-  | 'write'
-  | 'formatting'
-  | 'batch'
-  | 'cards'
-  | 'diagnostics'
-  | 'delete'
-  | 'debug';
+  | 'simple_write'
+  | 'markdown_note'
+  | 'structured_note'
+  | 'design_template'
+  | 'study_card'
+  | 'table'
+  | 'repair'
+  | 'debug'
+  | 'danger';
 export type ToolRiskLevel = 'low' | 'medium' | 'high' | 'dangerous';
+export type ToolOperationTier =
+  | 'Read Only'
+  | 'Read + Create'
+  | 'Read + Create + Modify'
+  | 'Full Control With Delete Approval'
+  | 'Danger Zone';
+export type ToolScopeRequirement =
+  | 'none'
+  | 'focused-rem'
+  | 'current-rem-tree'
+  | 'approved-root'
+  | 'workspace_allowed';
 
 export interface ToolPolicyEntry {
   name: string;
@@ -34,7 +48,17 @@ export interface ToolMetadata {
   name: string;
   tier: ToolTier | 'unsupported';
   category: ToolCategory;
+  operationTier: ToolOperationTier;
+  scopeRequirement: ToolScopeRequirement;
+  toolAccessTier: ToolTier | 'unsupported';
   riskLevel: ToolRiskLevel;
+  sdkCapability: string | null;
+  isPublic: boolean;
+  isDebug: boolean;
+  isDangerous: boolean;
+  liveVerificationRequired: boolean;
+  performanceBudgetMs: number;
+  userFacingName: string;
   requiresWrite: boolean;
   requiresDelete: boolean;
   supportsDryRun: boolean;
@@ -45,10 +69,11 @@ export interface ToolMetadata {
   exposedNormally: boolean;
   sdkSupported: boolean;
   agentWarning?: string;
+  hiddenReason?: string;
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-06-05.goal8-tier-model';
+export const TOOL_SCHEMA_VERSION = '2026-06-05.goal9-registry-source';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
@@ -77,6 +102,18 @@ export const NOTE_WRITER_TIER_TOOLS = [
   'append_markdown_as_rem_tree',
   'apply_structured_note_batch',
   'verify_note_design',
+  'analyze_note_design',
+  'save_note_design_template',
+  'list_note_design_templates',
+  'preview_note_design_plan',
+  'export_note_design_template',
+  'import_note_design_template',
+  'create_designed_note_tree',
+  'verify_note_against_design',
+  'create_card_set_from_note',
+  'create_flashcards_from_markdown',
+  'create_cloze_cards_from_note',
+  'verify_card_set',
   'create_basic_flashcard',
   'create_cloze_card',
   'create_multiple_choice_card',
@@ -100,6 +137,9 @@ export const POWER_USER_TIER_TOOLS = [
   'set_rem_type',
   'set_hide_bullet',
   'clear_rem_formatting',
+  'update_note_with_design',
+  'repair_note_design',
+  'repair_card_set',
 ] as const;
 
 export const DEVELOPER_TIER_TOOLS = [
@@ -162,6 +202,61 @@ export const TOOL_POLICY_ENTRIES = [
     preferredFor: ['post-write style and structure verification'],
   },
   {
+    name: 'analyze_note_design',
+    policy: 'preferred',
+    preferredFor: ['saving sample-based note designs', 'extracting reusable design rules'],
+  },
+  {
+    name: 'save_note_design_template',
+    policy: 'preferred',
+    preferredFor: ['persisting local design templates'],
+  },
+  {
+    name: 'preview_note_design_plan',
+    policy: 'preferred',
+    preferredFor: ['previewing design changes before writing'],
+  },
+  {
+    name: 'create_designed_note_tree',
+    policy: 'preferred',
+    preferredFor: ['one-call polished note creation from content and a saved template'],
+  },
+  {
+    name: 'verify_note_against_design',
+    policy: 'preferred',
+    preferredFor: ['checking an existing note against a saved design template'],
+  },
+  {
+    name: 'repair_note_design',
+    policy: 'preferred',
+    preferredFor: ['approved repair of note design problems'],
+  },
+  {
+    name: 'create_card_set_from_note',
+    policy: 'preferred',
+    preferredFor: ['creating flashcards from an existing note while keeping the note primary'],
+  },
+  {
+    name: 'create_flashcards_from_markdown',
+    policy: 'preferred',
+    preferredFor: ['creating clean flashcards from Markdown markers'],
+  },
+  {
+    name: 'create_cloze_cards_from_note',
+    policy: 'preferred',
+    preferredFor: ['creating cloze cards from cloze-marked notes'],
+  },
+  {
+    name: 'verify_card_set',
+    policy: 'preferred',
+    preferredFor: ['checking flashcard set cleanliness'],
+  },
+  {
+    name: 'repair_card_set',
+    policy: 'preferred',
+    preferredFor: ['approved repair of flashcard set issues'],
+  },
+  {
     name: 'delete_rem_by_id',
     policy: 'dangerous',
     avoidWhen: ['normal note writing', 'uncertain target identity'],
@@ -182,6 +277,9 @@ export const TOOL_POLICY_ENTRIES = [
   { name: 'get_rem_breadcrumbs', policy: 'read' },
   { name: 'search_rems', policy: 'read' },
   { name: 'get_document_or_folder_tree', policy: 'read' },
+  { name: 'list_note_design_templates', policy: 'read' },
+  { name: 'export_note_design_template', policy: 'read' },
+  { name: 'import_note_design_template', policy: 'fallback' },
   {
     name: 'create_rem',
     policy: 'fallback',
@@ -267,6 +365,124 @@ function tierForTool(name: string): ToolMetadata['tier'] {
   return name === 'create_folder' ? 'unsupported' : 'note_writer';
 }
 
+const WRITE_CATEGORIES = new Set<ToolCategory>([
+  'simple_write',
+  'markdown_note',
+  'structured_note',
+  'design_template',
+  'study_card',
+  'table',
+  'repair',
+  'danger',
+]);
+
+function userFacingNameForTool(name: string): string {
+  return name
+    .split('_')
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function defaultSdkCapability(name: string, category: ToolCategory): string | null {
+  if (name === 'create_folder') return 'no_verified_folder_api';
+  if (
+    name === 'save_note_design_template' ||
+    name === 'list_note_design_templates' ||
+    name === 'export_note_design_template' ||
+    name === 'import_note_design_template'
+  ) {
+    return 'plugin.storage.local';
+  }
+  if (name === 'analyze_note_design' || name === 'preview_note_design_plan' || name === 'verify_note_against_design') {
+    return 'plugin.rem read SDK';
+  }
+  if (
+    name === 'create_designed_note_tree' ||
+    name === 'update_note_with_design' ||
+    name === 'repair_note_design'
+  ) {
+    return 'plugin.rem.createTreeWithMarkdown + style setters';
+  }
+  if (name === 'create_rem' || name === 'create_document') return 'plugin.rem.createSingleRemWithMarkdown';
+  if (
+    name === 'create_rem_tree' ||
+    name === 'create_styled_rem_tree' ||
+    name === 'apply_structured_note_batch' ||
+    name === 'create_polished_note_tree' ||
+    name === 'create_or_replace_note_from_markdown' ||
+    name === 'create_note_from_markdown_tree' ||
+    name === 'append_markdown_as_rem_tree'
+  ) {
+    return 'plugin.rem.createTreeWithMarkdown';
+  }
+  if (category === 'read' || category === 'debug' || category === 'system') return 'bridge_or_read_sdk';
+  if (category === 'study_card') return 'plugin.rem.createRem + card setters';
+  if (category === 'repair') return 'plugin.rem mutation setters';
+  return 'plugin.rem SDK';
+}
+
+function defaultScopeRequirement(
+  name: string,
+  category: ToolCategory,
+  requiresDelete: boolean
+): ToolScopeRequirement {
+  if (requiresDelete || category === 'repair') return 'current-rem-tree';
+  if (name === 'search_rems') return 'workspace_allowed';
+  if (WRITE_CATEGORIES.has(category)) return 'approved-root';
+  if (category === 'read') return 'focused-rem';
+  return 'none';
+}
+
+function defaultPerformanceBudgetMs(name: string, category: ToolCategory): number {
+  if (name === 'run_bridge_health_check') return 12000;
+  if (name === 'search_rems') return 2000;
+  if (
+    category === 'markdown_note' ||
+    category === 'structured_note' ||
+    category === 'design_template' ||
+    category === 'table'
+  ) {
+    return 5000;
+  }
+  if (category === 'simple_write' || category === 'study_card' || category === 'repair' || category === 'danger') return 3000;
+  return 1000;
+}
+
+function operationTierForMetadata(input: {
+  name: string;
+  category: ToolCategory;
+  riskLevel: ToolRiskLevel;
+  requiresWrite: boolean;
+  requiresDelete: boolean;
+}): ToolOperationTier {
+  if (input.requiresDelete || input.riskLevel === 'dangerous') {
+    return 'Full Control With Delete Approval';
+  }
+  if (!input.requiresWrite) {
+    return 'Read Only';
+  }
+  if (input.name === 'create_or_replace_note_from_markdown' || input.name === 'apply_structured_note_batch') {
+    return 'Read + Create + Modify';
+  }
+  if (
+    input.category === 'simple_write' ||
+    input.category === 'markdown_note' ||
+    input.category === 'structured_note' ||
+    input.category === 'design_template' ||
+    input.category === 'study_card' ||
+    input.category === 'table'
+  ) {
+    if (
+      input.name.startsWith('create_') ||
+      input.name.startsWith('append_') ||
+      input.name === 'create_polished_note_tree'
+    ) {
+      return 'Read + Create';
+    }
+  }
+  return 'Read + Create + Modify';
+}
+
 function meta(
   name: string,
   category: ToolCategory,
@@ -275,97 +491,176 @@ function meta(
 ): ToolMetadata {
   const requiresDelete = flags.requiresDelete ?? (riskLevel === 'dangerous' && name.startsWith('delete_'));
   const requiresWrite =
-    flags.requiresWrite ?? (requiresDelete || ['write', 'formatting', 'batch', 'cards', 'delete'].includes(category));
+    flags.requiresWrite ?? (requiresDelete || WRITE_CATEGORIES.has(category));
+  const tier = tierForTool(name);
+  const operationTier =
+    flags.operationTier ??
+    operationTierForMetadata({
+      name,
+      category,
+      riskLevel,
+      requiresWrite,
+      requiresDelete,
+    });
+  const isDangerous = flags.isDangerous ?? (requiresDelete || riskLevel === 'dangerous');
+  const isDebug = flags.isDebug ?? (category === 'debug' || category === 'system');
+  const isPublic =
+    flags.isPublic ?? (tier !== 'unsupported' && flags.exposedNormally !== false && name !== 'replace_rem');
   return {
     name,
-    tier: tierForTool(name),
+    tier,
     category,
+    operationTier,
+    scopeRequirement: flags.scopeRequirement ?? defaultScopeRequirement(name, category, requiresDelete),
+    toolAccessTier: flags.toolAccessTier ?? tier,
     riskLevel,
+    sdkCapability: flags.sdkCapability ?? defaultSdkCapability(name, category),
+    isPublic,
+    isDebug,
+    isDangerous,
+    liveVerificationRequired:
+      flags.liveVerificationRequired ??
+      !(flags.runtimeVerified === true && flags.runtimeVerifiedSource === 'server_local'),
+    performanceBudgetMs: flags.performanceBudgetMs ?? defaultPerformanceBudgetMs(name, category),
+    userFacingName: flags.userFacingName ?? userFacingNameForTool(name),
     requiresWrite,
     requiresDelete,
     supportsDryRun: flags.supportsDryRun ?? false,
     supportsIdempotency: flags.supportsIdempotency ?? false,
-    recommendedForNormalUse: flags.recommendedForNormalUse ?? (tierForTool(name) !== 'developer' && riskLevel !== 'dangerous'),
+    recommendedForNormalUse: flags.recommendedForNormalUse ?? (tier !== 'developer' && riskLevel !== 'dangerous'),
     runtimeVerified: flags.runtimeVerified ?? false,
     runtimeVerifiedSource: flags.runtimeVerifiedSource ?? 'registry_only',
-    exposedNormally: flags.exposedNormally ?? tierForTool(name) !== 'unsupported',
-    sdkSupported: flags.sdkSupported ?? tierForTool(name) !== 'unsupported',
+    exposedNormally: flags.exposedNormally ?? tier !== 'unsupported',
+    sdkSupported: flags.sdkSupported ?? tier !== 'unsupported',
+    agentWarning: flags.agentWarning,
+    hiddenReason: flags.hiddenReason,
   };
 }
 
 export const TOOL_METADATA = [
-  meta('get_bridge_status', 'status', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
-  meta('get_plugin_status', 'status', 'low'),
+  meta('get_bridge_status', 'system', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('get_plugin_status', 'system', 'low'),
   meta('get_focused_rem', 'read', 'low'),
   meta('get_rem', 'read', 'low'),
   meta('get_children', 'read', 'low'),
   meta('get_rem_tree', 'read', 'low'),
   meta('get_rem_breadcrumbs', 'read', 'low'),
   meta('search_rems', 'read', 'low'),
-  meta('create_basic_flashcard', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('create_cloze_card', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('create_multiple_choice_card', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('create_list_answer_card', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('delete_rem_by_id', 'delete', 'dangerous', {
+  meta('create_basic_flashcard', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('create_cloze_card', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('create_multiple_choice_card', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('create_list_answer_card', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('delete_rem_by_id', 'danger', 'dangerous', {
     requiresDelete: true,
     supportsDryRun: true,
     supportsIdempotency: true,
     recommendedForNormalUse: false,
+    hiddenReason: 'delete_rem_by_id is exposed only when REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 and active tool tier is danger.',
     agentWarning:
       'DANGER: delete_rem_by_id is destructive. Default dryRun=true. Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId after user approval.',
   }),
   meta('get_current_selection', 'read', 'low'),
   meta('get_rem_rich', 'read', 'low'),
   meta('get_document_or_folder_tree', 'read', 'low'),
-  meta('create_rem', 'write', 'medium', { supportsIdempotency: true }),
-  meta('create_document', 'write', 'medium', { supportsIdempotency: true }),
-  meta('append_to_rem', 'write', 'medium', { supportsIdempotency: true }),
-  meta('update_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('replace_rem', 'delete', 'dangerous', {
+  meta('create_rem', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('create_document', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('append_to_rem', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('update_rem', 'repair', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('replace_rem', 'danger', 'dangerous', {
     requiresDelete: true,
     supportsDryRun: true,
     supportsIdempotency: true,
     recommendedForNormalUse: false,
     exposedNormally: false,
+    isPublic: false,
+    hiddenReason: 'replace_rem is hidden until replacement guards and readback verification are live-proven safe.',
   }),
-  meta('move_rem', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('reorder_children', 'write', 'high', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('create_rem_tree', 'write', 'medium', { supportsIdempotency: true }),
-  meta('update_rem_rich', 'write', 'high', { supportsIdempotency: true }),
-  meta('create_styled_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('create_polished_note_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('create_or_replace_note_from_markdown', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('preview_markdown_note_tree', 'batch', 'low', {
+  meta('move_rem', 'repair', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('reorder_children', 'repair', 'high', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_rem_tree', 'structured_note', 'medium', { supportsIdempotency: true }),
+  meta('update_rem_rich', 'repair', 'high', { supportsIdempotency: true }),
+  meta('create_styled_rem_tree', 'structured_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_polished_note_tree', 'design_template', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_or_replace_note_from_markdown', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('preview_markdown_note_tree', 'markdown_note', 'low', {
     requiresWrite: false,
+    scopeRequirement: 'none',
     supportsDryRun: true,
     supportsIdempotency: true,
   }),
-  meta('create_note_from_markdown_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('append_markdown_as_rem_tree', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('apply_structured_note_batch', 'batch', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('apply_style_plan', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_note_from_markdown_tree', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('append_markdown_as_rem_tree', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('apply_structured_note_batch', 'structured_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('apply_style_plan', 'repair', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('verify_note_design', 'read', 'low'),
-  meta('apply_remnote_command', 'formatting', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
-  meta('set_rem_heading_level', 'formatting', 'medium'),
-  meta('set_rem_text_color', 'formatting', 'medium'),
-  meta('set_rem_highlight_color', 'formatting', 'medium'),
-  meta('set_text_span_color', 'formatting', 'medium'),
-  meta('set_text_span_highlight', 'formatting', 'medium'),
-  meta('set_rem_type', 'formatting', 'medium'),
-  meta('set_hide_bullet', 'formatting', 'medium'),
-  meta('clear_rem_formatting', 'formatting', 'high'),
-  meta('create_concept_card', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('create_descriptor_card', 'cards', 'medium', { supportsIdempotency: true }),
-  meta('ping_remnote_plugin', 'diagnostics', 'low'),
-  meta('get_bridge_diagnostics', 'diagnostics', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
-  meta('run_bridge_health_check', 'diagnostics', 'high', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
-  meta('get_remnote_capability_guide', 'diagnostics', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('analyze_note_design', 'design_template', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'current-rem-tree',
+    supportsDryRun: true,
+    supportsIdempotency: true,
+  }),
+  meta('save_note_design_template', 'design_template', 'medium', { supportsIdempotency: true }),
+  meta('list_note_design_templates', 'design_template', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    supportsIdempotency: true,
+  }),
+  meta('preview_note_design_plan', 'design_template', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    supportsDryRun: true,
+    supportsIdempotency: true,
+  }),
+  meta('export_note_design_template', 'design_template', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    supportsIdempotency: true,
+  }),
+  meta('import_note_design_template', 'design_template', 'medium', { supportsIdempotency: true }),
+  meta('create_designed_note_tree', 'design_template', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('update_note_with_design', 'repair', 'high', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    agentWarning: 'Existing note design updates require dryRun preview or approved=true for real mutation.',
+  }),
+  meta('verify_note_against_design', 'read', 'low'),
+  meta('repair_note_design', 'repair', 'high', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    agentWarning: 'repair_note_design defaults to dryRun and requires approved=true for real repair.',
+  }),
+  meta('create_card_set_from_note', 'study_card', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_flashcards_from_markdown', 'study_card', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_cloze_cards_from_note', 'study_card', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('verify_card_set', 'read', 'low'),
+  meta('repair_card_set', 'repair', 'high', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    agentWarning: 'repair_card_set defaults to dryRun and requires approved=true for real repair.',
+  }),
+  meta('apply_remnote_command', 'repair', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('set_rem_heading_level', 'repair', 'medium'),
+  meta('set_rem_text_color', 'repair', 'medium'),
+  meta('set_rem_highlight_color', 'repair', 'medium'),
+  meta('set_text_span_color', 'repair', 'medium'),
+  meta('set_text_span_highlight', 'repair', 'medium'),
+  meta('set_rem_type', 'repair', 'medium'),
+  meta('set_hide_bullet', 'repair', 'medium'),
+  meta('clear_rem_formatting', 'repair', 'high'),
+  meta('create_concept_card', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('create_descriptor_card', 'study_card', 'medium', { supportsIdempotency: true }),
+  meta('ping_remnote_plugin', 'debug', 'low'),
+  meta('get_bridge_diagnostics', 'debug', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('run_bridge_health_check', 'debug', 'high', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
+  meta('get_remnote_capability_guide', 'debug', 'low', { runtimeVerified: true, runtimeVerifiedSource: 'server_local' }),
   meta('debug_get_raw_rich_text', 'debug', 'low'),
-  meta('create_folder', 'write', 'medium', {
+  meta('create_folder', 'simple_write', 'medium', {
     requiresWrite: true,
     exposedNormally: false,
+    isPublic: false,
     sdkSupported: false,
     recommendedForNormalUse: false,
+    hiddenReason: 'create_folder is hidden because no modern RemNote SDK folder creation path is live-verified.',
   }),
 ] as const satisfies readonly ToolMetadata[];
 
@@ -400,11 +695,12 @@ export function getToolPolicyEntry(name: string): ToolPolicyEntry {
 }
 
 export function getToolMetadata(name: string): ToolMetadata {
-  return TOOL_METADATA_BY_NAME.get(name) ?? meta(name, 'write', 'medium');
+  return TOOL_METADATA_BY_NAME.get(name) ?? meta(name, 'simple_write', 'medium');
 }
 
 export function isToolVisibleInProfile(name: string, profile: ToolProfile): boolean {
-  if (!getToolMetadata(name).exposedNormally) {
+  const metadata = getToolMetadata(name);
+  if (!metadata.isPublic || !metadata.sdkSupported || !metadata.exposedNormally) {
     return false;
   }
   if (profile === 'danger') {
@@ -464,6 +760,7 @@ export function getProfileHiddenTools(allPublicTools: readonly string[], profile
 }
 
 export function getToolTierSummary(profile: ToolProfile, exposeDeleteTool = false) {
+  const mcpCatalogNames = TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported).map((tool) => tool.name);
   return {
     activeTier: profile,
     aliases: {
@@ -475,35 +772,14 @@ export function getToolTierSummary(profile: ToolProfile, exposeDeleteTool = fals
     },
     tiers: {
       basic: [...BASIC_TIER_TOOLS],
-      note_writer: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'note_writer'),
-      power_user: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'power_user'),
-      developer: filterToolsForProfile(TOOL_METADATA.map((tool) => tool.name), 'developer'),
-      danger: TOOL_METADATA.filter((tool) => tool.exposedNormally && (exposeDeleteTool || tool.name !== 'delete_rem_by_id')).map((tool) => tool.name),
+      note_writer: filterToolsForProfile(mcpCatalogNames, 'note_writer'),
+      power_user: filterToolsForProfile(mcpCatalogNames, 'power_user'),
+      developer: filterToolsForProfile(mcpCatalogNames, 'developer'),
+      danger: mcpCatalogNames.filter((tool) => exposeDeleteTool || tool !== 'delete_rem_by_id'),
     },
   };
 }
 
 export function requiredOperationTierForTool(name: string): string {
-  const metadata = getToolMetadata(name);
-  if (metadata.requiresDelete || metadata.riskLevel === 'dangerous') {
-    return 'Full Control With Delete Approval';
-  }
-  if (!metadata.requiresWrite) {
-    return 'Read Only';
-  }
-  if (name === 'create_or_replace_note_from_markdown' || name === 'apply_structured_note_batch') {
-    return 'Read + Create + Modify';
-  }
-  if (metadata.category === 'write' || metadata.category === 'cards' || metadata.category === 'batch') {
-    if (
-      name.startsWith('create_') ||
-      name.startsWith('append_') ||
-      name === 'apply_structured_note_batch' ||
-      name === 'create_polished_note_tree' ||
-      name === 'create_or_replace_note_from_markdown'
-    ) {
-      return 'Read + Create';
-    }
-  }
-  return 'Read + Create + Modify';
+  return getToolMetadata(name).operationTier;
 }

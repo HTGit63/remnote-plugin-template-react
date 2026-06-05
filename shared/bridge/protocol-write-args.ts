@@ -510,6 +510,221 @@ export interface VerifyNoteDesignArgs extends NoteStylePresetFields {
   expected?: NuclearPhysicsStyleExpected;
 }
 
+export type NoteDesignTemplateSchemaVersion = 1;
+export type NoteDesignConflictBehavior = 'last_write_wins' | 'versioned_reject';
+
+export interface NoteDesignRules {
+  headingPattern: {
+    rootHeadingLevel?: RemHeadingLevel;
+    sectionHeadingLevel?: RemHeadingLevel;
+    headingCounts?: Partial<Record<RemHeadingLevel, number>>;
+    directChildHeadingCounts?: Partial<Record<RemHeadingLevel, number>>;
+  };
+  colorPattern: {
+    textColors?: Record<string, number>;
+    highlightColors?: Record<string, number>;
+    wholeRemHighlights?: Record<string, number>;
+  };
+  spacingPattern: {
+    spacerCount: number;
+    spacerTexts: string[];
+    blankRemCount: number;
+    siblingSpacerLikely: boolean;
+  };
+  mathPattern: {
+    inlineMathCount: number;
+    blockMathCount: number;
+    visibleDelimiterCount: number;
+    malformedMathLikely: boolean;
+  };
+  bulletNesting: {
+    maxDepth: number;
+    maxChildrenPerRem: number;
+    averageChildrenPerNonLeaf: number;
+  };
+  formulaPlacement: {
+    displayFormulasAsSeparateRems: boolean;
+    inlineFormulasInsideText: boolean;
+    rawDisplayDelimitersVisible: boolean;
+  };
+  tableStyle: {
+    tableLikeRemCount: number;
+    markdownTableCount: number;
+    tableHeadings: string[];
+  };
+  cardStyle: {
+    cardLikeRemCount: number;
+    clozeLikeRemCount: number;
+    doubleColonMarkerCount: number;
+  };
+  workedExampleStyle: {
+    workedExampleCount: number;
+    labels: string[];
+  };
+  expectedStyleMap?: ExpectedStyleMap;
+  stylePreset?: NoteStylePreset;
+}
+
+export interface NoteDesignTemplate {
+  schemaVersion: NoteDesignTemplateSchemaVersion;
+  templateId: string;
+  name: string;
+  description?: string;
+  sourceRemId?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+  conflictBehavior: NoteDesignConflictBehavior;
+  rules: NoteDesignRules;
+  localOnly: true;
+}
+
+export interface NoteDesignTemplateSummary {
+  templateId: string;
+  name: string;
+  description?: string;
+  sourceRemId?: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface AnalyzeNoteDesignArgs {
+  rootRemId?: string;
+  sampleRemId?: string;
+  maxDepth?: number;
+  maxNodes?: number;
+}
+
+export interface SaveNoteDesignTemplateArgs {
+  templateId?: string;
+  name: string;
+  description?: string;
+  sourceRemId?: string;
+  rootRemId?: string;
+  rules?: NoteDesignRules;
+  overwrite?: boolean;
+}
+
+export interface ListNoteDesignTemplatesArgs {
+  includeRules?: boolean;
+}
+
+export type NoteDesignPreviewMode = 'create' | 'append' | 'replace_children' | 'repair';
+
+export interface PreviewNoteDesignPlanArgs {
+  templateId?: string;
+  templateJson?: string;
+  targetRemId?: string;
+  parentId?: string;
+  title?: string;
+  content?: string;
+  mode?: NoteDesignPreviewMode;
+  rules?: NoteDesignRules;
+}
+
+export interface ExportNoteDesignTemplateArgs {
+  templateId: string;
+}
+
+export interface ImportNoteDesignTemplateArgs {
+  templateJson: string;
+  overwrite?: boolean;
+}
+
+export type DesignedNoteWritingMode = 'markdown' | 'styled_tree';
+export type DesignedNoteUpdateMode =
+  | 'append_sections'
+  | 'replace_children'
+  | 'repair_structure'
+  | 'convert_markdown_pollution'
+  | 'convert_formulas';
+
+export interface CreateDesignedNoteTreeArgs {
+  parentId: string;
+  title: string;
+  content: string | StyledRemTreeNode;
+  templateId?: string;
+  writingMode?: DesignedNoteWritingMode;
+  dryRun?: boolean;
+  verifyAfterWrite?: boolean;
+  performanceTargetMs?: number;
+  idempotencyKey?: string;
+  maxDepth?: number;
+  maxNodeCount?: number;
+}
+
+export interface UpdateNoteWithDesignArgs {
+  targetRemId: string;
+  mode: DesignedNoteUpdateMode;
+  templateId?: string;
+  content?: string | StyledRemTreeNode;
+  markdownText?: string;
+  styleOperations?: StylingPlanOperation[];
+  dryRun?: boolean;
+  approved?: boolean;
+  verifyAfterWrite?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface VerifyNoteAgainstDesignArgs {
+  rootRemId: string;
+  templateId?: string;
+  rules?: NoteDesignRules;
+  expectedStyleMap?: ExpectedStyleMap;
+}
+
+export interface RepairNoteDesignArgs {
+  rootRemId: string;
+  templateId?: string;
+  operations?: StylingPlanOperation[];
+  dryRun?: boolean;
+  approved?: boolean;
+  verifyAfterWrite?: boolean;
+  idempotencyKey?: string;
+}
+
+export interface CreateCardSetFromNoteArgs {
+  rootRemId: string;
+  parentId?: string;
+  maxCards?: number;
+  dryRun?: boolean;
+  direction?: PracticeDirection;
+  idempotencyKey?: string;
+}
+
+export interface CreateFlashcardsFromMarkdownArgs {
+  parentId: string;
+  markdownText: string;
+  marker?: MarkdownFlashcardMarkerMode;
+  maxCards?: number;
+  dryRun?: boolean;
+  direction?: PracticeDirection;
+  idempotencyKey?: string;
+}
+
+export interface CreateClozeCardsFromNoteArgs {
+  rootRemId: string;
+  parentId?: string;
+  maxCards?: number;
+  dryRun?: boolean;
+  direction?: PracticeDirection;
+  idempotencyKey?: string;
+}
+
+export interface VerifyCardSetArgs {
+  rootRemId: string;
+  maxCards?: number;
+}
+
+export interface RepairCardSetArgs {
+  rootRemId: string;
+  cards?: Array<{ front: string; back: string }>;
+  dryRun?: boolean;
+  approved?: boolean;
+  direction?: PracticeDirection;
+  idempotencyKey?: string;
+}
+
 export interface CreateFlashcardArgs {
   parentId: string;
   front: string;

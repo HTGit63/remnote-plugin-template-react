@@ -380,6 +380,147 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         rootRemId: targetRemId,
         expectations: [{ remId: targetRemId, plainText: fakeRem.plainText, headingLevel: 'H2' }],
       };
+    case 'analyze_note_design':
+      return {
+        rootRemId: targetRemId,
+        maxDepth: 2,
+        maxNodes: 20,
+      };
+    case 'save_note_design_template':
+      return {
+        templateId: 'area3-template',
+        name: 'Area 3 Template',
+        rules: {
+          headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+          colorPattern: {},
+          spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+          mathPattern: { inlineMathCount: 1, blockMathCount: 1, visibleDelimiterCount: 0, malformedMathLikely: false },
+          bulletNesting: { maxDepth: 2, maxChildrenPerRem: 2, averageChildrenPerNonLeaf: 1 },
+          formulaPlacement: { displayFormulasAsSeparateRems: true, inlineFormulasInsideText: true, rawDisplayDelimitersVisible: false },
+          tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+          cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+          workedExampleStyle: { workedExampleCount: 0, labels: [] },
+        },
+        overwrite: true,
+      };
+    case 'list_note_design_templates':
+      return { includeRules: false };
+    case 'preview_note_design_plan':
+      return {
+        templateId: 'area3-template',
+        parentId,
+        title: 'Area 3 Designed Note',
+        content: 'Preview content',
+        mode: 'create',
+      };
+    case 'export_note_design_template':
+      return { templateId: 'area3-template' };
+    case 'import_note_design_template':
+      return {
+        templateJson: JSON.stringify({
+          template: {
+            schemaVersion: 1,
+            templateId: 'area3-template',
+            name: 'Area 3 Template',
+            createdAt: '2026-06-05T00:00:00.000Z',
+            updatedAt: '2026-06-05T00:00:00.000Z',
+            version: 1,
+            conflictBehavior: 'versioned_reject',
+            localOnly: true,
+            rules: {
+              headingPattern: { rootHeadingLevel: 'H1', sectionHeadingLevel: 'H3' },
+              colorPattern: {},
+              spacingPattern: { spacerCount: 0, spacerTexts: [], blankRemCount: 0, siblingSpacerLikely: false },
+              mathPattern: { inlineMathCount: 0, blockMathCount: 0, visibleDelimiterCount: 0, malformedMathLikely: false },
+              bulletNesting: { maxDepth: 1, maxChildrenPerRem: 1, averageChildrenPerNonLeaf: 1 },
+              formulaPlacement: { displayFormulasAsSeparateRems: false, inlineFormulasInsideText: false, rawDisplayDelimitersVisible: false },
+              tableStyle: { tableLikeRemCount: 0, markdownTableCount: 0, tableHeadings: [] },
+              cardStyle: { cardLikeRemCount: 0, clozeLikeRemCount: 0, doubleColonMarkerCount: 0 },
+              workedExampleStyle: { workedExampleCount: 0, labels: [] },
+            },
+          },
+        }),
+        overwrite: true,
+      };
+    case 'create_designed_note_tree':
+      return {
+        parentId,
+        title: 'Area 3 Designed Note',
+        content: '# Area 3 Designed Note\n\nContent',
+        templateId: 'area3-template',
+        writingMode: 'markdown',
+        dryRun: true,
+        verifyAfterWrite: true,
+        performanceTargetMs: 5000,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'update_note_with_design':
+      return {
+        targetRemId,
+        mode: 'append_sections',
+        templateId: 'area3-template',
+        markdownText: '### Added section\n\nContent',
+        dryRun: true,
+        approved: false,
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'verify_note_against_design':
+      return {
+        rootRemId: targetRemId,
+        templateId: 'area3-template',
+      };
+    case 'repair_note_design':
+      return {
+        rootRemId: targetRemId,
+        templateId: 'area3-template',
+        dryRun: true,
+        approved: false,
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'create_card_set_from_note':
+      return {
+        rootRemId: targetRemId,
+        parentId,
+        maxCards: 5,
+        dryRun: true,
+        direction: 'both',
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'create_flashcards_from_markdown':
+      return {
+        parentId,
+        markdownText: 'Area 3 front:: Area 3 back',
+        marker: 'both',
+        maxCards: 5,
+        dryRun: true,
+        direction: 'both',
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'create_cloze_cards_from_note':
+      return {
+        rootRemId: targetRemId,
+        parentId,
+        maxCards: 5,
+        dryRun: true,
+        direction: 'both',
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'verify_card_set':
+      return {
+        rootRemId: targetRemId,
+        maxCards: 5,
+      };
+    case 'repair_card_set':
+      return {
+        rootRemId: targetRemId,
+        cards: [{ front: 'Area 3 front', back: 'Area 3 back' }],
+        dryRun: true,
+        approved: false,
+        direction: 'both',
+        idempotencyKey: idempotencyKey(tool),
+      };
     default:
       throw new Error(`No Area 3 certification args for ${tool}.`);
   }
@@ -540,6 +681,21 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'append_markdown_as_rem_tree':
     case 'apply_style_plan':
     case 'verify_note_design':
+    case 'analyze_note_design':
+    case 'save_note_design_template':
+    case 'list_note_design_templates':
+    case 'preview_note_design_plan':
+    case 'export_note_design_template':
+    case 'import_note_design_template':
+    case 'create_designed_note_tree':
+    case 'update_note_with_design':
+    case 'verify_note_against_design':
+    case 'repair_note_design':
+    case 'create_card_set_from_note':
+    case 'create_flashcards_from_markdown':
+    case 'create_cloze_cards_from_note':
+    case 'verify_card_set':
+    case 'repair_card_set':
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':

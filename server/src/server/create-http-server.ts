@@ -623,15 +623,16 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       const runtimeInfo = runtimeInfoForRequest(req);
       const chatGptPairing = await latestPairingSummary();
       const registry = registrySummary(undefined, chatGptPairing.toolTier ?? config.toolProfile);
+      const bridgeStatus = hub.getStatus();
       if (config.deploymentMode === 'hosted') {
         writeJson(res, 200, {
           ok: true,
           name: 'remnote-chatgpt-bridge-server',
-          deploymentMode: runtimeInfo.deploymentMode,
-          toolCallAuthMode: runtimeInfo.toolCallAuthMode,
-          hostedPairingEnabled: runtimeInfo.hostedPairingEnabled,
-          health: hub.getStatus().connected ? 'plugin_connected' : 'waiting_for_plugin_pairing',
-          pluginConnectionStatus: hub.getStatus().connected ? 'connected' : 'offline',
+          ...runtimeInfo,
+          deployment: runtimeInfo,
+          connected: bridgeStatus.connected,
+          health: bridgeStatus.connected ? 'plugin_connected' : 'waiting_for_plugin_pairing',
+          pluginConnectionStatus: bridgeStatus.connected ? 'connected' : 'offline',
           hostedPairingStatus: chatGptPairing.status,
           sessionStale: chatGptPairing.stale,
           activeToolProfile: registry.activeToolTier,

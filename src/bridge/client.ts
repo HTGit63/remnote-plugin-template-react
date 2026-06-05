@@ -17,7 +17,7 @@ import {
 import { type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
 import type { HostedPairingSession } from './pairing';
-import { getBridgePluginRuntimeInfo } from '../remnote/sdkCapabilities';
+import { getBridgePluginRuntimeInfo } from '../remnote/capabilities';
 
 const PROTOCOL_VERSION = 1;
 const INITIAL_RECONNECT_MS = 500;
