@@ -1,4 +1,4 @@
-# RemNote ChatGPT Bridge
+# RemnoteMCP
 
 Local/hosted MCP bridge for controlled RemNote note reading and writing.
 
@@ -52,6 +52,22 @@ MCP:       http://127.0.0.1:47392/mcp
 Use `REMNOTE_BRIDGE_TOKEN` unless isolated local development explicitly sets `REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1`.
 
 `PLUGIN_NOT_PAIRED` means ChatGPT is hitting a hosted or stale connector path. Local disconnected calls should report `PLUGIN_NOT_CONNECTED`.
+
+## RemNote Plugin UI
+
+The RemNote sidebar widget is `RemnoteMCP`. Default view shows setup status, writing access, design template selection, pending approval, last result, and a quick health check. Developer diagnostics, tool health, raw registry details, and copy-debug actions are behind Advanced.
+
+Registered RemNote commands:
+
+```text
+Open RemnoteMCP
+Run RemnoteMCP Health Check
+Save Focused Note as Design Template
+Use Focused Rem as Approved Root
+Copy MCP URL
+Copy Diagnostics
+Open RemnoteMCP Settings
+```
 
 ## Hosted Mode
 
@@ -126,6 +142,13 @@ npm run server:test:performance
 Hosted MCP calls validate token expiry, issuer/audience, OAuth scopes, RemNote access scope, trusted write mode, and destructive delete scope. Public hosted health/root routes expose only minimal status. `/diagnostics` requires dashboard session or `ADMIN_DEBUG_SECRET` in hosted mode.
 
 See `docs/security/permissions.md`.
+
+Public auth and release readiness:
+
+```text
+docs/public-auth-plan.md
+docs/public-release-checklist.md
+```
 
 ## Required Quality Gates
 

@@ -15,10 +15,10 @@ export function BridgeWidgetHeader({
   return (
     <header className="bridge-hero plugin-header">
       <div className="bridge-mark" aria-hidden="true">
-        RN
+        MCP
       </div>
       <div className="bridge-hero-copy">
-        <h2 className="bridge-title">RemNote Bridge</h2>
+        <h2 className="bridge-title">RemnoteMCP</h2>
         <p className="bridge-subtitle">
           {nextAction}
           {status.activeToolTier || status.toolTier || status.toolProfile

@@ -220,6 +220,7 @@ export async function structuredWriteEngine(
         status: 'already_applied',
         operationPlan: replayPlan,
         writeEngine: writeEngineExecutionFromPlan(replayPlan, { idempotencyReplay: true }),
+        durationMs: Date.now() - startedAt,
       };
     }
   }
@@ -285,6 +286,7 @@ export async function structuredWriteEngine(
       operationPlan,
       writeEngine: writeEngineExecutionFromPlan(operationPlan),
       performance,
+      durationMs: Date.now() - startedAt,
     };
   }
 
@@ -513,6 +515,7 @@ export async function structuredWriteEngine(
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
       performance,
+      durationMs: Date.now() - startedAt,
     };
     rememberStyledTreeResult(idempotencyKey, result);
     return result;
@@ -711,6 +714,7 @@ export async function applyStructuredNoteBatch(
         dryRun: false,
         operationPlan: replayPlan,
         writeEngine: writeEngineExecutionFromPlan(replayPlan, { idempotencyReplay: true }),
+        durationMs: Date.now() - startedAt,
       };
     }
   }
@@ -805,6 +809,7 @@ export async function applyStructuredNoteBatch(
         completed: false,
       },
       performance,
+      durationMs: Date.now() - startedAt,
     };
   }
 
@@ -1068,6 +1073,7 @@ export async function applyStructuredNoteBatch(
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
       performance,
+      durationMs: Date.now() - startedAt,
     };
 
     rememberStructuredBatchResult(idempotencyKey, result);

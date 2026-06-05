@@ -6,6 +6,7 @@ import {
   type ApprovalResolution,
   type BridgeToolProfile,
   type BridgeToolName,
+  type NoteDesignTemplateSummary,
   type PendingApprovalRequest,
   type PermissionMode,
   type PermissionScope,
@@ -41,7 +42,6 @@ import {
 import {
   BridgeTaskBanner,
   BridgeWidgetHeader,
-  RecommendedModeCard,
   ToolProfileSummary,
 } from './components/BridgeWidgetPieces';
 import {
@@ -50,6 +50,10 @@ import {
   toolTierOptions,
 } from './bridge-panel/options';
 import {
+  BRIDGE_COMMAND_INTENT_STORAGE_KEY,
+  type BridgeCommandIntent,
+} from './bridge-panel/command-intents';
+import {
   getPermissionDecision,
   getPermissionModeLabel,
   getPermissionScopeLabel,
@@ -57,6 +61,10 @@ import {
   normalizePermissionScope,
 } from '../remnote/permissions';
 import { getCurrentSelection, getFocusedRemStatus } from '../remnote/read';
+import {
+  listNoteDesignTemplates,
+  saveNoteDesignTemplate,
+} from '../remnote/templates/designTemplates';
 
 const statusToneClass: Record<string, string> = {
   connected: 'bridge-pill bridge-pill-success',
@@ -135,7 +143,7 @@ function summarizeToolAvailability(publicTools: string[] | undefined, mode: Perm
   return { free, gated, blocked };
 }
 
-function companionHttpUrl(serverUrl: string, pathname: '/health' | '/diagnostics'): string {
+function companionHttpUrl(serverUrl: string, pathname: '/health' | '/diagnostics' | '/mcp'): string {
   const url = new URL(serverUrl);
   url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
   if (url.port === '47391') {
@@ -349,10 +357,14 @@ export function BridgeStatusWidget() {
   const [hostedSession, setHostedSession] = useState<HostedPairingSession | null>(null);
   const [selectedToolTier, setSelectedToolTier] = useState<BridgeToolProfile>('note_writer');
   const [toolTierState, setToolTierState] = useState<PluginToolTierState | null>(null);
+  const [savedTemplates, setSavedTemplates] = useState<NoteDesignTemplateSummary[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateStatus, setTemplateStatus] = useState('No template selected.');
   const [pairingEvent, setPairingEvent] = useState('Open ChatGPT connector auth, then enter the Render pairing code here.');
   const [chatGptPairingCode, setChatGptPairingCode] = useState('');
   const [localConnectionLabel, setLocalConnectionLabel] = useState('');
   const [chatGptPairingPreview, setChatGptPairingPreview] = useState<ChatGptPairingPreview | null>(null);
+  const handledIntentIdsRef = useRef<Set<string>>(new Set());
   const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
   const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
@@ -371,8 +383,9 @@ export function BridgeStatusWidget() {
       plugin.storage.getLocal<PermissionMode>('bridge-permission-mode'),
       plugin.storage.getLocal<PermissionScope>('bridge-permission-scope'),
       plugin.storage.getLocal<string>('bridge-approved-root-rem-id'),
+      plugin.storage.getLocal<string>('bridge-selected-template-id'),
     ])
-      .then(([session, storedTier, settingTier, storedMode, storedScope, storedRoot]) => {
+      .then(([session, storedTier, settingTier, storedMode, storedScope, storedRoot, storedTemplateId]) => {
         if (alive) {
           setHostedSession(session);
           setSelectedToolTier(normalizeBridgeToolTier(storedTier ?? settingTier ?? session?.toolTier));
@@ -384,6 +397,10 @@ export function BridgeStatusWidget() {
           }
           if (storedRoot) {
             setRuntimeApprovedRootRemId(storedRoot);
+          }
+          if (storedTemplateId) {
+            setSelectedTemplateId(storedTemplateId);
+            setTemplateStatus('Saved template selected.');
           }
         }
       })
@@ -406,6 +423,10 @@ export function BridgeStatusWidget() {
       const configuredToken = await reactivePlugin.settings.getSetting<string>('bridge-token');
       return configuredToken?.trim() || '';
     }) ?? '';
+
+  const commandIntent = useTracker(async (reactivePlugin) => {
+    return await reactivePlugin.storage.getSession<BridgeCommandIntent>(BRIDGE_COMMAND_INTENT_STORAGE_KEY);
+  });
 
   const configuredPermissionMode = normalizePermissionMode(
     useTracker(async (reactivePlugin) => {
@@ -494,6 +515,25 @@ export function BridgeStatusWidget() {
     verificationMatrix.filter((tool) => tool.runtimeVerified !== true && tool.serverLocalVerified !== true).length;
   const publicUserSummary = publicUserSummaryFrom(lastServerDiagnostics);
 
+  const loadTemplates = useCallback(async () => {
+    try {
+      const result = await listNoteDesignTemplates(plugin, { includeRules: false });
+      const templates = result.templates.filter(
+        (template): template is NoteDesignTemplateSummary =>
+          typeof (template as NoteDesignTemplateSummary).templateId === 'string' &&
+          typeof (template as NoteDesignTemplateSummary).name === 'string'
+      );
+      setSavedTemplates(templates);
+      if (templates.length === 0) {
+        setTemplateStatus('No saved templates yet.');
+      } else if (!selectedTemplateId) {
+        setTemplateStatus(`${templates.length} saved template${templates.length === 1 ? '' : 's'} available.`);
+      }
+    } catch (error: unknown) {
+      setTemplateStatus(error instanceof Error ? error.message : String(error));
+    }
+  }, [plugin, selectedTemplateId]);
+
   useEffect(() => {
     permissionModeRef.current = permissionMode;
   }, [permissionMode]);
@@ -509,6 +549,10 @@ export function BridgeStatusWidget() {
   useEffect(() => {
     pendingRequestRef.current = pendingRequest;
   }, [pendingRequest]);
+
+  useEffect(() => {
+    void loadTemplates();
+  }, [loadTemplates]);
 
   useEffect(() => {
     if (!effectiveHostedSession?.sessionSecret || chatGptPairingDisabled) {
@@ -781,6 +825,47 @@ export function BridgeStatusWidget() {
     await plugin.app.toast('Approved root set to focused Rem.');
   };
 
+  const handleTemplateChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const nextTemplateId = event.target.value;
+    setSelectedTemplateId(nextTemplateId);
+    await plugin.storage.setLocal('bridge-selected-template-id', nextTemplateId);
+    const template = savedTemplates.find((item) => item.templateId === nextTemplateId);
+    setTemplateStatus(template ? `${template.name} selected.` : 'No template selected.');
+  };
+
+  const handleSaveFocusedTemplate = async () => {
+    if (!focusedRemStatus?.remId) {
+      setTemplateStatus('Focus a note before saving a template.');
+      await plugin.app.toast('Focus a note before saving a template.');
+      return;
+    }
+
+    const label = focusedRemStatus.label.replace(/^Focused Rem:\s*/i, '').trim() || 'Focused Note';
+    const result = await saveNoteDesignTemplate(plugin, {
+      rootRemId: focusedRemStatus.remId,
+      sourceRemId: focusedRemStatus.remId,
+      name: `${label} Design`,
+      description: 'Saved from focused Rem in RemnoteMCP.',
+      overwrite: true,
+    });
+    setSelectedTemplateId(result.template.templateId);
+    await plugin.storage.setLocal('bridge-selected-template-id', result.template.templateId);
+    setTemplateStatus(`Saved ${result.template.name}.`);
+    await loadTemplates();
+    await plugin.app.toast('Focused note design template saved.');
+  };
+
+  const handleCopyMcpUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(companionHttpUrl(serverUrl, '/mcp'));
+      setDebugCopyStatus('MCP URL copied.');
+      await plugin.app.toast('MCP URL copied.');
+    } catch {
+      setDebugCopyStatus('MCP URL copy failed.');
+      await plugin.app.toast('Could not copy MCP URL from this RemNote surface.');
+    }
+  };
+
   const handleUseRecommendedNoteMode = async () => {
     const nextScope: PermissionScope = 'focused_rem_and_descendants';
     const nextMode: PermissionMode = 'read_create_modify';
@@ -1047,6 +1132,45 @@ export function BridgeStatusWidget() {
     }
   };
 
+  useEffect(() => {
+    if (!commandIntent?.id || handledIntentIdsRef.current.has(commandIntent.id)) {
+      return;
+    }
+
+    handledIntentIdsRef.current.add(commandIntent.id);
+    void (async () => {
+      try {
+        switch (commandIntent.kind) {
+          case 'run_health_check':
+            await handleHealthCheck('quick');
+            break;
+          case 'save_focused_template':
+            await handleSaveFocusedTemplate();
+            break;
+          case 'use_focused_as_approved_root':
+            await handleUseFocusedAsApprovedRoot();
+            setAccessOpen(true);
+            break;
+          case 'copy_mcp_url':
+            await handleCopyMcpUrl();
+            break;
+          case 'copy_diagnostics':
+            await handleCopyDiagnostics();
+            break;
+          case 'open_settings':
+            setAccessOpen(true);
+            setAdvancedOpen(false);
+            await plugin.app.toast('RemnoteMCP access settings shown.');
+            break;
+          default:
+            break;
+        }
+      } finally {
+        await plugin.storage.setSession(BRIDGE_COMMAND_INTENT_STORAGE_KEY, null);
+      }
+    })();
+  }, [commandIntent?.id]);
+
   const approveLabel = pendingDecision?.destructive
     ? 'Approve Destructive Write'
     : pendingRequest
@@ -1199,69 +1323,65 @@ export function BridgeStatusWidget() {
           onChangeAccess={() => setAccessOpen((open) => !open)}
         />
 
-        <section className="bridge-panel bridge-panel--notice">
+        <section className="bridge-panel bridge-setup-panel">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
-              <h3>ChatGPT Bridge</h3>
-              <p>
-                {chatGptPairingDisabled
-                  ? LOCAL_PAIRING_DISABLED_MESSAGE
-                  : 'Enter the Render pairing code. RemNote plugin must approve before ChatGPT gets access.'}
-              </p>
+              <h3>Setup</h3>
+              <p>Connect, choose scope, pick a template, then approve writes when needed.</p>
             </div>
-            <span
-              className={
-                chatGptPairingDisabled
-                  ? 'bridge-pill bridge-pill-muted'
-                  : chatGptPairingConnected
-                    ? 'bridge-pill bridge-pill-success'
-                    : 'bridge-pill bridge-pill-warning'
-              }
-            >
-              {chatGptPairingDisabled ? 'Disabled' : chatGptPairingConnected ? 'Connected' : 'Not connected'}
+            <span className={ready ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
+              {ready ? 'Ready' : 'Needs check'}
             </span>
           </div>
-          <dl className="bridge-detail-list">
-            <DetailRow
-              label="Status"
-              value={
-                chatGptPairingDisabled
-                  ? 'ChatGPT pairing disabled in local-token mode'
-                  : chatGptPairingConnected
-                    ? 'Connected to ChatGPT'
-                    : 'Not connected'
-              }
-            />
-            <DetailRow
-              label="Connection"
-              value={
-                chatGptPairingDisabled
-                  ? (localConnectionLabel || 'ChatGPT pairing disabled')
-                  : hostedSession?.connectedLabel ?? (localConnectionLabel || 'ChatGPT session')
-              }
-            />
-            <DetailRow label="Access Scope" value={getPermissionScopeLabel(permissionScope)} />
-            <DetailRow label="Write Mode" value={getPermissionModeLabel(permissionMode)} />
-            <DetailRow label="Tool Tier" value={toolTierOptions.find((tier) => tier.value === selectedToolTier)?.label ?? selectedToolTier} />
-            <DetailRow label="Session Refresh" value={sessionStale ? 'Needed' : 'Not needed'} />
-            <DetailRow
-              label="Pairing Status"
-              value={
-                chatGptPairingDisabled
-                  ? LOCAL_PAIRING_DISABLED_MESSAGE
-                  : sessionStale
-                    ? 'Refresh required only for server URL/token changes.'
-                    : pairingEvent
-              }
-            />
-            {chatGptPairingPreview && !chatGptPairingConnected && !chatGptPairingDisabled && (
-              <>
-                <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
-                <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
-              </>
-            )}
-          </dl>
-          {!chatGptPairingConnected && !chatGptPairingDisabled && (
+          <div className="bridge-step-list">
+            <div className="bridge-step">
+              <span className={ready ? 'bridge-step-dot bridge-step-dot--success' : 'bridge-step-dot bridge-step-dot--warning'} />
+              <div>
+                <strong>Connection</strong>
+                <p>{bridgeNextAction}</p>
+              </div>
+            </div>
+            <div className="bridge-step">
+              <span className={permissionScope === 'workspace_allowed' ? 'bridge-step-dot bridge-step-dot--warning' : 'bridge-step-dot bridge-step-dot--success'} />
+              <div>
+                <strong>Writing mode</strong>
+                <p>{getPermissionScopeLabel(permissionScope)} + {getPermissionModeLabel(permissionMode)}</p>
+              </div>
+            </div>
+            <div className="bridge-step">
+              <span className={selectedTemplateId ? 'bridge-step-dot bridge-step-dot--success' : 'bridge-step-dot'} />
+              <div>
+                <strong>Template</strong>
+                <p>{selectedTemplateId ? templateStatus : 'Optional. Save focused note style when ready.'}</p>
+              </div>
+            </div>
+            <div className="bridge-step">
+              <span className={pendingRequest ? 'bridge-step-dot bridge-step-dot--warning' : 'bridge-step-dot bridge-step-dot--success'} />
+              <div>
+                <strong>Approval</strong>
+                <p>{pendingRequest ? `Waiting for ${formatToolName(pendingRequest.tool)}.` : 'No request waiting.'}</p>
+              </div>
+            </div>
+          </div>
+          <div className="bridge-actions">
+            <button type="button" className="bridge-button bridge-button-approve" onClick={handleUseRecommendedNoteMode}>
+              Use Recommended Mode
+            </button>
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={() => handleHealthCheck('quick')}>
+              Health Check
+            </button>
+          </div>
+        </section>
+
+        {!chatGptPairingDisabled && !chatGptPairingConnected && (
+          <section className="bridge-panel bridge-panel--notice">
+            <div className="bridge-section-head">
+              <div className="bridge-heading-copy">
+                <h3>ChatGPT Pairing</h3>
+                <p>Enter the hosted pairing code from ChatGPT. RemNote approval is required before access.</p>
+              </div>
+              <span className="bridge-pill bridge-pill-warning">Not connected</span>
+            </div>
             <div className="bridge-access-editor">
               <label className="bridge-field">
                 Pairing code
@@ -1287,182 +1407,137 @@ export function BridgeStatusWidget() {
                 />
               </label>
             </div>
-          )}
-          <div className="bridge-actions">
-            {!chatGptPairingConnected && !chatGptPairingDisabled && (
-              <>
-                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
-                  Check Code
-                </button>
-                <button type="button" className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
-                  Approve Connection
-                </button>
-                <button type="button" className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
-                  Deny
-                </button>
-              </>
+            {chatGptPairingPreview && (
+              <dl className="bridge-detail-list bridge-detail-list--spaced">
+                <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
+                <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
+              </dl>
             )}
-            <button type="button" className="bridge-button bridge-button-reject" onClick={handleClearPairing}>
-              {chatGptPairingDisabled ? 'Clear Stored Pairing' : 'Disconnect ChatGPT'}
-            </button>
-          </div>
-        </section>
+            <div className="bridge-actions">
+              <button type="button" className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
+                Check Code
+              </button>
+              <button type="button" className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
+                Approve
+              </button>
+              <button type="button" className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
+                Deny
+              </button>
+            </div>
+          </section>
+        )}
 
-        <section className="bridge-panel bridge-tool-tier-panel">
+        <section className="bridge-panel bridge-access-panel">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
-              <h3>Tool Tier</h3>
-              <p>Choose available ChatGPT tools. Changes apply live without reconnect.</p>
+              <h3>Writing Access</h3>
+              <p>Default keeps ChatGPT inside focused Rem and descendants.</p>
             </div>
-            <span className={sessionStale ? 'bridge-pill bridge-pill-warning' : 'bridge-pill bridge-pill-success'}>
-              {sessionStale ? 'Refresh needed' : 'Live'}
-            </span>
-          </div>
-          <label className="bridge-field">
-            Active tool tier
-            <select value={selectedToolTier} onChange={handleToolTierChange}>
-              {toolTierOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="bridge-mode-grid bridge-tool-tier-grid">
-            {toolTierOptions.map((option) => {
-              const selected = selectedToolTier === option.value;
-              const activeOnServer = activeServerToolTier === option.value;
-              const count =
-                toolTierState?.toolCountsByTier?.[option.value] ??
-                toolCountForTier(visibleTierSummary, option.value);
-              return (
-                <div
-                  key={option.value}
-                  className={[
-                    'bridge-mode-card',
-                    selected ? 'bridge-mode-card--success' : 'bridge-mode-card--warning',
-                    selected ? 'bridge-tool-tier-card--selected' : '',
-                  ].join(' ')}
-                >
-                  <span className={['bridge-pill', activeOnServer ? 'bridge-pill-success' : 'bridge-pill-muted'].join(' ')}>
-                    {activeOnServer ? 'Active on server' : 'Not active'}
-                  </span>
-                  <strong>{option.label}</strong>
-                  <p>{count || 0} tools. {option.risk}. {option.description}</p>
-                  {selected && sessionStale && (
-                    <p className="bridge-tier-warning">
-                      Refresh required only for server URL/token changes.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-
-        <section className="bridge-panel bridge-recommendation-panel">
-          <div className="bridge-section-head">
-            <div className="bridge-heading-copy">
-              <h3>Recommended Mode</h3>
-              <p>Best for normal note writing: focused Rem and descendants with create/modify approval.</p>
-            </div>
-            <span className="bridge-pill bridge-pill-success">Recommended</span>
-          </div>
-          <ToolProfileSummary
-            toolProfile={activeServerToolTier}
-            publicToolCount={toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount}
-            allPublicToolCount={toolTierState?.allPublicToolCount ?? bridgeStatus.allPublicToolCount}
-            preferredToolCount={bridgeStatus.preferredTools?.length ?? 0}
-            hiddenByProfileCount={profileHiddenToolCount}
-          />
-          <div className="bridge-mode-grid">
-            <RecommendedModeCard tone="success" badge="Green" title="Focused Rem + Descendants">
-              Vivy can work inside current note and children it creates under it.
-            </RecommendedModeCard>
-            <RecommendedModeCard tone="success" badge="Green" title="Read + Create + Modify">
-              Note-writing tools can create and modify inside the approved scope.
-            </RecommendedModeCard>
-            <RecommendedModeCard tone="warning" badge="Caution" title="Workspace Allowed">
-              Broad testing/search mode. Does not fix unsupported tools.
-            </RecommendedModeCard>
-            <RecommendedModeCard tone="danger" badge="Danger" title="Danger Zone">
-              High-risk mode. Guarded delete requires approval; replace stays hidden.
-            </RecommendedModeCard>
-          </div>
-          <button type="button" className="bridge-button bridge-button-approve bridge-button-full" onClick={handleUseRecommendedNoteMode}>
-            Use Recommended Note Mode
-          </button>
-        </section>
-
-        <section className="bridge-panel">
-          <div className="bridge-section-head">
-            <h3>Access</h3>
             <span className="bridge-pill bridge-pill-accent">{getPermissionModeLabel(permissionMode)}</span>
           </div>
+          <div className="bridge-access-editor bridge-access-editor--always">
+            <label className="bridge-field">
+              Access scope
+              <select value={permissionScope} onChange={handleScopeChange}>
+                {permissionScopeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {getPermissionScopeLabel(option.value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="bridge-field">
+              Write mode
+              <select value={permissionMode} onChange={handleModeChange}>
+                {permissionModeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p className="bridge-field-help">
+            {permissionScopeOptions.find((option) => option.value === permissionScope)?.description}
+          </p>
           <dl className="bridge-detail-list">
-            <DetailRow
-              label="Effective Mode"
-              value={`${getPermissionScopeLabel(permissionScope)} + ${getPermissionModeLabel(permissionMode)}`}
-            />
-            <DetailRow label="ChatGPT Can Access" value={getPermissionScopeLabel(permissionScope)} />
-            <DetailRow label="Writes" value={getPermissionModeLabel(permissionMode)} />
             <DetailRow
               label="Focused Rem"
               value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
             />
             <DetailRow
-              label="Selected Rems"
-              value={
-                currentSelection?.selectionSupported
-                  ? `${currentSelection.selectedRemIds.length} selected`
-                  : 'Selection unavailable'
-              }
+              label="Approved Root"
+              value={approvedRootRemId ?? (permissionScope === 'approved_document_or_folder' ? 'Missing approved root Rem ID' : 'Only needed for Approved Root scope')}
+              mono={Boolean(approvedRootRemId)}
             />
-            <DetailRow label="Pending Request" value={pendingRequest ? formatToolName(pendingRequest.tool) : 'No request waiting'} />
-            <div className="bridge-three-col">
-              <DetailRow label="Free Tools" value={toolAvailability.free} />
-              <DetailRow label="Gated Tools" value={toolAvailability.gated} />
-              <DetailRow label="Hidden Tools" value={hiddenToolCount} />
-            </div>
           </dl>
-          {accessOpen && (
-            <div className="bridge-access-editor">
-              <label className="bridge-field">
-                Access scope
-                <select value={permissionScope} onChange={handleScopeChange}>
-                  {permissionScopeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {getPermissionScopeLabel(option.value)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <p className="bridge-field-help">
-                {permissionScopeOptions.find((option) => option.value === permissionScope)?.description}
-              </p>
-              <label className="bridge-field">
-                Write mode
-                <select value={permissionMode} onChange={handleModeChange}>
-                  {permissionModeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {permissionScope === 'approved_document_or_folder' && (
-                <div className="bridge-inline-actions">
-                  <DetailRow label="Approved Root" value={approvedRootRemId ?? 'Missing approved root Rem ID'} mono />
-                  <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>
-                    Use Focused Rem
-                  </button>
-                </div>
-              )}
+          <div className="bridge-actions">
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>
+              Use Focused as Root
+            </button>
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleCopyMcpUrl}>
+              Copy MCP URL
+            </button>
+          </div>
+        </section>
+
+        <section className="bridge-panel bridge-template-panel">
+          <div className="bridge-section-head">
+            <div className="bridge-heading-copy">
+              <h3>Design Template</h3>
+              <p>Reuse a saved note style for high-level note tools.</p>
             </div>
-          )}
+            <span className="bridge-pill bridge-pill-muted">{savedTemplates.length} saved</span>
+          </div>
+          <label className="bridge-field">
+            Template
+            <select value={selectedTemplateId} onChange={handleTemplateChange}>
+              <option value="">No template</option>
+              {savedTemplates.map((template) => (
+                <option key={template.templateId} value={template.templateId}>
+                  {template.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="bridge-actions">
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleSaveFocusedTemplate}>
+              Save Focused Style
+            </button>
+            <button type="button" className="bridge-button bridge-button-secondary" onClick={loadTemplates}>
+              Refresh Templates
+            </button>
+          </div>
+          <div className="bridge-footnote">{templateStatus}</div>
         </section>
 
         {pendingSection}
+
+        <section className="bridge-panel bridge-result-panel">
+          <div className="bridge-section-head">
+            <div className="bridge-heading-copy">
+              <h3>Last Result</h3>
+              <p>{publicUserSummary ? String(publicUserSummary.message ?? 'Summary ready.') : bridgeStatus.lastEvent}</p>
+            </div>
+            <span className={lastFailedRequest ? 'bridge-pill bridge-pill-danger' : 'bridge-pill bridge-pill-muted'}>
+              {lastFailedRequest ? 'Failure seen' : 'No failure'}
+            </span>
+          </div>
+          <dl className="bridge-detail-list">
+            <DetailRow
+              label="Last Health"
+              value={lastHealthCheck ? (lastHealthCheck.ok === false ? 'Failed' : 'Checked') : 'Not checked yet'}
+            />
+            <DetailRow
+              label="Last Tool Success"
+              value={lastSuccessfulRequest ? `${lastSuccessfulRequest.tool ?? 'request'} ${lastSuccessfulRequest.durationMs ?? ''}ms` : 'No diagnostics fetch yet'}
+            />
+            <DetailRow
+              label="Last Tool Failure"
+              value={lastFailedRequest ? `${lastFailedRequest.tool ?? 'request'} ${lastFailedRequest.errorCode ?? ''}` : 'No failed request in fetched diagnostics'}
+            />
+          </dl>
+        </section>
 
         <section className="bridge-panel">
           <button
@@ -1474,6 +1549,59 @@ export function BridgeStatusWidget() {
           </button>
           {advancedOpen && (
             <div className="bridge-advanced">
+              <section className="bridge-advanced-block">
+                <div className="bridge-section-head">
+                  <div className="bridge-heading-copy">
+                    <h3>Tool Health and Tier</h3>
+                    <p>Developer controls for visible tools, registry truth, and live verification.</p>
+                  </div>
+                  <span className={sessionStale ? 'bridge-pill bridge-pill-warning' : 'bridge-pill bridge-pill-success'}>
+                    {sessionStale ? 'Refresh needed' : 'Live'}
+                  </span>
+                </div>
+                <label className="bridge-field">
+                  Active tool tier
+                  <select value={selectedToolTier} onChange={handleToolTierChange}>
+                    {toolTierOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <ToolProfileSummary
+                  toolProfile={activeServerToolTier}
+                  publicToolCount={toolTierState?.publicToolCount ?? bridgeStatus.publicToolCount}
+                  allPublicToolCount={toolTierState?.allPublicToolCount ?? bridgeStatus.allPublicToolCount}
+                  preferredToolCount={bridgeStatus.preferredTools?.length ?? 0}
+                  hiddenByProfileCount={profileHiddenToolCount}
+                />
+                <div className="bridge-mode-grid bridge-tool-tier-grid">
+                  {toolTierOptions.map((option) => {
+                    const selected = selectedToolTier === option.value;
+                    const activeOnServer = activeServerToolTier === option.value;
+                    const count =
+                      toolTierState?.toolCountsByTier?.[option.value] ??
+                      toolCountForTier(visibleTierSummary, option.value);
+                    return (
+                      <div
+                        key={option.value}
+                        className={[
+                          'bridge-mode-card',
+                          selected ? 'bridge-mode-card--success' : 'bridge-mode-card--warning',
+                          selected ? 'bridge-tool-tier-card--selected' : '',
+                        ].join(' ')}
+                      >
+                        <span className={['bridge-pill', activeOnServer ? 'bridge-pill-success' : 'bridge-pill-muted'].join(' ')}>
+                          {activeOnServer ? 'Active' : 'Inactive'}
+                        </span>
+                        <strong>{option.label}</strong>
+                        <p>{count || 0} tools. {option.risk}. {option.description}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
               <section className="bridge-metrics" aria-label="Bridge summary">
                 <StatusMetric
                   label="Exposed"

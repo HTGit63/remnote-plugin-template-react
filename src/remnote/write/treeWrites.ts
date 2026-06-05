@@ -167,10 +167,11 @@ export async function createRemTree(
   plugin: RNPlugin,
   args: CreateRemTreeArgs
 ): Promise<CreateRemTreeResult> {
+  const startedAt = Date.now();
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-tree');
   const cached = CREATE_TREE_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return { ...cached, durationMs: Date.now() - startedAt };
   }
 
   const validationState: TreeValidationState = { nodeCount: 0 };
@@ -196,6 +197,7 @@ export async function createRemTree(
         rootInsertPosition: 'end',
         status: 'created_tree',
         idempotencyKey,
+        durationMs: Date.now() - startedAt,
       };
       rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
       return result;
@@ -214,6 +216,7 @@ export async function createRemTree(
       rootInsertPosition: args.position ?? 'end',
       status: 'created_tree',
       idempotencyKey,
+      durationMs: Date.now() - startedAt,
     };
     rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
     return result;
@@ -292,6 +295,7 @@ export async function createPolishedNoteTree(
         status: 'already_applied',
         operationPlan: replayPlan,
         writeEngine: writeEngineExecutionFromPlan(replayPlan, { idempotencyReplay: true }),
+        durationMs: Date.now() - startedAt,
       };
     }
   }
@@ -485,6 +489,7 @@ export async function createPolishedNoteTree(
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
       performance,
+      durationMs: Date.now() - startedAt,
     };
 
     if (!args.dryRun) {

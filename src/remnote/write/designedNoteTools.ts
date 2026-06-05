@@ -148,6 +148,7 @@ export async function createDesignedNoteTree(
       writingMode,
       verification: polishedTreeResult.verification,
       performance: polishedTreeResult.performance,
+      durationMs,
       polishedTreeResult,
     };
   }
@@ -188,6 +189,7 @@ export async function createDesignedNoteTree(
     writingMode,
     verification: markdownResult.verification,
     performance: markdownResult.performance,
+    durationMs,
     markdownResult,
   };
 }

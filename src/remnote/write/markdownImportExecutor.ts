@@ -448,6 +448,7 @@ export async function createOrReplaceNoteFromMarkdown(
       ...baseResult,
       status: 'dry_run',
       performance,
+      durationMs: Date.now() - startedAt,
       verification: verifyMarkdownSourceFidelity(
         plan.sourceSnippets,
         markdownImportOutputTextFromTree(plan.tree),
@@ -566,6 +567,7 @@ export async function createOrReplaceNoteFromMarkdown(
           status: 'skipped',
           verification,
           performance,
+          durationMs: Date.now() - startedAt,
         };
         rememberMarkdownImportResult(idempotencyKey, result);
         return result;
@@ -744,6 +746,7 @@ export async function createOrReplaceNoteFromMarkdown(
         ? 'success_with_performance_warning'
         : status,
       performance,
+      durationMs: Date.now() - startedAt,
     };
     rememberMarkdownImportResult(idempotencyKey, result);
     return result;

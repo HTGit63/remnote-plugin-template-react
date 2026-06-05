@@ -153,6 +153,7 @@ export interface CreateRemTreeResult {
   rootInsertPosition?: 'start' | 'end';
   status: 'created_tree';
   idempotencyKey?: string;
+  durationMs?: number;
 }
 
 export interface FormatRemResult {
@@ -227,6 +228,7 @@ export interface CreateStyledRemTreeResult {
   mathNodeCount?: number;
   cardNodeCount?: number;
   performance?: WritePerformanceReport;
+  durationMs?: number;
 }
 
 export interface StructuredNoteBatchVerification {
@@ -320,6 +322,7 @@ export interface ApplyStructuredNoteBatchResult {
     failedRemIds?: string[];
   };
   performance?: WritePerformanceReport;
+  durationMs?: number;
 }
 
 export interface ApplyStylePlanResult {
@@ -413,6 +416,7 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
     splitChunkCount: number;
   };
   performance?: WritePerformanceReport;
+  durationMs?: number;
   fallback?: {
     used: boolean;
     reason?: string;
@@ -518,6 +522,7 @@ export interface CreateDesignedNoteTreeResult {
   writingMode: 'markdown' | 'styled_tree';
   verification?: unknown;
   performance?: WritePerformanceReport;
+  durationMs?: number;
   markdownResult?: CreateOrReplaceNoteFromMarkdownResult;
   polishedTreeResult?: CreatePolishedNoteTreeResult;
 }

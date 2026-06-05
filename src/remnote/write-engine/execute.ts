@@ -63,12 +63,18 @@ export async function executeWriteOperation<T>(
     skipTransaction: options.skipTransaction,
   });
   const transaction = (plugin as TransactionCapablePlugin).app?.transaction;
-  const result =
-    operationPlan.transaction.willUse && typeof transaction === 'function'
-      ? ((await transaction.call((plugin as TransactionCapablePlugin).app, () =>
-          operation(operationPlan)
-        )) as T)
-      : await operation(operationPlan);
+  let result: T | undefined;
+  if (operationPlan.transaction.willUse && typeof transaction === 'function') {
+    await transaction.call((plugin as TransactionCapablePlugin).app, async () => {
+      result = await operation(operationPlan);
+    });
+  } else {
+    result = await operation(operationPlan);
+  }
+
+  if (result === undefined) {
+    throw new Error('Write operation did not return a result.');
+  }
 
   return {
     result,
