@@ -88,6 +88,13 @@ export interface BridgeHubDiagnostics {
   initialSyncTimedOut?: boolean;
   initialSyncWarning?: string;
   sessionRouter?: ReturnType<SessionRouter['getStatus']>;
+  connectorCompatNoAuthTools?: boolean;
+  connectorCompatRouting?:
+    | 'disabled'
+    | 'single_active_plugin_connection'
+    | 'no_active_connection'
+    | 'multiple_active_connections';
+  activePluginConnectionCount?: number;
   activePluginConnections?: Array<{
     connectionId: string;
     userId: string;

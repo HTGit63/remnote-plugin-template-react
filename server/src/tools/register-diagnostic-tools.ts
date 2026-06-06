@@ -102,11 +102,44 @@ export function registerDiagnosticTools({
         deleteToolExposed: registry.deleteToolExposed,
         registryMismatchCount,
       });
+      const lastFailedRequest = lastFailedToolCalls[0] ?? null;
+      const executionSummary = {
+        pluginConnected: diagnostics.status.connected,
+        hostedMode: runtimeInfo?.deploymentMode === 'hosted',
+        connectorCompatNoAuthTools: diagnostics.connectorCompatNoAuthTools ?? false,
+        connectorCompatRouting: diagnostics.connectorCompatRouting ?? 'disabled',
+        activePluginConnectionCount: diagnostics.activePluginConnectionCount ?? diagnostics.activePluginConnections?.length ?? 0,
+        activePluginUsers: (diagnostics.activePluginConnections ?? []).map((connection) => connection.userId),
+        selectedToolTier: registry.activeToolTier,
+        listedToolCount: registry.publicToolCount,
+        callableToolCount: callableTools.length,
+        liveVerifiedToolCount: successfulPluginTools.length,
+        failedToolCount: lastFailedToolCalls.length,
+        lastFailedTool: lastFailedRequest?.mcpTool ?? null,
+        lastErrorCode: lastFailedRequest?.errorCode ?? null,
+        lastErrorLayer: lastFailedRequest
+          ? lastFailedRequest.pluginLifecycle?.length
+            ? 'plugin'
+            : 'server_or_bridge'
+          : null,
+        lastRequestReachedPlugin: lastFailedRequest
+          ? Boolean(lastFailedRequest.pluginLifecycle?.length)
+          : null,
+        lastRemNoteApprovalStatus: lastFailedRequest?.lifecycle.some((event) =>
+          event.phase === 'approval_approved' || event.phase === 'approval_rejected' || event.phase === 'approval_timeout'
+        )
+          ? lastFailedRequest.lifecycle.find((event) =>
+              event.phase === 'approval_approved' || event.phase === 'approval_rejected' || event.phase === 'approval_timeout'
+            )?.phase ?? null
+          : null,
+        lastSdkErrorCode: lastFailedRequest?.sdkUnsupported ? 'SDK_UNSUPPORTED' : null,
+      };
       const result = {
         ...registry,
         ...directWrite,
         ...(runtimeInfo ?? {}),
         ...diagnostics,
+        executionSummary,
         pendingRequests: diagnostics.status.pendingRequests,
         pendingApproval: diagnostics.pending[0] ?? null,
         recentErrors: diagnostics.recentRequests.filter((request) => !request.ok),

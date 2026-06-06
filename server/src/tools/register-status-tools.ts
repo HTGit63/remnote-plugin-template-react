@@ -29,6 +29,10 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
           ...currentRegistry(),
           serverStartedAt: hub.getDiagnostics().startedAt,
           recentRequestCount: hub.getDiagnostics().recentRequests.length,
+          pluginConnected: hub.getStatus().connected,
+          activePluginConnectionCount: hub.getDiagnostics().activePluginConnectionCount ?? 0,
+          connectorCompatNoAuthTools: hub.getDiagnostics().connectorCompatNoAuthTools ?? false,
+          connectorCompatRouting: hub.getDiagnostics().connectorCompatRouting ?? 'disabled',
         },
       },
     })

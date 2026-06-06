@@ -35,20 +35,53 @@ import { getCurrentSelection } from '../../remnote/read';
 
 export function mapSdkError(id: string, error: unknown): BridgeResponse {
   if (error instanceof RemnoteWriteError) {
-    return createBridgeFailure(id, error.code, error.message, error.details);
+    const layer =
+      error.code === 'OUT_OF_SCOPE'
+        ? 'plugin_scope'
+        : error.code === 'PERMISSION_DENIED' || error.code === 'TRUSTED_WRITE_REQUIRED'
+          ? 'plugin_permission'
+          : error.code === 'SDK_UNSUPPORTED' || error.code === 'SDK_ERROR'
+            ? 'sdk'
+            : 'plugin_permission';
+    const recommendedFix =
+      error.code === 'OUT_OF_SCOPE'
+        ? 'Focus the intended root Rem, select the target Rem, or change RemnoteMCP writing scope before retrying.'
+        : error.code === 'TRUSTED_WRITE_REQUIRED'
+          ? 'Approve this write in RemNote, or enable trusted writes inside the approved scope.'
+          : error.code === 'SDK_UNSUPPORTED'
+            ? 'Use the fallback tool shown in diagnostics or upgrade/verify the RemNote plugin SDK capability.'
+            : 'Check RemnoteMCP permission mode, scope, and the target Rem ID, then retry.';
+    return createBridgeFailure(id, error.code, error.message, {
+      ...(error.details && typeof error.details === 'object' ? error.details : {}),
+      layer,
+      code: error.code,
+      recommendedFix,
+    });
   }
 
   const message = error instanceof Error ? error.message : String(error);
 
   if (/not found/i.test(message)) {
-    return createBridgeFailure(id, 'REM_NOT_FOUND', message);
+    return createBridgeFailure(id, 'REM_NOT_FOUND', message, {
+      layer: 'plugin_scope',
+      code: 'REM_NOT_FOUND',
+      recommendedFix: 'Verify the Rem ID still exists and is inside the approved RemnoteMCP scope.',
+    });
   }
 
   if (/missing|empty|too long|exceeds/i.test(message)) {
-    return createBridgeFailure(id, 'INVALID_ARGS', message);
+    return createBridgeFailure(id, 'INVALID_ARGS', message, {
+      layer: 'plugin_permission',
+      code: 'INVALID_ARGS',
+      recommendedFix: 'Fix the tool arguments shown by the error, then retry with a tiny payload first.',
+    });
   }
 
-  return createBridgeFailure(id, 'SDK_ERROR', 'RemNote SDK operation failed.');
+  return createBridgeFailure(id, 'SDK_ERROR', 'RemNote SDK operation failed.', {
+    layer: 'sdk',
+    code: 'SDK_ERROR',
+    recommendedFix: 'Retry with a smaller payload. If it repeats, run diagnostics and use the markdown hierarchy fallback.',
+  });
 }
 
 export function uniqueRemIds(ids: Array<string | null | undefined>): string[] {

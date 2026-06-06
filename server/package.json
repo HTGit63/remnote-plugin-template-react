@@ -14,6 +14,7 @@
     "test:auth": "tsx src/auth-smoke.ts",
     "test:pairing": "tsx src/pairing-smoke.ts",
     "test:routing": "tsx src/routing-smoke.ts",
+    "test:connector-compat-routing": "tsx src/connector-compat-routing-smoke.ts",
     "test:security": "tsx src/auth-smoke.ts",
     "test:boundaries": "tsx src/boundary-smoke.ts",
     "test:tools-core": "tsx src/area1-smoke.ts core && tsx src/area3-certification.ts core",
@@ -36,10 +37,11 @@
     "test:area3": "tsx src/area3-certification.ts all",
     "test:idempotency": "tsx src/area1-smoke.ts idempotency && tsx src/area3-certification.ts idempotency",
     "test:performance": "tsx src/area1-smoke.ts performance && tsx src/area3-certification.ts performance && tsx src/performance-benchmark.ts",
-    "test:e2e-hosted-smoke": "tsx src/routing-smoke.ts && tsx src/area2-smoke.ts && tsx src/area3-certification.ts hosted",
+    "test:e2e-hosted-smoke": "tsx src/routing-smoke.ts && tsx src/connector-compat-routing-smoke.ts && tsx src/area2-smoke.ts && tsx src/area3-certification.ts hosted",
     "generate-tool-reference": "tsx src/diagnostics/tool-reference-generator.ts",
     "smoke": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/local-mode-smoke.ts && tsx src/smoke.ts",
-    "live-test": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/live-test.ts"
+    "live-test": "tsx ../src/remnote/write/style-correctness-regression.ts && tsx src/live-test.ts",
+    "live-tool-smoke": "tsx src/live-tool-smoke.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

@@ -69,6 +69,7 @@ export function failureToToolResult(failure: BridgeFailure): McpToolResult {
     structuredContent: {
       ok: false,
       error: failure.error,
+      lifecycle: failure.lifecycle ?? [],
     },
   };
 }
@@ -104,6 +105,7 @@ export function successToToolResult(response: BridgeResponse, message: string): 
     structuredContent: {
       ok: true,
       result: response.result,
+      lifecycle: response.lifecycle ?? [],
     },
   };
 }

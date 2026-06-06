@@ -201,6 +201,14 @@ export class BridgeHub {
 
   getDiagnostics(): BridgeHubDiagnostics {
     const now = Date.now();
+    const activeConnectionInfos = this.sessionRouter.getActiveConnectionInfos();
+    const connectorCompatRouting = !this.config.connectorCompatNoAuthTools
+      ? 'disabled'
+      : activeConnectionInfos.length === 0
+        ? 'no_active_connection'
+        : activeConnectionInfos.length === 1
+          ? 'single_active_plugin_connection'
+          : 'multiple_active_connections';
     return {
       startedAt: this.startedAt,
       status: this.getStatus(),
@@ -222,7 +230,10 @@ export class BridgeHub {
       initialSyncTimedOut: this.pluginRuntimeInfo?.initialSyncTimedOut,
       initialSyncWarning: this.pluginRuntimeInfo?.initialSyncWarning,
       sessionRouter: this.sessionRouter.getStatus(),
-      activePluginConnections: this.sessionRouter.getActiveConnectionInfos().map((connection) => ({
+      connectorCompatNoAuthTools: this.config.connectorCompatNoAuthTools,
+      connectorCompatRouting,
+      activePluginConnectionCount: activeConnectionInfos.length,
+      activePluginConnections: activeConnectionInfos.map((connection) => ({
         ...connection,
         userId: connection.userId === '__local__' ? '__local__' : hashDiagnosticId(connection.userId),
         pluginSessionId: hashDiagnosticId(connection.pluginSessionId),
@@ -554,6 +565,23 @@ export class BridgeHub {
     | { ok: true; socket: WebSocket; userId: string }
     | { ok: false; error: BridgeErrorCode; message: string } {
     if (this.config.deploymentMode === 'hosted') {
+      if (principal?.authMode === 'connector_compat_noauth') {
+        const singleActive = this.sessionRouter.getSingleActiveConnection();
+        if (!singleActive.ok) {
+          return {
+            ok: false,
+            error: singleActive.error,
+            message: singleActive.message,
+          };
+        }
+
+        return {
+          ok: true,
+          socket: singleActive.connection.socketRef,
+          userId: singleActive.userId,
+        };
+      }
+
       const userId = principal?.userId;
       if (!userId) {
         return {

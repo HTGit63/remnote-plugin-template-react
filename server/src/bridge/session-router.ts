@@ -46,6 +46,11 @@ export interface SessionRouterStatus {
   connectedUsers: string[];
 }
 
+export type SingleActiveConnectionResult =
+  | { ok: true; userId: string; connection: PluginConnection }
+  | { ok: false; error: 'PLUGIN_NOT_CONNECTED'; message: string; activeConnectionCount: 0 }
+  | { ok: false; error: 'DEVICE_CONFLICT'; message: string; activeConnectionCount: number };
+
 // ─── Hello message types ─────────────────────────────────────────────
 
 interface LegacyPluginHello {
@@ -252,6 +257,31 @@ export class SessionRouter {
    */
   getLocalConnection(): PluginConnection | null {
     return this.getConnectionForUser('__local__');
+  }
+
+  getSingleActiveConnection(): SingleActiveConnectionResult {
+    const active = Array.from(this.connections.entries()).filter(([, conn]) => conn.isOpen);
+    if (active.length === 0) {
+      return {
+        ok: false,
+        error: 'PLUGIN_NOT_CONNECTED',
+        message: 'No active RemNote plugin connection is available for connector compatibility routing.',
+        activeConnectionCount: 0,
+      };
+    }
+
+    if (active.length > 1) {
+      return {
+        ok: false,
+        error: 'DEVICE_CONFLICT',
+        message:
+          'Multiple active RemNote plugin connections are available. Connector compatibility routing requires exactly one active plugin connection or normal OAuth pairing.',
+        activeConnectionCount: active.length,
+      };
+    }
+
+    const [userId, connection] = active[0];
+    return { ok: true, userId, connection };
   }
 
   /**

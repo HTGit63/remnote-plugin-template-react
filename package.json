@@ -16,6 +16,7 @@
     "server:test:auth": "npm run test:auth --prefix server",
     "server:test:pairing": "npm run test:pairing --prefix server",
     "server:test:routing": "npm run test:routing --prefix server",
+    "server:test:connector-compat-routing": "npm run test:connector-compat-routing --prefix server",
     "server:test:security": "npm run test:security --prefix server",
     "server:test:boundaries": "npm run test:boundaries --prefix server",
     "server:test:tools-core": "npm run test:tools-core --prefix server",
@@ -43,6 +44,7 @@
     "server:generate-tool-reference": "npm run generate-tool-reference --prefix server",
     "server:test-client": "npm run test-client --prefix server",
     "bridge:live-test": "npm run live-test --prefix server",
+    "bridge:live-tool-smoke": "npm run live-tool-smoke --prefix server",
     "mcp:live-test": "npm run live-test --prefix server"
   },
   "dependencies": {

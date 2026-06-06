@@ -36,6 +36,17 @@ export interface TrustedWriteDecision {
   decidedAt: string;
 }
 
+export interface ToolPermissionBlockDetails {
+  layer: 'server_policy';
+  code: string;
+  toolName: string;
+  requiredAccessScope: ChatGptAccessScope;
+  actualAccessScope: ChatGptAccessScope;
+  permissionMode: PermissionMode;
+  permissionScope: PermissionScope;
+  recommendedFix: string;
+}
+
 let lastTrustedWriteDecision: TrustedWriteDecision | null = null;
 
 const scopeRank: Record<ChatGptAccessScope, number> = {
@@ -169,7 +180,7 @@ export function getDirectWritePolicySnapshot(principal?: AuthenticatedPrincipal)
 export function validateMcpToolPermission(
   body: unknown,
   principal: AuthenticatedPrincipal
-): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; decision?: TrustedWriteDecision } {
+): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; details: ToolPermissionBlockDetails; decision?: TrustedWriteDecision } {
   if (principal.authMode !== 'hosted_oauth' && principal.authMode !== 'connector_compat_noauth') {
     return { ok: true };
   }
@@ -188,6 +199,21 @@ export function validateMcpToolPermission(
     return { ok: true };
   }
 
+  const approvedScope = principal.accessScope ?? 'focused-rem-only';
+  const baseDetails = (
+    code: string,
+    recommendedFix: string
+  ): ToolPermissionBlockDetails => ({
+    layer: 'server_policy',
+    code,
+    toolName: permission.toolName,
+    requiredAccessScope: permission.requiredAccessScope,
+    actualAccessScope: approvedScope,
+    permissionMode: permissionModeForPrincipal(principal),
+    permissionScope: permissionScopeForPrincipal(principal),
+    recommendedFix,
+  });
+
   if (permission.disabled) {
     return {
       ok: false,
@@ -195,10 +221,10 @@ export function validateMcpToolPermission(
       auditReason: 'tool_disabled',
       code: 'TOOL_HIDDEN_BY_PROFILE',
       layer: 'server_policy',
+      details: baseDetails('TOOL_HIDDEN_BY_PROFILE', 'Choose a visible supported tool, or enable the required tool tier/settings first.'),
     };
   }
 
-  const approvedScope = principal.accessScope ?? 'focused-rem-only';
   if (scopeRank[approvedScope] < scopeRank[permission.requiredAccessScope]) {
     return {
       ok: false,
@@ -206,6 +232,12 @@ export function validateMcpToolPermission(
       auditReason: 'insufficient_remnote_access_scope',
       code: 'OUT_OF_SCOPE',
       layer: 'server_policy',
+      details: baseDetails(
+        'OUT_OF_SCOPE',
+        permission.requiredAccessScope === 'current-rem-tree'
+          ? 'Set writing mode/access scope to Focused Rem + descendants, then focus the target root Rem in RemNote.'
+          : 'Approve Workspace access only if this read/write operation truly needs workspace search.'
+      ),
     };
   }
 
@@ -247,6 +279,10 @@ export function validateMcpToolPermission(
         auditReason: 'missing_write_scope',
         code: 'INSUFFICIENT_SCOPE',
         layer: 'server_policy',
+        details: baseDetails(
+          'INSUFFICIENT_SCOPE',
+          'Reconnect the ChatGPT connector with bridge:write scope, or enable the plugin setting that grants safe writes inside the approved scope.'
+        ),
         decision,
       };
     }
@@ -260,6 +296,10 @@ export function validateMcpToolPermission(
         auditReason: 'missing_delete_scope',
         code: 'INSUFFICIENT_SCOPE',
         layer: 'server_policy',
+        details: baseDetails(
+          'INSUFFICIENT_SCOPE',
+          'Enter Danger Zone explicitly and reconnect/authorize a session with bridge:delete. Keep dryRun=true until the target and guard are verified.'
+        ),
       };
     }
 
@@ -274,6 +314,10 @@ export function validateMcpToolPermission(
           auditReason: 'missing_delete_guard',
           code: 'INVALID_ARGS',
           layer: 'server_policy',
+          details: baseDetails(
+            'INVALID_ARGS',
+            'Run delete_rem_by_id with dryRun=true first, then provide confirmTitle plus expectedParentId or expectedAncestorId for real delete.'
+          ),
         };
       }
     }
@@ -287,6 +331,10 @@ export function validateMcpToolPermission(
           auditReason: 'missing_replace_guard',
           code: 'INVALID_ARGS',
           layer: 'server_policy',
+          details: baseDetails(
+            'INVALID_ARGS',
+            'Run replace_rem with dryRun=true first, then include expectedPlainText matching the current Rem before real replacement.'
+          ),
         };
       }
     }

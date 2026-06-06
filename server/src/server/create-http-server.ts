@@ -218,8 +218,14 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       runtimeUnverifiedToolCount: summary.runtimeUnverifiedToolCount,
       lastSuccessfulTool,
       lastFailedTool,
+      lastErrorCode: lastFailedTool?.errorCode ?? null,
+      lastErrorLayer: lastFailedTool?.pluginLifecycle ? 'plugin' : lastFailedTool ? 'server_or_bridge' : null,
+      lastRequestReachedPlugin: lastFailedTool ? Boolean(lastFailedTool.pluginLifecycle?.length) : null,
       averageLatencyMs: averageLatencyMs(diagnostics.recentRequests),
       pluginConnectionStatus: diagnostics.status.connected ? 'connected' : 'offline',
+      connectorCompatNoAuthTools: diagnostics.connectorCompatNoAuthTools ?? config.connectorCompatNoAuthTools,
+      connectorCompatRouting: diagnostics.connectorCompatRouting,
+      activePluginConnectionCount: diagnostics.activePluginConnectionCount ?? 0,
     };
   }
 
@@ -653,6 +659,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       const chatGptPairing = await latestPairingSummary();
       const registry = registrySummary(undefined, chatGptPairing.toolTier ?? config.toolProfile);
       const bridgeStatus = hub.getStatus();
+      const bridgeDiagnostics = hub.getDiagnostics();
       if (config.deploymentMode === 'hosted') {
         writeJson(res, 200, {
           ok: true,
@@ -667,6 +674,9 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           activeToolProfile: registry.activeToolTier,
           publicToolCount: registry.publicToolCount,
           toolRegistryVersion: registry.toolRegistryVersion,
+          connectorCompatNoAuthTools: config.connectorCompatNoAuthTools,
+          connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
+          activePluginConnectionCount: bridgeDiagnostics.activePluginConnectionCount ?? 0,
         });
         return;
       }
@@ -1043,6 +1053,12 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         error: toolPermission.error,
         code: toolPermission.code,
         layer: toolPermission.layer,
+        toolName: toolPermission.details.toolName,
+        requiredAccessScope: toolPermission.details.requiredAccessScope,
+        actualAccessScope: toolPermission.details.actualAccessScope,
+        permissionMode: toolPermission.details.permissionMode,
+        permissionScope: toolPermission.details.permissionScope,
+        recommendedFix: toolPermission.details.recommendedFix,
         directWriteDecision: toolPermission.decision,
       });
       return;
