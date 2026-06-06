@@ -9,6 +9,18 @@ RemnoteMCP is not public-ready. The connector/schema/auth layer is repaired loca
 
 ## Completed In This Pass
 
+- Fixed structured writer transaction return handling.
+- Disabled SDK transactions by default until live transaction proof passes.
+- Made manual recursive structured/tree creation the default path.
+- Put `createTreeWithMarkdown` fast path behind `REMNOTE_BRIDGE_ENABLE_MARKDOWN_TREE_FAST_PATH=1`.
+- Added specific `SDK_CREATE_TREE_UNSUPPORTED`, `SDK_CREATE_TREE_EMPTY_RESULT`, and `TRANSACTION_RETURN_BUG` errors.
+- Fixed safe whole-text highlight path to avoid child Rem pollution.
+- Added child-pollution failure reporting for style-only operations.
+- Fixed `verify_card_set` recognition for plugin-created card variants.
+- Fixed post-mutation readback for `update_rem` and `update_rem_rich`.
+- Removed OAuth security scheme metadata from no-auth connector compatibility tool registration.
+- Added `server/src/live-tool-regression.ts` and `npm run bridge:live-tool-regression`.
+- Added `docs/TOOL_EXECUTION_REPAIR.md`.
 - Restored no-auth MCP discovery for `initialize`, `notifications/initialized`, and `tools/list`.
 - Kept normal `tools/call` auth protected unless local no-token mode or explicit `REMNOTE_BRIDGE_CONNECTOR_COMPAT_NO_AUTH_TOOLS=1`.
 - Added hosted connector compatibility routing: exactly one active plugin connection is routed; zero returns `PLUGIN_NOT_CONNECTED`; multiple returns `DEVICE_CONFLICT`.
@@ -35,7 +47,6 @@ npm run server:test:routing
 npm run server:test:connector-compat-routing
 npm run server:smoke
 npm run server:test:performance
-npm run server:generate-tool-reference
 ```
 
 Build warnings:
@@ -87,11 +98,10 @@ server/reports/live-tool-smoke.md
 Latest local no-plugin run:
 
 ```text
-passed: 1
-failed: 6
-skipped: 26
-listed tools: 63
-reason: RemNote plugin socket not connected; disposable parent Rem ID missing
+command: npm run bridge:live-tool-regression
+result: failed honestly
+reason: ECONNREFUSED 127.0.0.1:47392; local MCP server was not running for live regression
+report: server/reports/live-tool-regression.json
 ```
 
 ## Performance Benchmark

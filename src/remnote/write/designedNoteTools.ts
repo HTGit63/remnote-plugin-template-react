@@ -1,4 +1,5 @@
-import type { PluginRem as Rem, RNPlugin } from '@remnote/plugin-sdk';
+import { RemType } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 import type {
   CardWorkflowCardPlan,
   CardWorkflowResult,
@@ -112,6 +113,78 @@ function requireApproval(tool: string, dryRun: boolean, approved: boolean | unde
       `${tool} requires dryRun=true or approved=true before mutating an existing note.`
     );
   }
+}
+
+function richTextHasClozeMetadata(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(richTextHasClozeMetadata);
+  }
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.cId === 'string' ||
+    record.hiddenCloze === true ||
+    record.revealedCloze === true
+  ) {
+    return true;
+  }
+  return Object.values(record).some(richTextHasClozeMetadata);
+}
+
+async function safeIsCardItem(rem: Rem): Promise<boolean> {
+  try {
+    return await rem.isCardItem();
+  } catch {
+    return false;
+  }
+}
+
+async function safePracticeEnabled(rem: Rem): Promise<boolean> {
+  try {
+    return await rem.getEnablePractice();
+  } catch {
+    return false;
+  }
+}
+
+async function safeRemType(rem: Rem): Promise<RemType | undefined> {
+  try {
+    return await rem.getType();
+  } catch {
+    return rem.type;
+  }
+}
+
+async function getCardItemChildren(rem: Rem): Promise<Rem[]> {
+  const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem()).catch(() => []);
+  const cardItems: Rem[] = [];
+  for (const child of children) {
+    if (await safeIsCardItem(child)) {
+      cardItems.push(child);
+    }
+  }
+  return cardItems;
+}
+
+function cardTypeFromBackText(
+  backText: string,
+  remType: RemType | undefined,
+  cardItemCount: number
+): CardWorkflowCardPlan['cardType'] {
+  if (remType === RemType.CONCEPT) {
+    return 'concept';
+  }
+  if (remType === RemType.DESCRIPTOR) {
+    return 'descriptor';
+  }
+  if (cardItemCount > 0) {
+    return /^Answer:/m.test(backText) && /^Choice:/m.test(backText)
+      ? 'multiple_choice'
+      : 'list_answer';
+  }
+  return 'basic';
 }
 
 export async function createDesignedNoteTree(
@@ -605,24 +678,36 @@ export async function verifyCardSet(
   const cards: CardWorkflowCardPlan[] = [];
   const issues: string[] = [];
   for (const child of children.slice(0, maxCards)) {
+    if (await safeIsCardItem(child)) {
+      continue;
+    }
     const text = await getRemPlainText(plugin, child).catch(() => ({ frontText: '', backText: '', plainText: '' }));
+    const practiceEnabled = await safePracticeEnabled(child);
+    const cardItemChildren = await getCardItemChildren(child);
+    const remType = await safeRemType(child);
     if (text.backText) {
       cards.push({
         front: text.frontText || child._id,
         back: text.backText,
         sourceRemId: child._id,
-        cardType: 'basic',
+        cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
       });
-    } else if (/\{\{.+?\}\}/.test(text.frontText)) {
+    } else if (
+      /\{\{.+?\}\}/.test(text.frontText) ||
+      richTextHasClozeMetadata(child.text as RichTextInterface | undefined)
+    ) {
       cards.push({
         front: text.frontText,
         text: text.frontText,
         sourceRemId: child._id,
         cardType: 'cloze',
       });
-    } else if (text.frontText) {
-      issues.push(`Rem ${child._id} has front text but no back/cloze marker.`);
+    } else if (practiceEnabled) {
+      issues.push(`Rem ${child._id} has practice enabled but no back text or cloze metadata.`);
     }
+  }
+  if (cards.length === 0) {
+    issues.push('No cards recognized under root Rem.');
   }
   return cardWorkflowResult({
     status: 'verified',

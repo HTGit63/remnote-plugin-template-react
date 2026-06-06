@@ -1,5 +1,7 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import type { TransactionCapablePlugin, WriteEngineExecution, WriteOperationPlan } from './types';
+import { sdkTransactionsDisabledByRuntimeFlag } from '../write/runtimeFlags';
+import { RemnoteWriteError } from '../write/writeErrors';
 
 export function sdkTransactionSupported(plugin: RNPlugin): boolean {
   return typeof (plugin as TransactionCapablePlugin).app?.transaction === 'function';
@@ -16,7 +18,8 @@ export function finalizeWriteOperationPlan(
 ): WriteOperationPlan {
   const requested = options.requestTransaction ?? true;
   const supported = sdkTransactionSupported(plugin);
-  const willUse = requested && supported && !options.skipTransaction && !plan.dryRun;
+  const disabledByRuntimeFlag = sdkTransactionsDisabledByRuntimeFlag();
+  const willUse = requested && supported && !options.skipTransaction && !plan.dryRun && !disabledByRuntimeFlag;
   return {
     ...plan,
     transaction: {
@@ -29,9 +32,11 @@ export function finalizeWriteOperationPlan(
           ? 'dry_run'
           : options.skipTransaction
             ? 'nested_transaction_skipped'
-            : supported
-              ? 'transaction_not_requested'
-              : 'sdk_transaction_unavailable',
+            : disabledByRuntimeFlag
+              ? 'sdk_transactions_disabled_by_default'
+              : supported
+                ? 'transaction_not_requested'
+                : 'sdk_transaction_unavailable',
     },
     idempotency: {
       ...plan.idempotency,
@@ -42,12 +47,23 @@ export function finalizeWriteOperationPlan(
 
 export function writeEngineExecutionFromPlan(
   plan: WriteOperationPlan,
-  options: { idempotencyReplay?: boolean } = {}
+  options: {
+    idempotencyReplay?: boolean;
+    transactionReturnedValue?: boolean;
+    callbackReturnedValue?: boolean;
+    fallbackUsed?: boolean;
+    createdRemIdsBeforeError?: string[];
+  } = {}
 ): WriteEngineExecution {
   return {
     transactional: plan.transaction.requested,
+    transactionRequested: plan.transaction.requested,
     transactionSupported: plan.transaction.supported,
     transactionUsed: plan.transaction.willUse,
+    transactionReturnedValue: options.transactionReturnedValue,
+    callbackReturnedValue: options.callbackReturnedValue,
+    fallbackUsed: options.fallbackUsed,
+    createdRemIdsBeforeError: options.createdRemIdsBeforeError,
     idempotencyReplay: Boolean(options.idempotencyReplay),
     persistentHostedIdempotencyPlanned: plan.idempotency.scope === 'hosted_persistent_planned',
   };
@@ -57,28 +73,66 @@ export async function executeWriteOperation<T>(
   plugin: RNPlugin,
   plan: WriteOperationPlan,
   operation: (activePlan: WriteOperationPlan) => Promise<T>,
-  options: { skipTransaction?: boolean } = {}
+  options: {
+    skipTransaction?: boolean;
+    getCreatedRemIds?: () => string[];
+    getFallbackUsed?: () => boolean;
+  } = {}
 ): Promise<{ result: T; operationPlan: WriteOperationPlan; writeEngine: WriteEngineExecution }> {
   const operationPlan = finalizeWriteOperationPlan(plugin, plan, {
     skipTransaction: options.skipTransaction,
   });
   const transaction = (plugin as TransactionCapablePlugin).app?.transaction;
   let result: T | undefined;
+  let transactionReturnedValue: boolean | undefined;
+  let callbackReturnedValue = false;
   if (operationPlan.transaction.willUse && typeof transaction === 'function') {
-    await transaction.call((plugin as TransactionCapablePlugin).app, async () => {
-      result = await operation(operationPlan);
+    const app = (plugin as TransactionCapablePlugin).app;
+    result = await app.transaction!(async () => {
+      const callbackResult = await operation(operationPlan);
+      callbackReturnedValue = callbackResult !== undefined;
+      return callbackResult;
     });
+    transactionReturnedValue = result !== undefined;
   } else {
     result = await operation(operationPlan);
+    callbackReturnedValue = result !== undefined;
+    transactionReturnedValue = operationPlan.transaction.willUse ? false : undefined;
   }
 
   if (result === undefined) {
-    throw new Error('Write operation did not return a result.');
+    const createdRemIdsBeforeError = options.getCreatedRemIds?.() ?? [];
+    throw new RemnoteWriteError(
+      operationPlan.transaction.willUse ? 'TRANSACTION_RETURN_BUG' : 'SDK_ERROR',
+      operationPlan.transaction.willUse
+        ? 'RemNote SDK transaction did not return the callback result.'
+        : 'Write operation did not return a result.',
+      {
+        operationId: operationPlan.operationId,
+        transactionRequested: operationPlan.transaction.requested,
+        transactionSupported: operationPlan.transaction.supported,
+        transactionUsed: operationPlan.transaction.willUse,
+        transactionReturnedValue: false,
+        callbackReturnedValue,
+        fallbackUsed: options.getFallbackUsed?.() ?? false,
+        createdRemIdsBeforeError,
+        partialExecution: {
+          createdRemIds: createdRemIdsBeforeError,
+          failedStage: operationPlan.transaction.willUse ? 'sdk_transaction_return' : 'write_operation_return',
+          rollbackStatus: 'not_attempted',
+        },
+      }
+    );
   }
 
   return {
     result,
     operationPlan,
-    writeEngine: writeEngineExecutionFromPlan(operationPlan),
+    writeEngine: writeEngineExecutionFromPlan(operationPlan, {
+      transactionReturnedValue,
+      callbackReturnedValue,
+      fallbackUsed: options.getFallbackUsed?.() ?? false,
+      createdRemIdsBeforeError: options.getCreatedRemIds?.() ?? [],
+    }),
   };
 }

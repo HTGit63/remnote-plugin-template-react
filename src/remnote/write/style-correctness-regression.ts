@@ -208,8 +208,10 @@ async function main() {
   assert((root.text[0] as Record<string, unknown>)[RICH_TEXT_HIGHLIGHT_FIELD] === undefined, 'Text color corrupted highlight.');
 
   await setRemHighlightColor(plugin, { remId: root._id, color: 'Blue' });
-  assert(await root.getHighlightColor() === 'Blue', 'Whole-Rem highlight not set separately.');
-  assert((root.text[0] as Record<string, unknown>)[RICH_TEXT_FONT_COLOR_FIELD] === 1, 'Whole-Rem highlight corrupted text color.');
+  assert(await root.getHighlightColor() !== 'Blue', 'Safe whole-text highlight used native Rem highlight.');
+  assert(root.text.some((item) => typeof item === 'object' && item !== null && (item as Record<string, unknown>)[RICH_TEXT_HIGHLIGHT_FIELD] === 6), 'Whole-text rich highlight missing.');
+  assert((root.text[0] as Record<string, unknown>)[RICH_TEXT_FONT_COLOR_FIELD] === 1, 'Whole-text highlight corrupted text color.');
+  assert(root.children.length === 0, 'Whole-text highlight created child Rem.');
 
   await setTextSpanColor(plugin, { remId: root._id, text: 'alpha', color: 'Blue' });
   assert(root.text.some((item) => typeof item === 'object' && item !== null && (item as Record<string, unknown>).text === 'alpha' && (item as Record<string, unknown>)[RICH_TEXT_FONT_COLOR_FIELD] === 6), 'Span font color missing.');

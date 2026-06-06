@@ -102,6 +102,7 @@ import {
   finalizeWriteOperationPlan,
   writeEngineExecutionFromPlan,
 } from '../write-engine/execute';
+import { markdownTreeFastPathEnabled } from './runtimeFlags';
 
 type ValidatedSimpleTreeNode = ReturnType<typeof validateTreeNode>;
 
@@ -179,28 +180,40 @@ export async function createRemTree(
   assertTreeLimits(validationState, {}, 'Rem tree');
 
   try {
-    if ((args.position ?? 'end') === 'end' && hasRemSdkApi(plugin, 'createTreeWithMarkdown')) {
+    if (
+      markdownTreeFastPathEnabled() &&
+      (args.position ?? 'end') === 'end' &&
+      hasRemSdkApi(plugin, 'createTreeWithMarkdown')
+    ) {
       const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
-      const createdRoots = await createRemTreeWithMarkdownApi(
-        plugin,
-        simpleTreeNodeToMarkdown(tree),
-        parent
-      );
-      const root = createdRoots[0];
-      const createdRemIds = await collectCreatedTreeRemIds([root]);
-      const rootInsertIndex = await getRemSiblingIndex(root);
-      const result: CreateRemTreeResult = {
-        rootCreatedRemId: root._id,
-        createdNodeCount: createdRemIds.length,
-        createdRemIds,
-        ...(rootInsertIndex !== undefined ? { rootInsertIndex } : {}),
-        rootInsertPosition: 'end',
-        status: 'created_tree',
-        idempotencyKey,
-        durationMs: Date.now() - startedAt,
-      };
-      rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
-      return result;
+      let createdRoots: Rem[] | null = null;
+      try {
+        createdRoots = await createRemTreeWithMarkdownApi(
+          plugin,
+          simpleTreeNodeToMarkdown(tree),
+          parent
+        );
+      } catch {
+        createdRoots = null;
+      }
+
+      if (createdRoots) {
+        const root = createdRoots[0];
+        const createdRemIds = await collectCreatedTreeRemIds([root]);
+        const rootInsertIndex = await getRemSiblingIndex(root);
+        const result: CreateRemTreeResult = {
+          rootCreatedRemId: root._id,
+          createdNodeCount: createdRemIds.length,
+          createdRemIds,
+          ...(rootInsertIndex !== undefined ? { rootInsertIndex } : {}),
+          rootInsertPosition: 'end',
+          status: 'created_tree',
+          idempotencyKey,
+          durationMs: Date.now() - startedAt,
+        };
+        rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
+        return result;
+      }
     }
 
     const created = await createStyledRemTree(plugin, {
@@ -330,6 +343,7 @@ export async function createPolishedNoteTree(
     const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
       const canUseReliableMarkdownTree =
+        markdownTreeFastPathEnabled() &&
         !args.dryRun &&
         !args.stylingPlan?.operations?.length &&
         hasRemSdkApi(plugin, 'createTreeWithMarkdown') &&
@@ -337,51 +351,73 @@ export async function createPolishedNoteTree(
       let created: CreateStyledRemTreeResult;
       if (canUseReliableMarkdownTree) {
         const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
-        const roots = await createRemTreeWithMarkdownApi(
-          plugin,
-          styledNodeToMarkdownLines(presetTree).join('\n'),
-          parent
-        );
-        const records = await collectRemRecordsPreOrder(roots, parent._id);
-        const plannedNodes = flattenStyledNodes(presetTree);
-        for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
-          await applyRemStyle(plugin, records[index].rem, plannedNodes[index].style);
+        let roots: Rem[] | null = null;
+        try {
+          roots = await createRemTreeWithMarkdownApi(
+            plugin,
+            styledNodeToMarkdownLines(presetTree).join('\n'),
+            parent
+          );
+        } catch {
+          roots = null;
         }
-        const root = roots[0];
-        const createdRemIds = await collectCreatedTreeRemIds(roots);
-        created = {
-          rootCreatedRemId: root._id,
-          createdNodeCount: createdRemIds.length,
-          createdRemIds,
-          createdNodes: records.map((record, index) => ({
-            remId: record.rem._id,
-            parentId: record.parentId,
-            depth: record.depth,
-            index: record.index,
-            type: plannedNodes[index]?.type ?? 'rem',
-          })),
-          rootInsertIndex: await getRemSiblingIndex(root),
-          rootInsertPosition: 'end',
-          status: 'created_styled_tree',
-          idempotencyKey,
-          idMap: Object.fromEntries(
-            plannedNodes
-              .map((node, index) => [node.clientNodeId, records[index]?.rem._id] as const)
-              .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1]))
-          ),
-          previewOutline: [presetTree].reduce((outline, node) => {
-            collectStyledTreePlan(node, 0, outline);
-            return outline;
-          }, [] as string[]),
-          styleOperationCount: plannedNodes.reduce(
-            (count, node) => count + (node.style ? Object.values(node.style).filter((value) => value !== undefined).length : 0),
-            0
-          ),
-          mathNodeCount: 0,
-          cardNodeCount: 0,
-          operationPlan: activePlan,
-          writeEngine: writeEngineExecutionFromPlan(activePlan),
-        };
+        if (!roots) {
+          created = await createStyledRemTree(
+            plugin,
+            {
+              parentId: args.parentId,
+              position: 'end',
+              tree: presetTree,
+              dryRun: args.dryRun,
+              idempotencyKey,
+              maxDepth: args.maxDepth,
+              maxNodeCount: args.maxNodeCount,
+            },
+            { skipTransaction: true }
+          );
+        } else {
+          const records = await collectRemRecordsPreOrder(roots, parent._id);
+          const plannedNodes = flattenStyledNodes(presetTree);
+          const root = roots[0];
+          const createdRemIds = await collectCreatedTreeRemIds(roots);
+          createdRemIdsForRollback = createdRemIds;
+          for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
+            await applyRemStyle(plugin, records[index].rem, plannedNodes[index].style);
+          }
+          created = {
+            rootCreatedRemId: root._id,
+            createdNodeCount: createdRemIds.length,
+            createdRemIds,
+            createdNodes: records.map((record, index) => ({
+              remId: record.rem._id,
+              parentId: record.parentId,
+              depth: record.depth,
+              index: record.index,
+              type: plannedNodes[index]?.type ?? 'rem',
+            })),
+            rootInsertIndex: await getRemSiblingIndex(root),
+            rootInsertPosition: 'end',
+            status: 'created_styled_tree',
+            idempotencyKey,
+            idMap: Object.fromEntries(
+              plannedNodes
+                .map((node, index) => [node.clientNodeId, records[index]?.rem._id] as const)
+                .filter((entry): entry is readonly [string, string] => Boolean(entry[0] && entry[1]))
+            ),
+            previewOutline: [presetTree].reduce((outline, node) => {
+              collectStyledTreePlan(node, 0, outline);
+              return outline;
+            }, [] as string[]),
+            styleOperationCount: plannedNodes.reduce(
+              (count, node) => count + (node.style ? Object.values(node.style).filter((value) => value !== undefined).length : 0),
+              0
+            ),
+            mathNodeCount: 0,
+            cardNodeCount: 0,
+            operationPlan: activePlan,
+            writeEngine: writeEngineExecutionFromPlan(activePlan),
+          };
+        }
       } else {
         created = await createStyledRemTree(
           plugin,
@@ -469,7 +505,7 @@ export async function createPolishedNoteTree(
         ],
       };
       return result;
-    });
+    }, { getCreatedRemIds: () => createdRemIdsForRollback });
     const executionDurationMs = Date.now() - executionStartedAt;
     const performance = buildWritePerformanceReport({
       phaseDurationsMs: {

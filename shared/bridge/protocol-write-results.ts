@@ -63,8 +63,13 @@ export interface WriteOperationPlan {
 
 export interface WriteEngineExecution {
   transactional: boolean;
+  transactionRequested?: boolean;
   transactionSupported: boolean;
   transactionUsed: boolean;
+  transactionReturnedValue?: boolean;
+  callbackReturnedValue?: boolean;
+  fallbackUsed?: boolean;
+  createdRemIdsBeforeError?: string[];
   idempotencyReplay: boolean;
   persistentHostedIdempotencyPlanned: boolean;
 }
@@ -115,6 +120,7 @@ export interface UpdateRemResult {
   beforePlainText?: string;
   afterPlainText?: string;
   afterPreviewMarkdown?: string;
+  verification?: Record<string, unknown>;
 }
 
 export interface MoveRemResult {
@@ -570,7 +576,7 @@ export interface CardWorkflowCardPlan {
   text?: string;
   clozeText?: string;
   sourceRemId?: string;
-  cardType: 'basic' | 'cloze';
+  cardType: 'basic' | 'concept' | 'descriptor' | 'cloze' | 'multiple_choice' | 'list_answer';
 }
 
 export interface CardWorkflowResult {

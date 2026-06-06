@@ -82,6 +82,7 @@ import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeE
 import { REMNOTE_COMMAND_RESULT_CACHE, STYLE_PLAN_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getColorFormat, getFreshInsertIndex, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
+import { nativeRemHighlightEnabled } from './runtimeFlags';
 
 async function getDirectChildIds(rem: Rem): Promise<string[]> {
   return (await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem())).map((child) => child._id);
@@ -92,6 +93,22 @@ function withNoChildMutationProof(
   beforeChildIds: readonly string[],
   afterChildIds: readonly string[]
 ): FormatRemResult {
+  const createdChildIds = afterChildIds.filter((id) => !beforeChildIds.includes(id));
+  if (createdChildIds.length > 0) {
+    throw new RemnoteWriteError('PARTIAL_FAILURE', 'Style-only operation created unexpected child Rems.', {
+      remId: result.remId,
+      status: result.status,
+      childIdsBefore: [...beforeChildIds],
+      childIdsAfter: [...afterChildIds],
+      createdChildRemIds: createdChildIds,
+      partialExecution: {
+        createdRemIds: createdChildIds,
+        failedStage: 'style_child_pollution_check',
+        rollbackStatus: 'not_attempted',
+      },
+    });
+  }
+
   return {
     ...result,
     verification: {
@@ -203,20 +220,43 @@ export async function setRemHighlightColor(
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const beforeChildIds = await getDirectChildIds(rem);
   const color = remColorNameFromString(args.color);
-  const format = getColorFormat(color);
-  if (!format) {
+  if (color === 'default') {
     throw new RemnoteWriteError(
       'SDK_UNSUPPORTED',
       'The current RemNote SDK path does not expose clearing whole-Rem highlight color.'
     );
   }
 
-  await runSdkOperation('rem.setHighlightColor', () =>
-    rem.setHighlightColor(format as never)
-  );
+  if (nativeRemHighlightEnabled()) {
+    const format = getColorFormat(color);
+    if (!format) {
+      throw new RemnoteWriteError(
+        'SDK_UNSUPPORTED',
+        `Highlight ${color} is not supported by this SDK.`
+      );
+    }
+    await runSdkOperation('rem.setHighlightColor', () =>
+      rem.setHighlightColor(format as never)
+    );
+    const afterChildIds = await getDirectChildIds(rem);
+    return withNoChildMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, beforeChildIds, afterChildIds);
+  }
 
+  const plain = await getRemPlainString(plugin, rem);
+  if (!plain) {
+    throw new RemnoteWriteError('SDK_UNSUPPORTED', 'NO_TEXT_TO_HIGHLIGHT: Rem has no text to highlight safely.', {
+      remId: rem._id,
+      requestedColor: color,
+    });
+  }
+  const result = await setTextHighlightInRange(
+    plugin,
+    rem,
+    { start: 0, end: plain.length, resolvedPlainText: plain },
+    color
+  );
   const afterChildIds = await getDirectChildIds(rem);
-  return withNoChildMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, beforeChildIds, afterChildIds);
+  return withNoChildMutationProof({ ...result, status: 'highlight_set' }, beforeChildIds, afterChildIds);
 }
 
 export async function setRemType(
@@ -431,11 +471,7 @@ export async function applyRemnoteCommand(
     case 'highlight_green':
     case 'highlight_red': {
       const colorName = command.replace('highlight_', '') as RemColorName;
-      const format = getColorFormat(colorName);
-      if (!format) {
-        throw new RemnoteWriteError('SDK_UNSUPPORTED', `Highlight ${colorName} is not supported by this SDK.`);
-      }
-      await runSdkOperation('rem.setHighlightColor', () => rem.setHighlightColor(format as never));
+      await setRemHighlightColor(plugin, { remId: rem._id, color: colorName });
       break;
     }
     case 'hide_bullet':

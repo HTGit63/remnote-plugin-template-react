@@ -155,8 +155,13 @@ export async function createRemTreeWithMarkdownApi(
   const createTree = remNamespaceApi(plugin).createTreeWithMarkdown;
   if (typeof createTree !== 'function') {
     throw new RemnoteWriteError(
-      'SDK_UNSUPPORTED',
-      'plugin.rem.createTreeWithMarkdown is not available in this RemNote runtime.'
+      'SDK_CREATE_TREE_UNSUPPORTED',
+      'plugin.rem.createTreeWithMarkdown is not available in this RemNote runtime.',
+      {
+        operation: 'rem.createTreeWithMarkdown',
+        markdownLength: markdown.length,
+        parentId: parent._id,
+      }
     );
   }
 
@@ -165,8 +170,12 @@ export async function createRemTreeWithMarkdownApi(
   );
 
   if (!Array.isArray(createdRems) || createdRems.length === 0) {
-    throw new RemnoteWriteError('SDK_ERROR', 'RemNote did not return Rems from createTreeWithMarkdown.', {
+    throw new RemnoteWriteError('SDK_CREATE_TREE_EMPTY_RESULT', 'RemNote did not return Rems from createTreeWithMarkdown.', {
       operation: 'rem.createTreeWithMarkdown',
+      markdownLength: markdown.length,
+      parentId: parent._id,
+      returnedType: Array.isArray(createdRems) ? 'array' : typeof createdRems,
+      returnedArrayLength: Array.isArray(createdRems) ? createdRems.length : undefined,
     });
   }
 
@@ -647,9 +656,14 @@ export async function applyRemStyle(plugin: RNPlugin, rem: Rem, style: RemStyleI
   }
 
   if (normalizedStyle.highlightColor && normalizedStyle.highlightColor !== 'default') {
-    const color = getColorFormat(normalizedStyle.highlightColor);
-    if (color) {
-      await runSdkOperation('rem.setHighlightColor', () => rem.setHighlightColor(color as never));
+    const plain = await getRemPlainString(plugin, rem);
+    if (plain.length > 0) {
+      await setTextHighlightInRange(
+        plugin,
+        rem,
+        { start: 0, end: plain.length, resolvedPlainText: plain },
+        normalizedStyle.highlightColor
+      );
     }
   }
 

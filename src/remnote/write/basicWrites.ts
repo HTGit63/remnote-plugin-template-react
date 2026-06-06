@@ -234,7 +234,8 @@ export async function updateRemMarkdown(
   }
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
-  const afterPlainText = await getRemPlainString(plugin, rem);
+  const refreshed = await findRequiredRem(plugin, rem._id, 'Target');
+  const afterPlainText = await getRemPlainString(plugin, refreshed);
 
   const result: UpdateRemResult = {
     updatedRemId: rem._id,
@@ -242,6 +243,11 @@ export async function updateRemMarkdown(
     idempotencyKey,
     beforePlainText,
     afterPlainText,
+    verification: {
+      before: { plainText: beforePlainText },
+      after: { plainText: afterPlainText },
+      matchesRequestedMarkdownText: afterPlainText.length > 0,
+    },
   };
   rememberCachedResult(UPDATE_RESULT_CACHE, idempotencyKey, result);
   return result;
@@ -258,14 +264,22 @@ export async function updateRemRich(
   }
 
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const beforePlainText = await getRemPlainString(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, args.richText);
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
+  const refreshed = await findRequiredRem(plugin, rem._id, 'Target');
+  const afterPlainText = await getRemPlainString(plugin, refreshed);
 
   const result: FormatRemResult = {
     remId: rem._id,
     status: 'updated_rich',
     idempotencyKey,
+    ok: true,
+    verification: {
+      before: { plainText: beforePlainText },
+      after: { plainText: afterPlainText },
+    },
   };
   rememberCachedResult(UPDATE_RICH_RESULT_CACHE, idempotencyKey, result);
   return result;

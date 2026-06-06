@@ -125,6 +125,7 @@ import {
   verifyStagedReplacement,
 } from '../write-engine/verify';
 import type { WriteOperationPlan } from '../write-engine/types';
+import { markdownTreeFastPathEnabled } from './runtimeFlags';
 
 function styledNodeMarkdownText(node: StyledRemTreeNode): string {
   const direct = node.text ?? node.title;
@@ -387,7 +388,6 @@ export async function structuredWriteEngine(
       created = await createRemWithRichText(plugin, richText, nodeParent, index);
     }
 
-    await applyRemStyle(plugin, created, node.style);
     if (node.clientNodeId) {
       idMap[node.clientNodeId] = created._id;
     }
@@ -399,6 +399,7 @@ export async function structuredWriteEngine(
       index,
       type,
     });
+    await applyRemStyle(plugin, created, node.style);
 
     const children = node.children ?? [];
     for (let childIndex = 0; childIndex < children.length; childIndex += 1) {
@@ -410,66 +411,76 @@ export async function structuredWriteEngine(
 
   try {
     const executionStartedAt = Date.now();
+    let markdownFastPathFallbackUsed = false;
     const executed = await executeWriteOperation(
       plugin,
       operationPlan,
       async (activePlan) => {
         const canUseBulkMarkdownTree =
+          markdownTreeFastPathEnabled() &&
           (args.position ?? 'end') === 'end' &&
           hasRemSdkApi(plugin, 'createTreeWithMarkdown') &&
           canUseMarkdownTreeFastPath(tree);
         if (canUseBulkMarkdownTree) {
-          const roots = await createRemTreeWithMarkdownApi(
-            plugin,
-            styledNodeToMarkdownLines(tree).join('\n'),
-            parent
-          );
-          const records = await collectRemRecordsPreOrder(roots, parent._id);
-          const plannedNodes = flattenStyledNodes(tree);
-          for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
-            const node = plannedNodes[index];
-            const record = records[index];
-            if (node.richText?.length) {
-              const richText = await buildRichTextFromSpans(plugin, node.richText);
-              await runSdkOperation('rem.setText', () => record.rem.setText(richText));
-            } else if (node.type === 'mathBlock' || node.type === 'inlineMath') {
-              const richText = await buildRichTextFromSpans(plugin, [
-                { type: node.type, latex: node.latex ?? node.text ?? node.title ?? '' },
-              ]);
-              await runSdkOperation('rem.setText', () => record.rem.setText(richText));
-            }
-            await applyRemStyle(plugin, record.rem, node.style);
-            if (node.clientNodeId) {
-              idMap[node.clientNodeId] = record.rem._id;
-            }
-            createdRemIds.push(record.rem._id);
-            createdNodes.push({
-              remId: record.rem._id,
-              parentId: record.parentId,
-              depth: record.depth,
-              index: record.index,
-              type: node.type ?? 'rem',
-            });
+          let roots: Rem[] | null = null;
+          try {
+            roots = await createRemTreeWithMarkdownApi(
+              plugin,
+              styledNodeToMarkdownLines(tree).join('\n'),
+              parent
+            );
+          } catch {
+            markdownFastPathFallbackUsed = true;
           }
-          const root = roots[0];
-          const result: CreateStyledRemTreeResult = {
-            rootCreatedRemId: root._id,
-            createdNodeCount: createdRemIds.length,
-            createdRemIds,
-            createdNodes,
-            rootInsertIndex: await getRemSiblingIndex(root),
-            rootInsertPosition: 'end',
-            status: 'created_styled_tree',
-            idempotencyKey,
-            idMap,
-            previewOutline: plan.previewOutline,
-            styleOperationCount: plan.styleOperationCount,
-            mathNodeCount: plan.mathNodeCount,
-            cardNodeCount: plan.cardNodeCount,
-            operationPlan: activePlan,
-            writeEngine: writeEngineExecutionFromPlan(activePlan),
-          };
-          return result;
+
+          if (roots) {
+            const records = await collectRemRecordsPreOrder(roots, parent._id);
+            const plannedNodes = flattenStyledNodes(tree);
+            for (let index = 0; index < Math.min(records.length, plannedNodes.length); index += 1) {
+              const node = plannedNodes[index];
+              const record = records[index];
+              createdRemIds.push(record.rem._id);
+              createdNodes.push({
+                remId: record.rem._id,
+                parentId: record.parentId,
+                depth: record.depth,
+                index: record.index,
+                type: node.type ?? 'rem',
+              });
+              if (node.richText?.length) {
+                const richText = await buildRichTextFromSpans(plugin, node.richText);
+                await runSdkOperation('rem.setText', () => record.rem.setText(richText));
+              } else if (node.type === 'mathBlock' || node.type === 'inlineMath') {
+                const richText = await buildRichTextFromSpans(plugin, [
+                  { type: node.type, latex: node.latex ?? node.text ?? node.title ?? '' },
+                ]);
+                await runSdkOperation('rem.setText', () => record.rem.setText(richText));
+              }
+              await applyRemStyle(plugin, record.rem, node.style);
+              if (node.clientNodeId) {
+                idMap[node.clientNodeId] = record.rem._id;
+              }
+            }
+            const root = roots[0];
+            const result: CreateStyledRemTreeResult = {
+              rootCreatedRemId: root._id,
+              createdNodeCount: createdRemIds.length,
+              createdRemIds,
+              createdNodes,
+              rootInsertIndex: await getRemSiblingIndex(root),
+              rootInsertPosition: 'end',
+              status: 'created_styled_tree',
+              idempotencyKey,
+              idMap,
+              previewOutline: plan.previewOutline,
+              styleOperationCount: plan.styleOperationCount,
+              mathNodeCount: plan.mathNodeCount,
+              cardNodeCount: plan.cardNodeCount,
+              operationPlan: activePlan,
+              writeEngine: writeEngineExecutionFromPlan(activePlan),
+            };
+            return result;
+          }
         }
 
         const rootInsertIndex = await getFreshInsertIndex(plugin, parent, args.position ?? 'end');
@@ -494,7 +505,11 @@ export async function structuredWriteEngine(
         };
         return result;
       },
-      { skipTransaction: options.skipTransaction }
+      {
+        skipTransaction: options.skipTransaction,
+        getCreatedRemIds: () => createdRemIds,
+        getFallbackUsed: () => markdownFastPathFallbackUsed,
+      }
     );
     const executionDurationMs = Date.now() - executionStartedAt;
     const performance = buildWritePerformanceReport({
@@ -942,10 +957,13 @@ export async function applyStructuredNoteBatch(
 
   try {
     const executionStartedAt = Date.now();
-    const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
-      let rootCreatedRemId: string | undefined;
-      let rootInsertIndex: number | undefined;
-      let rootInsertPosition: 'start' | 'end' | undefined;
+    const executed = await executeWriteOperation(
+      plugin,
+      operationPlan,
+      async (activePlan) => {
+        let rootCreatedRemId: string | undefined;
+        let rootInsertIndex: number | undefined;
+        let rootInsertPosition: 'start' | 'end' | undefined;
 
       if (operation === 'create_child_tree') {
         if (!root) {
@@ -1052,8 +1070,10 @@ export async function applyStructuredNoteBatch(
         },
         ...(verification ? { verification } : {}),
       };
-      return result;
-    });
+        return result;
+      },
+      { getCreatedRemIds: () => createdRemIds }
+    );
     const executionDurationMs = Date.now() - executionStartedAt;
     const performance = buildWritePerformanceReport({
       phaseDurationsMs: {

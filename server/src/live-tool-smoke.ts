@@ -98,16 +98,34 @@ async function postRpc(method: string, params: Record<string, unknown>): Promise
     headers.authorization = `Bearer ${bearerToken}`;
   }
 
-  const response = await fetch(mcpUrl, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      method,
-      params,
-    }),
-  });
+  let response: Response;
+  try {
+    response = await fetch(mcpUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        method,
+        params,
+      }),
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      status: 599,
+      text: message,
+      json: {
+        error: {
+          code: 'MCP_ENDPOINT_UNREACHABLE',
+          message,
+          layer: 'mcp_transport',
+          recommendedFix: 'Start the MCP server and reconnect the RemNote plugin, then rerun live regression.',
+        },
+      },
+      durationMs: Date.now() - started,
+    };
+  }
   const text = await response.text();
   let json: unknown = null;
   try {
@@ -514,6 +532,14 @@ function markdownReport(results: ToolSmokeResult[], matrix: ToolMatrixEntry[]): 
   return `${lines.join('\n')}\n`;
 }
 
+function writeSmokeReport(report: JsonRecord) {
+  mkdirSync(reportDir, { recursive: true });
+  writeFileSync(resolve(reportDir, 'live-tool-smoke.json'), `${JSON.stringify(report, null, 2)}\n`);
+  const results = Array.isArray(report.results) ? report.results.filter(isRecord) as unknown as ToolSmokeResult[] : [];
+  const matrix = Array.isArray(report.matrix) ? report.matrix.filter(isRecord) as unknown as ToolMatrixEntry[] : [];
+  writeFileSync(resolve(reportDir, 'live-tool-smoke.md'), markdownReport(results, matrix));
+}
+
 const state: SmokeState = { disposableParentId };
 const init = await postRpc('initialize', {
   protocolVersion: '2024-11-05',
@@ -521,12 +547,46 @@ const init = await postRpc('initialize', {
   clientInfo: { name: 'remnote-live-tool-smoke', version: '1.0.0' },
 });
 if (init.status >= 400) {
-  throw new Error(`MCP initialize failed: ${init.status} ${init.text}`);
+  const result = classifyToolResult(
+    { tool: 'mcp_initialize', category: 'system/read', mutation: 'none', args: () => ({}) },
+    init
+  );
+  const report = {
+    ok: false,
+    generatedAt: new Date().toISOString(),
+    mcpUrl: mcpUrl.replace(/token=[^&]+/g, 'token=REDACTED'),
+    disposableParentId: disposableParentId ? 'provided' : 'missing',
+    allowFocusedRoot,
+    totals: { passed: 0, failed: 1, skipped: 0, listedTools: 0, matrixUnknown: 0 },
+    results: [result],
+    matrix: [],
+  };
+  writeSmokeReport(report);
+  console.log(JSON.stringify(report, null, 2));
+  process.exitCode = 1;
+  process.exit();
 }
 
 const toolsList = await postRpc('tools/list', {});
 if (toolsList.status >= 400) {
-  throw new Error(`MCP tools/list failed: ${toolsList.status} ${toolsList.text}`);
+  const result = classifyToolResult(
+    { tool: 'mcp_tools_list', category: 'system/read', mutation: 'none', args: () => ({}) },
+    toolsList
+  );
+  const report = {
+    ok: false,
+    generatedAt: new Date().toISOString(),
+    mcpUrl: mcpUrl.replace(/token=[^&]+/g, 'token=REDACTED'),
+    disposableParentId: disposableParentId ? 'provided' : 'missing',
+    allowFocusedRoot,
+    totals: { passed: 0, failed: 1, skipped: 0, listedTools: 0, matrixUnknown: 0 },
+    results: [result],
+    matrix: [],
+  };
+  writeSmokeReport(report);
+  console.log(JSON.stringify(report, null, 2));
+  process.exitCode = 1;
+  process.exit();
 }
 
 const listedTools = isRecord(toolsList.json) &&
@@ -587,9 +647,7 @@ const report = {
   matrix,
 };
 
-mkdirSync(reportDir, { recursive: true });
-writeFileSync(resolve(reportDir, 'live-tool-smoke.json'), `${JSON.stringify(report, null, 2)}\n`);
-writeFileSync(resolve(reportDir, 'live-tool-smoke.md'), markdownReport(results, matrix));
+writeSmokeReport(report);
 
 console.log(JSON.stringify(report, null, 2));
 if (!report.ok) {

@@ -69,20 +69,25 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       return undefined as never;
     }
     registeredToolNames.push(name as RegisteredMcpToolName);
-    const requiredScopes = requiredOAuthScopesForTool(name);
+    const configRecord = config as Record<string, unknown>;
+    const existingMeta = (config as { _meta?: Record<string, unknown> })._meta ?? {};
+    const meta =
+      options.toolCallAuthMode === 'hosted_oauth_required'
+        ? {
+            ...existingMeta,
+            securitySchemes: [
+              {
+                type: 'oauth2',
+                scopes: requiredOAuthScopesForTool(name),
+              },
+            ],
+          }
+        : existingMeta;
     return server.registerTool(
       name,
       {
-        ...(config as Record<string, unknown>),
-        _meta: {
-          ...((config as { _meta?: Record<string, unknown> })._meta ?? {}),
-          securitySchemes: [
-            {
-              type: 'oauth2',
-              scopes: requiredScopes,
-            },
-          ],
-        },
+        ...configRecord,
+        _meta: meta,
       } as never,
       handler
     );

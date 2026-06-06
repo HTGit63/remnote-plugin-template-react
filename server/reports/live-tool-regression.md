@@ -1,3 +1,20 @@
+# RemnoteMCP Live Tool Regression
+
+Generated: 2026-06-06T05:55:36.042Z
+Overall: fail
+Smoke exit code: 1
+
+## Acceptance Gate
+
+- Failed tools: 1
+- Gateway failures: 1
+- Structured/markdown failures: 0
+- System/read passed: 0
+- Simple write passed: 0
+- Dangerous real delete ran: no
+
+## Underlying Smoke Report
+
 # RemnoteMCP Live Tool Smoke Report
 
 - MCP URL: http://127.0.0.1:47392/mcp?tool_tier=developer

@@ -79,9 +79,24 @@ REMNOTE_LIVE_TOOL_PARENT_ID="$DISPOSABLE_PARENT_REM_ID" \
 npm run bridge:live-tool-smoke
 ```
 
+## Full Live Regression Harness
+
+This calls through MCP `tools/call`, then writes a separate acceptance report.
+
+```bash
+REMNOTE_BRIDGE_TOKEN="$REMNOTE_BRIDGE_TOKEN" \
+REMNOTE_MCP_URL="$MCP_LOCAL_URL" \
+REMNOTE_LIVE_TOOL_PARENT_ID="$DISPOSABLE_PARENT_REM_ID" \
+npm run bridge:live-tool-regression
+```
+
 Reports are written to:
 
 ```text
 server/reports/live-tool-smoke.json
 server/reports/live-tool-smoke.md
+server/reports/live-tool-regression.json
+server/reports/live-tool-regression.md
 ```
+
+Disposable Rem cleanup: keep all live writes under `$DISPOSABLE_PARENT_REM_ID`, inspect that root in RemNote, then delete it manually or run `delete_rem_by_id` dry-run with title/ancestor guard before any real delete.
