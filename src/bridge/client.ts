@@ -4,6 +4,7 @@ import {
   type BridgePluginRuntimeInfo,
   type BridgePluginRegister,
   type BridgeCancelRequest,
+  type BridgeLifecycleEvent,
   type BridgeRequest,
   type BridgeResponse,
   type BridgeServerHello,
@@ -366,11 +367,31 @@ export class BrowserBridgeClient {
       );
     }
 
+    const responseToSend = this.withResponseSentLifecycle(response as BridgeResponse);
     if (this.cancelledRequestIds.delete((requestOrFailure as BridgeRequest).id)) {
-      return;
+      console.info('Bridge request completed after server cancel; sending terminal response for diagnostics.', {
+        requestId: (requestOrFailure as BridgeRequest).id,
+        ok: responseToSend.ok,
+        errorCode: responseToSend.ok ? undefined : responseToSend.error.code,
+      });
     }
 
-    this.send(response as BridgeResponse);
+    this.send(responseToSend);
+  }
+
+  private withResponseSentLifecycle(response: BridgeResponse): BridgeResponse {
+    const lifecycle: BridgeLifecycleEvent[] = [
+      ...(response.lifecycle ?? []),
+      {
+        phase: 'response_sent',
+        at: new Date().toISOString(),
+        message: 'Plugin sent terminal bridge response to companion server.',
+      },
+    ];
+    return {
+      ...response,
+      lifecycle,
+    } as BridgeResponse;
   }
 
   private isServerHello(message: unknown): message is BridgeServerHello {

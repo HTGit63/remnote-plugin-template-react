@@ -81,6 +81,7 @@ export interface CreateRemResult {
   insertPosition?: 'end';
   status: 'created';
   idempotencyKey?: string;
+  verification?: Record<string, unknown>;
 }
 
 export interface CreateDocumentResult {
@@ -91,6 +92,7 @@ export interface CreateDocumentResult {
   document: true;
   status: 'created_document';
   idempotencyKey?: string;
+  verification?: Record<string, unknown>;
 }
 
 export interface CreateFolderResult {

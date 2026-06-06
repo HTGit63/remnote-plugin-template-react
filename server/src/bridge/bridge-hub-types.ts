@@ -79,6 +79,17 @@ export interface BridgeHubDiagnostics {
   status: BridgeHubStatus;
   pending: BridgeHubRequestSnapshot[];
   recentRequests: BridgeHubRequestOutcome[];
+  lateResponses?: Array<{
+    id: string;
+    receivedAt: string;
+    ok: boolean;
+    errorCode?: string;
+    lifecycle: BridgeLifecycleEvent[];
+    createdRemIds?: string[];
+    updatedRemIds?: string[];
+    deletedRemIds?: string[];
+    partialExecution?: unknown;
+  }>;
   lastHealthCheck: BridgeHealthCheckResult | null;
   pluginRuntime?: BridgePluginRuntimeInfo | null;
   sdkVersion?: string;

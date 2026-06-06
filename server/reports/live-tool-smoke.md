@@ -1,7 +1,7 @@
 # RemnoteMCP Live Tool Smoke Report
 
 - MCP URL: http://127.0.0.1:47392/mcp?tool_tier=developer
-- Generated: 2026-06-06T05:55:36.004Z
+- Generated: 2026-06-06T06:58:12.029Z
 - Passed: 0
 - Failed: 1
 - Skipped: 0
@@ -10,7 +10,7 @@
 
 | Tool | Category | Status | ms | Code | Layer | Reached Plugin | Changed | Fix |
 |---|---|---:|---:|---|---|---:|---:|---|
-| mcp_initialize | system/read | failed | 84 | MCP_ENDPOINT_UNREACHABLE | mcp_transport | no | no | Start the MCP server and reconnect the RemNote plugin, then rerun live regression. |
+| mcp_initialize | system/read | failed | 14 | MCP_ENDPOINT_UNREACHABLE | mcp_transport | no | no | Start the MCP server and reconnect the RemNote plugin, then rerun live regression. |
 
 ## Static Execution Matrix
 

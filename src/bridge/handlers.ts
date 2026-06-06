@@ -1,6 +1,5 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import {
-  type DeleteRemByIdArgs,
   type ApprovalResolution,
   type BridgeLifecycleEvent,
   type BridgeLifecyclePhase,
@@ -16,9 +15,11 @@ import {
   type DebugGetRawRichTextArgs,
   type CreateOrReplaceNoteFromMarkdownArgs,
   WRITE_APPROVAL_TIMEOUT_MS,
+  BRIDGE_TOOL_ANNOTATIONS,
   createBridgeFailure,
   createBridgeSuccess,
   isBridgeToolName,
+  isDryRunRequest,
 } from '../../shared/bridge/protocol';
 import { getPermissionDecision } from '../remnote/permissions';
 import {
@@ -321,6 +322,8 @@ export async function handleBridgeRequest(
 ): Promise<BridgeResponse> {
   const startedAt = Date.now();
   const lifecycle: BridgeLifecycleEvent[] = [];
+  const dryRunRequest = isDryRunRequest(request.tool, request.args);
+  const mutationCandidate = !dryRunRequest && !BRIDGE_TOOL_ANNOTATIONS[request.tool].readOnlyHint;
   let approvalStatus: 'not_required' | 'approved' | 'rejected' | 'timeout' | 'cancelled' | 'denied' | 'failed' =
     'not_required';
   const finish = (
@@ -346,6 +349,7 @@ export async function handleBridgeRequest(
     return responseWithLifecycle;
   };
 
+  recordLifecycle(lifecycle, 'plugin_received', 'Plugin handler received the bridge request.');
   recordLifecycle(lifecycle, 'received', 'Plugin handler received the bridge request.');
   const decision = getPermissionDecision(context.permissionMode, request.tool);
 
@@ -357,20 +361,20 @@ export async function handleBridgeRequest(
 
   try {
     await enforceScope(plugin, request, context);
+    recordLifecycle(lifecycle, 'plugin_validated', 'Request permissions and scope validated.');
     recordLifecycle(lifecycle, 'validated', 'Request permissions and scope validated.');
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
     return finish(response, 'denied');
   }
 
-  let approvalRequired = decision.approvalRequired;
+  let approvalRequired = dryRunRequest ? false : decision.approvalRequired;
   try {
-    approvalRequired =
-      approvalRequired ||
-      ((context.permissionMode === 'read_create' || context.permissionMode === 'read_create_modify') &&
-        (await shouldForceApproval(plugin, request)));
-    if (request.tool === 'delete_rem_by_id' && (request.args as DeleteRemByIdArgs).dryRun !== false) {
-      approvalRequired = false;
+    if (!dryRunRequest) {
+      approvalRequired =
+        approvalRequired ||
+        ((context.permissionMode === 'read_create' || context.permissionMode === 'read_create_modify') &&
+          (await shouldForceApproval(plugin, request)));
     }
   } catch (error: unknown) {
     const response = mapSdkError(request.id, error);
@@ -383,6 +387,7 @@ export async function handleBridgeRequest(
       const timeoutMs = request.timeoutMs
         ? Math.min(request.timeoutMs, WRITE_APPROVAL_TIMEOUT_MS)
         : WRITE_APPROVAL_TIMEOUT_MS;
+      recordLifecycle(lifecycle, 'approval_required', 'Request requires RemNote approval before execution.');
       recordLifecycle(lifecycle, 'waiting_for_chatgpt_permission', 'ChatGPT-side tool permission already completed before this local bridge request.');
       recordLifecycle(lifecycle, 'waiting_for_remnote_approval', 'Request is waiting for RemNote approval.');
       recordLifecycle(lifecycle, 'waiting_for_approval', 'Request is waiting for RemNote approval.');
@@ -451,7 +456,13 @@ export async function handleBridgeRequest(
 
   try {
     let response: BridgeResponse;
+    recordLifecycle(lifecycle, 'execution_started', 'Plugin handler started bridge operation execution.');
     recordLifecycle(lifecycle, 'executing', 'Executing RemNote bridge operation.');
+    if (dryRunRequest) {
+      recordLifecycle(lifecycle, 'dry_run_planned', 'Dry-run request will not mutate RemNote.');
+    } else if (mutationCandidate) {
+      recordLifecycle(lifecycle, 'sdk_mutation_started', 'Request may call RemNote SDK mutation methods.');
+    }
     switch (request.tool) {
       case 'ping':
         response = createBridgeSuccess(request, {
@@ -733,6 +744,9 @@ export async function handleBridgeRequest(
       default:
         response = createBridgeFailure('unknown', 'UNKNOWN_TOOL', 'Unknown bridge tool.');
         break;
+    }
+    if (response.ok && mutationCandidate) {
+      recordLifecycle(lifecycle, 'sdk_mutation_completed', 'RemNote SDK mutation returned a bridge result.');
     }
     return finish(response, approvalStatus);
   } catch (error: unknown) {

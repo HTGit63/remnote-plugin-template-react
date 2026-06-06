@@ -1,6 +1,8 @@
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { ChatGptAccessScope } from './storage/types.js';
 import type { PermissionMode, PermissionScope } from '../../shared/bridge/protocol.js';
+import { isDryRunRequest } from '../../shared/bridge/protocol.js';
+import { bridgeToolNameForPublicMcpTool } from './mcp-tool-map.js';
 
 export type ToolPermissionCategory = 'read' | 'write' | 'destructive' | 'status';
 
@@ -200,6 +202,19 @@ export function validateMcpToolPermission(
   }
 
   const approvedScope = principal.accessScope ?? 'focused-rem-only';
+  const args =
+    typeof request.params.arguments === 'object' && request.params.arguments !== null && !Array.isArray(request.params.arguments)
+      ? request.params.arguments as Record<string, unknown>
+      : {};
+  const bridgeToolName = bridgeToolNameForPublicMcpTool(request.params.name);
+  const dryRunRequest = bridgeToolName ? isDryRunRequest(bridgeToolName, args as never) : false;
+  let requiredAccessScope = permission.requiredAccessScope;
+  if (request.params.name === 'search_rems') {
+    const hasContextRemId = typeof args.contextRemId === 'string' && args.contextRemId.trim().length > 0;
+    if (hasContextRemId || approvedScope === 'current-rem-tree') {
+      requiredAccessScope = 'current-rem-tree';
+    }
+  }
   const baseDetails = (
     code: string,
     recommendedFix: string
@@ -207,7 +222,7 @@ export function validateMcpToolPermission(
     layer: 'server_policy',
     code,
     toolName: permission.toolName,
-    requiredAccessScope: permission.requiredAccessScope,
+    requiredAccessScope,
     actualAccessScope: approvedScope,
     permissionMode: permissionModeForPrincipal(principal),
     permissionScope: permissionScopeForPrincipal(principal),
@@ -225,7 +240,7 @@ export function validateMcpToolPermission(
     };
   }
 
-  if (scopeRank[approvedScope] < scopeRank[permission.requiredAccessScope]) {
+  if (scopeRank[approvedScope] < scopeRank[requiredAccessScope]) {
     return {
       ok: false,
       error: 'This tool requires a broader RemNote access scope. Reconnect and approve the required scope.',
@@ -234,7 +249,7 @@ export function validateMcpToolPermission(
       layer: 'server_policy',
       details: baseDetails(
         'OUT_OF_SCOPE',
-        permission.requiredAccessScope === 'current-rem-tree'
+        requiredAccessScope === 'current-rem-tree'
           ? 'Set writing mode/access scope to Focused Rem + descendants, then focus the target root Rem in RemNote.'
           : 'Approve Workspace access only if this read/write operation truly needs workspace search.'
       ),
@@ -242,12 +257,8 @@ export function validateMcpToolPermission(
   }
 
   const scopeGrants = new Set(principal.scopeGrants);
-  const args =
-    typeof request.params.arguments === 'object' && request.params.arguments !== null && !Array.isArray(request.params.arguments)
-      ? request.params.arguments as Record<string, unknown>
-      : {};
 
-  if (permission.requiresTrustedWrite) {
+  if (permission.requiresTrustedWrite && !dryRunRequest) {
     const trustedWriteModeEffective = principal.trustedWriteMode === 'trusted-inside-scope';
     const hasWriteScope = scopeGrants.has('bridge:write');
     const hasTrustedWriteScope = scopeGrants.has('bridge:trusted_write');
@@ -288,7 +299,7 @@ export function validateMcpToolPermission(
     }
   }
 
-  if (permission.category === 'destructive') {
+  if (permission.category === 'destructive' && !dryRunRequest) {
     if (!scopeGrants.has('bridge:delete')) {
       return {
         ok: false,

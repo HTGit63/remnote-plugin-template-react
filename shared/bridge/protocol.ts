@@ -4,6 +4,7 @@ export * from './protocol-write-args.js';
 export * from './protocol-write-results.js';
 export * from './protocol-messages.js';
 export * from './protocol-registry.js';
+export * from './dry-run.js';
 export * from './style-presets.js';
 export * from './performance.js';
 export * from './design-template-sync.js';

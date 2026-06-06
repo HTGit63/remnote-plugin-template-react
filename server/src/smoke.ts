@@ -5,12 +5,36 @@ import {
   type BridgeResponse,
   type BridgeServerHello,
   type SerializedRem,
+  isDryRunRequest,
 } from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
 import { callMcpTool, initializeMcp, listMcpTools } from './mcp-client.js';
 import { getPublicMcpToolNames } from './tool-registry.js';
 
 const token = 'smoke-token';
+
+function assertDryRunDetector() {
+  const cases: Array<[BridgeRequest['tool'], unknown, boolean]> = [
+    ['apply_structured_note_batch', { dryRun: true }, true],
+    ['create_styled_rem_tree', { dryRun: true }, true],
+    ['create_note_from_markdown_tree', { safetyOptions: { dryRun: true } }, true],
+    ['append_markdown_as_rem_tree', { safetyOptions: { dryRun: true } }, true],
+    ['apply_style_plan', { dryRun: true }, true],
+    ['apply_remnote_command', { dryRun: true }, true],
+    ['move_rem', { dryRun: true }, true],
+    ['repair_note_design', {}, true],
+    ['repair_card_set', {}, true],
+    ['delete_rem_by_id', {}, true],
+    ['delete_rem_by_id', { dryRun: false }, false],
+    ['create_rem', {}, false],
+  ];
+
+  for (const [tool, args, expected] of cases) {
+    if (isDryRunRequest(tool, args as never) !== expected) {
+      throw new Error(`isDryRunRequest mismatch for ${tool}.`);
+    }
+  }
+}
 
 const fakeRem: SerializedRem = {
   remId: 'rem-smoke-1',
@@ -1171,14 +1195,14 @@ async function runReliabilitySmoke() {
       })
     );
     if (
-      !unknownWriteResult.includes('RETRYABLE_UNKNOWN_WRITE_STATUS') ||
+      unknownWriteResult.includes('RETRYABLE_UNKNOWN_WRITE_STATUS') ||
       !unknownWriteResult.includes('"retryable":true')
     ) {
-      throw new Error('Disconnected idempotent write did not return retryable unknown write status.');
+      throw new Error('Disconnected write before plugin execution should be retryable but not unknown write status.');
     }
     const diagnostics = unknownWriteApp.hub.getDiagnostics();
-    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode !== 'RETRYABLE_UNKNOWN_WRITE_STATUS') {
-      throw new Error('Unknown write diagnostics did not record terminal retryable state.');
+    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode === 'RETRYABLE_UNKNOWN_WRITE_STATUS') {
+      throw new Error('Disconnected pre-execution write diagnostics incorrectly recorded unknown write state.');
     }
   } finally {
     unknownWriteWs.close();
@@ -1218,15 +1242,15 @@ async function runReliabilitySmoke() {
       })
     );
     if (
-      !unknownDeleteResult.includes('RETRYABLE_UNKNOWN_DELETE_STATUS') ||
+      unknownDeleteResult.includes('RETRYABLE_UNKNOWN_DELETE_STATUS') ||
       !unknownDeleteResult.includes('"retryable":true') ||
       unknownDeleteResult.includes('"deletedRemId"')
     ) {
-      throw new Error(`Disconnected real delete did not return retryable unknown delete status without claiming deletion: ${unknownDeleteResult}`);
+      throw new Error(`Disconnected real delete before mutation should be retryable but not unknown delete status: ${unknownDeleteResult}`);
     }
     const diagnostics = unknownDeleteApp.hub.getDiagnostics();
-    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode !== 'RETRYABLE_UNKNOWN_DELETE_STATUS') {
-      throw new Error('Unknown delete diagnostics did not record terminal retryable state.');
+    if (diagnostics.status.pendingRequests !== 0 || diagnostics.recentRequests[0]?.errorCode === 'RETRYABLE_UNKNOWN_DELETE_STATUS') {
+      throw new Error('Disconnected pre-mutation delete diagnostics incorrectly recorded unknown delete state.');
     }
   } finally {
     unknownDeleteWs.close();
@@ -1826,8 +1850,12 @@ try {
       },
     })
   );
-  if (!batchDryRun.includes('dry_run') || !batchDryRun.includes('"plannedNodeCount":2')) {
-    throw new Error('apply_structured_note_batch dry run did not return planned status.');
+  if (
+    !batchDryRun.includes('dry_run') ||
+    !batchDryRun.includes('"plannedNodeCount":2') ||
+    batchDryRun.includes('RETRYABLE_UNKNOWN_WRITE_STATUS')
+  ) {
+    throw new Error('apply_structured_note_batch dry run did not return pure no-approval planned status.');
   }
 
   const batchApply = JSON.stringify(
@@ -2082,6 +2110,7 @@ try {
   await app.stop();
 }
 
+assertDryRunDetector();
 await runProfileAndSinglePortSmoke();
 await runReliabilitySmoke();
 await runCancellationSmoke();

@@ -9,6 +9,7 @@ import type {
 import {
   BRIDGE_TOOL_ANNOTATIONS,
   createBridgeFailure,
+  isDryRunRequest,
 } from '../../../shared/bridge/protocol.js';
 import {
   TRANSIENT_BRIDGE_ERRORS,
@@ -23,8 +24,100 @@ export function hasLifecyclePhase(lifecycle: readonly BridgeLifecycleEvent[] | u
   return Boolean(lifecycle?.some((event) => event.phase === phase));
 }
 
+function hasAnyLifecyclePhase(
+  lifecycle: readonly BridgeLifecycleEvent[] | undefined,
+  phases: readonly BridgeLifecyclePhase[]
+): boolean {
+  return Boolean(lifecycle?.some((event) => phases.includes(event.phase)));
+}
+
+function payloadHasMutationEvidence(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const idKeys = [
+    'createdRemId',
+    'rootCreatedRemId',
+    'updatedRemId',
+    'deletedRemId',
+    'movedRemId',
+  ];
+  if (idKeys.some((key) => typeof value[key] === 'string' && value[key])) {
+    return true;
+  }
+
+  const idArrayKeys = [
+    'createdRemIds',
+    'createdChildRemIds',
+    'updatedRemIds',
+    'deletedRemIds',
+    'movedRemIds',
+    'rollbackRemovedRemIds',
+    'rollbackFailedRemIds',
+  ];
+  if (idArrayKeys.some((key) => Array.isArray(value[key]) && (value[key] as unknown[]).length > 0)) {
+    return true;
+  }
+
+  if (isRecord(value.partialExecution)) {
+    return true;
+  }
+
+  if (isRecord(value.originalDetails) && isRecord(value.originalDetails.partialExecution)) {
+    return true;
+  }
+
+  return false;
+}
+
+export function requestReachedPluginTransport(response: BridgeResponse): boolean {
+  return hasAnyLifecyclePhase(response.lifecycle, [
+    'forwarded_to_plugin',
+    'plugin_received',
+    'received',
+    'plugin_validated',
+    'validated',
+    'approval_required',
+    'waiting_for_remnote_approval',
+    'waiting_for_approval',
+    'execution_started',
+    'executing',
+  ]);
+}
+
+export function requestEnteredApproval(response: BridgeResponse): boolean {
+  return hasAnyLifecyclePhase(response.lifecycle, [
+    'approval_required',
+    'waiting_for_remnote_approval',
+    'waiting_for_approval',
+    'approval_timeout',
+  ]);
+}
+
+export function requestStartedExecution(response: BridgeResponse): boolean {
+  return hasAnyLifecyclePhase(response.lifecycle, [
+    'execution_started',
+    'executing',
+    'sdk_mutation_started',
+    'sdk_mutation_completed',
+  ]);
+}
+
+export function mutationCouldHaveStarted(response: BridgeResponse): boolean {
+  if (hasAnyLifecyclePhase(response.lifecycle, [
+    'sdk_mutation_started',
+    'sdk_mutation_completed',
+    'partial_failure',
+  ])) {
+    return true;
+  }
+
+  return payloadHasMutationEvidence(response.ok ? response.result : response.error.details);
+}
+
 export function requestReachedPlugin(response: BridgeResponse): boolean {
-  return hasLifecyclePhase(response.lifecycle, 'executing') || hasLifecyclePhase(response.lifecycle, 'waiting_for_remnote_approval');
+  return requestReachedPluginTransport(response);
 }
 
 export function hasIdempotencyKey(args: unknown): boolean {
@@ -127,6 +220,20 @@ export function retryableOriginalFailure(tool: BridgeToolName, response: BridgeR
       : 'Reconnect the RemNote plugin and retry only when the operation is idempotent or you verified no write occurred.';
 
   return retryableFailure(tool, response, response.error.code, response.error.message, retryKind);
+}
+
+export function retryableApprovalTimeoutFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {
+  return retryableFailure(
+    tool,
+    response,
+    response.ok ? 'TIMEOUT' : response.error.code,
+    response.ok ? 'Request timed out before execution status was known.' : response.error.message,
+    'Approve or reject the pending RemNote approval, then retry only if diagnostics show no mutation started.'
+  );
+}
+
+export function isDryRunBridgeRequest<TTool extends BridgeToolName>(tool: TTool, args: unknown): boolean {
+  return isDryRunRequest(tool, args);
 }
 
 export function retryableUnknownWriteFailure(tool: BridgeToolName, response: BridgeResponse): BridgeResponse {

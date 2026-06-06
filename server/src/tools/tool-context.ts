@@ -54,7 +54,35 @@ export function defaultTimeoutForTool(tool: BridgeToolName): number {
   const annotations = annotationsFor(tool);
   const budgetMs = getToolPerformanceBudgetMs(publicMcpToolNameForBridgeTool(tool));
   const baseTimeoutMs = Math.max(budgetMs + 5000, 6000);
-  return annotations.destructiveHint === true ? Math.max(baseTimeoutMs, 20000) : baseTimeoutMs;
+  if (annotations.destructiveHint === true) {
+    return Math.max(baseTimeoutMs, 60000);
+  }
+
+  if (
+    [
+      'apply_structured_note_batch',
+      'create_styled_rem_tree',
+      'create_polished_note_tree',
+      'create_or_replace_note_from_markdown',
+      'create_note_from_markdown_tree',
+      'append_markdown_as_rem_tree',
+      'create_designed_note_tree',
+      'update_note_with_design',
+      'repair_note_design',
+      'create_card_set_from_note',
+      'create_flashcards_from_markdown',
+      'create_cloze_cards_from_note',
+      'repair_card_set',
+    ].includes(tool)
+  ) {
+    return Math.max(baseTimeoutMs, 60000);
+  }
+
+  if (annotations.readOnlyHint === true) {
+    return Math.max(baseTimeoutMs, 12000);
+  }
+
+  return Math.max(baseTimeoutMs, 45000);
 }
 
 export function failureToToolResult(failure: BridgeFailure): McpToolResult {

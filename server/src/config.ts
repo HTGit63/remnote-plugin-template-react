@@ -26,6 +26,10 @@ export interface BridgeRuntimeInfo {
   hostedPairingEnabled: boolean;
   localTokenRequired: boolean;
   expectedPairingBehavior: string;
+  gitCommit?: string;
+  gitBranch?: string;
+  deployCommit?: string;
+  deployBranch?: string;
 }
 
 export interface CompanionServerConfig {
@@ -77,6 +81,10 @@ export interface CompanionServerConfig {
   maxBridgeMessageBytes: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
+  gitCommit: string;
+  gitBranch: string;
+  deployCommit: string;
+  deployBranch: string;
 }
 
 const DEFAULT_BRIDGE_PORT = 47391;
@@ -244,6 +252,10 @@ export function getRuntimeInfo(
       hostedPairingEnabled: isHostedPairingEnabled(config),
       localTokenRequired: isLocalTokenRequired(config),
       expectedPairingBehavior: getExpectedPairingBehavior(config),
+      gitCommit: config.gitCommit || undefined,
+      gitBranch: config.gitBranch || undefined,
+      deployCommit: config.deployCommit || config.gitCommit || undefined,
+      deployBranch: config.deployBranch || config.gitBranch || undefined,
     };
   }
 
@@ -262,6 +274,10 @@ export function getRuntimeInfo(
     hostedPairingEnabled: isHostedPairingEnabled(config),
     localTokenRequired: isLocalTokenRequired(config),
     expectedPairingBehavior: getExpectedPairingBehavior(config),
+    gitCommit: config.gitCommit || undefined,
+    gitBranch: config.gitBranch || undefined,
+    deployCommit: config.deployCommit || config.gitCommit || undefined,
+    deployBranch: config.deployBranch || config.gitBranch || undefined,
   };
 }
 
@@ -408,6 +424,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     ),
     rateLimitWindowMs: numberFromEnv(env.REMNOTE_BRIDGE_RATE_LIMIT_WINDOW_MS, DEFAULT_RATE_LIMIT_WINDOW_MS),
     rateLimitMaxRequests: numberFromEnv(env.REMNOTE_BRIDGE_RATE_LIMIT_MAX_REQUESTS, DEFAULT_RATE_LIMIT_MAX_REQUESTS),
+    gitCommit:
+      env.RENDER_GIT_COMMIT?.trim() ||
+      env.GIT_COMMIT?.trim() ||
+      env.COMMIT_SHA?.trim() ||
+      env.SOURCE_VERSION?.trim() ||
+      '',
+    gitBranch:
+      env.RENDER_GIT_BRANCH?.trim() ||
+      env.GIT_BRANCH?.trim() ||
+      env.BRANCH?.trim() ||
+      '',
+    deployCommit:
+      env.RENDER_GIT_COMMIT?.trim() ||
+      env.RENDER_COMMIT?.trim() ||
+      '',
+    deployBranch:
+      env.RENDER_GIT_BRANCH?.trim() ||
+      env.RENDER_BRANCH?.trim() ||
+      '',
     sessionSecret,
     adminDebugSecret,
     pairingCodeTtlSeconds: numberFromEnv(env.PAIRING_CODE_TTL_SECONDS, DEFAULT_PAIRING_CODE_TTL_SECONDS),

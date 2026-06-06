@@ -32,6 +32,12 @@ RemnoteMCP is not public-ready. The connector/schema/auth layer is repaired loca
 - Added diagnostic failure fields: layer, code, required/actual scope, permission mode/scope, recommended fix.
 - Generated `TOOL_REFERENCE.md`.
 - Added manual MCP curl tests in `docs/MCP_MANUAL_TOOL_TESTS.md`.
+- Fixed the timeout/dry-run regression where approval waits and forwarded requests were classified as unknown writes.
+- Added shared dry-run detection for server policy and plugin approval handling.
+- Disabled the single-Rem markdown SDK fast path by default to avoid blank child Rems.
+- Added non-blank readback verification and rollback reporting for `create_rem` / `create_document`.
+- Added late response diagnostics for plugin responses that arrive after server timeout.
+- Added git/deploy branch and commit fields to runtime diagnostics when the deployment environment exposes them.
 
 ## Static Test Results
 
@@ -100,7 +106,7 @@ Latest local no-plugin run:
 ```text
 command: npm run bridge:live-tool-regression
 result: failed honestly
-reason: ECONNREFUSED 127.0.0.1:47392; local MCP server was not running for live regression
+reason: MCP_ENDPOINT_UNREACHABLE / fetch failed; local MCP server was not running at 127.0.0.1:47392
 report: server/reports/live-tool-regression.json
 ```
 

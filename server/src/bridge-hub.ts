@@ -46,7 +46,8 @@ import {
 
 import {
   isTransientFailure,
-  requestReachedPlugin,
+  mutationCouldHaveStarted,
+  isDryRunBridgeRequest,
   getIdempotencyKey,
   isHighLevelIdempotentWrite,
   targetRootFromArgs,
@@ -74,6 +75,7 @@ export class BridgeHub {
   private lastDisconnectedAt: string | undefined;
   private readonly startedAt = new Date().toISOString();
   private readonly recentRequests: BridgeHubRequestOutcome[] = [];
+  private readonly lateResponses: NonNullable<BridgeHubDiagnostics['lateResponses']> = [];
   private lastHealthCheck: BridgeHealthCheckResult | null = null;
   private pluginRuntimeInfo: BridgePluginRuntimeInfo | null = null;
   private readonly sessionRouter: SessionRouter;
@@ -221,6 +223,7 @@ export class BridgeHub {
         status: request.status,
       })),
       recentRequests: [...this.recentRequests],
+      lateResponses: [...this.lateResponses],
       lastHealthCheck: this.lastHealthCheck,
       pluginRuntime: this.pluginRuntimeInfo,
       sdkVersion: this.pluginRuntimeInfo?.sdkVersion,
@@ -311,10 +314,14 @@ export class BridgeHub {
         return retryResponse;
       }
 
-      if (requestReachedPlugin(firstResponse) && isRealDeleteAttempt(tool, args)) {
+      if (mutationCouldHaveStarted(firstResponse) && isRealDeleteAttempt(tool, args)) {
         return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownDeleteFailure(tool, firstResponse));
       }
-      if (requestReachedPlugin(firstResponse) && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+      if (
+        mutationCouldHaveStarted(firstResponse) &&
+        !isDryRunBridgeRequest(tool, args) &&
+        !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint
+      ) {
         return this.recordSyntheticFailure(tool, timeoutMs, retryableUnknownWriteFailure(tool, firstResponse));
       }
       return this.recordSyntheticFailure(tool, timeoutMs, retryableOriginalFailure(tool, firstResponse));
@@ -341,6 +348,7 @@ export class BridgeHub {
     const id = randomUUID();
     const startedAt = Date.now();
     const lifecycle: BridgeLifecycleEvent[] = [
+      createLifecycleEvent('server_received', 'Companion server received MCP bridge request.'),
       createLifecycleEvent('received', 'Companion server received MCP bridge request.'),
     ];
 
@@ -407,6 +415,8 @@ export class BridgeHub {
       const timeout = setTimeout(() => {
         this.sendCancel(id, 'server_timeout', `Timed out waiting for ${tool}.`);
         this.pending.get(id)?.lifecycle.push(
+          createLifecycleEvent('cancelled_by_server_timeout', `Server cancelled ${tool} after timeout.`),
+          createLifecycleEvent('response_dropped', `Late plugin response may arrive after ${tool} timeout.`),
           createLifecycleEvent('timeout', `Timed out waiting for ${tool}.`)
         );
         this.resolvePending(id, createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
@@ -454,6 +464,7 @@ export class BridgeHub {
       });
 
       try {
+        lifecycle.push(createLifecycleEvent('forwarded_to_plugin', 'Request forwarded to RemNote plugin WebSocket.'));
         lifecycle.push(createLifecycleEvent('executing', 'Request forwarded to RemNote plugin WebSocket.'));
         target.socket.send(JSON.stringify(request), (error) => {
           if (!error) {
@@ -495,19 +506,23 @@ export class BridgeHub {
       return 'none';
     }
 
-    const reachedPlugin = requestReachedPlugin(response);
+    const mutationStarted = mutationCouldHaveStarted(response);
+    const dryRun = isDryRunBridgeRequest(tool, args);
     if (!response.ok && response.error.code === 'TIMEOUT') {
-      if (isRealDeleteAttempt(tool, args)) {
-        return reachedPlugin ? 'unknown_delete' : 'retryable';
+      if (dryRun) {
+        return 'retryable';
       }
-      if (reachedPlugin && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+      if (isRealDeleteAttempt(tool, args)) {
+        return mutationStarted ? 'unknown_delete' : 'retryable';
+      }
+      if (mutationStarted && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
         return 'unknown_write';
       }
       return 'retryable';
     }
 
     if (isRealDeleteAttempt(tool, args)) {
-      return reachedPlugin ? 'unknown_delete' : 'retryable';
+      return mutationStarted ? 'unknown_delete' : 'retryable';
     }
 
     if (allowRetry && BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
@@ -518,11 +533,11 @@ export class BridgeHub {
       return 'retry';
     }
 
-    if (reachedPlugin && isDeleteTool(tool)) {
+    if (mutationStarted && isDeleteTool(tool)) {
       return 'unknown_delete';
     }
 
-    if (reachedPlugin && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+    if (mutationStarted && !dryRun && !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
       return 'unknown_write';
     }
 
@@ -786,6 +801,29 @@ export class BridgeHub {
     }
 
     const pending = this.pending.get(message.id);
+    if (!pending) {
+      const lifecycle = [
+        createLifecycleEvent('response_dropped', 'Plugin response arrived after companion server pending request expired.'),
+        ...(message.lifecycle ?? []),
+      ];
+      this.lateResponses.unshift({
+        id: message.id,
+        receivedAt: new Date().toISOString(),
+        ok: message.ok,
+        errorCode: message.ok ? undefined : message.error.code,
+        lifecycle,
+        ...getExecutionEvidence(message),
+      });
+      if (this.lateResponses.length > 50) {
+        this.lateResponses.length = 50;
+      }
+      console.warn('Late bridge response received after pending request expired', {
+        requestId: message.id,
+        ok: message.ok,
+        errorCode: message.ok ? undefined : message.error.code,
+      });
+      return;
+    }
     if (this.config.deploymentMode === 'hosted' && pending?.targetSocket !== socket) {
       return;
     }
