@@ -70,6 +70,7 @@ export const REMNOTE_COMMAND_RESULT_CACHE = new Map<string, ApplyRemnoteCommandR
 export const STYLE_PLAN_RESULT_CACHE = new Map<string, ApplyStylePlanResult>();
 export const STYLED_TREE_RESULT_CACHE = new Map<string, CreateStyledRemTreeResult>();
 export const DELETE_BY_ID_RESULT_CACHE = new Map<string, DeleteRemByIdResult>();
+export const DELETE_BY_ID_DRY_RUN_CACHE = new Map<string, DeleteRemByIdResult>();
 export const POLISHED_TREE_RESULT_CACHE = new Map<string, CreatePolishedNoteTreeResult>();
 export const MARKDOWN_IMPORT_RESULT_CACHE = new Map<string, CreateOrReplaceNoteFromMarkdownResult>();
 export const CREATE_REM_RESULT_CACHE = new Map<string, CreateRemResult>();
@@ -81,6 +82,7 @@ export const MOVE_RESULT_CACHE = new Map<string, MoveRemResult>();
 export const REORDER_RESULT_CACHE = new Map<string, ReorderChildrenResult>();
 export const CREATE_TREE_RESULT_CACHE = new Map<string, CreateRemTreeResult>();
 export const FLASHCARD_RESULT_CACHE = new Map<string, CreateFlashcardResult>();
+export const CURRENT_SESSION_CREATED_REM_IDS = new Set<string>();
 
 export function getWriteIdempotencyKey(input: string | undefined, prefix: string): string {
   const trimmed = input?.trim();
@@ -98,4 +100,20 @@ export function rememberCachedResult<T>(cache: Map<string, T>, idempotencyKey: s
     }
     cache.delete(oldestKey);
   }
+}
+
+export function rememberCreatedRemIds(remIds: readonly string[] | undefined) {
+  for (const remId of remIds ?? []) {
+    if (typeof remId === 'string' && remId.length > 0) {
+      CURRENT_SESSION_CREATED_REM_IDS.add(remId);
+    }
+  }
+}
+
+export function wasCreatedInCurrentSession(remId: string): boolean {
+  return CURRENT_SESSION_CREATED_REM_IDS.has(remId);
+}
+
+export function rememberDeleteDryRunResult(idempotencyKey: string, result: DeleteRemByIdResult) {
+  rememberCachedResult(DELETE_BY_ID_DRY_RUN_CACHE, idempotencyKey, result);
 }

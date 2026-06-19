@@ -66,11 +66,12 @@ import type {
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
-import { APPEND_RESULT_CACHE, CREATE_DOCUMENT_RESULT_CACHE, CREATE_REM_RESULT_CACHE, MOVE_RESULT_CACHE, REORDER_RESULT_CACHE, UPDATE_RESULT_CACHE, UPDATE_RICH_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult } from './writeCaches';
+import { APPEND_RESULT_CACHE, CREATE_DOCUMENT_RESULT_CACHE, CREATE_REM_RESULT_CACHE, MOVE_RESULT_CACHE, REORDER_RESULT_CACHE, UPDATE_RESULT_CACHE, UPDATE_RICH_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult, rememberCreatedRemIds } from './writeCaches';
 import { buildRichTextFromSpans, createRemWithRichText, createSingleRemWithMarkdownApi, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, getRemSiblingIndex, hasRemSdkApi, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
 import { normalizeMarkdown } from './writeValidation';
 import { getDeleteTarget } from './deleteWrites';
 import { singleMarkdownFastPathEnabled } from './runtimeFlags';
+import { captureStyleMutationSnapshot, withStyleMutationProof } from './styleMutationInvariant';
 
 async function rollbackCreatedRem(plugin: RNPlugin, remId: string): Promise<{
   rollbackStatus: 'completed' | 'failed';
@@ -187,6 +188,7 @@ export async function createRemFromMarkdown(
     idempotencyKey,
     verification,
   };
+  rememberCreatedRemIds([createdRem._id]);
   rememberCachedResult(CREATE_REM_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -221,6 +223,7 @@ export async function createDocumentFromMarkdown(
       afterSetIsDocument: verification,
     },
   };
+  rememberCreatedRemIds([createdRem._id]);
   rememberCachedResult(CREATE_DOCUMENT_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -264,6 +267,7 @@ export async function appendMarkdownToRem(
     status: 'appended',
     idempotencyKey,
   };
+  rememberCreatedRemIds([createdRem._id]);
   rememberCachedResult(APPEND_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -339,13 +343,15 @@ export async function updateRemRich(
 
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const beforePlainText = await getRemPlainString(plugin, rem);
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, args.richText);
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
   const refreshed = await findRequiredRem(plugin, rem._id, 'Target');
   const afterPlainText = await getRemPlainString(plugin, refreshed);
+  const after = await captureStyleMutationSnapshot(plugin, refreshed);
 
-  const result: FormatRemResult = {
+  const result: FormatRemResult = withStyleMutationProof({
     remId: rem._id,
     status: 'updated_rich',
     idempotencyKey,
@@ -354,7 +360,7 @@ export async function updateRemRich(
       before: { plainText: beforePlainText },
       after: { plainText: afterPlainText },
     },
-  };
+  }, before, after);
   rememberCachedResult(UPDATE_RICH_RESULT_CACHE, idempotencyKey, result);
   return result;
 }

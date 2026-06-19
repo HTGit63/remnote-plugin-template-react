@@ -42,12 +42,46 @@ import { RemnoteWriteError, runSdkOperation } from './writeErrors';
 
 const DEFAULT_CARD_LIMIT = 40;
 const MAX_CARD_LIMIT = 100;
+const DEFAULT_CARD_VERIFY_NODE_LIMIT = 250;
+const MAX_CARD_VERIFY_NODE_LIMIT = 500;
+const DEFAULT_CARD_VERIFY_TIMEOUT_MS = 1000;
+const MAX_CARD_VERIFY_TIMEOUT_MS = 10000;
 
 function clampCardLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) {
     return DEFAULT_CARD_LIMIT;
   }
   return Math.min(Math.max(Math.floor(value as number), 1), MAX_CARD_LIMIT);
+}
+
+function clampCardNodeLimit(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_CARD_VERIFY_NODE_LIMIT;
+  }
+  return Math.min(Math.max(Math.floor(value as number), 1), MAX_CARD_VERIFY_NODE_LIMIT);
+}
+
+function clampCardDepth(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return 1;
+  }
+  return Math.min(Math.max(Math.floor(value as number), 0), 4);
+}
+
+function clampCardVerifierTimeout(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_CARD_VERIFY_TIMEOUT_MS;
+  }
+  return Math.min(Math.max(Math.floor(value as number), 100), MAX_CARD_VERIFY_TIMEOUT_MS);
+}
+
+async function withVerifierTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<{ ok: true; value: T } | { ok: false }> {
+  return Promise.race([
+    promise.then((value) => ({ ok: true as const, value })).catch(() => ({ ok: true as const, value: [] as unknown as T })),
+    new Promise<{ ok: false }>((resolve) => {
+      setTimeout(() => resolve({ ok: false }), timeoutMs);
+    }),
+  ]);
 }
 
 function contentToMarkdown(title: string, content: string | StyledRemTreeNode): string {
@@ -583,7 +617,12 @@ function cardWorkflowResult(input: {
   cards: CardWorkflowCardPlan[];
   createdRemIds?: string[];
   issues?: string[];
+  warnings?: string[];
   repairPlan?: string[];
+  truncated?: boolean;
+  inspectedNodeCount?: number;
+  durationMs?: number;
+  limits?: CardWorkflowResult['limits'];
 }): CardWorkflowResult {
   return {
     status: input.status,
@@ -595,7 +634,12 @@ function cardWorkflowResult(input: {
     cards: input.cards,
     createdRemIds: input.createdRemIds,
     issues: input.issues,
+    warnings: input.warnings,
     repairPlan: input.repairPlan,
+    truncated: input.truncated,
+    inspectedNodeCount: input.inspectedNodeCount,
+    durationMs: input.durationMs,
+    limits: input.limits,
   };
 }
 
@@ -674,48 +718,105 @@ export async function verifyCardSet(
 ): Promise<VerifyCardSetResult> {
   const root = await findRequiredRem(plugin, args.rootRemId, 'Target');
   const maxCards = clampCardLimit(args.maxCards);
-  const children = await runSdkOperation('rem.getChildrenRem', () => root.getChildrenRem()).catch(() => []);
+  const maxNodes = clampCardNodeLimit(args.maxNodes);
+  const maxDepth = clampCardDepth(args.maxDepth);
+  const timeoutMs = clampCardVerifierTimeout(args.timeoutMs);
+  const startedAt = Date.now();
   const cards: CardWorkflowCardPlan[] = [];
   const issues: string[] = [];
-  for (const child of children.slice(0, maxCards)) {
-    if (await safeIsCardItem(child)) {
+  const warnings: string[] = [];
+  const queue: Array<{ rem: Rem; depth: number }> = [{ rem: root, depth: 0 }];
+  const seen = new Set<string>();
+  let inspectedNodeCount = 0;
+  let truncated = false;
+
+  while (queue.length) {
+    if (Date.now() - startedAt > timeoutMs) {
+      truncated = true;
+      warnings.push('verify_card_set stopped at timeoutMs.');
+      break;
+    }
+    if (inspectedNodeCount >= maxNodes) {
+      truncated = true;
+      warnings.push(`verify_card_set stopped at maxNodes=${maxNodes}.`);
+      break;
+    }
+    if (cards.length >= maxCards) {
+      truncated = true;
+      warnings.push(`verify_card_set stopped at maxCards=${maxCards}.`);
+      break;
+    }
+    const { rem: child, depth } = queue.shift() as { rem: Rem; depth: number };
+    if (seen.has(child._id)) {
       continue;
     }
-    const text = await getRemPlainText(plugin, child).catch(() => ({ frontText: '', backText: '', plainText: '' }));
-    const practiceEnabled = await safePracticeEnabled(child);
-    const cardItemChildren = await getCardItemChildren(child);
-    const remType = await safeRemType(child);
-    if (text.backText) {
-      cards.push({
-        front: text.frontText || child._id,
-        back: text.backText,
-        sourceRemId: child._id,
-        cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
-      });
-    } else if (
-      /\{\{.+?\}\}/.test(text.frontText) ||
-      richTextHasClozeMetadata(child.text as RichTextInterface | undefined)
-    ) {
-      cards.push({
-        front: text.frontText,
-        text: text.frontText,
-        sourceRemId: child._id,
-        cardType: 'cloze',
-      });
-    } else if (practiceEnabled) {
-      issues.push(`Rem ${child._id} has practice enabled but no back text or cloze metadata.`);
+    seen.add(child._id);
+    inspectedNodeCount += 1;
+
+    if (depth > 0 && (await safeIsCardItem(child))) {
+      continue;
+    }
+
+    if (depth > 0) {
+      const text = await getRemPlainText(plugin, child).catch(() => ({ frontText: '', backText: '', plainText: '' }));
+      const practiceEnabled = await safePracticeEnabled(child);
+      const cardItemChildren = await getCardItemChildren(child);
+      const remType = await safeRemType(child);
+      if (text.backText) {
+        cards.push({
+          front: text.frontText || child._id,
+          back: text.backText,
+          sourceRemId: child._id,
+          cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
+        });
+      } else if (
+        /\{\{.+?\}\}/.test(text.frontText) ||
+        richTextHasClozeMetadata(child.text as RichTextInterface | undefined)
+      ) {
+        cards.push({
+          front: text.frontText,
+          text: text.frontText,
+          sourceRemId: child._id,
+          cardType: 'cloze',
+        });
+      } else if (practiceEnabled) {
+        issues.push(`Rem ${child._id} has practice enabled but no back text or cloze metadata.`);
+      }
+    }
+
+    if (depth < maxDepth) {
+      const childRead = await withVerifierTimeout(
+        runSdkOperation('rem.getChildrenRem', () => child.getChildrenRem()).catch(() => []),
+        Math.max(100, timeoutMs - (Date.now() - startedAt))
+      );
+      if (!childRead.ok) {
+        truncated = true;
+        warnings.push(`verify_card_set timed out while reading children for Rem ${child._id}.`);
+        break;
+      }
+      for (const grandchild of childRead.value) {
+        if (!seen.has(grandchild._id)) {
+          queue.push({ rem: grandchild, depth: depth + 1 });
+        }
+      }
     }
   }
+
   if (cards.length === 0) {
-    issues.push('No cards recognized under root Rem.');
+    warnings.push('No cards found under target root.');
   }
   return cardWorkflowResult({
-    status: 'verified',
-    ok: issues.length === 0,
+    status: truncated ? 'partial' : 'verified',
+    ok: !truncated && issues.length === 0,
     rootRemId: args.rootRemId,
     parentId: args.rootRemId,
     cards,
     issues,
+    warnings,
+    truncated,
+    inspectedNodeCount,
+    durationMs: Date.now() - startedAt,
+    limits: { maxCards, maxNodes, maxDepth, timeoutMs },
   });
 }
 

@@ -161,6 +161,20 @@ export function registerDiagnosticTools({
           registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
         publicUserSummary,
       };
+      const operationId = `diagnostics-${Date.now().toString(36)}`;
+      const standard = {
+        status: 'PASS',
+        toolName: 'get_bridge_diagnostics',
+        operationId,
+        target: { toolProfile: registry.activeToolTier },
+        created: [],
+        updated: [],
+        deleted: [],
+        counts: { created: 0, updated: 0, deleted: 0 },
+        verification: executionSummary,
+        phaseDurations: {},
+        warnings: [],
+      };
       return {
         content: [
           {
@@ -170,6 +184,7 @@ export function registerDiagnosticTools({
         ],
         structuredContent: {
           ok: true,
+          ...standard,
           result: {
             ...result,
             developerDiagnosticBundle: {
@@ -178,6 +193,7 @@ export function registerDiagnosticTools({
               payload: redactDiagnosticValue(result),
             },
           },
+          standard,
         },
       };
     }
@@ -218,6 +234,34 @@ export function registerDiagnosticTools({
         toolProfile,
         principal,
       });
+      const operationId = `health-${Date.now().toString(36)}`;
+      const standard = {
+        status: result.status === 'failed' ? 'FAIL' : result.status === 'partial' ? 'PARTIAL' : 'PASS',
+        toolName: 'run_bridge_health_check',
+        operationId,
+        target: { mode, parentId, targetRemId },
+        created: [],
+        updated: [],
+        deleted: [],
+        counts: {
+          created: 0,
+          updated: 0,
+          deleted: 0,
+          passed: result.passedCount,
+          failed: result.failedCount,
+          skipped: result.skippedCount,
+          unsupported: result.unsupportedCount,
+        },
+        verification: {
+          status: result.status,
+          passedCount: result.passedCount,
+          failedCount: result.failedCount,
+          skippedCount: result.skippedCount,
+          unsupportedCount: result.unsupportedCount,
+        },
+        phaseDurations: {},
+        warnings: [],
+      };
       return {
         content: [
           {
@@ -227,7 +271,9 @@ export function registerDiagnosticTools({
         ],
         structuredContent: {
           ok: result.status !== 'failed',
+          ...standard,
           result,
+          standard,
         },
       };
     }
@@ -252,6 +298,20 @@ export function registerDiagnosticTools({
     },
     async ({ section }) => {
       const guide = getRemnoteCapabilityGuide(section as RemnoteCapabilityGuideSection);
+      const operationId = `guide-${Date.now().toString(36)}`;
+      const standard = {
+        status: 'PASS',
+        toolName: 'get_remnote_capability_guide',
+        operationId,
+        target: { section },
+        created: [],
+        updated: [],
+        deleted: [],
+        counts: { created: 0, updated: 0, deleted: 0, sections: guide.blocks.length },
+        verification: { section },
+        phaseDurations: {},
+        warnings: [],
+      };
       return {
         content: [
           {
@@ -263,7 +323,9 @@ export function registerDiagnosticTools({
         ],
         structuredContent: {
           ok: true,
+          ...standard,
           result: guide,
+          standard,
         },
       };
     }

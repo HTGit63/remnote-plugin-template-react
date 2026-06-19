@@ -4,7 +4,7 @@ import {
 } from './schemas.js';
 import type { ToolRegistrationContext } from './tool-context.js';
 
-export function registerStatusTools({ hub, registerTool, currentRegistry, runtimeInfo }: ToolRegistrationContext): void {
+export function registerStatusTools({ hub, registerTool, currentRegistry, runtimeInfo, principal }: ToolRegistrationContext): void {
   registerTool(
     'get_bridge_status',
     {
@@ -19,22 +19,57 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
         idempotentHint: true,
       },
     },
-    async () => ({
-      content: [{ type: 'text', text: hub.getStatus().connected ? 'RemNote plugin connected.' : 'RemNote plugin not connected.' }],
-      structuredContent: {
-        ok: true,
-        result: {
-          ...hub.getStatus(),
-          ...(runtimeInfo ?? {}),
-          ...currentRegistry(),
-          serverStartedAt: hub.getDiagnostics().startedAt,
-          recentRequestCount: hub.getDiagnostics().recentRequests.length,
-          pluginConnected: hub.getStatus().connected,
-          activePluginConnectionCount: hub.getDiagnostics().activePluginConnectionCount ?? 0,
-          connectorCompatNoAuthTools: hub.getDiagnostics().connectorCompatNoAuthTools ?? false,
-          connectorCompatRouting: hub.getDiagnostics().connectorCompatRouting ?? 'disabled',
+    async () => {
+      const registry = currentRegistry();
+      const status = hub.getStatus();
+      const diagnostics = hub.getDiagnostics();
+      const operationId = `status-${Date.now().toString(36)}`;
+      return {
+        content: [{ type: 'text', text: status.connected ? 'RemNote plugin connected.' : 'RemNote plugin not connected.' }],
+        structuredContent: {
+          ok: true,
+          status: 'PASS',
+          toolName: 'get_bridge_status',
+          operationId,
+          target: { deploymentMode: runtimeInfo?.deploymentMode ?? 'unknown' },
+          created: [],
+          updated: [],
+          deleted: [],
+          counts: { created: 0, updated: 0, deleted: 0 },
+          verification: { pluginConnected: status.connected },
+          phaseDurations: {},
+          warnings: [],
+          result: {
+            ...status,
+            ...(runtimeInfo ?? {}),
+            ...registry,
+            gitSha: runtimeInfo?.deployCommit ?? runtimeInfo?.gitCommit ?? registry.gitSha,
+            branchName: runtimeInfo?.deployBranch ?? runtimeInfo?.gitBranch ?? registry.branchName,
+            activeToolProfile: registry.activeToolTier,
+            permissionMode: principal?.trustedWriteMode ?? 'unauthenticated_or_discovery',
+            permissionScope: principal?.accessScope ?? 'unauthenticated_or_discovery',
+            serverStartedAt: diagnostics.startedAt,
+            recentRequestCount: diagnostics.recentRequests.length,
+            pluginConnected: status.connected,
+            activePluginConnectionCount: diagnostics.activePluginConnectionCount ?? 0,
+            connectorCompatNoAuthTools: diagnostics.connectorCompatNoAuthTools ?? false,
+            connectorCompatRouting: diagnostics.connectorCompatRouting ?? 'disabled',
+          },
+          standard: {
+            status: 'PASS',
+            toolName: 'get_bridge_status',
+            operationId,
+            target: { deploymentMode: runtimeInfo?.deploymentMode ?? 'unknown' },
+            created: [],
+            updated: [],
+            deleted: [],
+            counts: { created: 0, updated: 0, deleted: 0 },
+            verification: { pluginConnected: status.connected },
+            phaseDurations: {},
+            warnings: [],
+          },
         },
-      },
-    })
+      };
+    }
   );
 }

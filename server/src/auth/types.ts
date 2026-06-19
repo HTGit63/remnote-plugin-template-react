@@ -25,7 +25,7 @@ export interface AuthenticatedPrincipal {
   pluginInstanceId?: string;
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
-  toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
+  toolTier?: 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
   requiresConnectorRefresh?: boolean;
 }
 

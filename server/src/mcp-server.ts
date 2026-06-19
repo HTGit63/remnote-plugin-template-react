@@ -9,6 +9,7 @@ import {
   getToolRegistrySummary,
   type RegisteredMcpToolName,
 } from './tool-registry.js';
+import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
 import { DEFAULT_TOOL_PROFILE, getToolMetadata, type ToolProfile } from './tool-policy.js';
 import { registerCardTools } from './tools/register-card-tools.js';
 import { registerDeleteTools } from './tools/register-delete-tools.js';
@@ -59,11 +60,22 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
       discoveryAuthMode: options.discoveryAuthMode ?? 'no_auth_required',
       toolCallAuthMode: options.toolCallAuthMode ?? 'no_auth_allowed',
     });
-  const callPlugin = <TTool extends BridgeToolName>(
+  const callPlugin = async <TTool extends BridgeToolName>(
     tool: TTool,
     args: BridgeToolArgs[TTool],
     timeoutMs = defaultTimeoutForTool(tool),
-  ) => hub.callPlugin(tool, args, timeoutMs, options.requestSignal, options.principal);
+  ) => {
+    const response = await hub.callPlugin(tool, args, timeoutMs, options.requestSignal, options.principal);
+    const mcpToolName = publicMcpToolNameForBridgeTool(tool);
+    if (response.ok) {
+      const result =
+        typeof response.result === 'object' && response.result !== null && !Array.isArray(response.result)
+          ? { ...response.result, toolName: mcpToolName }
+          : { value: response.result, toolName: mcpToolName };
+      return { ...response, result } as typeof response;
+    }
+    return { ...response, toolName: mcpToolName } as typeof response;
+  };
   const registerTool = ((name: string, config: never, handler: never) => {
     if (!activeToolNames.has(name as RegisteredMcpToolName)) {
       return undefined as never;

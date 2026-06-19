@@ -92,6 +92,7 @@ Allowed values:
 
 ```text
 basic
+mass_note_writer
 note_writer
 power_user
 developer
@@ -102,12 +103,14 @@ Legacy aliases still normalize for compatibility:
 
 ```text
 core -> basic
-advanced_notes -> note_writer
+advanced_notes -> mass_note_writer
+mass_notes -> mass_note_writer
+safe_note_writer -> mass_note_writer
 developer_diagnostics -> developer
 full -> danger
 ```
 
-`toolTier` can appear as a compatibility alias in responses only. The default is `note_writer`, so normal note-writing tools are public and callable without switching to diagnostics or danger access.
+`toolTier` can appear as a compatibility alias in responses only. The default is `mass_note_writer`, so ChatGPT sees read tools plus `create_or_replace_note_from_markdown` for bulk Markdown notes. Broader note, design, card, formatting, repair, debug, and delete tools require an explicit higher profile.
 
 Tool counts are generated from the registry at runtime. Check:
 
@@ -115,7 +118,7 @@ Tool counts are generated from the registry at runtime. Check:
 npm run server:test:tool-profile
 ```
 
-`delete_rem_by_id` is gated by `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and the `danger` access tier. It defaults to `dryRun=true`; real delete requires `dryRun=false`, `confirmTitle`, and `expectedParentId` or `expectedAncestorId`.
+`delete_rem_by_id` is gated by `REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1` and the `danger` access tier. It defaults to `dryRun=true`; real delete requires `dryRun=false`, `confirmTitle`, and `expectedParentId` or `expectedAncestorId`. Disposable cleanup can additionally require `requireCreatedInCurrentSession=true`, `requirePriorDryRun=true`, and the same `idempotencyKey` used for the dry run.
 
 `create_folder` is not public/callable in this pass. Modern SDK typings expose folder APIs, but this bridge keeps the tool hidden until the Goal 2 refactor live-verifies the safe path.
 

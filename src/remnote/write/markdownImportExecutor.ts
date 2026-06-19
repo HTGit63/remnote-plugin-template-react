@@ -84,12 +84,13 @@ import {
 } from '../../../shared/bridge/markdown-importer';
 import { buildWritePerformanceReport } from '../../../shared/bridge/performance';
 import { RemnoteWriteError, getPartialExecutionDetails, runSdkOperation } from './writeErrors';
-import { MARKDOWN_IMPORT_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
+import { MARKDOWN_IMPORT_RESULT_CACHE, getWriteIdempotencyKey, rememberCreatedRemIds } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 import { findRequiredRem, getRemPlainString } from './remnoteSdkHelpers';
 import { applyStructuredNoteBatch, readCreatedRemIdsFromError } from './structuredBatch';
 import { buildWriteOperationPlan } from '../write-engine/plan';
 import { finalizeWriteOperationPlan, writeEngineExecutionFromPlan } from '../write-engine/execute';
+import { createNotePlanSummary } from './notePlan';
 
 const MARKDOWN_SECTION_CHUNK_NODE_THRESHOLD = 120;
 const MARKDOWN_SECTION_CHUNK_CHAR_THRESHOLD = 60000;
@@ -165,6 +166,92 @@ function markdownFallbackForPlan(
     reason: `payload exceeds one-shot budget (${plan.stats.nodeCount} nodes, ${estimateTreeChars(plan.tree)} chars)`,
     chunkCount: Math.max(1, chunks.length),
     strategy: 'section_chunks',
+  };
+}
+
+function chunkMaxDepth(nodes: readonly StyledRemTreeNode[]): number {
+  if (!nodes.length) {
+    return 0;
+  }
+  return Math.max(...nodes.map((node) => countTreeDepth(node)));
+}
+
+function countTreeDepth(node: StyledRemTreeNode): number {
+  const children = node.children ?? [];
+  if (!children.length) {
+    return 1;
+  }
+  return 1 + Math.max(...children.map(countTreeDepth));
+}
+
+function estimateWriteRisk(
+  plan: ReturnType<typeof parseMarkdownImportPlan>,
+  fallback: NonNullable<CreateOrReplaceNoteFromMarkdownResult['fallback']>
+): 'low' | 'medium' | 'high' {
+  if (plan.stats.nodeCount > 250 || plan.stats.maxDepth > 8 || fallback.used) {
+    return 'high';
+  }
+  if (plan.stats.nodeCount > 100 || plan.stats.tableCount > 4 || plan.stats.mathBlockCount + plan.stats.inlineMathCount > 30) {
+    return 'medium';
+  }
+  return 'low';
+}
+
+function buildMassNoteManifest(
+  plan: ReturnType<typeof parseMarkdownImportPlan>,
+  fallback: NonNullable<CreateOrReplaceNoteFromMarkdownResult['fallback']>,
+  idempotencyKey: string
+): NonNullable<CreateOrReplaceNoteFromMarkdownResult['massNoteManifest']> {
+  const warnings: string[] = [];
+  const sectionChunks = fallback.used ? chunkTopLevelChildren(plan.tree.children ?? []) : [];
+  if (fallback.used) {
+    warnings.push(fallback.reason ?? 'Large note requires section chunk fallback.');
+  }
+  if (plan.stats.flashcardCount > 0) {
+    warnings.push('Flashcard markers are present; card creation must be verified separately.');
+  }
+  if (plan.stats.maxDepth > 8) {
+    warnings.push(`Plan depth ${plan.stats.maxDepth} is high for one write.`);
+  }
+
+  const chunks = fallback.used
+    ? [
+        {
+          chunkIndex: 0,
+          plannedNodeCount: 1,
+          maxDepth: 1,
+          idempotencyKey: `${idempotencyKey}:root`,
+          status: 'planned' as const,
+        },
+        ...sectionChunks.map((chunk, index) => ({
+          chunkIndex: index + 1,
+          plannedNodeCount: chunk.reduce((sum, child) => sum + countTreeNodes(child), 0),
+          maxDepth: chunkMaxDepth(chunk),
+          idempotencyKey: `${idempotencyKey}:chunk:${index + 1}`,
+          status: 'planned' as const,
+        })),
+      ]
+    : [
+        {
+          chunkIndex: 0,
+          plannedNodeCount: plan.stats.nodeCount,
+          maxDepth: plan.stats.maxDepth,
+          idempotencyKey,
+          status: 'planned' as const,
+        },
+      ];
+
+  return {
+    plannedNodeCount: plan.stats.nodeCount,
+    maxDepth: plan.stats.maxDepth,
+    mathCount: plan.stats.mathBlockCount + plan.stats.inlineMathCount,
+    tableCount: plan.stats.tableCount,
+    flashcardMarkers: plan.stats.flashcardCount,
+    estimatedWriteRisk: estimateWriteRisk(plan, fallback),
+    recommendedChunkSize: MARKDOWN_SECTION_CHUNK_MAX_NODES,
+    chunkCount: chunks.length,
+    warnings,
+    chunks,
   };
 }
 
@@ -256,6 +343,12 @@ export function previewMarkdownNoteTree(
     verifyAfterWrite: args.verifyAfterWrite,
   });
   const outputText = markdownImportOutputTextFromTree(plan.tree);
+  const fallback = markdownFallbackForPlan(plan);
+  const notePlan = createNotePlanSummary(plan.tree, 'markdown', {
+    mathCount: plan.stats.mathBlockCount + plan.stats.inlineMathCount,
+    tableCount: plan.stats.tableCount,
+    flashcardMarkers: plan.stats.flashcardCount,
+  });
   return {
     ok: true,
     status: 'previewed',
@@ -268,6 +361,8 @@ export function previewMarkdownNoteTree(
     outputText,
     formulaValidation: plan.formulaValidation,
     flashcardOptions: plan.options.flashcardOptions,
+    notePlan,
+    massNoteManifest: buildMassNoteManifest(plan, fallback, 'preview-markdown-note-tree'),
     verification: verifyMarkdownSourceFidelity(
       plan.sourceSnippets,
       outputText,
@@ -411,6 +506,12 @@ export async function createOrReplaceNoteFromMarkdown(
     })
   );
   const fallback = markdownFallbackForPlan(plan);
+  const notePlan = createNotePlanSummary(plan.tree, 'markdown', {
+    mathCount: plan.stats.mathBlockCount + plan.stats.inlineMathCount,
+    tableCount: plan.stats.tableCount,
+    flashcardMarkers: plan.stats.flashcardCount,
+  });
+  const massNoteManifest = buildMassNoteManifest(plan, fallback, idempotencyKey);
   const planningDurationMs = Date.now() - startedAt;
 
   const baseResult = {
@@ -426,6 +527,8 @@ export async function createOrReplaceNoteFromMarkdown(
     mode: normalized.mode,
     duplicatePolicy: normalized.duplicatePolicy,
     operationPlan,
+    notePlan,
+    massNoteManifest,
     writeEngine: writeEngineExecutionFromPlan(operationPlan),
     plan: markdownImportPlanSummary(plan),
     fallback,
@@ -486,6 +589,13 @@ export async function createOrReplaceNoteFromMarkdown(
       const createdRemIds = [...rootBatch.createdRemIds];
       const updatedRemIds = [...(rootBatch.updatedRemIds ?? [])];
       const rootId = rootBatch.rootCreatedRemId;
+      if (massNoteManifest.chunks[0]) {
+        massNoteManifest.chunks[0] = {
+          ...massNoteManifest.chunks[0],
+          createdRemIds: [...rootBatch.createdRemIds],
+          status: rootBatch.status === 'already_applied' ? 'already_applied' : 'applied',
+        };
+      }
       if (!rootId) {
         throw new RemnoteWriteError('PARTIAL_FAILURE', 'Markdown chunk fallback created no root Rem.', {
           partialExecution: {
@@ -515,6 +625,14 @@ export async function createOrReplaceNoteFromMarkdown(
         });
         createdRemIds.push(...chunkResult.createdRemIds);
         updatedRemIds.push(...(chunkResult.updatedRemIds ?? []));
+        const manifestIndex = index + 1;
+        if (massNoteManifest.chunks[manifestIndex]) {
+          massNoteManifest.chunks[manifestIndex] = {
+            ...massNoteManifest.chunks[manifestIndex],
+            createdRemIds: [...chunkResult.createdRemIds],
+            status: chunkResult.status === 'already_applied' ? 'already_applied' : 'applied',
+          };
+        }
       }
 
       return {
@@ -722,6 +840,13 @@ export async function createOrReplaceNoteFromMarkdown(
       fallbackUsed: fallback.used,
       fallbackReason: fallback.reason,
     });
+    if (!fallback.used && massNoteManifest.chunks[0]) {
+      massNoteManifest.chunks[0] = {
+        ...massNoteManifest.chunks[0],
+        createdRemIds: [...batchResult.createdRemIds],
+        status: batchResult.status === 'already_applied' ? 'already_applied' : 'applied',
+      };
+    }
     const result: CreateOrReplaceNoteFromMarkdownResult = {
       ...baseResult,
       rootRemId,
@@ -748,6 +873,7 @@ export async function createOrReplaceNoteFromMarkdown(
       performance,
       durationMs: Date.now() - startedAt,
     };
+    rememberCreatedRemIds(result.createdRemIds);
     rememberMarkdownImportResult(idempotencyKey, result);
     return result;
   } catch (error: unknown) {
@@ -756,6 +882,7 @@ export async function createOrReplaceNoteFromMarkdown(
       throw new RemnoteWriteError(error.code, error.message, {
         originalDetails: error.details,
         operationPlan,
+        massNoteManifest,
         partialExecution: {
           createdRemIds: readCreatedRemIdsFromError(error),
           failedAtPath:

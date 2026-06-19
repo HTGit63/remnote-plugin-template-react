@@ -88,6 +88,8 @@ export interface DeleteRemByIdArgs {
   confirmTitle?: string;
   dryRun?: boolean;
   idempotencyKey?: string;
+  requireCreatedInCurrentSession?: boolean;
+  requirePriorDryRun?: boolean;
 }
 
 export type RemHeadingLevel = 'H1' | 'H2' | 'H3' | 'normal';
@@ -714,6 +716,9 @@ export interface CreateClozeCardsFromNoteArgs {
 export interface VerifyCardSetArgs {
   rootRemId: string;
   maxCards?: number;
+  maxNodes?: number;
+  maxDepth?: number;
+  timeoutMs?: number;
 }
 
 export interface RepairCardSetArgs {

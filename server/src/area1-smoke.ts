@@ -5,6 +5,7 @@ import {
 } from './tool-registry.js';
 import {
   BASIC_TIER_TOOLS,
+  MASS_NOTE_WRITER_TIER_TOOLS,
   NOTE_WRITER_TIER_TOOLS,
   POWER_USER_TIER_TOOLS,
   DEVELOPER_TIER_TOOLS,
@@ -93,13 +94,35 @@ function checkCore() {
   assert(!tools.includes('create_folder'), 'basic tier must not expose unsupported create_folder.');
   assert(normalizeToolProfile('simple') === 'basic', 'simple alias must normalize to basic.');
   assert(normalizeToolProfile('core') === 'basic', 'core alias must normalize to basic.');
-  assert(normalizeToolProfile('advanced_notes') === 'note_writer', 'advanced_notes alias must normalize to note_writer.');
+  assert(normalizeToolProfile('advanced_notes') === 'mass_note_writer', 'advanced_notes alias must normalize to mass_note_writer.');
+  assert(normalizeToolProfile('mass_notes') === 'mass_note_writer', 'mass_notes alias must normalize to mass_note_writer.');
   assert(normalizeToolProfile('full') === 'danger', 'full alias must normalize to danger.');
+}
+
+function checkMassNoteWriter() {
+  const tools = getPublicMcpToolNames(false, 'mass_note_writer');
+  assert(JSON.stringify(tools) === JSON.stringify([...MASS_NOTE_WRITER_TIER_TOOLS]), 'mass_note_writer tier must match safe mass note list.');
+  for (const tool of [
+    'preview_markdown_note_tree',
+    'create_note_from_markdown_tree',
+    'append_markdown_as_rem_tree',
+    'apply_structured_note_batch',
+    'create_polished_note_tree',
+    'create_designed_note_tree',
+    'verify_card_set',
+    'delete_rem_by_id',
+    'debug_get_raw_rich_text',
+    'set_rem_heading_level',
+  ]) {
+    assert(!tools.includes(tool), `mass_note_writer tier must not expose ${tool}.`);
+  }
+  assert(tools.includes('create_or_replace_note_from_markdown'), 'mass_note_writer must expose proven Markdown writer.');
+  assertNoRemovedTools(tools, 'mass_note_writer tier');
 }
 
 function checkAdvanced() {
   const tools = toolSet('note_writer');
-  for (const tool of [...BASIC_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS]) {
+  for (const tool of [...MASS_NOTE_WRITER_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS]) {
     assert(tools.has(tool), `note_writer tier missing ${tool}.`);
   }
   for (const tool of [...POWER_USER_TIER_TOOLS, ...DEVELOPER_TIER_TOOLS]) {
@@ -110,7 +133,7 @@ function checkAdvanced() {
 
 function checkDiagnostics() {
   const tools = toolSet('developer');
-  for (const tool of [...BASIC_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS, ...POWER_USER_TIER_TOOLS, ...DEVELOPER_TIER_TOOLS]) {
+  for (const tool of [...MASS_NOTE_WRITER_TIER_TOOLS, ...NOTE_WRITER_TIER_TOOLS, ...POWER_USER_TIER_TOOLS, ...DEVELOPER_TIER_TOOLS]) {
     assert(tools.has(tool), `developer tier missing ${tool}.`);
   }
   assert(!tools.has('delete_rem_by_id'), 'developer tier should not include danger tool.');
@@ -480,12 +503,13 @@ function checkHostedDiagnostics() {
 }
 
 function checkTierSwitching() {
-  const tiers: ToolProfile[] = ['basic', 'note_writer', 'power_user', 'developer', 'danger'];
+  const tiers: ToolProfile[] = ['basic', 'mass_note_writer', 'note_writer', 'power_user', 'developer', 'danger'];
   const counts = tiers.map((tier) => getPublicMcpToolNames(false, tier).length);
-  assert(counts[0] < counts[1], 'note_writer should expose more tools than basic.');
-  assert(counts[1] < counts[2], 'power_user should expose more tools than note_writer.');
-  assert(counts[2] < counts[3], 'developer should expose more tools than power_user.');
-  assert(counts[4] >= counts[3], 'danger should expose at least the developer tool set.');
+  assert(counts[0] < counts[1], 'mass_note_writer should expose more tools than basic.');
+  assert(counts[1] < counts[2], 'note_writer should expose more tools than mass_note_writer.');
+  assert(counts[2] < counts[3], 'power_user should expose more tools than note_writer.');
+  assert(counts[3] < counts[4], 'developer should expose more tools than power_user.');
+  assert(counts[5] >= counts[4], 'danger should expose at least the developer tool set.');
 }
 
 function checkIdempotency() {
@@ -547,6 +571,7 @@ function checkPerformance() {
 const checks: Record<string, () => void> = {
   all: () => {
     checkCore();
+    checkMassNoteWriter();
     checkAdvanced();
     checkDiagnostics();
     checkFullAndMetadata();
@@ -559,6 +584,7 @@ const checks: Record<string, () => void> = {
     checkPerformance();
   },
   core: checkCore,
+  mass: checkMassNoteWriter,
   advanced: checkAdvanced,
   diagnostics: checkDiagnostics,
   schemas: checkSchemas,

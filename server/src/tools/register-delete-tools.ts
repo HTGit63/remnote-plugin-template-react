@@ -19,13 +19,15 @@ export function registerDeleteTools({ registerTool, callPlugin }: ToolRegistrati
         confirmTitle: z.string().trim().max(1000).optional().describe('Required for real delete: must match target plain text exactly.'),
         dryRun: z.boolean().default(true).describe('Default true. Set false only after reviewing the dry-run target.'),
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Returns the same delete result on retry in this plugin session.'),
+        requireCreatedInCurrentSession: z.boolean().default(false).describe('For disposable cleanup only: require the target Rem ID to have been created by this plugin session.'),
+        requirePriorDryRun: z.boolean().default(false).describe('For disposable cleanup only: require a prior dryRun with the same idempotencyKey and matching target.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('delete_rem_by_id'),
     },
-    async ({ remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey }) =>
+    async ({ remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey, requireCreatedInCurrentSession, requirePriorDryRun }) =>
       bridgeToolResult(
-        () => callPlugin('delete_rem_by_id', { remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey }),
+        () => callPlugin('delete_rem_by_id', { remId, expectedParentId, expectedAncestorId, confirmTitle, dryRun, idempotencyKey, requireCreatedInCurrentSession, requirePriorDryRun }),
         dryRun === false ? 'Delete Rem by ID request processed.' : 'Delete Rem by ID dry run processed.'
       )
   );

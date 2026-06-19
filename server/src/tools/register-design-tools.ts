@@ -282,6 +282,9 @@ export function registerHighLevelCardWorkflowTools({ registerTool, callPlugin }:
       inputSchema: z.object({
         rootRemId: REM_ID_SCHEMA,
         maxCards: CARD_LIMIT_SCHEMA.optional(),
+        maxNodes: z.number().int().min(1).max(500).optional().describe('Maximum Rem nodes to inspect before returning a partial verification result.'),
+        maxDepth: z.number().int().min(0).max(4).optional().describe('Maximum descendant depth to inspect. Default 1 for direct card children.'),
+        timeoutMs: z.number().int().min(100).max(10000).optional().describe('Verifier time budget. Returns partial instead of hanging.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('verify_card_set'),

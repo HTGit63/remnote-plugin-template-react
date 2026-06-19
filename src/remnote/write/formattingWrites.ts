@@ -83,55 +83,21 @@ import { REMNOTE_COMMAND_RESULT_CACHE, STYLE_PLAN_RESULT_CACHE, getWriteIdempote
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getColorFormat, getFreshInsertIndex, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
 import { nativeRemHighlightEnabled } from './runtimeFlags';
-
-async function getDirectChildIds(rem: Rem): Promise<string[]> {
-  return (await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem())).map((child) => child._id);
-}
-
-function withNoChildMutationProof(
-  result: FormatRemResult,
-  beforeChildIds: readonly string[],
-  afterChildIds: readonly string[]
-): FormatRemResult {
-  const createdChildIds = afterChildIds.filter((id) => !beforeChildIds.includes(id));
-  if (createdChildIds.length > 0) {
-    throw new RemnoteWriteError('PARTIAL_FAILURE', 'Style-only operation created unexpected child Rems.', {
-      remId: result.remId,
-      status: result.status,
-      childIdsBefore: [...beforeChildIds],
-      childIdsAfter: [...afterChildIds],
-      createdChildRemIds: createdChildIds,
-      partialExecution: {
-        createdRemIds: createdChildIds,
-        failedStage: 'style_child_pollution_check',
-        rollbackStatus: 'not_attempted',
-      },
-    });
-  }
-
-  return {
-    ...result,
-    verification: {
-      ...(result.verification ?? {}),
-      childCountBefore: beforeChildIds.length,
-      childCountAfter: afterChildIds.length,
-      childIdsBefore: [...beforeChildIds],
-      childIdsAfter: [...afterChildIds],
-      noChildrenCreated: afterChildIds.length === beforeChildIds.length &&
-        afterChildIds.every((id) => beforeChildIds.includes(id)),
-    },
-  };
-}
+import {
+  captureStyleMutationSnapshot,
+  verifyStyleOnlyMutation,
+  withStyleMutationProof,
+} from './styleMutationInvariant';
 
 export async function setRemHeadingLevel(
   plugin: RNPlugin,
   args: SetRemHeadingLevelArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  const beforeChildIds = await getDirectChildIds(rem);
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(args.level)));
-  const afterChildIds = await getDirectChildIds(rem);
-  return withNoChildMutationProof({ remId: rem._id, status: 'heading_set', ok: true }, beforeChildIds, afterChildIds);
+  const after = await captureStyleMutationSnapshot(plugin, rem);
+  return withStyleMutationProof({ remId: rem._id, status: 'heading_set', ok: true }, before, after);
 }
 
 export async function setRemTextColor(
@@ -140,12 +106,12 @@ export async function setRemTextColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   try {
-    const beforeChildIds = await getDirectChildIds(rem);
+    const before = await captureStyleMutationSnapshot(plugin, rem);
     const formatted = await applyTextColorToAllText(plugin, getRemRichText(rem), args.color);
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
-    const afterChildIds = await getDirectChildIds(rem);
+    const after = await captureStyleMutationSnapshot(plugin, rem);
     const plain = await getRemPlainString(plugin, rem);
-    return withNoChildMutationProof(
+    return withStyleMutationProof(
       {
         remId: rem._id,
         status: 'text_color_set',
@@ -158,8 +124,8 @@ export async function setRemTextColor(
           textLength: plain.length,
         },
       },
-      beforeChildIds,
-      afterChildIds
+      before,
+      after
     );
   } catch (error: unknown) {
     throw mapFormattingError(error);
@@ -172,7 +138,7 @@ export async function setTextSpanColor(
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   try {
-    const beforeChildIds = await getDirectChildIds(rem);
+    const before = await captureStyleMutationSnapshot(plugin, rem);
     const range = await resolveRangeFromPlainText(
       plugin,
       getRemRichText(rem),
@@ -182,8 +148,8 @@ export async function setTextSpanColor(
       rangeInputFromArgs(args).occurrence ?? 1
     );
     const result = await setTextColorInRange(plugin, rem, range, args.color, 'span_color_set');
-    const afterChildIds = await getDirectChildIds(rem);
-    return withNoChildMutationProof(result, beforeChildIds, afterChildIds);
+    const after = await captureStyleMutationSnapshot(plugin, rem);
+    return withStyleMutationProof(result, before, after);
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -196,7 +162,7 @@ export async function setTextSpanHighlight(
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const rangeArgs = rangeInputFromArgs(args);
   try {
-    const beforeChildIds = await getDirectChildIds(rem);
+    const before = await captureStyleMutationSnapshot(plugin, rem);
     const range = await resolveRangeFromPlainText(
       plugin,
       getRemRichText(rem),
@@ -206,8 +172,8 @@ export async function setTextSpanHighlight(
       rangeArgs.occurrence ?? 1
     );
     const result = await setTextHighlightInRange(plugin, rem, range, args.color);
-    const afterChildIds = await getDirectChildIds(rem);
-    return withNoChildMutationProof(result, beforeChildIds, afterChildIds);
+    const after = await captureStyleMutationSnapshot(plugin, rem);
+    return withStyleMutationProof(result, before, after);
   } catch (error: unknown) {
     throw mapFormattingError(error);
   }
@@ -218,7 +184,7 @@ export async function setRemHighlightColor(
   args: SetRemHighlightColorArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
-  const beforeChildIds = await getDirectChildIds(rem);
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   const color = remColorNameFromString(args.color);
   if (color === 'default') {
     throw new RemnoteWriteError(
@@ -238,8 +204,8 @@ export async function setRemHighlightColor(
     await runSdkOperation('rem.setHighlightColor', () =>
       rem.setHighlightColor(format as never)
     );
-    const afterChildIds = await getDirectChildIds(rem);
-    return withNoChildMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, beforeChildIds, afterChildIds);
+    const after = await captureStyleMutationSnapshot(plugin, rem);
+    return withStyleMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, before, after);
   }
 
   const plain = await getRemPlainString(plugin, rem);
@@ -255,8 +221,8 @@ export async function setRemHighlightColor(
     { start: 0, end: plain.length, resolvedPlainText: plain },
     color
   );
-  const afterChildIds = await getDirectChildIds(rem);
-  return withNoChildMutationProof({ ...result, status: 'highlight_set' }, beforeChildIds, afterChildIds);
+  const after = await captureStyleMutationSnapshot(plugin, rem);
+  return withStyleMutationProof({ ...result, status: 'highlight_set' }, before, after);
 }
 
 export async function setRemType(
@@ -271,8 +237,10 @@ export async function setRemType(
     );
   }
 
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(args.type)));
-  return { remId: rem._id, status: 'rem_type_set' };
+  const after = await captureStyleMutationSnapshot(plugin, rem);
+  return withStyleMutationProof({ remId: rem._id, status: 'rem_type_set', ok: true }, before, after);
 }
 
 export async function setHideBullet(
@@ -280,8 +248,10 @@ export async function setHideBullet(
   args: SetHideBulletArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(!args.hideBullet));
-  return { remId: rem._id, status: 'hide_bullet_set' };
+  const after = await captureStyleMutationSnapshot(plugin, rem);
+  return withStyleMutationProof({ remId: rem._id, status: 'hide_bullet_set', ok: true }, before, after);
 }
 
 export async function clearRemFormatting(
@@ -289,6 +259,7 @@ export async function clearRemFormatting(
   args: ClearRemFormattingArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  const before = await captureStyleMutationSnapshot(plugin, rem);
   const plain = await getRemPlainString(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, [{ text: plain || ' ' }]);
   const warnings: string[] = [];
@@ -317,14 +288,15 @@ export async function clearRemFormatting(
     cleared.remType = true;
   }
 
-  return {
+  const after = await captureStyleMutationSnapshot(plugin, rem);
+  return withStyleMutationProof({
     remId: rem._id,
     status: warnings.length === 0 ? 'formatting_cleared' : 'formatting_partially_cleared',
     ok: warnings.length === 0,
     cleared,
     unsupported,
     warnings,
-  };
+  }, before, after);
 }
 
 async function resolveCommandTarget(plugin: RNPlugin, args: ApplyRemnoteCommandArgs): Promise<Rem> {
@@ -388,6 +360,10 @@ function resultForCommand(
   };
 }
 
+function isStyleOnlyCommand(command: RemnoteCommandName): boolean {
+  return command !== 'insert_inline_math' && command !== 'insert_math_block';
+}
+
 async function appendMathToRem(
   plugin: RNPlugin,
   rem: Rem,
@@ -442,6 +418,9 @@ export async function applyRemnoteCommand(
 
   const rem = await resolveCommandTarget(plugin, args);
   const command = args.command;
+  const before = isStyleOnlyCommand(command)
+    ? await captureStyleMutationSnapshot(plugin, rem)
+    : undefined;
 
   if (args.dryRun) {
     return {
@@ -515,6 +494,10 @@ export async function applyRemnoteCommand(
   }
 
   const result = resultForCommand(rem, command, idempotencyKey);
+  if (before) {
+    const after = await captureStyleMutationSnapshot(plugin, rem);
+    result.verification = verifyStyleOnlyMutation(rem._id, result.status, before, after);
+  }
   rememberRemnoteCommandResult(idempotencyKey, result);
   return result;
 }
@@ -593,6 +576,7 @@ async function applyOneStyleOperation(
     case 'bold_span':
     case 'italic_span': {
       const rem = await findRequiredRem(plugin, operation.remId, 'Target');
+      const before = await captureStyleMutationSnapshot(plugin, rem);
       const range = await resolveRangeFromPlainText(
         plugin,
         getRemRichText(rem),
@@ -609,7 +593,8 @@ async function applyOneStyleOperation(
         [operation.type === 'bold_span' ? 'bold' : 'italic']
       );
       await runSdkOperation('rem.setText', () => rem.setText(richText));
-      return {
+      const after = await captureStyleMutationSnapshot(plugin, rem);
+      return withStyleMutationProof({
         remId: rem._id,
         status: 'updated_rich',
         ok: true,
@@ -617,7 +602,7 @@ async function applyOneStyleOperation(
         start: range.start,
         end: range.end,
         methodUsed: 'rich_text_rebuild',
-      } as FormatRemResult;
+      } as FormatRemResult, before, after);
     }
     case 'math_conversion':
       throw new RemnoteWriteError(

@@ -79,7 +79,7 @@ import {
   resolveRangeFromPlainText,
 } from '../richTextFormatting';
 import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeErrors';
-import { FLASHCARD_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult } from './writeCaches';
+import { FLASHCARD_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult, rememberCreatedRemIds } from './writeCaches';
 import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getFreshInsertIndex, getRemTypeValue } from './remnoteSdkHelpers';
 
 export async function createFlashcardRem(
@@ -155,6 +155,7 @@ export async function createBasicFlashcard(
     status: 'created_flashcard',
     idempotencyKey,
   };
+  rememberCreatedRemIds([rem._id]);
   rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -211,6 +212,7 @@ export async function createClozeCard(
     status: 'created_flashcard',
     idempotencyKey,
   };
+  rememberCreatedRemIds([rem._id]);
   rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -249,4 +251,3 @@ export async function createListAnswerCard(
     'list_answer'
   );
 }
-

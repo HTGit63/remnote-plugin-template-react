@@ -66,6 +66,46 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => `${JSON.stringify(key)}:${stableStringify(child)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function stableHash(value: unknown): string {
+  const input = stableStringify(value);
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+export function normalizeNoteDesignTemplate(template: NoteDesignTemplate): Record<string, unknown> {
+  return {
+    schemaVersion: template.schemaVersion,
+    templateId: template.templateId,
+    name: template.name,
+    description: template.description,
+    sourceRemId: template.sourceRemId,
+    conflictBehavior: template.conflictBehavior,
+    rules: template.rules,
+  };
+}
+
+export function hashNoteDesignTemplate(template: NoteDesignTemplate): string {
+  return stableHash(normalizeNoteDesignTemplate(template));
+}
+
 function clampInt(value: number | undefined, fallback: number, min: number, max: number): number {
   if (!Number.isFinite(value)) {
     return fallback;
@@ -564,9 +604,12 @@ export async function exportNoteDesignTemplate(
   if (!template) {
     throw new RemnoteWriteError('INVALID_ARGS', `Design template "${args.templateId}" was not found.`);
   }
+  const normalizedTemplate = normalizeNoteDesignTemplate(template);
+  const normalizedTemplateHash = stableHash(normalizedTemplate);
   const templateJson = JSON.stringify(
     {
       exportedAt: nowIso(),
+      normalizedTemplateHash,
       template,
     },
     null,
@@ -577,6 +620,8 @@ export async function exportNoteDesignTemplate(
     templateId: template.templateId,
     templateJson,
     template,
+    normalizedTemplate,
+    normalizedTemplateHash,
   };
 }
 
@@ -585,14 +630,21 @@ export async function importNoteDesignTemplate(
   args: ImportNoteDesignTemplateArgs
 ): Promise<ImportNoteDesignTemplateResult> {
   const imported = parseTemplateJson(args.templateJson);
+  const importedTemplateHash = hashNoteDesignTemplate(imported);
   const store = await readTemplateStore(plugin);
   const existingIndex = store.templates.findIndex((template) => template.templateId === imported.templateId);
   if (existingIndex >= 0 && !args.overwrite) {
+    const existingNormalized = normalizeNoteDesignTemplate(store.templates[existingIndex]);
+    const existingHash = stableHash(existingNormalized);
     return {
       status: 'already_exists',
       template: store.templates[existingIndex],
       templateCount: store.templates.length,
       warnings: ['Template already exists. Pass overwrite=true to replace it.'],
+      normalizedTemplate: existingNormalized,
+      normalizedTemplateHash: existingHash,
+      importedTemplateHash,
+      roundTripEqual: existingHash === importedTemplateHash,
     };
   }
   const template = {
@@ -607,9 +659,15 @@ export async function importNoteDesignTemplate(
     store.templates.push(template);
   }
   await writeTemplateStore(plugin, store);
+  const normalizedTemplate = normalizeNoteDesignTemplate(template);
+  const normalizedTemplateHash = stableHash(normalizedTemplate);
   return {
     status: 'imported',
     template,
     templateCount: store.templates.length,
+    normalizedTemplate,
+    normalizedTemplateHash,
+    importedTemplateHash,
+    roundTripEqual: normalizedTemplateHash === importedTemplateHash,
   };
 }

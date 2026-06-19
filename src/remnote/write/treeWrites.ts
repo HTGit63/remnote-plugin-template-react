@@ -103,6 +103,7 @@ import {
   writeEngineExecutionFromPlan,
 } from '../write-engine/execute';
 import { markdownTreeFastPathEnabled } from './runtimeFlags';
+import { createNotePlanSummary } from './notePlan';
 
 type ValidatedSimpleTreeNode = ReturnType<typeof validateTreeNode>;
 
@@ -314,6 +315,7 @@ export async function createPolishedNoteTree(
   }
 
   const presetTree = applyStylePresetToTree(args.tree, args);
+  const notePlan = createNotePlanSummary(presetTree, 'polished');
   const operationPlan = finalizeWriteOperationPlan(
     plugin,
     buildWriteOperationPlan({
@@ -496,6 +498,7 @@ export async function createPolishedNoteTree(
           attempted: false,
           completed: false,
         },
+        notePlan,
         phases: [
           { name: 'validate_tree', status: 'completed' },
           { name: 'create_tree', status: created.status === 'dry_run' ? 'skipped' : 'completed' },

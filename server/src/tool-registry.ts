@@ -12,10 +12,11 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-05.goal9-catalog';
+export const TOOL_REGISTRY_VERSION = '2026-06-17.mass-note-writer-catalog';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const SERVER_VERSION = '0.1.0';
+export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
 export const STATIC_SDK_UNSUPPORTED_TOOLS = ['create_folder'] as const;
 export const SERVER_LOCAL_MCP_TOOLS = [
   'get_bridge_status',
@@ -279,11 +280,30 @@ export function getToolRegistrySummary(
 
   return {
     serverVersion: SERVER_VERSION,
+    packageVersion: PACKAGE_VERSION,
     pluginVersion: 'reported-by-plugin-status',
+    gitSha:
+      process.env.RENDER_GIT_COMMIT?.trim() ||
+      process.env.RENDER_COMMIT?.trim() ||
+      process.env.GIT_COMMIT?.trim() ||
+      process.env.COMMIT_SHA?.trim() ||
+      process.env.SOURCE_VERSION?.trim() ||
+      'unknown',
+    branchName:
+      process.env.RENDER_GIT_BRANCH?.trim() ||
+      process.env.RENDER_BRANCH?.trim() ||
+      process.env.GIT_BRANCH?.trim() ||
+      process.env.BRANCH?.trim() ||
+      'unknown',
+    buildTime: process.env.REMNOTE_BRIDGE_BUILD_TIME?.trim() || process.env.BUILD_TIME?.trim() || 'unknown',
+    deploymentEnvironment: process.env.RENDER ? 'render' : process.env.NODE_ENV || 'development',
     toolProfile: profile,
     toolTier: profile,
     activeToolTier: profile,
+    activeToolProfile: profile,
     defaultToolTier: DEFAULT_TOOL_PROFILE,
+    permissionMode: 'request_principal_or_bridge_runtime',
+    permissionScope: 'request_principal_or_bridge_runtime',
     operationPermissionTiers: [
       'Read Only',
       'Read + Create',
@@ -301,6 +321,7 @@ export function getToolRegistrySummary(
     ],
     toolAccessTiers: [
       'Basic',
+      'Mass Note Writer',
       'Note Writer',
       'Power User',
       'Developer',
@@ -336,10 +357,12 @@ export function getToolRegistrySummary(
     registeredTools,
     sourceRegistryTools,
     declaredToolNames: sourceRegistryTools,
+    declaredToolCount: sourceRegistryTools.length,
     allPublicTools,
     allPublicToolCount: allPublicTools.length,
     publicToolCount: publicTools.length,
     publicTools,
+    listedToolCount: publicTools.length,
     exposedTools: [...publicTools],
     registryDeclaredTools: sourceRegistryTools,
     mcpRegisteredTools: [...registeredTools],
@@ -448,6 +471,7 @@ export function getToolRegistrySummary(
     activePolicyGroups,
     profileHiddenTools,
     hiddenTools,
+    hiddenToolCount: hiddenTools.length + profileHiddenTools.length,
     hiddenReasons,
     registryMismatch: mismatch,
     deleteToolExposed: publicTools.includes('delete_rem_by_id'),

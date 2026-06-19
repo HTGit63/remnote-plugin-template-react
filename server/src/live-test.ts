@@ -32,6 +32,35 @@ function getStructuredResult(response: unknown): Record<string, unknown> {
   return typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {};
 }
 
+function unwrapToolResult(response: unknown): Record<string, unknown> {
+  const payload = getStructuredResult(response);
+  const nested = payload.result;
+  return typeof nested === 'object' && nested !== null ? (nested as Record<string, unknown>) : payload;
+}
+
+function stringField(record: Record<string, unknown>, field: string): string | undefined {
+  return typeof record[field] === 'string' ? record[field] as string : undefined;
+}
+
+function stringArrayField(record: Record<string, unknown>, field: string): string[] {
+  return Array.isArray(record[field])
+    ? (record[field] as unknown[]).filter((value): value is string => typeof value === 'string')
+    : [];
+}
+
+function liveMarkdown(title: string, sectionCount: number): string {
+  return [
+    `# ${title}`,
+    '',
+    ...Array.from({ length: sectionCount }, (_, index) => [
+      `## Section ${index + 1}`,
+      '',
+      `Body ${index + 1} preserves text, inline math \\(x_${index + 1}\\), and source order.`,
+      '',
+    ]).flat(),
+  ].join('\n');
+}
+
 function getToolNames(response: unknown): string[] {
   const result = typeof response === 'object' && response !== null ? (response as { result?: unknown }).result : undefined;
   const tools = typeof result === 'object' && result !== null ? (result as { tools?: unknown }).tools : undefined;
@@ -132,6 +161,44 @@ async function findRegressionRoot(mcp: McpClientOptions, results: ToolStatus[]):
   return undefined;
 }
 
+async function cleanupCurrentSessionRoot(
+  dangerMcp: McpClientOptions,
+  rootRemId: string,
+  confirmTitle: string,
+  expectedAncestorId: string,
+  idempotencyKey: string,
+  results: ToolStatus[]
+) {
+  await runTool(
+    dangerMcp,
+    'delete_rem_by_id',
+    {
+      remId: rootRemId,
+      dryRun: true,
+      confirmTitle,
+      expectedAncestorId,
+      requireCreatedInCurrentSession: true,
+      requirePriorDryRun: false,
+      idempotencyKey,
+    },
+    results
+  );
+  await runTool(
+    dangerMcp,
+    'delete_rem_by_id',
+    {
+      remId: rootRemId,
+      dryRun: false,
+      confirmTitle,
+      expectedAncestorId,
+      requireCreatedInCurrentSession: true,
+      requirePriorDryRun: true,
+      idempotencyKey,
+    },
+    results
+  );
+}
+
 const mode = getMode();
 const mcp: McpClientOptions = {
   url: process.env.REMNOTE_MCP_URL ?? 'http://127.0.0.1:47392/mcp',
@@ -143,10 +210,13 @@ try {
   await initializeMcp(mcp);
   const listed = getToolNames(await listMcpTools(mcp));
   const diagnosticMcp = withToolTier(mcp, 'developer');
+  const noteWriterMcp = withToolTier(mcp, 'note_writer');
+  const powerMcp = withToolTier(mcp, 'power_user');
+  const dangerMcp = withToolTier(mcp, 'danger');
   results.push({
     tool: 'tools/list',
-    status: listed.length >= 40 ? 'passed' : 'failed',
-    reason: `${listed.length} tools listed`,
+    status: listed.length > 0 ? 'passed' : 'failed',
+    reason: `${listed.length} tools listed for the active profile`,
   });
 
   await runTool(mcp, 'get_bridge_status', {}, results);
@@ -158,36 +228,144 @@ try {
   if (mode !== 'read_only') {
     const parentId = await findRegressionRoot(mcp, results);
     if (parentId) {
-      await runTool(
-        mcp,
-        'apply_structured_note_batch',
-        {
-          target: { mode: 'parent_child', parentId },
-          operation: 'create_child_tree',
-          position: 'end',
-          dryRun: mode !== 'full_sandbox',
-          idempotencyKey: `live-${mode}-${Date.now()}`,
-          rollbackOnFailure: true,
-          verifyAfterWrite: mode === 'full_sandbox',
-          note: {
-            root: {
-              text: 'MCP Regression Batch Note',
-              style: { headingLevel: 'H2', color: 'blue' },
-              children: [
-                {
-                  text: 'Inline math \\(a^2+b^2=c^2\\)',
-                  style: { highlight: 'yellow' },
-                },
-                {
-                  type: 'mathBlock',
-                  latex: '\\int_0^1 x^2 dx',
-                },
-              ],
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const dryRunCases = mode === 'full_sandbox' ? [250, 500] : [15, 25, 50, 100, 250, 500];
+      for (const size of dryRunCases) {
+        await runTool(
+          mcp,
+          'create_or_replace_note_from_markdown',
+          {
+            parentRemId: parentId,
+            markdownText: liveMarkdown(`MCP Live Dry Run ${size} ${stamp}`, Math.max(1, Math.floor(size / 2))),
+            mode: 'create_child',
+            duplicatePolicy: 'create_new',
+            safetyOptions: {
+              dryRun: true,
+              verifyAfterWrite: true,
+              rollbackOnFailure: true,
+              idempotencyKey: `live-dry-${size}-${stamp}`,
+            },
+            limits: { maxNodes: 2000, maxDepth: 12, maxMarkdownChars: 500000 },
+          },
+          results
+        );
+      }
+
+      if (mode === 'full_sandbox') {
+        for (const size of [15, 25, 50, 100]) {
+          const title = `MCP Live Write ${size} ${stamp}`;
+          const idempotencyKey = `live-write-${size}-${stamp}`;
+          const response = await runTool(
+            mcp,
+            'create_or_replace_note_from_markdown',
+            {
+              parentRemId: parentId,
+              markdownText: liveMarkdown(title, Math.max(1, Math.floor(size / 2))),
+              mode: 'create_child',
+              duplicatePolicy: 'create_new',
+              safetyOptions: {
+                dryRun: false,
+                verifyAfterWrite: true,
+                rollbackOnFailure: true,
+                idempotencyKey,
+              },
+              limits: { maxNodes: 2000, maxDepth: 12, maxMarkdownChars: 500000 },
+            },
+            results
+          );
+          const payload = unwrapToolResult(response);
+          const rootRemId = stringField(payload, 'rootRemId') ?? stringArrayField(payload, 'createdRemIds')[0];
+          if (!rootRemId) {
+            results.push({ tool: `live-write-${size}-root-id`, status: 'failed', error: 'Write did not return rootRemId or createdRemIds.' });
+            continue;
+          }
+          await runTool(mcp, 'get_rem_tree', { remId: rootRemId, depth: 3, maxNodes: Math.max(50, size + 10) }, results);
+          const replay = await runTool(
+            mcp,
+            'create_or_replace_note_from_markdown',
+            {
+              parentRemId: parentId,
+              markdownText: liveMarkdown(title, Math.max(1, Math.floor(size / 2))),
+              mode: 'create_child',
+              duplicatePolicy: 'create_new',
+              safetyOptions: {
+                dryRun: false,
+                verifyAfterWrite: true,
+                rollbackOnFailure: true,
+                idempotencyKey,
+              },
+              limits: { maxNodes: 2000, maxDepth: 12, maxMarkdownChars: 500000 },
+            },
+            results
+          );
+          const replayPayload = unwrapToolResult(replay);
+          if (replayPayload.status !== 'already_applied') {
+            results.push({ tool: `idempotency-replay-${size}`, status: 'failed', error: `Expected already_applied, got ${String(replayPayload.status)}` });
+          } else {
+            results.push({ tool: `idempotency-replay-${size}`, status: 'passed' });
+          }
+          await cleanupCurrentSessionRoot(
+            dangerMcp,
+            rootRemId,
+            title,
+            parentId,
+            `cleanup-${idempotencyKey}`,
+            results
+          );
+        }
+
+        const cardTitle = `MCP Live Card Root ${stamp}`;
+        const cardRootResponse = await runTool(
+          mcp,
+          'create_or_replace_note_from_markdown',
+          {
+            parentRemId: parentId,
+            markdownText: `# ${cardTitle}\n\nCard lifecycle parent.`,
+            mode: 'create_child',
+            duplicatePolicy: 'create_new',
+            safetyOptions: {
+              dryRun: false,
+              verifyAfterWrite: true,
+              rollbackOnFailure: true,
+              idempotencyKey: `live-card-root-${stamp}`,
             },
           },
-        },
-        results
-      );
+          results
+        );
+        const cardRootPayload = unwrapToolResult(cardRootResponse);
+        const cardRootId = stringField(cardRootPayload, 'rootRemId') ?? stringArrayField(cardRootPayload, 'createdRemIds')[0];
+        if (cardRootId) {
+          await runTool(noteWriterMcp, 'create_basic_flashcard', {
+            parentId: cardRootId,
+            front: 'Basic front',
+            back: 'Basic back',
+            idempotencyKey: `live-basic-card-${stamp}`,
+          }, results);
+          await runTool(noteWriterMcp, 'create_cloze_card', {
+            parentId: cardRootId,
+            text: 'The nucleus emits energy',
+            clozeText: 'nucleus',
+            idempotencyKey: `live-cloze-card-${stamp}`,
+          }, results);
+          await runTool(powerMcp, 'create_flashcards_from_markdown', {
+            parentId: cardRootId,
+            markdownText: 'Markdown front:: Markdown back',
+            marker: 'double_colon',
+            idempotencyKey: `live-markdown-card-${stamp}`,
+          }, results);
+          await runTool(powerMcp, 'verify_card_set', { rootRemId: cardRootId, maxDepth: 2, maxNodes: 50, timeoutMs: 1000 }, results);
+          await cleanupCurrentSessionRoot(
+            dangerMcp,
+            cardRootId,
+            cardTitle,
+            parentId,
+            `cleanup-live-card-root-${stamp}`,
+            results
+          );
+        } else {
+          results.push({ tool: 'card-lifecycle-root', status: 'failed', error: 'Card lifecycle parent was not created.' });
+        }
+      }
     }
   }
 } catch (error: unknown) {

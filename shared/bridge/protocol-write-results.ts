@@ -209,6 +209,7 @@ export interface ApplyRemnoteCommandResult {
   status: 'command_applied' | 'already_applied' | 'dry_run';
   dryRun?: boolean;
   idempotencyKey?: string;
+  verification?: Record<string, unknown>;
 }
 
 export interface CreateStyledRemTreeResult {
@@ -237,6 +238,7 @@ export interface CreateStyledRemTreeResult {
   cardNodeCount?: number;
   performance?: WritePerformanceReport;
   durationMs?: number;
+  notePlan?: NotePlanSummary;
 }
 
 export interface StructuredNoteBatchVerification {
@@ -267,6 +269,39 @@ export interface MarkdownFormulaValidationResult {
   errors: string[];
 }
 
+export interface NotePlanSummary {
+  source: 'markdown' | 'structured' | 'polished' | 'designed';
+  plannedNodeCount: number;
+  maxDepth: number;
+  mathCount: number;
+  tableCount: number;
+  flashcardMarkers: number;
+  outline: string[];
+  stableShapeHash: string;
+}
+
+export interface MarkdownMassNoteChunkManifest {
+  chunkIndex: number;
+  plannedNodeCount: number;
+  maxDepth: number;
+  idempotencyKey: string;
+  createdRemIds?: string[];
+  status?: 'planned' | 'applied' | 'already_applied' | 'failed';
+}
+
+export interface MarkdownMassNoteManifest {
+  plannedNodeCount: number;
+  maxDepth: number;
+  mathCount: number;
+  tableCount: number;
+  flashcardMarkers: number;
+  estimatedWriteRisk: 'low' | 'medium' | 'high';
+  recommendedChunkSize: number;
+  chunkCount: number;
+  warnings: string[];
+  chunks: MarkdownMassNoteChunkManifest[];
+}
+
 export interface PreviewMarkdownNoteTreeResult {
   ok: true;
   status: 'previewed';
@@ -280,6 +315,8 @@ export interface PreviewMarkdownNoteTreeResult {
   formulaValidation: MarkdownFormulaValidationResult;
   flashcardOptions?: Required<MarkdownFlashcardOptions>;
   verification: MarkdownImportVerification;
+  notePlan?: NotePlanSummary;
+  massNoteManifest?: MarkdownMassNoteManifest;
   plan: {
     previewOutline: string[];
     headingCount: number;
@@ -318,6 +355,8 @@ export interface ApplyStructuredNoteBatchResult {
   rollbackOnFailure: boolean;
   verifyAfterWrite: boolean;
   operationPlan?: WriteOperationPlan;
+  notePlan?: NotePlanSummary;
+  massNoteManifest?: MarkdownMassNoteManifest;
   writeEngine?: WriteEngineExecution;
   verification?: StructuredNoteBatchVerification;
   styleCount?: number;
@@ -394,6 +433,8 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
   dryRun?: boolean;
   idempotencyKey?: string;
   operationPlan?: WriteOperationPlan;
+  notePlan?: NotePlanSummary;
+  massNoteManifest?: MarkdownMassNoteManifest;
   writeEngine?: WriteEngineExecution;
   status:
     | 'dry_run'
@@ -509,6 +550,8 @@ export interface ExportNoteDesignTemplateResult {
   templateId: string;
   templateJson: string;
   template: NoteDesignTemplate;
+  normalizedTemplate: unknown;
+  normalizedTemplateHash: string;
 }
 
 export interface ImportNoteDesignTemplateResult {
@@ -516,6 +559,10 @@ export interface ImportNoteDesignTemplateResult {
   template: NoteDesignTemplate;
   templateCount: number;
   warnings?: string[];
+  normalizedTemplate?: unknown;
+  normalizedTemplateHash?: string;
+  importedTemplateHash?: string;
+  roundTripEqual?: boolean;
 }
 
 export interface CreateDesignedNoteTreeResult {
@@ -582,7 +629,7 @@ export interface CardWorkflowCardPlan {
 }
 
 export interface CardWorkflowResult {
-  status: 'dry_run' | 'created' | 'verified' | 'repaired';
+  status: 'dry_run' | 'created' | 'verified' | 'repaired' | 'partial';
   ok: boolean;
   dryRun?: boolean;
   rootRemId?: string;
@@ -591,7 +638,17 @@ export interface CardWorkflowResult {
   cards: CardWorkflowCardPlan[];
   createdRemIds?: string[];
   issues?: string[];
+  warnings?: string[];
   repairPlan?: string[];
+  truncated?: boolean;
+  inspectedNodeCount?: number;
+  durationMs?: number;
+  limits?: {
+    maxCards?: number;
+    maxNodes?: number;
+    maxDepth?: number;
+    timeoutMs?: number;
+  };
 }
 
 export type CreateCardSetFromNoteResult = CardWorkflowResult;
@@ -643,6 +700,8 @@ export interface DeleteRemByIdResult {
     expectedParentMatches?: boolean;
     expectedAncestorMatches?: boolean;
     confirmTitleMatches?: boolean;
+    createdInCurrentSession?: boolean;
+    priorDryRunMatches?: boolean;
   };
   wouldDelete?: {
     remId: string;

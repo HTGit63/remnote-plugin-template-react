@@ -81,7 +81,7 @@ interface PluginRegisterMessage {
   supportedTools?: string[];
   accessScope?: 'focused-rem-only' | 'current-rem-tree' | 'full-kb';
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
-  toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
+  toolTier?: 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
 }
 
 type PluginRegistrationMessage = PluginHelloMessage | PluginRegisterMessage;
@@ -111,7 +111,7 @@ export class SessionRouter {
     | {
         ok: true;
         connection: PluginConnection;
-        toolTier?: 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
+        toolTier?: 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
         requiresConnectorRefresh?: boolean;
       }
     | { ok: false; error: SessionRouterErrorCode; message: string }

@@ -7,7 +7,7 @@ export type ToolPolicy =
   | 'dangerous'
   | 'unsupported';
 
-export type ToolTier = 'basic' | 'note_writer' | 'power_user' | 'developer' | 'danger';
+export type ToolTier = 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
 export type LegacyToolTier = 'core' | 'advanced_notes' | 'developer_diagnostics' | 'full';
 export type ToolProfile = ToolTier;
 export type ToolCategory =
@@ -72,8 +72,8 @@ export interface ToolMetadata {
   hiddenReason?: string;
 }
 
-export const DEFAULT_TOOL_PROFILE: ToolProfile = 'note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-06-05.goal9-registry-source';
+export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
+export const TOOL_SCHEMA_VERSION = '2026-06-17.mass-note-writer-registry';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
@@ -84,6 +84,12 @@ export const BASIC_TIER_TOOLS = [
   'get_rem_tree',
   'get_rem_breadcrumbs',
   'search_rems',
+] as const;
+
+export const MASS_NOTE_WRITER_TIER_TOOLS = [
+  ...BASIC_TIER_TOOLS,
+  'get_document_or_folder_tree',
+  'create_or_replace_note_from_markdown',
 ] as const;
 
 export const NOTE_WRITER_TIER_TOOLS = [
@@ -155,6 +161,7 @@ export const DANGER_TIER_TOOLS = [
 ] as const;
 
 const BASIC_SET = new Set<string>(BASIC_TIER_TOOLS);
+const MASS_NOTE_WRITER_SET = new Set<string>(MASS_NOTE_WRITER_TIER_TOOLS);
 const NOTE_WRITER_SET = new Set<string>(NOTE_WRITER_TIER_TOOLS);
 const POWER_USER_SET = new Set<string>(POWER_USER_TIER_TOOLS);
 const DEVELOPER_SET = new Set<string>(DEVELOPER_TIER_TOOLS);
@@ -163,13 +170,17 @@ const DANGER_SET = new Set<string>(DANGER_TIER_TOOLS);
 export const TOOL_POLICY_ENTRIES = [
   {
     name: 'create_note_from_markdown_tree',
-    policy: 'preferred',
+    policy: 'fallback',
     preferredFor: ['new Markdown notes', 'clean Rem hierarchy', 'formula-heavy notes', 'tables and worked examples'],
+    avoidWhen: ['mass note creation', 'normal ChatGPT note writing'],
+    replacement: 'create_or_replace_note_from_markdown',
   },
   {
     name: 'append_markdown_as_rem_tree',
-    policy: 'preferred',
+    policy: 'fallback',
     preferredFor: ['appending Markdown as child Rem hierarchy', 'structured note extension'],
+    avoidWhen: ['mass note creation', 'normal ChatGPT note writing'],
+    replacement: 'create_or_replace_note_from_markdown',
   },
   {
     name: 'preview_markdown_note_tree',
@@ -183,13 +194,17 @@ export const TOOL_POLICY_ENTRIES = [
   },
   {
     name: 'create_polished_note_tree',
-    policy: 'preferred',
+    policy: 'fallback',
     preferredFor: ['complete notes', 'lessons', 'study trees', 'polished outlines'],
+    avoidWhen: ['mass note creation', 'normal ChatGPT note writing'],
+    replacement: 'create_or_replace_note_from_markdown',
   },
   {
     name: 'apply_structured_note_batch',
-    policy: 'preferred',
+    policy: 'fallback',
     preferredFor: ['atomic structured writing', 'dry-run then apply', 'math-heavy notes'],
+    avoidWhen: ['mass note creation', 'normal ChatGPT note writing'],
+    replacement: 'create_or_replace_note_from_markdown',
   },
   {
     name: 'apply_style_plan',
@@ -218,8 +233,10 @@ export const TOOL_POLICY_ENTRIES = [
   },
   {
     name: 'create_designed_note_tree',
-    policy: 'preferred',
+    policy: 'fallback',
     preferredFor: ['one-call polished note creation from content and a saved template'],
+    avoidWhen: ['mass note creation', 'normal ChatGPT note writing'],
+    replacement: 'create_or_replace_note_from_markdown',
   },
   {
     name: 'verify_note_against_design',
@@ -358,6 +375,7 @@ const TOOL_POLICY_BY_NAME: ReadonlyMap<string, ToolPolicyEntry> = new Map(
 
 function tierForTool(name: string): ToolMetadata['tier'] {
   if (BASIC_SET.has(name)) return 'basic';
+  if (MASS_NOTE_WRITER_SET.has(name)) return 'mass_note_writer';
   if (NOTE_WRITER_SET.has(name)) return 'note_writer';
   if (POWER_USER_SET.has(name)) return 'power_user';
   if (DEVELOPER_SET.has(name)) return 'developer';
@@ -674,7 +692,12 @@ export function normalizeToolProfile(value: string | undefined): ToolProfile {
     case 'core':
     case 'basic':
       return 'basic';
+    case 'mass_notes':
+    case 'mass_note':
+    case 'mass_note_writer':
+    case 'safe_note_writer':
     case 'advanced_notes':
+      return 'mass_note_writer';
     case 'note_writer':
       return 'note_writer';
     case 'power_user':
@@ -709,14 +732,17 @@ export function isToolVisibleInProfile(name: string, profile: ToolProfile): bool
   if (BASIC_SET.has(name)) {
     return true;
   }
+  if (profile === 'mass_note_writer') {
+    return MASS_NOTE_WRITER_SET.has(name);
+  }
   if (profile === 'note_writer') {
-    return NOTE_WRITER_SET.has(name);
+    return MASS_NOTE_WRITER_SET.has(name) || NOTE_WRITER_SET.has(name);
   }
   if (profile === 'power_user') {
-    return NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name);
+    return MASS_NOTE_WRITER_SET.has(name) || NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name);
   }
   if (profile === 'developer') {
-    return NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name) || DEVELOPER_SET.has(name);
+    return MASS_NOTE_WRITER_SET.has(name) || NOTE_WRITER_SET.has(name) || POWER_USER_SET.has(name) || DEVELOPER_SET.has(name);
   }
   return false;
 }
@@ -766,12 +792,16 @@ export function getToolTierSummary(profile: ToolProfile, exposeDeleteTool = fals
     aliases: {
       simple: 'basic',
       core: 'basic',
-      advanced_notes: 'note_writer',
+      advanced_notes: 'mass_note_writer',
+      mass_notes: 'mass_note_writer',
+      mass_note: 'mass_note_writer',
+      safe_note_writer: 'mass_note_writer',
       developer_diagnostics: 'developer',
       full: 'danger',
     },
     tiers: {
       basic: [...BASIC_TIER_TOOLS],
+      mass_note_writer: filterToolsForProfile(mcpCatalogNames, 'mass_note_writer'),
       note_writer: filterToolsForProfile(mcpCatalogNames, 'note_writer'),
       power_user: filterToolsForProfile(mcpCatalogNames, 'power_user'),
       developer: filterToolsForProfile(mcpCatalogNames, 'developer'),

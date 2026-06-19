@@ -66,7 +66,13 @@ import type {
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
-import { DELETE_BY_ID_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
+import {
+  DELETE_BY_ID_DRY_RUN_CACHE,
+  DELETE_BY_ID_RESULT_CACHE,
+  getWriteIdempotencyKey,
+  rememberDeleteDryRunResult,
+  wasCreatedInCurrentSession,
+} from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 import { findRequiredRem, getRemChildCount, getRemPlainString, getRemTitle } from './remnoteSdkHelpers';
 
@@ -191,6 +197,7 @@ export async function deleteRemByIdSafe(
     ...(args.expectedParentId ? { expectedParentMatches: target.parentId === args.expectedParentId } : {}),
     ...(args.expectedAncestorId ? { expectedAncestorMatches: ancestorIds.has(args.expectedAncestorId) } : {}),
     ...(args.confirmTitle ? { confirmTitleMatches: target.plainText.trim() === args.confirmTitle.trim() } : {}),
+    ...(args.requireCreatedInCurrentSession ? { createdInCurrentSession: wasCreatedInCurrentSession(remId) } : {}),
   };
   const dryRun = args.dryRun ?? true;
   const baseResult: DeleteRemByIdResult = {
@@ -207,10 +214,42 @@ export async function deleteRemByIdSafe(
   };
 
   if (dryRun) {
+    rememberDeleteDryRunResult(idempotencyKey, baseResult);
     return baseResult;
   }
 
   await assertSafeDeleteTarget(plugin, rem, target);
+
+  const priorDryRun = DELETE_BY_ID_DRY_RUN_CACHE.get(idempotencyKey);
+  if ((args.requirePriorDryRun || args.requireCreatedInCurrentSession) && !priorDryRun) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Real disposable cleanup requires a prior dryRun with the same idempotencyKey.', {
+      idempotencyKey,
+      requirePriorDryRun: args.requirePriorDryRun,
+      requireCreatedInCurrentSession: args.requireCreatedInCurrentSession,
+    });
+  }
+
+  if (priorDryRun) {
+    const priorTarget = priorDryRun.target;
+    guards.priorDryRunMatches =
+      priorTarget?.remId === target.remId &&
+      priorTarget?.parentId === target.parentId &&
+      priorTarget?.plainText === target.plainText;
+    if ((args.requirePriorDryRun || args.requireCreatedInCurrentSession) && !guards.priorDryRunMatches) {
+      throw new RemnoteWriteError('INVALID_ARGS', 'Prior delete dryRun no longer matches the target.', {
+        idempotencyKey,
+        priorTarget,
+        currentTarget: target,
+      });
+    }
+  }
+
+  if (args.requireCreatedInCurrentSession && !guards.createdInCurrentSession) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Disposable cleanup refused because the target was not created in this plugin session.', {
+      remId,
+      idempotencyKey,
+    });
+  }
 
   if (args.expectedParentId && !guards.expectedParentMatches) {
     throw new RemnoteWriteError('INVALID_ARGS', 'expectedParentId did not match target parent.', {

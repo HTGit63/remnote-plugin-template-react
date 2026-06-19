@@ -126,6 +126,7 @@ import {
 } from '../write-engine/verify';
 import type { WriteOperationPlan } from '../write-engine/types';
 import { markdownTreeFastPathEnabled } from './runtimeFlags';
+import { createNotePlanSummary } from './notePlan';
 
 function styledNodeMarkdownText(node: StyledRemTreeNode): string {
   const direct = node.text ?? node.title;
@@ -235,6 +236,7 @@ export async function structuredWriteEngine(
     'Styled tree'
   );
   const plan = collectStyledTreePlan(tree);
+  const notePlan = createNotePlanSummary(tree, 'structured');
   const operationPlan = finalizeWriteOperationPlan(
     plugin,
     buildWriteOperationPlan({
@@ -286,6 +288,7 @@ export async function structuredWriteEngine(
       cardNodeCount: plan.cardNodeCount,
       operationPlan,
       writeEngine: writeEngineExecutionFromPlan(operationPlan),
+      notePlan,
       performance,
       durationMs: Date.now() - startedAt,
     };
@@ -478,6 +481,7 @@ export async function structuredWriteEngine(
               cardNodeCount: plan.cardNodeCount,
               operationPlan: activePlan,
               writeEngine: writeEngineExecutionFromPlan(activePlan),
+              notePlan,
             };
             return result;
           }
@@ -502,6 +506,7 @@ export async function structuredWriteEngine(
           cardNodeCount: plan.cardNodeCount,
           operationPlan: activePlan,
           writeEngine: writeEngineExecutionFromPlan(activePlan),
+          notePlan,
         };
         return result;
       },
@@ -529,6 +534,7 @@ export async function structuredWriteEngine(
         : executed.result.status,
       operationPlan: executed.operationPlan,
       writeEngine: executed.writeEngine,
+      notePlan,
       performance,
       durationMs: Date.now() - startedAt,
     };
@@ -687,6 +693,10 @@ export async function applyStructuredNoteBatch(
     { maxDepth: args.maxDepth, maxNodeCount: args.maxNodeCount },
     'Structured note batch'
   );
+  const notePlan = createNotePlanSummary(
+    root ?? { text: 'Structured batch', children: childNodes },
+    'structured'
+  );
   const batchStats = (root ? [root] : childNodes).reduce(
     (acc, node) => {
       const nodeStats = collectStyledTreePlan(node, 0, acc.previewOutline);
@@ -818,6 +828,7 @@ export async function applyStructuredNoteBatch(
       mathCount: batchStats.mathNodeCount,
       cardCount: batchStats.cardNodeCount,
       operationPlan,
+      notePlan,
       writeEngine: writeEngineExecutionFromPlan(operationPlan),
       rollback: {
         attempted: false,
@@ -1063,6 +1074,7 @@ export async function applyStructuredNoteBatch(
         mathCount: batchStats.mathNodeCount,
         cardCount: batchStats.cardNodeCount,
         operationPlan: activePlan,
+        notePlan,
         writeEngine: writeEngineExecutionFromPlan(activePlan),
         rollback: {
           attempted: false,
@@ -1091,6 +1103,7 @@ export async function applyStructuredNoteBatch(
         ? 'success_with_performance_warning' as const
         : executed.result.status,
       operationPlan: executed.operationPlan,
+      notePlan,
       writeEngine: executed.writeEngine,
       performance,
       durationMs: Date.now() - startedAt,
@@ -1123,6 +1136,7 @@ export async function applyStructuredNoteBatch(
           operationId: operationPlan.operationId,
           idempotencyKey,
           operationPlan,
+          notePlan,
           partialExecution: {
             ...getPartialExecutionDetails(error.details),
             createdNodeCount: uniqueCreatedRemIds.length,

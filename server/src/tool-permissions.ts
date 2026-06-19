@@ -317,6 +317,8 @@ export function validateMcpToolPermission(
     if (request.params.name === 'delete_rem_by_id' && args.dryRun === false) {
       const hasScopeGuard = typeof args.expectedParentId === 'string' || typeof args.expectedAncestorId === 'string';
       const hasTitleGuard = typeof args.confirmTitle === 'string' && args.confirmTitle.trim().length > 0;
+      const requiresPriorDryRun = args.requirePriorDryRun === true || args.requireCreatedInCurrentSession === true;
+      const hasDryRunReplayKey = typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim().length > 0;
       if (!hasScopeGuard || !hasTitleGuard) {
         return {
           ok: false,
@@ -328,6 +330,20 @@ export function validateMcpToolPermission(
           details: baseDetails(
             'INVALID_ARGS',
             'Run delete_rem_by_id with dryRun=true first, then provide confirmTitle plus expectedParentId or expectedAncestorId for real delete.'
+          ),
+        };
+      }
+      if (requiresPriorDryRun && !hasDryRunReplayKey) {
+        return {
+          ok: false,
+          error:
+            'INVALID_ARGS: Guarded disposable cleanup requires an idempotencyKey reused from the prior dryRun.',
+          auditReason: 'missing_delete_dry_run_key',
+          code: 'INVALID_ARGS',
+          layer: 'server_policy',
+          details: baseDetails(
+            'INVALID_ARGS',
+            'Run delete_rem_by_id with dryRun=true first, then retry with dryRun=false, the same idempotencyKey, confirmTitle, and expectedParentId or expectedAncestorId.'
           ),
         };
       }

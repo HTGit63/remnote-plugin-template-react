@@ -70,6 +70,7 @@ export type ChatGptTrustedWriteMode =
 
 export type ChatGptToolTier =
   | 'basic'
+  | 'mass_note_writer'
   | 'note_writer'
   | 'power_user'
   | 'developer'

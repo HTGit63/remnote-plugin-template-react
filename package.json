@@ -40,6 +40,7 @@
     "server:test:area3": "npm run test:area3 --prefix server",
     "server:test:idempotency": "npm run test:idempotency --prefix server",
     "server:test:performance": "npm run test:performance --prefix server",
+    "server:mass-note-audit": "npm run mass-note-audit --prefix server",
     "server:test:e2e-hosted-smoke": "npm run test:e2e-hosted-smoke --prefix server",
     "server:generate-tool-reference": "npm run generate-tool-reference --prefix server",
     "server:test-client": "npm run test-client --prefix server",

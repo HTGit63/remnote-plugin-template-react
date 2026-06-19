@@ -850,7 +850,7 @@ function assertSchemaQuality(profile: ToolProfile = 'danger') {
     assert(metadata.exposedNormally === true, `${tool} must be normally exposed metadata.`);
     assert(metadata.sdkSupported === true, `${tool} must be SDK-supported or removed from public exposure.`);
     assert(['low', 'medium', 'high', 'dangerous'].includes(metadata.riskLevel), `${tool} risk metadata invalid.`);
-    assert(['basic', 'note_writer', 'power_user', 'developer', 'danger'].includes(String(metadata.tier)), `${tool} tier metadata invalid.`);
+    assert(['basic', 'mass_note_writer', 'note_writer', 'power_user', 'developer', 'danger'].includes(String(metadata.tier)), `${tool} tier metadata invalid.`);
     if (policy.policy === 'unsupported') {
       throw new Error(`${tool} has unsupported policy while public.`);
     }

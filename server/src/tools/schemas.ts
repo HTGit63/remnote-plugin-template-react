@@ -129,8 +129,33 @@ export const PERMISSION_SCOPE_SCHEMA = z
   .default('current_permission_scope');
 export const BRIDGE_TOOL_OUTPUT_SCHEMA = z.object({
   ok: z.boolean(),
+  status: z
+    .enum([
+      'PASS',
+      'FAIL',
+      'PARTIAL',
+      'GATED',
+      'UNSUPPORTED',
+      'SKIPPED',
+      'BLOCKED_BY_PERMISSION',
+      'BLOCKED_BY_PROFILE',
+      'PLATFORM_BLOCKED',
+    ])
+    .optional(),
+  toolName: z.string().optional(),
+  operationId: z.string().optional(),
+  idempotency: z.string().optional(),
+  target: z.any().optional(),
+  created: z.array(z.string()).optional(),
+  updated: z.array(z.string()).optional(),
+  deleted: z.array(z.string()).optional(),
+  counts: z.any().optional(),
+  verification: z.any().optional(),
+  phaseDurations: z.record(z.string(), z.number()).optional(),
+  warnings: z.array(z.string()).optional(),
   result: z.any().optional(),
   error: z.any().optional(),
+  standard: z.any().optional(),
 });
 export const REMNOTE_GUIDE_SECTION_SCHEMA = z
   .enum([
