@@ -14,6 +14,7 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
     back: z.string().trim().min(1).max(5000).describe('Card back text.'),
     direction: CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
     idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate card creation when the same key is reused.'),
+    verifyAfterWrite: z.boolean().default(true).optional().describe('Read the created card after writing and report verification evidence.'),
   });
 
   registerTool(
@@ -25,9 +26,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_basic_flashcard'),
     },
-    async ({ parentId, front, back, direction, idempotencyKey }) =>
+    async ({ parentId, front, back, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_basic_flashcard', { parentId, front, back, direction, idempotencyKey }),
+        () => callPlugin('create_basic_flashcard', { parentId, front, back, direction, idempotencyKey, verifyAfterWrite }),
         'Created basic flashcard.'
       )
   );
@@ -41,9 +42,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_concept_card'),
     },
-    async ({ parentId, front, back, direction, idempotencyKey }) =>
+    async ({ parentId, front, back, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_concept_card', { parentId, front, back, direction, idempotencyKey }),
+        () => callPlugin('create_concept_card', { parentId, front, back, direction, idempotencyKey, verifyAfterWrite }),
         'Created concept card.'
       )
   );
@@ -57,9 +58,9 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_descriptor_card'),
     },
-    async ({ parentId, front, back, direction, idempotencyKey }) =>
+    async ({ parentId, front, back, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_descriptor_card', { parentId, front, back, direction, idempotencyKey }),
+        () => callPlugin('create_descriptor_card', { parentId, front, back, direction, idempotencyKey, verifyAfterWrite }),
         'Created descriptor card.'
       )
   );
@@ -75,13 +76,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         clozeText: z.string().trim().max(1000).optional().describe('Optional exact text range to cloze.'),
         direction: CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
         idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate cloze card creation when the same key is reused.'),
+        verifyAfterWrite: z.boolean().default(true).optional().describe('Read the created card after writing and report verification evidence.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_cloze_card'),
     },
-    async ({ parentId, text, clozeText, direction, idempotencyKey }) =>
+    async ({ parentId, text, clozeText, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_cloze_card', { parentId, text, clozeText, direction, idempotencyKey }),
+        () => callPlugin('create_cloze_card', { parentId, text, clozeText, direction, idempotencyKey, verifyAfterWrite }),
         'Created cloze card.'
       )
   );
@@ -99,13 +101,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         correctChoice: z.string().trim().min(1).max(1000).describe('Correct choice text.'),
         direction: CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
         idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate multiple-choice card creation when the same key is reused.'),
+        verifyAfterWrite: z.boolean().default(true).optional().describe('Read the created card after writing and report verification evidence.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_multiple_choice_card'),
     },
-    async ({ parentId, question, choices, correctChoice, direction, idempotencyKey }) =>
+    async ({ parentId, question, choices, correctChoice, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_multiple_choice_card', { parentId, question, choices, correctChoice, direction, idempotencyKey }),
+        () => callPlugin('create_multiple_choice_card', { parentId, question, choices, correctChoice, direction, idempotencyKey, verifyAfterWrite }),
         'Created multiple-choice card.'
       )
   );
@@ -121,13 +124,14 @@ export function registerCardTools({ registerTool, callPlugin }: ToolRegistration
         items: z.array(z.string().trim().min(1).max(1000)).min(1).max(50).describe('Expected list items.'),
         direction: CONNECTOR_SAFE_PRACTICE_DIRECTION_SCHEMA.describe('Practice direction.'),
         idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate list-answer card creation when the same key is reused.'),
+        verifyAfterWrite: z.boolean().default(true).optional().describe('Read the created card after writing and report verification evidence.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_list_answer_card'),
     },
-    async ({ parentId, prompt, items, direction, idempotencyKey }) =>
+    async ({ parentId, prompt, items, direction, idempotencyKey, verifyAfterWrite }) =>
       bridgeToolResult(
-        () => callPlugin('create_list_answer_card', { parentId, prompt, items, direction, idempotencyKey }),
+        () => callPlugin('create_list_answer_card', { parentId, prompt, items, direction, idempotencyKey, verifyAfterWrite }),
         'Created list-answer card.'
       )
   );

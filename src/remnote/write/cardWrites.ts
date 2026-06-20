@@ -65,6 +65,7 @@ import type {
   VerifyNoteDesignArgs,
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
+import { getRemPlainText } from '../serialize';
 import {
   RichTextFormattingError,
   applyClozeToRange,
@@ -121,6 +122,85 @@ export async function createFlashcardRem(
   return { rem, childIds };
 }
 
+type CardCreationVerification = NonNullable<CreateFlashcardResult['verification']>;
+
+function looseTextMatch(actual: string, expected: string | undefined): boolean {
+  if (!expected) {
+    return true;
+  }
+  const normalizedActual = actual.trim();
+  const normalizedExpected = expected.trim();
+  if (!normalizedActual) {
+    return normalizedExpected.length === 0;
+  }
+  return (
+    normalizedActual === normalizedExpected ||
+    normalizedActual.includes(normalizedExpected) ||
+    normalizedExpected.includes(normalizedActual)
+  );
+}
+
+async function verifyCreatedFlashcard(
+  plugin: RNPlugin,
+  rem: Rem,
+  expected: {
+    front?: string;
+    back?: string;
+    childIds?: string[];
+  }
+): Promise<CardCreationVerification> {
+  const warnings: string[] = [];
+  const readBack = await runSdkOperation('rem.findOne', () => plugin.rem.findOne(rem._id)).catch(() => undefined);
+  if (!readBack) {
+    warnings.push(`Created card Rem ${rem._id} was not found during read-back verification.`);
+    return {
+      attempted: true,
+      passed: false,
+      method: 'rem.findOne',
+      warnings,
+      after: {
+        remId: rem._id,
+        frontText: '',
+        childIds: [],
+      },
+    };
+  }
+
+  const text = await getRemPlainText(plugin, readBack).catch(() => ({ frontText: '', backText: '', plainText: '' }));
+  const practiceEnabled = await runSdkOperation('rem.getEnablePractice', () => readBack.getEnablePractice()).catch(() => undefined);
+  const childIds = (await runSdkOperation('rem.getChildrenRem', () => readBack.getChildrenRem()).catch(() => []))
+    .map((child) => child._id);
+  const frontMatches = looseTextMatch(text.frontText, expected.front);
+  const backMatches = looseTextMatch(text.backText, expected.back);
+  const childrenMatch = (expected.childIds ?? []).every((childId) => childIds.includes(childId));
+  if (!frontMatches) {
+    warnings.push('Created card front text did not match requested front text.');
+  }
+  if (!backMatches) {
+    warnings.push('Created card back text did not match requested back text.');
+  }
+  if (practiceEnabled !== true) {
+    warnings.push('Created card did not read back with practice enabled.');
+  }
+  if (!childrenMatch) {
+    warnings.push('Created card item children did not read back.');
+  }
+
+  return {
+    attempted: true,
+    passed: frontMatches && backMatches && practiceEnabled === true && childrenMatch,
+    method: 'rem.findOne/getRemPlainText/getEnablePractice/getChildrenRem',
+    warnings,
+    after: {
+      remId: readBack._id,
+      frontText: text.frontText,
+      ...(text.backText ? { backText: text.backText } : {}),
+      childIds,
+      practiceEnabled,
+    },
+  };
+}
+
 export async function createBasicFlashcard(
   plugin: RNPlugin,
   args: CreateFlashcardArgs,
@@ -145,17 +225,22 @@ export async function createBasicFlashcard(
     args.direction ?? 'both',
     remType
   );
+  const verification: CardCreationVerification = (args.verifyAfterWrite ?? true)
+    ? await verifyCreatedFlashcard(plugin, rem, { front: args.front, back: args.back, childIds })
+    : { attempted: false, warnings: [] };
 
   const result: CreateFlashcardResult = {
     createdRemId: rem._id,
     parentId: parent._id,
     cardType,
     direction: args.direction ?? 'both',
+    ok: verification.passed ?? true,
     ...(childIds.length ? { createdChildRemIds: childIds } : {}),
     status: 'created_flashcard',
     idempotencyKey,
+    verification,
   };
-  rememberCreatedRemIds([rem._id]);
+  rememberCreatedRemIds([rem._id, ...childIds]);
   rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
   return result;
 }
@@ -203,14 +288,19 @@ export async function createClozeCard(
   const rem = await createRemWithRichText(plugin, clozeRichText, parent, insertIndex);
   await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
   await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(args.direction ?? 'both'));
+  const verification: CardCreationVerification = (args.verifyAfterWrite ?? true)
+    ? await verifyCreatedFlashcard(plugin, rem, { front: plainText.replace(/\{\{(.+?)\}\}/g, '$1') })
+    : { attempted: false, warnings: [] };
 
   const result: CreateFlashcardResult = {
     createdRemId: rem._id,
     parentId: parent._id,
     cardType: 'cloze',
     direction: args.direction ?? 'both',
+    ok: verification.passed ?? true,
     status: 'created_flashcard',
     idempotencyKey,
+    verification,
   };
   rememberCreatedRemIds([rem._id]);
   rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
@@ -230,6 +320,7 @@ export async function createMultipleChoiceCard(
       back,
       direction: args.direction ?? 'forward',
       idempotencyKey: args.idempotencyKey,
+      verifyAfterWrite: args.verifyAfterWrite,
     },
     'multiple_choice'
   );
@@ -247,6 +338,7 @@ export async function createListAnswerCard(
       back: args.items.join('\n'),
       direction: args.direction ?? 'forward',
       idempotencyKey: args.idempotencyKey,
+      verifyAfterWrite: args.verifyAfterWrite,
     },
     'list_answer'
   );

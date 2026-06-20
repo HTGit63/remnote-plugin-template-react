@@ -662,9 +662,23 @@ export interface CreateFlashcardResult {
   parentId: string;
   cardType: 'basic' | 'concept' | 'descriptor' | 'cloze' | 'multiple_choice' | 'list_answer';
   direction: PracticeDirection;
+  ok?: boolean;
   createdChildRemIds?: string[];
   status: 'created_flashcard';
   idempotencyKey?: string;
+  verification?: {
+    attempted: boolean;
+    passed?: boolean;
+    method?: string;
+    warnings: string[];
+    after?: {
+      remId: string;
+      frontText: string;
+      backText?: string;
+      childIds: string[];
+      practiceEnabled?: boolean;
+    };
+  };
 }
 
 export interface ReplaceRemResult {

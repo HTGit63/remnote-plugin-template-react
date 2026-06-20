@@ -592,6 +592,7 @@ async function createCards(
         clozeText: card.clozeText,
         direction,
         idempotencyKey: idempotencyKey ? `${idempotencyKey}-cloze-${index}` : undefined,
+        verifyAfterWrite: true,
       });
       createdRemIds.push(result.createdRemId);
       continue;
@@ -602,6 +603,7 @@ async function createCards(
       back: card.back ?? '',
       direction,
       idempotencyKey: idempotencyKey ? `${idempotencyKey}-basic-${index}` : undefined,
+      verifyAfterWrite: true,
     });
     createdRemIds.push(result.createdRemId);
   }
@@ -725,7 +727,43 @@ export async function verifyCardSet(
   const cards: CardWorkflowCardPlan[] = [];
   const issues: string[] = [];
   const warnings: string[] = [];
-  const queue: Array<{ rem: Rem; depth: number }> = [{ rem: root, depth: 0 }];
+  const initialChildrenRead = await withVerifierTimeout(
+    runSdkOperation('rem.getChildrenRem', () => root.getChildrenRem()).catch(() => []),
+    timeoutMs
+  );
+  if (!initialChildrenRead.ok) {
+    warnings.push(`verify_card_set timed out while reading target root children after ${timeoutMs}ms.`);
+    return cardWorkflowResult({
+      status: 'partial',
+      ok: false,
+      rootRemId: args.rootRemId,
+      parentId: args.rootRemId,
+      cards,
+      warnings,
+      truncated: true,
+      inspectedNodeCount: 0,
+      durationMs: Date.now() - startedAt,
+      limits: { maxCards, maxNodes, maxDepth, timeoutMs },
+    });
+  }
+
+  if (initialChildrenRead.value.length === 0) {
+    warnings.push('No cards found under target root.');
+    return cardWorkflowResult({
+      status: 'verified',
+      ok: true,
+      rootRemId: args.rootRemId,
+      parentId: args.rootRemId,
+      cards,
+      warnings,
+      truncated: false,
+      inspectedNodeCount: 0,
+      durationMs: Date.now() - startedAt,
+      limits: { maxCards, maxNodes, maxDepth, timeoutMs },
+    });
+  }
+
+  const queue: Array<{ rem: Rem; depth: number }> = initialChildrenRead.value.map((rem) => ({ rem, depth: 1 }));
   const seen = new Set<string>();
   let inspectedNodeCount = 0;
   let truncated = false;

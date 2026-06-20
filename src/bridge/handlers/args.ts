@@ -578,6 +578,9 @@ export function normalizeArgs<TTool extends BridgeToolName>(
       return {
         rootRemId: requiredRemId(args, 'rootRemId'),
         maxCards: optionalBoundedNumber(args, 'maxCards'),
+        maxNodes: optionalBoundedNumber(args, 'maxNodes'),
+        maxDepth: optionalBoundedNumber(args, 'maxDepth'),
+        timeoutMs: optionalBoundedNumber(args, 'timeoutMs'),
       } as BridgeToolArgs[TTool];
     case 'repair_card_set':
     {
@@ -600,6 +603,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         back: requiredTextField(args, 'back'),
         direction: optionalPracticeDirection(args),
         idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
       } as BridgeToolArgs[TTool];
     case 'create_cloze_card':
       return {
@@ -608,6 +612,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         clozeText: getStringField(args, 'clozeText')?.trim() || undefined,
         direction: optionalPracticeDirection(args),
         idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
       } as BridgeToolArgs[TTool];
     case 'create_multiple_choice_card':
       return {
@@ -617,6 +622,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         correctChoice: requiredTextField(args, 'correctChoice'),
         direction: optionalPracticeDirection(args),
         idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
       } as BridgeToolArgs[TTool];
     case 'create_list_answer_card':
       return {
@@ -625,6 +631,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         items: requiredStringArray(args, 'items', 50),
         direction: optionalPracticeDirection(args),
         idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
       } as BridgeToolArgs[TTool];
     case 'replace_rem':
       return {

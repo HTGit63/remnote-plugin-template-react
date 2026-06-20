@@ -15,8 +15,8 @@ import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-histo
 export const TOOL_REGISTRY_VERSION = '2026-06-17.mass-note-writer-catalog';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
-export const SERVER_VERSION = '0.1.0';
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
+export const SERVER_VERSION = PACKAGE_VERSION;
 export const STATIC_SDK_UNSUPPORTED_TOOLS = ['create_folder'] as const;
 export const SERVER_LOCAL_MCP_TOOLS = [
   'get_bridge_status',

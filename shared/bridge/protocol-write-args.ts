@@ -736,6 +736,7 @@ export interface CreateFlashcardArgs {
   back: string;
   direction?: PracticeDirection;
   idempotencyKey?: string;
+  verifyAfterWrite?: boolean;
 }
 
 export interface CreateClozeCardArgs {
@@ -744,6 +745,7 @@ export interface CreateClozeCardArgs {
   clozeText?: string;
   direction?: PracticeDirection;
   idempotencyKey?: string;
+  verifyAfterWrite?: boolean;
 }
 
 export interface CreateMultipleChoiceCardArgs {
@@ -753,6 +755,7 @@ export interface CreateMultipleChoiceCardArgs {
   correctChoice: string;
   direction?: PracticeDirection;
   idempotencyKey?: string;
+  verifyAfterWrite?: boolean;
 }
 
 export interface CreateListAnswerCardArgs {
@@ -761,4 +764,5 @@ export interface CreateListAnswerCardArgs {
   items: string[];
   direction?: PracticeDirection;
   idempotencyKey?: string;
+  verifyAfterWrite?: boolean;
 }
