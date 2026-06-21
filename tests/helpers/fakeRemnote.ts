@@ -1,0 +1,163 @@
+import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+
+type RichTextItem = RichTextInterface[number];
+
+export class FakeRem {
+  _id: string;
+  text: RichTextInterface;
+  backText: RichTextInterface = [];
+  children: string[] = [];
+  parent: string | null = null;
+  private practiceEnabled = false;
+  private practiceDirection = 'both';
+  private cardItem = false;
+
+  constructor(
+    private readonly plugin: FakePlugin,
+    id: string,
+    text: RichTextInterface = []
+  ) {
+    this._id = id;
+    this.text = text;
+  }
+
+  async setText(text: RichTextInterface) {
+    const plain = await this.plugin.richText.toString(text);
+    if (this.plugin.failSetTextIncludes && plain.includes(this.plugin.failSetTextIncludes)) {
+      throw new Error(`forced setText failure for ${plain}`);
+    }
+    this.text = JSON.parse(JSON.stringify(text));
+  }
+
+  async setBackText(text: RichTextInterface) {
+    this.backText = JSON.parse(JSON.stringify(text));
+  }
+
+  async setEnablePractice(enabled: boolean) {
+    this.practiceEnabled = enabled;
+  }
+
+  async getEnablePractice() {
+    return this.practiceEnabled;
+  }
+
+  async setPracticeDirection(direction: string) {
+    this.practiceDirection = direction;
+  }
+
+  async getPracticeDirection() {
+    return this.practiceDirection;
+  }
+
+  async setIsCardItem(cardItem: boolean) {
+    this.cardItem = cardItem;
+  }
+
+  async isCardItem() {
+    return this.cardItem;
+  }
+
+  async setFontSize() {}
+  async getFontSize() {
+    return undefined;
+  }
+  async setHighlightColor() {}
+  async getHighlightColor() {
+    return 'default';
+  }
+  async setIsListItem() {}
+  async isListItem() {
+    return true;
+  }
+  async setType() {}
+  async getType() {
+    return 'normal';
+  }
+
+  async setParent(parent: FakeRem, index?: number) {
+    if (this.parent) {
+      const oldParent = this.plugin.rems.get(this.parent);
+      if (oldParent) {
+        oldParent.children = oldParent.children.filter((id) => id !== this._id);
+      }
+    }
+    this.parent = parent._id;
+    const insertAt = index === undefined ? parent.children.length : Math.max(0, index);
+    parent.children.splice(insertAt, 0, this._id);
+  }
+
+  async getChildrenRem(): Promise<Rem[]> {
+    return this.children
+      .map((id) => this.plugin.rems.get(id))
+      .filter((rem): rem is FakeRem => Boolean(rem)) as unknown as Rem[];
+  }
+
+  async getDescendants(): Promise<Rem[]> {
+    const descendants: FakeRem[] = [];
+    for (const child of await this.getChildrenRem()) {
+      const fakeChild = child as unknown as FakeRem;
+      descendants.push(fakeChild);
+      descendants.push(...((await fakeChild.getDescendants()) as unknown as FakeRem[]));
+    }
+    return descendants as unknown as Rem[];
+  }
+
+  async remove() {
+    if (this.plugin.failRemoveIds.has(this._id)) {
+      throw new Error(`forced remove failure for ${this._id}`);
+    }
+    if (this.parent) {
+      const parent = this.plugin.rems.get(this.parent);
+      if (parent) {
+        parent.children = parent.children.filter((id) => id !== this._id);
+      }
+    }
+    this.plugin.rems.delete(this._id);
+  }
+}
+
+export class FakePlugin {
+  rems = new Map<string, FakeRem>();
+  createRemCount = 0;
+  failSetTextIncludes?: string;
+  failRemoveIds = new Set<string>();
+  private nextId = 1;
+
+  richText = {
+    text: (text: string) => ({
+      value: async () => [{ i: 'm', text } as RichTextItem],
+    }),
+    toString: async (richText: RichTextInterface) =>
+      richText
+        .map((item) => typeof item === 'string' ? item : String((item as Record<string, unknown>).text ?? ''))
+        .join(''),
+    length: async (richText: RichTextInterface) => this.richText.toString(richText).then((text) => text.length),
+    substring: async (richText: RichTextInterface, start: number, end?: number) => {
+      const plain = await this.richText.toString(richText);
+      return [{ i: 'm', text: plain.slice(start, end) } as RichTextItem];
+    },
+    parseFromMarkdown: async (markdown: string) => [{ i: 'm', text: markdown } as RichTextItem],
+    latex: (text: string, block = false) => ({ i: 'x', text, block } as RichTextItem),
+  };
+
+  rem = {
+    findOne: async (id: string) => this.rems.get(id) as unknown as Rem | null,
+    createRem: async () => {
+      const rem = new FakeRem(this, `generated-${this.nextId}`, []);
+      this.nextId += 1;
+      this.createRemCount += 1;
+      this.rems.set(rem._id, rem);
+      return rem as unknown as Rem;
+    },
+  };
+
+  addRem(id: string, text: string): FakeRem {
+    const rem = new FakeRem(this, id, [{ i: 'm', text } as RichTextItem]);
+    this.rems.set(id, rem);
+    return rem;
+  }
+
+  asPlugin(): RNPlugin {
+    return this as unknown as RNPlugin;
+  }
+}

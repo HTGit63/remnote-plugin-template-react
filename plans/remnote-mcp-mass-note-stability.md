@@ -16,9 +16,13 @@ In progress on `fix/remnote-mcp-mass-note-creation-stability`.
 - [x] Add guarded cleanup flags and current-session creation ledger.
 - [x] Bound `verify_card_set` with caps and timeout.
 - [x] Add empty-root fast path for `verify_card_set`.
-- [x] Make mass-note audit output report static readiness as `PARTIAL`, not fake live `PASS`.
+- [x] Make mass-note audit output report static readiness as explicit static statuses, not fake live `PASS`.
 - [x] Bind `serverVersion` to `packageVersion`.
 - [x] Add card creation read-back verification fields.
+- [x] Add Vitest unit/mock test runner.
+- [x] Add in-flight idempotency guard for concurrent structured batch writes.
+- [x] Add direct styled-tree rollback reporting on partial failure.
+- [x] Capture markdown fast-path fallback reasons.
 - [x] Tighten style-only child order invariant.
 - [x] Run all required local gates.
 - [ ] Run live 15/50/100-node write proof with disposable cleanup when RemNote plugin is connected.
@@ -46,3 +50,15 @@ Latest generated readiness report:
 - `reports/remnote-mcp-readiness-audit-2026-06-20T17-33-19-191Z.json`
 
 Readiness stats: `PASS=2`, `FAIL=0`, `PARTIAL=9`, `GATED=5`. This is not live RemNote proof.
+
+## 2026-06-21 Reliability Repair Checkpoint
+
+Local proof added:
+
+- `npm test` runs Vitest unit/mock tests without RemNote open.
+- Static audit rows no longer use runtime `PASS`.
+- Structured batch same-key concurrent calls share one running write.
+- Direct styled tree failure attempts rollback of created Rem IDs and reports removed/failed IDs.
+- Markdown tree fast-path fallback stores the SDK error message.
+
+Live proof remains not run until a connected RemNote plugin and disposable parent root are available.

@@ -9,17 +9,17 @@ import {
   DEFAULT_TOOL_PROFILE,
   MASS_NOTE_WRITER_TIER_TOOLS,
 } from './tool-policy.js';
-
-type AuditStatus =
-  | 'PASS'
-  | 'FAIL'
-  | 'PARTIAL'
-  | 'GATED'
-  | 'UNSUPPORTED'
-  | 'SKIPPED'
-  | 'BLOCKED_BY_PERMISSION'
-  | 'BLOCKED_BY_PROFILE'
-  | 'PLATFORM_BLOCKED';
+import {
+  assertAuditStatusHonesty,
+  liveRequiredStatus,
+  registryPresenceStatus,
+  sourceReadinessStatus,
+  staticStatusError,
+  staticStatusFix,
+  staticStatusRoot,
+  type VerificationLayer,
+  type VerificationStatus,
+} from './verification-status.js';
 
 type EvidenceMode = 'local_execution' | 'static_source_check' | 'live_required';
 
@@ -27,7 +27,8 @@ interface AuditRow {
   suite: string;
   testName: string;
   toolName: string;
-  status: AuditStatus;
+  status: VerificationStatus;
+  verificationLayer: VerificationLayer;
   evidenceMode: EvidenceMode;
   liveProof: boolean;
   durationMs: number;
@@ -43,9 +44,9 @@ interface AuditRow {
 
 type AuditRowInput = Omit<
   AuditRow,
-  'durationMs' | 'phaseDurations' | 'createdRemIds' | 'updatedRemIds' | 'deletedRemIds' | 'evidenceMode' | 'liveProof'
+  'durationMs' | 'phaseDurations' | 'createdRemIds' | 'updatedRemIds' | 'deletedRemIds' | 'evidenceMode' | 'liveProof' | 'verificationLayer'
 > &
-  Partial<Pick<AuditRow, 'durationMs' | 'phaseDurations' | 'createdRemIds' | 'updatedRemIds' | 'deletedRemIds' | 'evidenceMode' | 'liveProof'>>;
+  Partial<Pick<AuditRow, 'durationMs' | 'phaseDurations' | 'createdRemIds' | 'updatedRemIds' | 'deletedRemIds' | 'evidenceMode' | 'liveProof' | 'verificationLayer'>>;
 
 function gitValue(command: string): string {
   try {
@@ -56,7 +57,8 @@ function gitValue(command: string): string {
 }
 
 function row(input: AuditRowInput): AuditRow {
-  return {
+  const output = {
+    verificationLayer: input.verificationLayer ?? 'static_source',
     evidenceMode: input.evidenceMode ?? 'static_source_check',
     liveProof: input.liveProof ?? false,
     durationMs: input.durationMs ?? 0,
@@ -66,24 +68,8 @@ function row(input: AuditRowInput): AuditRow {
     deletedRemIds: input.deletedRemIds ?? [],
     ...input,
   };
-}
-
-function staticReadinessStatus(ready: boolean): AuditStatus {
-  return ready ? 'PARTIAL' : 'FAIL';
-}
-
-function staticReadinessError(ready: boolean, failureCode: string): string {
-  return ready ? 'STATIC_READINESS_ONLY' : failureCode;
-}
-
-function staticReadinessRoot(ready: boolean, failureRoot: string): string {
-  return ready ? 'static_readiness_only' : failureRoot;
-}
-
-function staticReadinessFix(ready: boolean, failureFix: string): string {
-  return ready
-    ? 'Static source readiness only. Run the matching local executable smoke or live MCP proof before treating this row as PASS.'
-    : failureFix;
+  assertAuditStatusHonesty(output);
+  return output;
 }
 
 function readRepoFile(repoRoot: string, relativePath: string): string {
@@ -169,7 +155,8 @@ const rows: AuditRow[] = [
     suite: 'S00',
     testName: 'local source metadata fields',
     toolName: 'get_bridge_status',
-    status: missingMetadata.length ? 'FAIL' : 'PASS',
+    status: registryPresenceStatus(missingMetadata.length === 0),
+    verificationLayer: 'static_source',
     evidenceMode: 'local_execution',
     verification: {
       missingMetadata,
@@ -186,7 +173,8 @@ const rows: AuditRow[] = [
     suite: 'S00',
     testName: 'deployed source alignment',
     toolName: 'get_bridge_diagnostics',
-    status: 'GATED',
+    status: liveRequiredStatus(undefined),
+    verificationLayer: 'live_remnote_plugin',
     evidenceMode: 'live_required',
     verification: { requires: ['running deployed/local MCP endpoint', 'connected RemNote plugin', 'matching gitSha'] },
     errorCode: 'LIVE_ENVIRONMENT_REQUIRED',
@@ -197,7 +185,8 @@ const rows: AuditRow[] = [
     suite: 'S01',
     testName: 'mass_note_writer profile listing and gating',
     toolName: 'tools/list',
-    status: DEFAULT_TOOL_PROFILE === 'mass_note_writer' && exactProfile && forbiddenVisible.length === 0 ? 'PASS' : 'FAIL',
+    status: registryPresenceStatus(DEFAULT_TOOL_PROFILE === 'mass_note_writer' && exactProfile && forbiddenVisible.length === 0),
+    verificationLayer: 'static_source',
     evidenceMode: 'local_execution',
     verification: {
       defaultToolProfile: DEFAULT_TOOL_PROFILE,
@@ -213,7 +202,8 @@ const rows: AuditRow[] = [
     suite: 'S02',
     testName: 'platform block classification',
     toolName: '*',
-    status: 'GATED',
+    status: 'NOT_RUN',
+    verificationLayer: 'live_remnote_plugin',
     evidenceMode: 'live_required',
     verification: { localReportClassifiesPlatformBlocks: true, requires: ['ChatGPT platform tool-call path'] },
     errorCode: 'PLATFORM_PATH_REQUIRED',
@@ -224,7 +214,8 @@ const rows: AuditRow[] = [
     suite: 'S03',
     testName: 'read-only tools and standard envelope',
     toolName: '*read_tools',
-    status: 'PARTIAL',
+    status: 'READY_FOR_RUNTIME_TEST',
+    verificationLayer: 'static_source',
     verification: {
       envelopeFields: ['status', 'toolName', 'operationId', 'createdRemIds', 'updatedRemIds', 'deletedRemIds', 'verification', 'phaseDurations', 'warnings'],
       readToolsProtected: ['get_bridge_status', 'get_plugin_status', 'get_rem', 'get_children', 'get_rem_tree', 'search_rems'],
@@ -237,27 +228,30 @@ const rows: AuditRow[] = [
     suite: 'S04',
     testName: 'stable markdown writer dry-run/readback contract',
     toolName: 'create_or_replace_note_from_markdown',
-    status: staticReadinessStatus(chunkManifestReady),
+    status: sourceReadinessStatus(chunkManifestReady),
+    verificationLayer: 'static_source',
     verification: { primaryWriter: true, manifestFieldsPresent: chunkManifestReady },
-    errorCode: staticReadinessError(chunkManifestReady, 'MARKDOWN_MANIFEST_MISSING'),
-    rootCauseClass: staticReadinessRoot(chunkManifestReady, 'writer_diagnostics_incomplete'),
-    fixRecommendation: staticReadinessFix(chunkManifestReady, 'Expose dry-run mass-note manifest fields on markdown writer result.'),
+    errorCode: staticStatusError(chunkManifestReady, 'MARKDOWN_MANIFEST_MISSING'),
+    rootCauseClass: staticStatusRoot(chunkManifestReady, 'writer_diagnostics_incomplete'),
+    fixRecommendation: staticStatusFix(chunkManifestReady, 'Expose dry-run mass-note manifest fields on markdown writer result.'),
   }),
   row({
     suite: 'S05',
     testName: 'idempotency replay contract',
     toolName: 'create_or_replace_note_from_markdown',
-    status: staticReadinessStatus(markdownSource.includes("status: 'already_applied'")),
+    status: sourceReadinessStatus(markdownSource.includes("status: 'already_applied'")),
+    verificationLayer: 'static_source',
     verification: { alreadyAppliedStatus: markdownSource.includes("status: 'already_applied'") },
-    errorCode: staticReadinessError(markdownSource.includes("status: 'already_applied'"), 'IDEMPOTENCY_REPLAY_MISSING'),
-    rootCauseClass: staticReadinessRoot(markdownSource.includes("status: 'already_applied'"), 'idempotency'),
-    fixRecommendation: staticReadinessFix(markdownSource.includes("status: 'already_applied'"), 'Return already_applied without duplicate writes on replay.'),
+    errorCode: staticStatusError(markdownSource.includes("status: 'already_applied'"), 'IDEMPOTENCY_REPLAY_MISSING'),
+    rootCauseClass: staticStatusRoot(markdownSource.includes("status: 'already_applied'"), 'idempotency'),
+    fixRecommendation: staticStatusFix(markdownSource.includes("status: 'already_applied'"), 'Return already_applied without duplicate writes on replay.'),
   }),
   row({
     suite: 'S06',
     testName: 'guarded cleanup contract',
     toolName: 'delete_rem_by_id',
-    status: 'PARTIAL',
+    status: 'READY_FOR_RUNTIME_TEST',
+    verificationLayer: 'static_source',
     verification: {
       broadDeleteHiddenFromDefault: !profileTools.includes('delete_rem_by_id'),
       requiredRealDeleteGuards: ['confirmTitle', 'expectedParentId or expectedAncestorId', 'requirePriorDryRun', 'idempotencyKey'],
@@ -270,7 +264,8 @@ const rows: AuditRow[] = [
     suite: 'S07',
     testName: 'phase timing/performance diagnostics',
     toolName: '*',
-    status: 'GATED',
+    status: liveRequiredStatus(undefined),
+    verificationLayer: 'live_remnote_plugin',
     evidenceMode: 'live_required',
     verification: { localTimingFieldsPresent: true, warmLatencyRequiresLivePlugin: true },
     errorCode: 'LIVE_TIMING_REQUIRED',
@@ -281,58 +276,63 @@ const rows: AuditRow[] = [
     suite: 'S08',
     testName: 'style invariants with two children',
     toolName: '*style_tools',
-    status: staticReadinessStatus(styleInvariantReady),
+    status: sourceReadinessStatus(styleInvariantReady),
+    verificationLayer: 'static_source',
     verification: {
       invariantFields: ['beforeChildIds', 'afterChildIds', 'beforeChildOrder', 'afterChildOrder', 'beforePlainText', 'afterPlainText', 'onlyExpectedStyleChanged'],
       regressionHarness: regressionSource.includes('runTwoChildStyleCase'),
     },
-    errorCode: staticReadinessError(styleInvariantReady, 'STYLE_INVARIANT_INCOMPLETE'),
-    rootCauseClass: staticReadinessRoot(styleInvariantReady, 'style_mutation_pollution'),
-    fixRecommendation: staticReadinessFix(styleInvariantReady, 'Route every style-only path through styleMutationInvariant and add two-child tests.'),
+    errorCode: staticStatusError(styleInvariantReady, 'STYLE_INVARIANT_INCOMPLETE'),
+    rootCauseClass: staticStatusRoot(styleInvariantReady, 'style_mutation_pollution'),
+    fixRecommendation: staticStatusFix(styleInvariantReady, 'Route every style-only path through styleMutationInvariant and add two-child tests.'),
   }),
   row({
     suite: 'S09',
     testName: 'bounded card verifier',
     toolName: 'verify_card_set',
-    status: staticReadinessStatus(cardVerifierReady),
+    status: sourceReadinessStatus(cardVerifierReady),
+    verificationLayer: 'static_source',
     verification: {
       emptyNoCardPassesWithWarning: cardSource.includes('No cards found under target root'),
       emptyRootFastPath: cardSource.includes('initialChildrenRead.value.length === 0'),
       capReturnsPartial: cardSource.includes("status: truncated ? 'partial' : 'verified'"),
       regressionHarness: regressionSource.includes('Traversal cap should return PARTIAL'),
     },
-    errorCode: staticReadinessError(cardVerifierReady, 'CARD_VERIFIER_UNBOUNDED'),
-    rootCauseClass: staticReadinessRoot(cardVerifierReady, 'verifier_traversal'),
-    fixRecommendation: staticReadinessFix(cardVerifierReady, 'Add maxNodes/maxDepth traversal and no-card fast path.'),
+    errorCode: staticStatusError(cardVerifierReady, 'CARD_VERIFIER_UNBOUNDED'),
+    rootCauseClass: staticStatusRoot(cardVerifierReady, 'verifier_traversal'),
+    fixRecommendation: staticStatusFix(cardVerifierReady, 'Add maxNodes/maxDepth traversal and no-card fast path.'),
   }),
   row({
     suite: 'S10',
     testName: 'NotePlan wrapper equivalence',
     toolName: 'create_or_replace_note_from_markdown/apply_structured_note_batch',
-    status: staticReadinessStatus(notePlanReady),
+    status: sourceReadinessStatus(notePlanReady),
+    verificationLayer: 'static_source',
     verification: { notePlanSummary: markdownSource.includes('notePlan'), equivalenceHarness: regressionSource.includes('notePlanShapeEqual') },
-    errorCode: staticReadinessError(notePlanReady, 'NOTEPLAN_EQUIVALENCE_MISSING'),
-    rootCauseClass: staticReadinessRoot(notePlanReady, 'writer_path_divergence'),
-    fixRecommendation: staticReadinessFix(notePlanReady, 'Normalize Markdown and structured inputs to NotePlan and assert shape hash equality.'),
+    errorCode: staticStatusError(notePlanReady, 'NOTEPLAN_EQUIVALENCE_MISSING'),
+    rootCauseClass: staticStatusRoot(notePlanReady, 'writer_path_divergence'),
+    fixRecommendation: staticStatusFix(notePlanReady, 'Normalize Markdown and structured inputs to NotePlan and assert shape hash equality.'),
   }),
   row({
     suite: 'S11',
     testName: 'chunked import dry-run manifest',
     toolName: 'create_or_replace_note_from_markdown',
-    status: staticReadinessStatus(chunkManifestReady),
+    status: sourceReadinessStatus(chunkManifestReady),
+    verificationLayer: 'static_source',
     verification: {
       requiredFields: ['plannedNodeCount', 'maxDepth', 'mathCount', 'tableCount', 'flashcardMarkers', 'estimatedWriteRisk', 'recommendedChunkSize', 'chunkCount', 'warnings'],
       dryRunCases: [25, 50, 100, 250, 500],
     },
-    errorCode: staticReadinessError(chunkManifestReady, 'CHUNK_MANIFEST_MISSING'),
-    rootCauseClass: staticReadinessRoot(chunkManifestReady, 'mass_note_chunking'),
-    fixRecommendation: staticReadinessFix(chunkManifestReady, 'Expose mass-note chunk manifest on preview/dry-run/write results.'),
+    errorCode: staticStatusError(chunkManifestReady, 'CHUNK_MANIFEST_MISSING'),
+    rootCauseClass: staticStatusRoot(chunkManifestReady, 'mass_note_chunking'),
+    fixRecommendation: staticStatusFix(chunkManifestReady, 'Expose mass-note chunk manifest on preview/dry-run/write results.'),
   }),
   row({
     suite: 'S11',
     testName: '25/50/100 real live writes and guarded cleanup',
     toolName: 'create_or_replace_note_from_markdown',
-    status: 'GATED',
+    status: liveRequiredStatus(undefined),
+    verificationLayer: 'live_remnote_plugin',
     evidenceMode: 'live_required',
     verification: { requires: ['REMNOTE_LIVE_TEST_PARENT_ID', 'connected plugin', 'guarded cleanup proof'], cases: [25, 50, 100] },
     errorCode: 'LIVE_WRITE_REQUIRED',
@@ -343,17 +343,19 @@ const rows: AuditRow[] = [
     suite: 'S12',
     testName: 'design template normalized round-trip hash',
     toolName: 'export_note_design_template/import_note_design_template',
-    status: staticReadinessStatus(designHashReady),
+    status: sourceReadinessStatus(designHashReady),
+    verificationLayer: 'static_source',
     verification: { normalizedHash: templateSource.includes('normalizedTemplateHash'), row: 'S12', regressionHarness: regressionSource.includes('S12 design template') },
-    errorCode: staticReadinessError(designHashReady, 'DESIGN_TEMPLATE_HASH_MISSING'),
-    rootCauseClass: staticReadinessRoot(designHashReady, 'design_template_round_trip'),
-    fixRecommendation: staticReadinessFix(designHashReady, 'Normalize design templates and compare stable hash after import.'),
+    errorCode: staticStatusError(designHashReady, 'DESIGN_TEMPLATE_HASH_MISSING'),
+    rootCauseClass: staticStatusRoot(designHashReady, 'design_template_round_trip'),
+    fixRecommendation: staticStatusFix(designHashReady, 'Normalize design templates and compare stable hash after import.'),
   }),
   row({
     suite: 'S13',
     testName: 'card creation lifecycle live proof',
     toolName: 'create_basic_flashcard/create_cloze_card/create_flashcards_from_markdown',
-    status: 'GATED',
+    status: liveRequiredStatus(undefined),
+    verificationLayer: 'live_remnote_plugin',
     evidenceMode: 'live_required',
     verification: { localVerifierReady: cardVerifierReady, requires: ['create', 'verify', 'idempotent replay', 'guarded cleanup'] },
     errorCode: 'LIVE_CARD_WRITE_REQUIRED',
@@ -374,8 +376,11 @@ const report = {
   summary: {
     pass: rows.filter((item) => item.status === 'PASS').length,
     fail: rows.filter((item) => item.status === 'FAIL').length,
-    partial: rows.filter((item) => item.status === 'PARTIAL').length,
-    gated: rows.filter((item) => item.status === 'GATED').length,
+    sourcePresent: rows.filter((item) => item.status === 'SOURCE_PRESENT').length,
+    registryPresent: rows.filter((item) => item.status === 'REGISTRY_PRESENT').length,
+    readyForRuntimeTest: rows.filter((item) => item.status === 'READY_FOR_RUNTIME_TEST').length,
+    readyForLiveTest: rows.filter((item) => item.status === 'READY_FOR_LIVE_TEST').length,
+    liveTestNotRun: rows.filter((item) => item.status === 'LIVE_TEST_NOT_RUN').length,
   },
   rows,
 };
@@ -396,12 +401,12 @@ writeFileSync(
     `Default profile: ${report.defaultToolProfile}`,
     `Live proof: ${report.liveProof ? 'yes' : 'no'}`,
     '',
-    '> This report is not live RemNote proof. `PARTIAL` means static/source readiness is present but execution proof is still required.',
+    '> This report is not live RemNote proof. Static/source rows use SOURCE_PRESENT, REGISTRY_PRESENT, or READY_FOR_RUNTIME_TEST, never runtime PASS.',
     '',
-    '| Suite | Test Name | Tool Name | Status | Evidence Mode | Live Proof | Duration Ms | Error Code | Root Cause Class | Fix Recommendation |',
-    '| --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |',
+    '| Suite | Test Name | Tool Name | Status | Verification Layer | Evidence Mode | Live Proof | Duration Ms | Error Code | Root Cause Class | Fix Recommendation |',
+    '| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |',
     ...rows.map((item) =>
-      `| ${item.suite} | ${item.testName} | ${item.toolName} | ${item.status} | ${item.evidenceMode} | ${item.liveProof ? 'yes' : 'no'} | ${item.durationMs} | ${item.errorCode ?? ''} | ${item.rootCauseClass ?? ''} | ${item.fixRecommendation ?? ''} |`
+      `| ${item.suite} | ${item.testName} | ${item.toolName} | ${item.status} | ${item.verificationLayer} | ${item.evidenceMode} | ${item.liveProof ? 'yes' : 'no'} | ${item.durationMs} | ${item.errorCode ?? ''} | ${item.rootCauseClass ?? ''} | ${item.fixRecommendation ?? ''} |`
     ),
     '',
   ].join('\n')

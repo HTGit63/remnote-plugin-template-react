@@ -20,7 +20,11 @@ export async function rollbackCreatedRems(plugin: RNPlugin, createdRemIds: reado
   }
 
   return {
-    status: failedRemIds.length ? ('failed' as const) : ('completed' as const),
+    status: failedRemIds.length
+      ? removedRemIds.length
+        ? ('partial' as const)
+        : ('failed' as const)
+      : ('completed' as const),
     removedRemIds,
     failedRemIds,
   };

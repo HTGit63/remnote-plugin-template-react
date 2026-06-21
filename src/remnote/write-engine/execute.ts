@@ -52,6 +52,7 @@ export function writeEngineExecutionFromPlan(
     transactionReturnedValue?: boolean;
     callbackReturnedValue?: boolean;
     fallbackUsed?: boolean;
+    fallbackReason?: string;
     createdRemIdsBeforeError?: string[];
   } = {}
 ): WriteEngineExecution {
@@ -63,6 +64,7 @@ export function writeEngineExecutionFromPlan(
     transactionReturnedValue: options.transactionReturnedValue,
     callbackReturnedValue: options.callbackReturnedValue,
     fallbackUsed: options.fallbackUsed,
+    fallbackReason: options.fallbackReason,
     createdRemIdsBeforeError: options.createdRemIdsBeforeError,
     idempotencyReplay: Boolean(options.idempotencyReplay),
     persistentHostedIdempotencyPlanned: plan.idempotency.scope === 'hosted_persistent_planned',
@@ -77,6 +79,7 @@ export async function executeWriteOperation<T>(
     skipTransaction?: boolean;
     getCreatedRemIds?: () => string[];
     getFallbackUsed?: () => boolean;
+    getFallbackReason?: () => string | undefined;
   } = {}
 ): Promise<{ result: T; operationPlan: WriteOperationPlan; writeEngine: WriteEngineExecution }> {
   const operationPlan = finalizeWriteOperationPlan(plugin, plan, {
@@ -115,6 +118,7 @@ export async function executeWriteOperation<T>(
         transactionReturnedValue: false,
         callbackReturnedValue,
         fallbackUsed: options.getFallbackUsed?.() ?? false,
+        fallbackReason: options.getFallbackReason?.(),
         createdRemIdsBeforeError,
         partialExecution: {
           createdRemIds: createdRemIdsBeforeError,
@@ -132,6 +136,7 @@ export async function executeWriteOperation<T>(
       transactionReturnedValue,
       callbackReturnedValue,
       fallbackUsed: options.getFallbackUsed?.() ?? false,
+      fallbackReason: options.getFallbackReason?.(),
       createdRemIdsBeforeError: options.getCreatedRemIds?.() ?? [],
     }),
   };

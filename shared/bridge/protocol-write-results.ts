@@ -69,6 +69,7 @@ export interface WriteEngineExecution {
   transactionReturnedValue?: boolean;
   callbackReturnedValue?: boolean;
   fallbackUsed?: boolean;
+  fallbackReason?: string;
   createdRemIdsBeforeError?: string[];
   idempotencyReplay: boolean;
   persistentHostedIdempotencyPlanned: boolean;
@@ -161,6 +162,10 @@ export interface CreateRemTreeResult {
   rootInsertPosition?: 'start' | 'end';
   status: 'created_tree';
   idempotencyKey?: string;
+  fallback?: {
+    used: boolean;
+    reason?: string;
+  };
   durationMs?: number;
 }
 
@@ -428,7 +433,7 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
     createdRemIds: string[];
     failedAtPath?: string;
     failedReason?: string;
-    rollbackStatus: 'not_attempted' | 'completed' | 'failed';
+    rollbackStatus: 'not_attempted' | 'completed' | 'partial' | 'failed';
   };
   dryRun?: boolean;
   idempotencyKey?: string;

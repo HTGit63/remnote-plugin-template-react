@@ -1,0 +1,450 @@
+{
+  "reportKind": "mass_note_readiness_audit",
+  "generatedAt": "2026-06-21T16:31:15.102Z",
+  "durationMs": 15,
+  "branchName": "fix/remnote-mcp-mass-note-creation-stability",
+  "gitSha": "4a11a03ce1a7c166ea3fb35485afdde5f39870fc",
+  "defaultToolProfile": "mass_note_writer",
+  "liveProof": false,
+  "note": "This report mixes local registry execution and static source readiness checks. It is not live RemNote proof.",
+  "summary": {
+    "pass": 0,
+    "fail": 0,
+    "sourcePresent": 0,
+    "registryPresent": 2,
+    "readyForRuntimeTest": 9,
+    "readyForLiveTest": 0,
+    "liveTestNotRun": 4
+  },
+  "rows": [
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "local_execution",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S00",
+      "testName": "local source metadata fields",
+      "toolName": "get_bridge_status",
+      "status": "REGISTRY_PRESENT",
+      "verification": {
+        "missingMetadata": [],
+        "gitSha": "4a11a03ce1a7c166ea3fb35485afdde5f39870fc",
+        "branchName": "fix/remnote-mcp-mass-note-creation-stability",
+        "registryGitSha": "unknown",
+        "registryBranchName": "unknown"
+      },
+      "errorCode": null,
+      "rootCauseClass": null,
+      "fixRecommendation": null
+    },
+    {
+      "verificationLayer": "live_remnote_plugin",
+      "evidenceMode": "live_required",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S00",
+      "testName": "deployed source alignment",
+      "toolName": "get_bridge_diagnostics",
+      "status": "LIVE_TEST_NOT_RUN",
+      "verification": {
+        "requires": [
+          "running deployed/local MCP endpoint",
+          "connected RemNote plugin",
+          "matching gitSha"
+        ]
+      },
+      "errorCode": "LIVE_ENVIRONMENT_REQUIRED",
+      "rootCauseClass": "live_environment_required",
+      "fixRecommendation": "Run live read_only after MCP server and RemNote plugin are connected; compare deployed git/version values to this branch."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "local_execution",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S01",
+      "testName": "mass_note_writer profile listing and gating",
+      "toolName": "tools/list",
+      "status": "REGISTRY_PRESENT",
+      "verification": {
+        "defaultToolProfile": "mass_note_writer",
+        "listedTools": [
+          "get_bridge_status",
+          "get_plugin_status",
+          "get_focused_rem",
+          "get_rem",
+          "get_children",
+          "get_rem_tree",
+          "get_rem_breadcrumbs",
+          "search_rems",
+          "get_document_or_folder_tree",
+          "create_or_replace_note_from_markdown"
+        ],
+        "expectedTools": [
+          "get_bridge_status",
+          "get_plugin_status",
+          "get_focused_rem",
+          "get_rem",
+          "get_children",
+          "get_rem_tree",
+          "get_rem_breadcrumbs",
+          "search_rems",
+          "get_document_or_folder_tree",
+          "create_or_replace_note_from_markdown"
+        ],
+        "forbiddenVisible": []
+      },
+      "errorCode": null,
+      "rootCauseClass": null,
+      "fixRecommendation": null
+    },
+    {
+      "verificationLayer": "live_remnote_plugin",
+      "evidenceMode": "live_required",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S02",
+      "testName": "platform block classification",
+      "toolName": "*",
+      "status": "NOT_RUN",
+      "verification": {
+        "localReportClassifiesPlatformBlocks": true,
+        "requires": [
+          "ChatGPT platform tool-call path"
+        ]
+      },
+      "errorCode": "PLATFORM_PATH_REQUIRED",
+      "rootCauseClass": "platform_environment_required",
+      "fixRecommendation": "Run read_only and safe_sandbox from the real client path and record PLATFORM_BLOCKED separately from bridge failures."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S03",
+      "testName": "read-only tools and standard envelope",
+      "toolName": "*read_tools",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "envelopeFields": [
+          "status",
+          "toolName",
+          "operationId",
+          "createdRemIds",
+          "updatedRemIds",
+          "deletedRemIds",
+          "verification",
+          "phaseDurations",
+          "warnings"
+        ],
+        "readToolsProtected": [
+          "get_bridge_status",
+          "get_plugin_status",
+          "get_rem",
+          "get_children",
+          "get_rem_tree",
+          "search_rems"
+        ]
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Run read tools through a local MCP smoke or live read_only path before treating this row as PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S04",
+      "testName": "stable markdown writer dry-run/readback contract",
+      "toolName": "create_or_replace_note_from_markdown",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "primaryWriter": true,
+        "manifestFieldsPresent": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S05",
+      "testName": "idempotency replay contract",
+      "toolName": "create_or_replace_note_from_markdown",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "alreadyAppliedStatus": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S06",
+      "testName": "guarded cleanup contract",
+      "toolName": "delete_rem_by_id",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "broadDeleteHiddenFromDefault": true,
+        "requiredRealDeleteGuards": [
+          "confirmTitle",
+          "expectedParentId or expectedAncestorId",
+          "requirePriorDryRun",
+          "idempotencyKey"
+        ]
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Run guarded cleanup dry-run plus current-session delete proof before treating this row as PASS."
+    },
+    {
+      "verificationLayer": "live_remnote_plugin",
+      "evidenceMode": "live_required",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S07",
+      "testName": "phase timing/performance diagnostics",
+      "toolName": "*",
+      "status": "LIVE_TEST_NOT_RUN",
+      "verification": {
+        "localTimingFieldsPresent": true,
+        "warmLatencyRequiresLivePlugin": true
+      },
+      "errorCode": "LIVE_TIMING_REQUIRED",
+      "rootCauseClass": "live_environment_required",
+      "fixRecommendation": "Run five live warm calls plus idle retry to classify server/plugin/SDK latency."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S08",
+      "testName": "style invariants with two children",
+      "toolName": "*style_tools",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "invariantFields": [
+          "beforeChildIds",
+          "afterChildIds",
+          "beforeChildOrder",
+          "afterChildOrder",
+          "beforePlainText",
+          "afterPlainText",
+          "onlyExpectedStyleChanged"
+        ],
+        "regressionHarness": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S09",
+      "testName": "bounded card verifier",
+      "toolName": "verify_card_set",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "emptyNoCardPassesWithWarning": true,
+        "emptyRootFastPath": true,
+        "capReturnsPartial": true,
+        "regressionHarness": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S10",
+      "testName": "NotePlan wrapper equivalence",
+      "toolName": "create_or_replace_note_from_markdown/apply_structured_note_batch",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "notePlanSummary": true,
+        "equivalenceHarness": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S11",
+      "testName": "chunked import dry-run manifest",
+      "toolName": "create_or_replace_note_from_markdown",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "requiredFields": [
+          "plannedNodeCount",
+          "maxDepth",
+          "mathCount",
+          "tableCount",
+          "flashcardMarkers",
+          "estimatedWriteRisk",
+          "recommendedChunkSize",
+          "chunkCount",
+          "warnings"
+        ],
+        "dryRunCases": [
+          25,
+          50,
+          100,
+          250,
+          500
+        ]
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "live_remnote_plugin",
+      "evidenceMode": "live_required",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S11",
+      "testName": "25/50/100 real live writes and guarded cleanup",
+      "toolName": "create_or_replace_note_from_markdown",
+      "status": "LIVE_TEST_NOT_RUN",
+      "verification": {
+        "requires": [
+          "REMNOTE_LIVE_TEST_PARENT_ID",
+          "connected plugin",
+          "guarded cleanup proof"
+        ],
+        "cases": [
+          25,
+          50,
+          100
+        ]
+      },
+      "errorCode": "LIVE_WRITE_REQUIRED",
+      "rootCauseClass": "live_environment_required",
+      "fixRecommendation": "Run full_sandbox only after read_only/safe_sandbox pass; verify and cleanup only current-session Rems."
+    },
+    {
+      "verificationLayer": "static_source",
+      "evidenceMode": "static_source_check",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S12",
+      "testName": "design template normalized round-trip hash",
+      "toolName": "export_note_design_template/import_note_design_template",
+      "status": "READY_FOR_RUNTIME_TEST",
+      "verification": {
+        "normalizedHash": true,
+        "row": "S12",
+        "regressionHarness": true
+      },
+      "errorCode": "STATIC_READINESS_ONLY",
+      "rootCauseClass": "static_readiness_only",
+      "fixRecommendation": "Static/source readiness only. Run unit, mock-plugin, local MCP, or live RemNote proof before treating this as runtime PASS."
+    },
+    {
+      "verificationLayer": "live_remnote_plugin",
+      "evidenceMode": "live_required",
+      "liveProof": false,
+      "durationMs": 0,
+      "phaseDurations": {},
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "suite": "S13",
+      "testName": "card creation lifecycle live proof",
+      "toolName": "create_basic_flashcard/create_cloze_card/create_flashcards_from_markdown",
+      "status": "LIVE_TEST_NOT_RUN",
+      "verification": {
+        "localVerifierReady": true,
+        "requires": [
+          "create",
+          "verify",
+          "idempotent replay",
+          "guarded cleanup"
+        ]
+      },
+      "errorCode": "LIVE_CARD_WRITE_REQUIRED",
+      "rootCauseClass": "live_environment_required",
+      "fixRecommendation": "Run full_sandbox card lifecycle after verifier passes and cleanup is proven."
+    }
+  ]
+}

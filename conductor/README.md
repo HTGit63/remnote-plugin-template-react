@@ -22,10 +22,11 @@ Goal: complete the `Agents.md` mass-note stability stages without weakening brid
 Required local gates:
 
 - `npm run check-types`
+- `npm test`
 - `npm run validate`
 - `npm run server:build`
 - `npm run server:smoke`
 - `npm run server:test:tool-profile`
 - `npm run server:mass-note-audit`
 
-Live gates need a running RemNote plugin socket and disposable test parent. Missing plugin access is `PLATFORM_BLOCKED` or gated, not pass.
+Live gates need a running RemNote plugin socket and disposable test parent. Missing plugin access is `BLOCKED_PLUGIN_NOT_CONNECTED`, `LIVE_TEST_NOT_RUN`, or `PLATFORM_BLOCKED`, not pass.

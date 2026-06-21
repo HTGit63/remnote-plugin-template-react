@@ -179,6 +179,7 @@ export async function createRemTree(
   const validationState: TreeValidationState = { nodeCount: 0 };
   const tree = validateTreeNode(args.tree, 1, validationState);
   assertTreeLimits(validationState, {}, 'Rem tree');
+  let markdownFastPathFallbackReason: string | undefined;
 
   try {
     if (
@@ -194,8 +195,9 @@ export async function createRemTree(
           simpleTreeNodeToMarkdown(tree),
           parent
         );
-      } catch {
+      } catch (error: unknown) {
         createdRoots = null;
+        markdownFastPathFallbackReason = getSdkErrorMessage(error);
       }
 
       if (createdRoots) {
@@ -210,6 +212,7 @@ export async function createRemTree(
           rootInsertPosition: 'end',
           status: 'created_tree',
           idempotencyKey,
+          fallback: { used: false },
           durationMs: Date.now() - startedAt,
         };
         rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
@@ -230,6 +233,9 @@ export async function createRemTree(
       rootInsertPosition: args.position ?? 'end',
       status: 'created_tree',
       idempotencyKey,
+      fallback: markdownFastPathFallbackReason
+        ? { used: true, reason: markdownFastPathFallbackReason }
+        : { used: false },
       durationMs: Date.now() - startedAt,
     };
     rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
@@ -341,6 +347,8 @@ export async function createPolishedNoteTree(
 
   let createdRemIdsForRollback: string[] = [];
   let verificationDurationMs = 0;
+  let markdownFastPathFallbackUsed = false;
+  let markdownFastPathFallbackReason: string | undefined;
   try {
     const executionStartedAt = Date.now();
     const executed = await executeWriteOperation(plugin, operationPlan, async (activePlan) => {
@@ -360,8 +368,10 @@ export async function createPolishedNoteTree(
             styledNodeToMarkdownLines(presetTree).join('\n'),
             parent
           );
-        } catch {
+        } catch (error: unknown) {
           roots = null;
+          markdownFastPathFallbackUsed = true;
+          markdownFastPathFallbackReason = getSdkErrorMessage(error);
         }
         if (!roots) {
           created = await createStyledRemTree(
@@ -377,6 +387,8 @@ export async function createPolishedNoteTree(
             },
             { skipTransaction: true }
           );
+          markdownFastPathFallbackUsed = markdownFastPathFallbackUsed || Boolean(created.writeEngine?.fallbackUsed);
+          markdownFastPathFallbackReason = markdownFastPathFallbackReason ?? created.writeEngine?.fallbackReason;
         } else {
           const records = await collectRemRecordsPreOrder(roots, parent._id);
           const plannedNodes = flattenStyledNodes(presetTree);
@@ -434,6 +446,8 @@ export async function createPolishedNoteTree(
           },
           { skipTransaction: true }
         );
+        markdownFastPathFallbackUsed = Boolean(created.writeEngine?.fallbackUsed);
+        markdownFastPathFallbackReason = created.writeEngine?.fallbackReason;
       }
       createdRemIdsForRollback = created.createdRemIds;
       const stylePlan = args.stylingPlan?.operations?.length
@@ -508,7 +522,11 @@ export async function createPolishedNoteTree(
         ],
       };
       return result;
-    }, { getCreatedRemIds: () => createdRemIdsForRollback });
+    }, {
+      getCreatedRemIds: () => createdRemIdsForRollback,
+      getFallbackUsed: () => markdownFastPathFallbackUsed,
+      getFallbackReason: () => markdownFastPathFallbackReason,
+    });
     const executionDurationMs = Date.now() - executionStartedAt;
     const performance = buildWritePerformanceReport({
       phaseDurationsMs: {
@@ -519,6 +537,8 @@ export async function createPolishedNoteTree(
       },
       primaryToolCallCount: 1,
       sdkOperationCount: operationPlan.estimatedOperationCount,
+      fallbackUsed: executed.writeEngine.fallbackUsed,
+      fallbackReason: executed.writeEngine.fallbackReason,
     });
     const result = {
       ...executed.result,

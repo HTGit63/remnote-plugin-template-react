@@ -93,7 +93,9 @@ import {
 } from './writeErrors';
 import {
   STRUCTURED_BATCH_RESULT_CACHE,
+  STRUCTURED_BATCH_IN_FLIGHT,
   STYLED_TREE_RESULT_CACHE,
+  STYLED_TREE_IN_FLIGHT,
   getWriteIdempotencyKey,
 } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
@@ -260,6 +262,22 @@ export async function structuredWriteEngine(
   const createdRemIds: string[] = [];
   const createdNodes: CreateStyledRemTreeResult['createdNodes'] = [];
   const idMap: Record<string, string> = {};
+  let inFlightPromise: Promise<CreateStyledRemTreeResult> | undefined;
+  let resolveInFlight: ((value: CreateStyledRemTreeResult) => void) | undefined;
+  let rejectInFlight: ((reason: unknown) => void) | undefined;
+
+  if (!args.dryRun) {
+    const running = STYLED_TREE_IN_FLIGHT.get(idempotencyKey);
+    if (running) {
+      return running;
+    }
+    inFlightPromise = new Promise<CreateStyledRemTreeResult>((resolve, reject) => {
+      resolveInFlight = resolve;
+      rejectInFlight = reject;
+    });
+    inFlightPromise.catch(() => undefined);
+    STYLED_TREE_IN_FLIGHT.set(idempotencyKey, inFlightPromise);
+  }
 
   if (args.dryRun) {
     const performance = buildWritePerformanceReport({
@@ -415,6 +433,7 @@ export async function structuredWriteEngine(
   try {
     const executionStartedAt = Date.now();
     let markdownFastPathFallbackUsed = false;
+    let markdownFastPathFallbackReason: string | undefined;
     const executed = await executeWriteOperation(
       plugin,
       operationPlan,
@@ -432,8 +451,9 @@ export async function structuredWriteEngine(
               styledNodeToMarkdownLines(tree).join('\n'),
               parent
             );
-          } catch {
+          } catch (error: unknown) {
             markdownFastPathFallbackUsed = true;
+            markdownFastPathFallbackReason = getSdkErrorMessage(error);
           }
 
           if (roots) {
@@ -514,6 +534,7 @@ export async function structuredWriteEngine(
         skipTransaction: options.skipTransaction,
         getCreatedRemIds: () => createdRemIds,
         getFallbackUsed: () => markdownFastPathFallbackUsed,
+        getFallbackReason: () => markdownFastPathFallbackReason,
       }
     );
     const executionDurationMs = Date.now() - executionStartedAt;
@@ -526,6 +547,8 @@ export async function structuredWriteEngine(
       },
       primaryToolCallCount: 1,
       sdkOperationCount: operationPlan.estimatedOperationCount,
+      fallbackUsed: executed.writeEngine.fallbackUsed,
+      fallbackReason: executed.writeEngine.fallbackReason,
     });
     const result = {
       ...executed.result,
@@ -539,34 +562,53 @@ export async function structuredWriteEngine(
       durationMs: Date.now() - startedAt,
     };
     rememberStyledTreeResult(idempotencyKey, result);
+    resolveInFlight?.(result);
     return result;
   } catch (error: unknown) {
+    const nestedCreatedRemIds =
+      error instanceof RemnoteWriteError ? readCreatedRemIdsFromError(error) : [];
+    const uniqueCreatedRemIds = Array.from(new Set([...createdRemIds, ...nestedCreatedRemIds]));
+    const rollback = uniqueCreatedRemIds.length
+      ? await rollbackCreatedRems(plugin, uniqueCreatedRemIds)
+      : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
     if (error instanceof RemnoteWriteError) {
-      throw new RemnoteWriteError(error.code, error.message, {
+      const wrapped = new RemnoteWriteError(error.code, error.message, {
         originalDetails: error.details,
-        createdNodeCount: createdRemIds.length,
-        createdRemIds,
+        createdNodeCount: uniqueCreatedRemIds.length,
+        createdRemIds: uniqueCreatedRemIds,
         partialExecution: {
           ...getPartialExecutionDetails(error.details),
-          createdNodeCount: createdRemIds.length,
-          createdRemIds,
+          createdNodeCount: uniqueCreatedRemIds.length,
+          createdRemIds: uniqueCreatedRemIds,
           failedStage: 'create_styled_rem_tree',
-          rollbackStatus: 'not_attempted',
+          rollbackStatus: rollback.status,
+          rollbackRemovedRemIds: rollback.removedRemIds,
+          rollbackFailedRemIds: rollback.failedRemIds,
         },
       });
+      rejectInFlight?.(wrapped);
+      throw wrapped;
     }
 
-    throw new RemnoteWriteError('SDK_ERROR', 'RemNote styled tree creation failed.', {
-      createdNodeCount: createdRemIds.length,
-      createdRemIds,
+    const wrapped = new RemnoteWriteError('SDK_ERROR', 'RemNote styled tree creation failed.', {
+      createdNodeCount: uniqueCreatedRemIds.length,
+      createdRemIds: uniqueCreatedRemIds,
       partialExecution: {
-        createdNodeCount: createdRemIds.length,
-        createdRemIds,
+        createdNodeCount: uniqueCreatedRemIds.length,
+        createdRemIds: uniqueCreatedRemIds,
         failedStage: 'create_styled_rem_tree',
-        rollbackStatus: 'not_attempted',
+        rollbackStatus: rollback.status,
+        rollbackRemovedRemIds: rollback.removedRemIds,
+        rollbackFailedRemIds: rollback.failedRemIds,
       },
       sdkMessage: getSdkErrorMessage(error),
     });
+    rejectInFlight?.(wrapped);
+    throw wrapped;
+  } finally {
+    if (inFlightPromise && STYLED_TREE_IN_FLIGHT.get(idempotencyKey) === inFlightPromise) {
+      STYLED_TREE_IN_FLIGHT.delete(idempotencyKey);
+    }
   }
 }
 
@@ -846,6 +888,22 @@ export async function applyStructuredNoteBatch(
   const stagedRemIds: string[] = [];
   const backupRemIds: string[] = [];
   let verificationDurationMs = 0;
+  let inFlightPromise: Promise<ApplyStructuredNoteBatchResult> | undefined;
+  let resolveInFlight: ((value: ApplyStructuredNoteBatchResult) => void) | undefined;
+  let rejectInFlight: ((reason: unknown) => void) | undefined;
+
+  if (!args.dryRun) {
+    const running = STRUCTURED_BATCH_IN_FLIGHT.get(idempotencyKey);
+    if (running) {
+      return running;
+    }
+    inFlightPromise = new Promise<ApplyStructuredNoteBatchResult>((resolve, reject) => {
+      resolveInFlight = resolve;
+      rejectInFlight = reject;
+    });
+    inFlightPromise.catch(() => undefined);
+    STRUCTURED_BATCH_IN_FLIGHT.set(idempotencyKey, inFlightPromise);
+  }
 
   async function updateExistingRoot(rem: Rem, node: StyledRemTreeNode) {
     const richText =
@@ -1111,6 +1169,7 @@ export async function applyStructuredNoteBatch(
 
     rememberStructuredBatchResult(idempotencyKey, result);
 
+    resolveInFlight?.(result);
     return result;
   } catch (error: unknown) {
     if (error instanceof RemnoteWriteError) {
@@ -1128,7 +1187,7 @@ export async function applyStructuredNoteBatch(
         rollbackOnFailure && uniqueCreatedRemIds.length
           ? await rollbackCreatedRems(plugin, uniqueCreatedRemIds)
           : { status: 'not_attempted' as const, removedRemIds: [], failedRemIds: [] };
-      throw new RemnoteWriteError(
+      const wrapped = new RemnoteWriteError(
         hasPartial ? 'PARTIAL_FAILURE' : error.code,
         hasPartial ? 'Structured note batch failed after partial execution.' : error.message,
         {
@@ -1161,9 +1220,11 @@ export async function applyStructuredNoteBatch(
           },
         }
       );
+      rejectInFlight?.(wrapped);
+      throw wrapped;
     }
 
-    throw new RemnoteWriteError('SDK_ERROR', 'Structured note batch failed.', {
+    const wrapped = new RemnoteWriteError('SDK_ERROR', 'Structured note batch failed.', {
       sdkMessage: getSdkErrorMessage(error),
       operationId: operationPlan.operationId,
       idempotencyKey,
@@ -1185,7 +1246,13 @@ export async function applyStructuredNoteBatch(
                   'Replacement keeps old children in backup until new children move succeeds.',
               }
             : undefined,
-      },
+        },
     });
+    rejectInFlight?.(wrapped);
+    throw wrapped;
+  } finally {
+    if (inFlightPromise && STRUCTURED_BATCH_IN_FLIGHT.get(idempotencyKey) === inFlightPromise) {
+      STRUCTURED_BATCH_IN_FLIGHT.delete(idempotencyKey);
+    }
   }
 }

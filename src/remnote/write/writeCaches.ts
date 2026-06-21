@@ -66,9 +66,11 @@ import type {
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 
 export const STRUCTURED_BATCH_RESULT_CACHE = new Map<string, ApplyStructuredNoteBatchResult>();
+export const STRUCTURED_BATCH_IN_FLIGHT = new Map<string, Promise<ApplyStructuredNoteBatchResult>>();
 export const REMNOTE_COMMAND_RESULT_CACHE = new Map<string, ApplyRemnoteCommandResult>();
 export const STYLE_PLAN_RESULT_CACHE = new Map<string, ApplyStylePlanResult>();
 export const STYLED_TREE_RESULT_CACHE = new Map<string, CreateStyledRemTreeResult>();
+export const STYLED_TREE_IN_FLIGHT = new Map<string, Promise<CreateStyledRemTreeResult>>();
 export const DELETE_BY_ID_RESULT_CACHE = new Map<string, DeleteRemByIdResult>();
 export const DELETE_BY_ID_DRY_RUN_CACHE = new Map<string, DeleteRemByIdResult>();
 export const POLISHED_TREE_RESULT_CACHE = new Map<string, CreatePolishedNoteTreeResult>();
