@@ -90,6 +90,13 @@ export const MASS_NOTE_WRITER_TIER_TOOLS = [
   ...BASIC_TIER_TOOLS,
   'get_document_or_folder_tree',
   'create_or_replace_note_from_markdown',
+  'plan_note_import',
+  'start_note_import_job',
+  'run_note_import_job_step',
+  'get_note_import_job_status',
+  'resume_note_import_job',
+  'verify_note_import_job',
+  'cancel_note_import_job',
 ] as const;
 
 export const NOTE_WRITER_TIER_TOOLS = [
@@ -191,6 +198,41 @@ export const TOOL_POLICY_ENTRIES = [
     name: 'create_or_replace_note_from_markdown',
     policy: 'preferred',
     preferredFor: ['long lecture notes', 'Markdown imports', 'ESSLCE notes', 'math-heavy bulk note transfer'],
+  },
+  {
+    name: 'plan_note_import',
+    policy: 'preferred',
+    preferredFor: ['planning long Markdown imports into bounded chunks without writing'],
+  },
+  {
+    name: 'start_note_import_job',
+    policy: 'preferred',
+    preferredFor: ['creating resumable bulk import manifests'],
+  },
+  {
+    name: 'run_note_import_job_step',
+    policy: 'preferred',
+    preferredFor: ['writing one bounded import chunk at a time'],
+  },
+  {
+    name: 'get_note_import_job_status',
+    policy: 'preferred',
+    preferredFor: ['checking resumable bulk import progress without writing'],
+  },
+  {
+    name: 'resume_note_import_job',
+    policy: 'preferred',
+    preferredFor: ['continuing from pending or partial import chunks'],
+  },
+  {
+    name: 'verify_note_import_job',
+    policy: 'preferred',
+    preferredFor: ['checking import manifest and normalized source fidelity'],
+  },
+  {
+    name: 'cancel_note_import_job',
+    policy: 'preferred',
+    preferredFor: ['stopping future import chunks without deleting content'],
   },
   {
     name: 'create_polished_note_tree',
@@ -404,6 +446,20 @@ function userFacingNameForTool(name: string): string {
 function defaultSdkCapability(name: string, category: ToolCategory): string | null {
   if (name === 'create_folder') return 'no_verified_folder_api';
   if (
+    [
+      'plan_note_import',
+      'start_note_import_job',
+      'get_note_import_job_status',
+      'verify_note_import_job',
+      'cancel_note_import_job',
+    ].includes(name)
+  ) {
+    return 'server_local_bulk_import_manifest';
+  }
+  if (name === 'run_note_import_job_step' || name === 'resume_note_import_job') {
+    return 'server_local_bulk_import_manifest + create_or_replace_note_from_markdown';
+  }
+  if (
     name === 'save_note_design_template' ||
     name === 'list_note_design_templates' ||
     name === 'export_note_design_template' ||
@@ -600,6 +656,59 @@ export const TOOL_METADATA = [
   meta('create_styled_rem_tree', 'structured_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_polished_note_tree', 'design_template', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('create_or_replace_note_from_markdown', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('plan_note_import', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    supportsDryRun: true,
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+  }),
+  meta('start_note_import_job', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    supportsDryRun: true,
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+  }),
+  meta('run_note_import_job_step', 'markdown_note', 'medium', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    performanceBudgetMs: 10000,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    liveVerificationRequired: true,
+  }),
+  meta('get_note_import_job_status', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+  }),
+  meta('resume_note_import_job', 'markdown_note', 'medium', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    performanceBudgetMs: 10000,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    liveVerificationRequired: true,
+  }),
+  meta('verify_note_import_job', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+  }),
+  meta('cancel_note_import_job', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'none',
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+  }),
   meta('preview_markdown_note_tree', 'markdown_note', 'low', {
     requiresWrite: false,
     scopeRequirement: 'none',

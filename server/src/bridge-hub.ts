@@ -20,7 +20,7 @@ import {
   createBridgeFailure,
 } from '../../shared/bridge/protocol.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
-import { getToolCallAuthMode, type CompanionServerConfig } from './config.js';
+import { DEFAULT_TIMEOUT_BUDGETS, getToolCallAuthMode, type CompanionServerConfig } from './config.js';
 import type { BridgeHealthCheckResult } from './health-check-types.js';
 import { SessionRouter } from './bridge/session-router.js';
 import type { StorageProvider } from './storage/types.js';
@@ -40,8 +40,6 @@ import {
   stringArrayFrom,
   getUniqueStrings,
   MAX_RECENT_REQUEST_OUTCOMES,
-  RECONNECT_RETRY_WINDOW_MS,
-  RECONNECT_RETRY_INTERVAL_MS,
 } from './bridge/bridge-hub-types.js';
 
 import {
@@ -76,6 +74,7 @@ export class BridgeHub {
   private readonly startedAt = new Date().toISOString();
   private readonly recentRequests: BridgeHubRequestOutcome[] = [];
   private readonly lateResponses: NonNullable<BridgeHubDiagnostics['lateResponses']> = [];
+  private readonly reconnectAttempts: NonNullable<BridgeHubDiagnostics['reconnectAttempts']> = [];
   private lastHealthCheck: BridgeHealthCheckResult | null = null;
   private pluginRuntimeInfo: BridgePluginRuntimeInfo | null = null;
   private readonly sessionRouter: SessionRouter;
@@ -214,6 +213,8 @@ export class BridgeHub {
     return {
       startedAt: this.startedAt,
       status: this.getStatus(),
+      timeoutBudgets: this.config.timeoutBudgets ?? DEFAULT_TIMEOUT_BUDGETS,
+      reconnectAttempts: [...this.reconnectAttempts],
       pending: Array.from(this.pending.entries()).map(([id, request]) => ({
         id,
         tool: request.tool,
@@ -413,13 +414,38 @@ export class BridgeHub {
 
     return new Promise<BridgeResponse>((resolve) => {
       const timeout = setTimeout(() => {
+        const pending = this.pending.get(id);
         this.sendCancel(id, 'server_timeout', `Timed out waiting for ${tool}.`);
-        this.pending.get(id)?.lifecycle.push(
+        pending?.lifecycle.push(
           createLifecycleEvent('cancelled_by_server_timeout', `Server cancelled ${tool} after timeout.`),
           createLifecycleEvent('response_dropped', `Late plugin response may arrive after ${tool} timeout.`),
           createLifecycleEvent('timeout', `Timed out waiting for ${tool}.`)
         );
-        this.resolvePending(id, createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`));
+        const timeoutLifecycle = pending?.lifecycle ?? [...lifecycle];
+        this.resolvePending(
+          id,
+          createBridgeFailure(id, 'TIMEOUT', `Timed out waiting for ${tool}.`, {
+            code: 'TIMEOUT',
+            tool,
+            timeoutMs,
+            startedAt: new Date(startedAt).toISOString(),
+            durationMs: Date.now() - startedAt,
+            lifecycle: timeoutLifecycle,
+            mutationCouldHaveStarted:
+              !BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint &&
+              !isDryRunBridgeRequest(tool, args),
+            retrySafety: BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint
+              ? 'retry_read_after_reconnect'
+              : isDryRunBridgeRequest(tool, args)
+                ? 'retry_dry_run_safe'
+                : 'unknown_write_status',
+            recommendation: BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint
+              ? 'Reconnect the RemNote plugin and retry the read.'
+              : isDryRunBridgeRequest(tool, args)
+                ? 'Retry the dry run after reconnect.'
+                : 'Inspect target state or resume with the same idempotency key.',
+          }, timeoutLifecycle)
+        );
       }, timeoutMs);
 
       const abortHandler = () => {
@@ -545,20 +571,48 @@ export class BridgeHub {
   }
 
   private async waitForPluginReconnect(signal?: AbortSignal): Promise<boolean> {
-    const deadline = Date.now() + RECONNECT_RETRY_WINDOW_MS;
+    const budgets = this.config.timeoutBudgets ?? DEFAULT_TIMEOUT_BUDGETS;
+    const startedAt = Date.now();
+    const deadline = startedAt + budgets.reconnectRetryWindowMs;
+    let attemptCount = 0;
     while (Date.now() <= deadline) {
       if (signal?.aborted) {
+        this.recordReconnectAttempt(startedAt, budgets.reconnectRetryWindowMs, budgets.reconnectRetryIntervalMs, attemptCount, false);
         return false;
       }
 
+      attemptCount += 1;
       if (this.getStatus().connected) {
+        this.recordReconnectAttempt(startedAt, budgets.reconnectRetryWindowMs, budgets.reconnectRetryIntervalMs, attemptCount, true);
         return true;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, RECONNECT_RETRY_INTERVAL_MS));
+      await new Promise((resolve) => setTimeout(resolve, budgets.reconnectRetryIntervalMs));
     }
 
-    return this.getStatus().connected;
+    const connected = this.getStatus().connected;
+    this.recordReconnectAttempt(startedAt, budgets.reconnectRetryWindowMs, budgets.reconnectRetryIntervalMs, attemptCount, connected);
+    return connected;
+  }
+
+  private recordReconnectAttempt(
+    startedAtMs: number,
+    windowMs: number,
+    intervalMs: number,
+    attemptCount: number,
+    connected: boolean
+  ) {
+    this.reconnectAttempts.unshift({
+      startedAt: new Date(startedAtMs).toISOString(),
+      finishedAt: new Date().toISOString(),
+      windowMs,
+      intervalMs,
+      attemptCount,
+      connected,
+    });
+    if (this.reconnectAttempts.length > 20) {
+      this.reconnectAttempts.length = 20;
+    }
   }
 
   private recordSyntheticFailure(
@@ -802,12 +856,14 @@ export class BridgeHub {
 
     const pending = this.pending.get(message.id);
     if (!pending) {
+      const priorOutcome = this.recentRequests.find((request) => request.id === message.id);
       const lifecycle = [
         createLifecycleEvent('response_dropped', 'Plugin response arrived after companion server pending request expired.'),
         ...(message.lifecycle ?? []),
       ];
       this.lateResponses.unshift({
         id: message.id,
+        tool: priorOutcome?.tool,
         receivedAt: new Date().toISOString(),
         ok: message.ok,
         errorCode: message.ok ? undefined : message.error.code,

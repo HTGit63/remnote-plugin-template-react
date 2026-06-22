@@ -1122,6 +1122,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       discoveryAuthMode: 'no_auth_required',
       toolCallAuthMode,
       runtimeInfo: runtimeInfoForRequest(req),
+      timeoutBudgets: config.timeoutBudgets,
       principal: auth.principal,
     });
     const transport = new StreamableHTTPServerTransport({

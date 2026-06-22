@@ -7,6 +7,7 @@ import type {
   BridgeToolName,
   SerializedRem,
 } from '../../shared/bridge/protocol.js';
+import { planNoteImport } from '../../shared/bridge/bulk-import.js';
 import { startCompanionApp } from './app.js';
 import { bridgeToolNameForPublicMcpTool } from './mcp-tool-map.js';
 import {
@@ -24,6 +25,24 @@ const mode = process.argv[2] ?? 'all';
 const token = 'area3-certification-token';
 const parentId = 'area3-parent';
 const targetRemId = 'area3-rem';
+const bulkImportSampleText = [
+  '# Area 3 Chapter',
+  '',
+  '## 1.1 First section',
+  '',
+  'Paragraph one.',
+  '',
+  '## 1.2 Second section',
+  '',
+  'Paragraph two with $E=mc^2$.',
+].join('\n');
+const bulkImportSamplePlan = planNoteImport({
+  sourceName: 'area3.md',
+  sourceText: bulkImportSampleText,
+  targetRootId: parentId,
+  chapterSelector: 'Area 3 Chapter',
+});
+const bulkImportSampleJobId = 'bulk-job:area3-certification';
 const fakeRem: SerializedRem = {
   remId: targetRemId,
   frontText: 'Area 3 certification Rem',
@@ -155,6 +174,25 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
       return { query: 'Area 3', contextRemId: parentId, maxResults: 3, scope: 'current_permission_scope' };
     case 'get_document_or_folder_tree':
       return { rootRemId: parentId, depth: 1, maxChildren: 3 };
+    case 'plan_note_import':
+      return {
+        sourceName: 'area3.md',
+        sourceText: bulkImportSampleText,
+        targetRootId: parentId,
+        chapterSelector: 'Area 3 Chapter',
+      };
+    case 'start_note_import_job':
+      return { planId: bulkImportSamplePlan.planId, jobId: bulkImportSampleJobId };
+    case 'run_note_import_job_step':
+      return { jobId: bulkImportSampleJobId, maxChunks: 1, dryRun: true };
+    case 'get_note_import_job_status':
+      return { jobId: bulkImportSampleJobId };
+    case 'resume_note_import_job':
+      return { jobId: bulkImportSampleJobId, dryRun: true };
+    case 'verify_note_import_job':
+      return { jobId: bulkImportSampleJobId };
+    case 'cancel_note_import_job':
+      return { jobId: bulkImportSampleJobId };
     case 'create_basic_flashcard':
     case 'create_concept_card':
     case 'create_descriptor_card':

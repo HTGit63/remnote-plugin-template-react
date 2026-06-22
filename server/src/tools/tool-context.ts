@@ -10,7 +10,7 @@ import type {
 import { BRIDGE_TOOL_ANNOTATIONS } from '../../../shared/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
 import type { AuthenticatedPrincipal } from '../auth/types.js';
-import type { BridgeRuntimeInfo } from '../config.js';
+import { DEFAULT_TIMEOUT_BUDGETS, type BridgeRuntimeInfo, type BridgeTimeoutBudgets } from '../config.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 import type { ToolProfile } from '../tool-policy.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
@@ -54,6 +54,7 @@ export interface ToolRegistrationContext {
   exposeDeleteTool: boolean;
   requestSignal?: AbortSignal;
   runtimeInfo?: BridgeRuntimeInfo;
+  timeoutBudgets?: BridgeTimeoutBudgets;
   toolProfile?: ToolProfile;
   principal?: AuthenticatedPrincipal;
 }
@@ -62,7 +63,147 @@ export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {
   return BRIDGE_TOOL_ANNOTATIONS[tool];
 }
 
-export function defaultTimeoutForTool(tool: BridgeToolName): number {
+export type WriteTimeoutEstimateInput = {
+  tool: BridgeToolName;
+  args?: unknown;
+  nodeCount?: number;
+  charCount?: number;
+  hasVerification?: boolean;
+  isBulkImportStep?: boolean;
+  requestedTimeoutMs?: number;
+  budgets?: BridgeTimeoutBudgets;
+};
+
+const HIGH_LEVEL_WRITE_TOOLS = new Set<BridgeToolName>([
+  'apply_structured_note_batch',
+  'create_styled_rem_tree',
+  'create_polished_note_tree',
+  'create_or_replace_note_from_markdown',
+  'create_note_from_markdown_tree',
+  'append_markdown_as_rem_tree',
+  'create_designed_note_tree',
+  'update_note_with_design',
+  'repair_note_design',
+  'create_card_set_from_note',
+  'create_flashcards_from_markdown',
+  'create_cloze_cards_from_note',
+  'repair_card_set',
+]);
+
+function numberFromRecord(record: Record<string, unknown> | undefined, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function estimateChars(value: unknown): number {
+  if (typeof value === 'string') {
+    return value.length;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce<number>((sum, item) => sum + estimateChars(item), 0);
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return 0;
+  }
+  return Object.values(record).reduce<number>((sum, item) => sum + estimateChars(item), 0);
+}
+
+function estimateNodes(value: unknown): number {
+  if (!value || typeof value !== 'object') {
+    return 0;
+  }
+  if (Array.isArray(value)) {
+    return value.reduce<number>((sum, item) => sum + estimateNodes(item), 0);
+  }
+  const record = value as Record<string, unknown>;
+  const childValues = [
+    record.children,
+    record.items,
+    record.choices,
+    record.root,
+    record.note,
+    record.tree,
+  ];
+  const children = childValues.reduce<number>((sum, item) => sum + estimateNodes(item), 0);
+  return children + (record.title || record.text || record.markdown || record.markdownText ? 1 : 0);
+}
+
+function clampTimeout(value: number, minimum: number, maximum: number): number {
+  if (!Number.isFinite(value)) {
+    return minimum;
+  }
+  return Math.min(Math.max(Math.floor(value), minimum), maximum);
+}
+
+export function estimateWriteTimeoutMs(input: WriteTimeoutEstimateInput): number {
+  const budgets = input.budgets ?? DEFAULT_TIMEOUT_BUDGETS;
+  const annotations = annotationsFor(input.tool);
+  const argsRecord = asRecord(input.args);
+  const requestedTimeoutMs =
+    input.requestedTimeoutMs ??
+    numberFromRecord(argsRecord, 'timeoutMs', 'requestedTimeoutMs');
+  const charCount = input.charCount ?? numberFromRecord(argsRecord, 'charCount') ?? estimateChars(input.args);
+  const nodeCount = input.nodeCount ?? numberFromRecord(argsRecord, 'nodeCount', 'maxNodeCount') ?? estimateNodes(input.args);
+  const hasVerification =
+    input.hasVerification ??
+    (Boolean(argsRecord?.verifyAfterWrite) ||
+      Boolean(asRecord(argsRecord?.safetyOptions)?.verifyAfterWrite));
+  const isBulkImportStep =
+    input.isBulkImportStep ??
+    (Boolean(argsRecord?.isBulkImportStep) ||
+      Boolean(argsRecord?.jobId) ||
+      Boolean(argsRecord?.chunkId));
+
+  if (requestedTimeoutMs !== undefined) {
+    return clampTimeout(requestedTimeoutMs, 1000, 300000);
+  }
+
+  const budgetMs = getToolPerformanceBudgetMs(publicMcpToolNameForBridgeTool(input.tool));
+  const baseTimeoutMs = Math.max(budgetMs + 5000, 6000);
+  if (annotations.destructiveHint === true) {
+    return Math.max(baseTimeoutMs, budgets.writeApprovalTimeoutMs, budgets.mutationTimeoutMs);
+  }
+
+  if (isBulkImportStep) {
+    const adaptiveMs =
+      budgets.mutationTimeoutMs +
+      Math.ceil(charCount / 1000) * 600 +
+      Math.ceil(nodeCount / 10) * 1000 +
+      (hasVerification ? 20000 : 0);
+    return clampTimeout(adaptiveMs, budgets.bulkStepTimeoutMs, 300000);
+  }
+
+  if (HIGH_LEVEL_WRITE_TOOLS.has(input.tool)) {
+    const adaptiveMs =
+      budgets.mutationTimeoutMs +
+      Math.ceil(charCount / 2000) * 500 +
+      Math.ceil(nodeCount / 25) * 1000 +
+      (hasVerification ? 15000 : 0);
+    return clampTimeout(adaptiveMs, budgets.highLevelWriteTimeoutMs, 300000);
+  }
+
+  if (annotations.readOnlyHint === true) {
+    return Math.max(baseTimeoutMs, budgets.readTimeoutMs);
+  }
+
+  return Math.max(baseTimeoutMs, budgets.mutationTimeoutMs);
+}
+
+export function defaultTimeoutForTool(
+  tool: BridgeToolName,
+  args?: unknown,
+  budgets?: BridgeTimeoutBudgets
+): number {
+  return estimateWriteTimeoutMs({ tool, args, budgets });
+}
+
+export function legacyDefaultTimeoutForTool(tool: BridgeToolName): number {
   const annotations = annotationsFor(tool);
   const budgetMs = getToolPerformanceBudgetMs(publicMcpToolNameForBridgeTool(tool));
   const baseTimeoutMs = Math.max(budgetMs + 5000, 6000);
@@ -70,23 +211,7 @@ export function defaultTimeoutForTool(tool: BridgeToolName): number {
     return Math.max(baseTimeoutMs, 60000);
   }
 
-  if (
-    [
-      'apply_structured_note_batch',
-      'create_styled_rem_tree',
-      'create_polished_note_tree',
-      'create_or_replace_note_from_markdown',
-      'create_note_from_markdown_tree',
-      'append_markdown_as_rem_tree',
-      'create_designed_note_tree',
-      'update_note_with_design',
-      'repair_note_design',
-      'create_card_set_from_note',
-      'create_flashcards_from_markdown',
-      'create_cloze_cards_from_note',
-      'repair_card_set',
-    ].includes(tool)
-  ) {
+  if (HIGH_LEVEL_WRITE_TOOLS.has(tool)) {
     return Math.max(baseTimeoutMs, 60000);
   }
 

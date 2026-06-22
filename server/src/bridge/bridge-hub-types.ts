@@ -9,6 +9,7 @@ import type {
 } from '../../../shared/bridge/protocol.js';
 import type { BridgeHealthCheckResult } from '../health-check-types.js';
 import type { SessionRouter } from './session-router.js';
+import type { BridgeTimeoutBudgets } from '../config.js';
 
 export interface PendingRequest {
   resolve: (response: BridgeResponse) => void;
@@ -77,10 +78,20 @@ export interface BridgeHubRequestOutcome {
 export interface BridgeHubDiagnostics {
   startedAt: string;
   status: BridgeHubStatus;
+  timeoutBudgets?: BridgeTimeoutBudgets;
+  reconnectAttempts?: Array<{
+    startedAt: string;
+    finishedAt: string;
+    windowMs: number;
+    intervalMs: number;
+    attemptCount: number;
+    connected: boolean;
+  }>;
   pending: BridgeHubRequestSnapshot[];
   recentRequests: BridgeHubRequestOutcome[];
   lateResponses?: Array<{
     id: string;
+    tool?: BridgeToolName;
     receivedAt: string;
     ok: boolean;
     errorCode?: string;
@@ -148,8 +159,6 @@ export function getUniqueStrings(values: string[]): string[] {
 }
 
 export const MAX_RECENT_REQUEST_OUTCOMES = 200;
-export const RECONNECT_RETRY_WINDOW_MS = 1200;
-export const RECONNECT_RETRY_INTERVAL_MS = 50;
 export const TRANSIENT_BRIDGE_ERRORS = new Set<BridgeErrorCode>([
   'PLUGIN_NOT_CONNECTED',
   'TIMEOUT',

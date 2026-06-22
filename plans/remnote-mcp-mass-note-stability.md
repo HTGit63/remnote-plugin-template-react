@@ -24,6 +24,9 @@ In progress on `fix/remnote-mcp-mass-note-creation-stability`.
 - [x] Add direct styled-tree rollback reporting on partial failure.
 - [x] Capture markdown fast-path fallback reasons.
 - [x] Tighten style-only child order invariant.
+- [x] Add configurable timeout/reconnect budgets for bulk reliability.
+- [x] Add server-side resumable bulk import planner/job tools.
+- [x] Add normalized plain-text bulk import source-fidelity checks.
 - [x] Run all required local gates.
 - [ ] Run live 15/50/100-node write proof with disposable cleanup when RemNote plugin is connected.
 
@@ -62,3 +65,29 @@ Local proof added:
 - Markdown tree fast-path fallback stores the SDK error message.
 
 Live proof remains not run until a connected RemNote plugin and disposable parent root are available.
+
+## 2026-06-22 No-Live Bulk Reliability Checkpoint
+
+Added prompt-specific no-live reliability work:
+
+- `plans/remnote-mcp-bulk-note-reliability-plan.md`
+- `docs/bulk-import.md`
+- configurable timeout budgets:
+  - `REMNOTE_BRIDGE_DEFAULT_REQUEST_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_HIGH_LEVEL_WRITE_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_BULK_STEP_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_READ_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_MUTATION_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_WRITE_APPROVAL_TIMEOUT_MS`
+  - `REMNOTE_BRIDGE_RECONNECT_RETRY_WINDOW_MS`
+  - `REMNOTE_BRIDGE_RECONNECT_RETRY_INTERVAL_MS`
+- server-side bulk tools:
+  - `plan_note_import`
+  - `start_note_import_job`
+  - `run_note_import_job_step`
+  - `get_note_import_job_status`
+  - `resume_note_import_job`
+  - `verify_note_import_job`
+  - `cancel_note_import_job`
+
+Current job storage is memory-only and explicitly reported as not durable across server restart. Live RemNote proof is still not run.

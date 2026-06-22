@@ -23,6 +23,13 @@ export const SERVER_LOCAL_MCP_TOOLS = [
   'get_bridge_diagnostics',
   'run_bridge_health_check',
   'get_remnote_capability_guide',
+  'plan_note_import',
+  'start_note_import_job',
+  'run_note_import_job_step',
+  'get_note_import_job_status',
+  'resume_note_import_job',
+  'verify_note_import_job',
+  'cancel_note_import_job',
 ] as const;
 
 export type McpToolExposure = 'public' | 'gated';

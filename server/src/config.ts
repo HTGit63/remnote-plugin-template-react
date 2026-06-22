@@ -32,6 +32,17 @@ export interface BridgeRuntimeInfo {
   deployBranch?: string;
 }
 
+export interface BridgeTimeoutBudgets {
+  defaultRequestTimeoutMs: number;
+  highLevelWriteTimeoutMs: number;
+  bulkStepTimeoutMs: number;
+  readTimeoutMs: number;
+  mutationTimeoutMs: number;
+  writeApprovalTimeoutMs: number;
+  reconnectRetryWindowMs: number;
+  reconnectRetryIntervalMs: number;
+}
+
 export interface CompanionServerConfig {
   deploymentMode: BridgeDeploymentMode;
   hostedPairingEnabled: boolean;
@@ -77,6 +88,7 @@ export interface CompanionServerConfig {
   auditLog: boolean;
   allowedOrigins: string[];
   requestTimeoutMs: number;
+  timeoutBudgets: BridgeTimeoutBudgets;
   maxBodyBytes: number;
   maxBridgeMessageBytes: number;
   rateLimitWindowMs: number;
@@ -90,6 +102,16 @@ export interface CompanionServerConfig {
 const DEFAULT_BRIDGE_PORT = 47391;
 const DEFAULT_MCP_PORT = 47392;
 const DEFAULT_REQUEST_TIMEOUT_MS = 120000;
+export const DEFAULT_TIMEOUT_BUDGETS: BridgeTimeoutBudgets = {
+  defaultRequestTimeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+  highLevelWriteTimeoutMs: 180000,
+  bulkStepTimeoutMs: 240000,
+  readTimeoutMs: 30000,
+  mutationTimeoutMs: 60000,
+  writeApprovalTimeoutMs: 30000,
+  reconnectRetryWindowMs: 30000,
+  reconnectRetryIntervalMs: 400,
+};
 const DEFAULT_MAX_BODY_BYTES = 128 * 1024;
 const DEFAULT_MAX_BRIDGE_MESSAGE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -116,6 +138,19 @@ function numberFromEnv(value: string | undefined, fallback: number): number {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function boundedNumberFromEnv(
+  value: string | undefined,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  const parsed = numberFromEnv(value, fallback);
+  if (!Number.isFinite(parsed) || parsed < min) {
+    return fallback;
+  }
+  return Math.min(Math.floor(parsed), max);
 }
 
 function boolFromEnv(value: string | undefined): boolean {
@@ -348,6 +383,56 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
   const bindHost = env.REMNOTE_BRIDGE_HOST?.trim() || '127.0.0.1';
   const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
   const port = numberFromEnv(env.PORT ?? env.REMNOTE_BRIDGE_PORT, DEFAULT_MCP_PORT);
+  const timeoutBudgets: BridgeTimeoutBudgets = {
+    defaultRequestTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_DEFAULT_REQUEST_TIMEOUT_MS ?? env.REMNOTE_BRIDGE_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.defaultRequestTimeoutMs,
+      1000,
+      300000
+    ),
+    highLevelWriteTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_HIGH_LEVEL_WRITE_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.highLevelWriteTimeoutMs,
+      30000,
+      300000
+    ),
+    bulkStepTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_BULK_STEP_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.bulkStepTimeoutMs,
+      30000,
+      300000
+    ),
+    readTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_READ_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.readTimeoutMs,
+      1000,
+      60000
+    ),
+    mutationTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_MUTATION_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.mutationTimeoutMs,
+      10000,
+      120000
+    ),
+    writeApprovalTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_WRITE_APPROVAL_TIMEOUT_MS,
+      DEFAULT_TIMEOUT_BUDGETS.writeApprovalTimeoutMs,
+      5000,
+      120000
+    ),
+    reconnectRetryWindowMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_RECONNECT_RETRY_WINDOW_MS,
+      DEFAULT_TIMEOUT_BUDGETS.reconnectRetryWindowMs,
+      1000,
+      120000
+    ),
+    reconnectRetryIntervalMs: boundedNumberFromEnv(
+      env.REMNOTE_BRIDGE_RECONNECT_RETRY_INTERVAL_MS,
+      DEFAULT_TIMEOUT_BUDGETS.reconnectRetryIntervalMs,
+      50,
+      5000
+    ),
+  };
 
   const storageMode: CompanionServerConfig['storageMode'] =
     env.REMNOTE_BRIDGE_STORAGE === 'postgres' || env.REMNOTE_BRIDGE_STORAGE === 'memory'
@@ -416,7 +501,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     hostedMode: deploymentMode === 'hosted',
     auditLog: env.REMNOTE_BRIDGE_AUDIT_LOG === undefined ? true : boolFromEnv(env.REMNOTE_BRIDGE_AUDIT_LOG),
     allowedOrigins,
-    requestTimeoutMs: numberFromEnv(env.REMNOTE_BRIDGE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS),
+    requestTimeoutMs: timeoutBudgets.defaultRequestTimeoutMs,
+    timeoutBudgets,
     maxBodyBytes: numberFromEnv(env.REMNOTE_BRIDGE_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES),
     maxBridgeMessageBytes: numberFromEnv(
       env.REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES,

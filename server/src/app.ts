@@ -16,9 +16,24 @@ export interface RunningCompanionApp {
 export async function startCompanionApp(
   overrideConfig: Partial<CompanionServerConfig> = {}
 ): Promise<RunningCompanionApp> {
+  const baseConfig = loadConfig();
+  const timeoutBudgets =
+    overrideConfig.timeoutBudgets ??
+    (overrideConfig.requestTimeoutMs !== undefined
+      ? {
+          ...baseConfig.timeoutBudgets,
+          defaultRequestTimeoutMs: overrideConfig.requestTimeoutMs,
+          highLevelWriteTimeoutMs: overrideConfig.requestTimeoutMs,
+          bulkStepTimeoutMs: overrideConfig.requestTimeoutMs,
+          readTimeoutMs: overrideConfig.requestTimeoutMs,
+          mutationTimeoutMs: overrideConfig.requestTimeoutMs,
+          writeApprovalTimeoutMs: overrideConfig.requestTimeoutMs,
+        }
+      : baseConfig.timeoutBudgets);
   const config = {
-    ...loadConfig(),
+    ...baseConfig,
     ...overrideConfig,
+    timeoutBudgets,
   };
   validateConfig(config);
 

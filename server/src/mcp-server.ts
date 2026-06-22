@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { BridgeToolArgs, BridgeToolName } from '../../shared/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
-import type { BridgeRuntimeInfo } from './config.js';
+import type { BridgeRuntimeInfo, BridgeTimeoutBudgets } from './config.js';
 import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
@@ -12,6 +12,7 @@ import {
 import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
 import { DEFAULT_TOOL_PROFILE, getToolMetadata, type ToolProfile } from './tool-policy.js';
 import { registerCardTools } from './tools/register-card-tools.js';
+import { registerBulkImportTools } from './tools/register-bulk-import-tools.js';
 import { registerDeleteTools } from './tools/register-delete-tools.js';
 import {
   registerDesignedNoteTools,
@@ -36,6 +37,7 @@ export interface CreateMcpServerOptions {
   discoveryAuthMode?: 'no_auth_required' | 'local_bearer_required' | 'hosted_oauth_required';
   toolCallAuthMode?: 'no_auth_allowed' | 'local_bearer_required' | 'connector_compat_no_auth_tools' | 'hosted_oauth_required';
   runtimeInfo?: BridgeRuntimeInfo;
+  timeoutBudgets?: BridgeTimeoutBudgets;
   principal?: AuthenticatedPrincipal;
 }
 
@@ -63,7 +65,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   const callPlugin = async <TTool extends BridgeToolName>(
     tool: TTool,
     args: BridgeToolArgs[TTool],
-    timeoutMs = defaultTimeoutForTool(tool),
+    timeoutMs = defaultTimeoutForTool(tool, args, options.timeoutBudgets),
   ) => {
     const response = await hub.callPlugin(tool, args, timeoutMs, options.requestSignal, options.principal);
     const mcpToolName = publicMcpToolNameForBridgeTool(tool);
@@ -113,11 +115,13 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     exposeDeleteTool: Boolean(options.exposeDeleteTool),
     requestSignal: options.requestSignal,
     runtimeInfo: options.runtimeInfo,
+    timeoutBudgets: options.timeoutBudgets,
     toolProfile,
     principal: options.principal,
   };
 
   registerStatusTools(context);
+  registerBulkImportTools(context);
   registerDiagnosticTools(context);
   registerReadTools(context);
   registerBasicWriteTools(context);
