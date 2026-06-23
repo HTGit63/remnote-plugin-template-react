@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-06-17.mass-note-writer-registry';
+export const TOOL_SCHEMA_VERSION = '2026-06-23.bulk-import-reliability';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',

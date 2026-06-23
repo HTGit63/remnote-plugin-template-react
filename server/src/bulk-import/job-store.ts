@@ -8,8 +8,10 @@ import type {
   BulkImportPlan,
 } from '../../../shared/bridge/bulk-import.js';
 import {
+  bulkChapterIdempotencyKey,
   bulkChunkId,
   bulkChunkIdempotencyKey,
+  bulkSectionIdempotencyKey,
   summarizeBulkImportProgress,
 } from '../../../shared/bridge/bulk-import.js';
 
@@ -55,6 +57,7 @@ export class BulkImportJobStore {
       sourceHash: plan.sourceHash,
       targetRootId: plan.targetRootId,
       chapterTitle: plan.chapterTitle,
+      chapterIdempotencyKey: bulkChapterIdempotencyKey(jobId, plan.sourceHash),
       status: 'planned',
       storageDurability: 'memory_only',
       sections,
@@ -141,8 +144,45 @@ export class BulkImportJobStore {
   nextRunnableChunk(jobId: string): BulkImportChunk | null {
     const job = this.requireJob(jobId);
     return job.chunks.find((chunk) =>
-      ['pending', 'partial', 'failed'].includes(chunk.status)
+      ['pending', 'partial', 'partial_needs_verification', 'written_not_verified', 'failed'].includes(chunk.status)
     ) ?? null;
+  }
+
+  recordChapterRoot(jobId: string, chapterRootRemId: string): BulkImportJob {
+    const job = this.requireJob(jobId);
+    job.chapterRootRemId = chapterRootRemId;
+    for (const chunk of job.chunks) {
+      chunk.chapterRootRemId = chapterRootRemId;
+    }
+    for (const section of job.sections) {
+      for (const chunk of section.chunks) {
+        chunk.chapterRootRemId = chapterRootRemId;
+      }
+    }
+    job.updatedAt = new Date().toISOString();
+    return job;
+  }
+
+  recordSectionRoot(jobId: string, sectionKey: string, sectionRootRemId: string): BulkImportJob {
+    const job = this.requireJob(jobId);
+    const section = job.sections.find((candidate) => candidate.sectionKey === sectionKey);
+    if (!section) {
+      throw new Error(`Unknown import section: ${sectionKey}`);
+    }
+    section.sectionRootRemId = sectionRootRemId;
+    section.idempotencyKey = section.idempotencyKey ?? bulkSectionIdempotencyKey(jobId, section.sectionKey, section.sourceHash);
+    for (const chunk of job.chunks.filter((candidate) => candidate.sectionKey === sectionKey)) {
+      chunk.sectionRootRemId = sectionRootRemId;
+      chunk.chunkParentRemId = sectionRootRemId;
+      chunk.expectedParent = sectionRootRemId;
+    }
+    for (const chunk of section.chunks) {
+      chunk.sectionRootRemId = sectionRootRemId;
+      chunk.chunkParentRemId = sectionRootRemId;
+      chunk.expectedParent = sectionRootRemId;
+    }
+    job.updatedAt = new Date().toISOString();
+    return job;
   }
 
   cancelJob(jobId: string): BulkImportJob {
@@ -169,11 +209,19 @@ export class BulkImportJobStore {
       job.status = 'needs_manual_review';
       return;
     }
-    if (job.chunks.some((chunk) => chunk.status === 'partial' || chunk.status === 'failed')) {
+    if (job.chunks.some((chunk) =>
+      chunk.status === 'partial' ||
+      chunk.status === 'partial_needs_verification' ||
+      chunk.status === 'written_not_verified' ||
+      chunk.status === 'failed'
+    )) {
       job.status = 'partial';
       return;
     }
-    if (job.chunks.every((chunk) => chunk.status === 'verified' || chunk.status === 'skipped_already_verified')) {
+    if (job.chunks.every((chunk) =>
+      (chunk.status === 'verified' || chunk.status === 'skipped_already_verified') &&
+      chunk.verificationStatus === 'passed'
+    )) {
       job.status = 'completed';
       job.completedAt = job.completedAt ?? new Date().toISOString();
       return;

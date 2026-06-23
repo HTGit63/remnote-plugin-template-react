@@ -428,6 +428,7 @@ export class BridgeHub {
             code: 'TIMEOUT',
             tool,
             timeoutMs,
+            idempotencyKey,
             startedAt: new Date(startedAt).toISOString(),
             durationMs: Date.now() - startedAt,
             lifecycle: timeoutLifecycle,

@@ -12,8 +12,10 @@ export type BulkImportChunkStatus =
   | 'pending'
   | 'running'
   | 'written'
+  | 'written_not_verified'
   | 'verified'
   | 'partial'
+  | 'partial_needs_verification'
   | 'failed'
   | 'skipped_already_verified'
   | 'needs_manual_review';
@@ -22,6 +24,8 @@ export type BulkImportVerificationStatus =
   | 'passed'
   | 'failed'
   | 'partial'
+  | 'written_not_verified'
+  | 'source_fidelity_failed'
   | 'not_verifiable';
 
 export interface BulkImportPlannerOptions {
@@ -41,11 +45,17 @@ export interface PlanNoteImportInput {
 
 export interface BulkImportChunk {
   chunkId: string;
+  targetRootId: string;
+  chapterRootRemId?: string;
+  chapterTitle: string;
+  sectionRootRemId?: string;
   sectionKey: string;
+  sectionTitle: string;
   chunkIndex: number;
   sourceText: string;
   sourceHash: string;
   expectedParent: string;
+  chunkParentRemId?: string;
   createdRemIds: string[];
   updatedRemIds: string[];
   startedAt?: string;
@@ -64,6 +74,8 @@ export interface BulkImportSection {
   title: string;
   sourceHash: string;
   sourceText: string;
+  sectionRootRemId?: string;
+  idempotencyKey?: string;
   chunkCount: number;
   chunks: BulkImportChunk[];
 }
@@ -74,6 +86,8 @@ export interface BulkImportPlan {
   sourceName?: string;
   sourceHash: string;
   targetRootId: string;
+  chapterRootRemId?: string;
+  chapterIdempotencyKey: string;
   chapterSelector?: string;
   chapterTitle: string;
   sections: BulkImportSection[];
@@ -128,6 +142,8 @@ export interface BulkImportJob {
   updatedAt: string;
   completedAt?: string;
   cancelledAt?: string;
+  chapterRootRemId?: string;
+  chapterIdempotencyKey: string;
   lastError?: string;
 }
 
@@ -327,6 +343,23 @@ export function bulkChunkIdempotencyKey(jobId: string, sectionKey: string, chunk
   return `bulk-import:${jobId}:section:${sectionKey}:chunk:${chunkIndex}:source:${sourceHash}`;
 }
 
+export function bulkChapterIdempotencyKey(jobId: string, sourceHash: string): string {
+  return `bulk-import:${jobId}:chapter:source:${sourceHash}`;
+}
+
+export function bulkSectionIdempotencyKey(jobId: string, sectionKey: string, sourceHash: string): string {
+  return `bulk-import:${jobId}:section-root:${sectionKey}:source:${sourceHash}`;
+}
+
+export function normalizeBulkImportTitle(title: string): string {
+  return title
+    .replace(/\r\n/g, '\n')
+    .replace(/^[#\s]+/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
   const sourceText = input.sourceText ?? '';
   if (!sourceText.trim()) {
@@ -347,7 +380,10 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
       const chunkIndex = index + 1;
       return {
         chunkId: bulkChunkId(planId, section.sectionKey, chunkIndex, chunkSourceHash),
+        targetRootId: input.targetRootId,
+        chapterTitle: selected.chapterTitle,
         sectionKey: section.sectionKey,
+        sectionTitle: section.title,
         chunkIndex,
         sourceText: chunkText,
         sourceHash: chunkSourceHash,
@@ -384,6 +420,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
     sourceName: input.sourceName,
     sourceHash,
     targetRootId: input.targetRootId,
+    chapterIdempotencyKey: bulkChapterIdempotencyKey('job-pending', sourceHash),
     chapterSelector: input.chapterSelector,
     chapterTitle: selected.chapterTitle,
     sections,
@@ -466,17 +503,114 @@ export function verifyBulkImportSourceText(input: {
   };
 }
 
+export function flattenBulkImportReadbackText(value: unknown): string {
+  if (!value || typeof value !== 'object') {
+    return '';
+  }
+  const record = value as Record<string, unknown>;
+  const ownText = [
+    record.frontText,
+    record.plainText,
+    record.title,
+  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const childText = Array.isArray(record.children)
+    ? record.children.map((child) => flattenBulkImportReadbackText(child)).filter(Boolean)
+    : [];
+  return [...ownText, ...childText].join('\n');
+}
+
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) {
+    return 0;
+  }
+  let count = 0;
+  let offset = 0;
+  while (offset <= haystack.length) {
+    const foundAt = haystack.indexOf(needle, offset);
+    if (foundAt < 0) {
+      break;
+    }
+    count += 1;
+    offset = foundAt + Math.max(1, needle.length);
+  }
+  return count;
+}
+
+export function verifyBulkImportReadback(input: {
+  job: BulkImportJob;
+  readbackTree?: unknown;
+  actualTextByChunkId?: Record<string, string>;
+}): BulkImportVerificationResult[] {
+  const treeText = input.readbackTree ? flattenBulkImportReadbackText(input.readbackTree) : undefined;
+  const normalizedTree = treeText ? normalizeForSourceFidelity(treeText) : undefined;
+  let previousOffset = -1;
+  return input.job.chunks.map((chunk) => {
+    const explicitText = input.actualTextByChunkId?.[chunk.chunkId];
+    const actualText = explicitText ?? normalizedTree;
+    const report = verifyBulkImportSourceText({
+      expectedText: chunk.sourceText,
+      actualText,
+      jobId: input.job.jobId,
+      sectionKey: chunk.sectionKey,
+      chunkIndex: chunk.chunkIndex,
+    });
+    if (!normalizedTree || !report.ok) {
+      return report;
+    }
+    const expected = normalizeForSourceFidelity(chunk.sourceText);
+    const offset = normalizedTree.indexOf(expected);
+    const duplicateCount = countOccurrences(normalizedTree, expected);
+    const wrongOrder = offset >= 0 && offset < previousOffset;
+    if (offset >= 0) {
+      previousOffset = offset;
+    }
+    if (duplicateCount > 1 || wrongOrder) {
+      return {
+        ...report,
+        ok: false,
+        status: 'source_fidelity_failed',
+        duplicateSections: duplicateCount > 1 ? [chunk.sectionKey] : undefined,
+        wrongParentChunks: wrongOrder ? [chunk.chunkId] : undefined,
+        warnings: [
+          ...report.warnings,
+          duplicateCount > 1 ? 'Duplicate chunk text found in readback.' : '',
+          wrongOrder ? 'Chunk order in readback does not match manifest.' : '',
+        ].filter(Boolean),
+        recommendedAction: 'Inspect readback tree before resume.',
+      };
+    }
+    return report;
+  });
+}
+
 export function summarizeBulkImportProgress(job: BulkImportJob) {
   const chunksTotal = job.chunks.length;
-  const chunksVerified = job.chunks.filter((chunk) => chunk.status === 'verified' || chunk.status === 'skipped_already_verified').length;
-  const chunksFailed = job.chunks.filter((chunk) => chunk.status === 'failed' || chunk.status === 'partial').length;
+  const chunksVerified = job.chunks.filter((chunk) =>
+    (chunk.status === 'verified' || chunk.status === 'skipped_already_verified') &&
+    chunk.verificationStatus === 'passed'
+  ).length;
+  const chunksFailed = job.chunks.filter((chunk) =>
+    chunk.status === 'failed' ||
+    chunk.status === 'partial' ||
+    chunk.status === 'partial_needs_verification' ||
+    chunk.status === 'written_not_verified'
+  ).length;
   const sectionsTotal = job.sections.length;
   const verifiedSections = new Set(
     job.sections
-      .filter((section) => section.chunks.every((chunk) => chunk.status === 'verified' || chunk.status === 'skipped_already_verified'))
+      .filter((section) => section.chunks.every((chunk) =>
+        (chunk.status === 'verified' || chunk.status === 'skipped_already_verified') &&
+        chunk.verificationStatus === 'passed'
+      ))
       .map((section) => section.sectionKey)
   );
-  const nextChunk = job.chunks.find((chunk) => chunk.status === 'pending' || chunk.status === 'partial' || chunk.status === 'failed');
+  const nextChunk = job.chunks.find((chunk) =>
+    chunk.status === 'pending' ||
+    chunk.status === 'partial' ||
+    chunk.status === 'partial_needs_verification' ||
+    chunk.status === 'written_not_verified' ||
+    chunk.status === 'failed'
+  );
   return {
     sectionsTotal,
     sectionsVerified: verifiedSections.size,

@@ -27,6 +27,9 @@ In progress on `fix/remnote-mcp-mass-note-creation-stability`.
 - [x] Add configurable timeout/reconnect budgets for bulk reliability.
 - [x] Add server-side resumable bulk import planner/job tools.
 - [x] Add normalized plain-text bulk import source-fidelity checks.
+- [x] Prevent false verified status without explicit verification evidence.
+- [x] Track chapter root, section root, and chunk parent Rem IDs in bulk manifests.
+- [x] Add fake bridge coverage for timeout, disconnect, resume, readback, and duplicate root prevention.
 - [x] Run all required local gates.
 - [ ] Run live 15/50/100-node write proof with disposable cleanup when RemNote plugin is connected.
 
@@ -91,3 +94,18 @@ Added prompt-specific no-live reliability work:
   - `cancel_note_import_job`
 
 Current job storage is memory-only and explicitly reported as not durable across server restart. Live RemNote proof is still not run.
+
+## 2026-06-23 Bulk Verification Honesty Checkpoint
+
+Fixed remaining bulk-job reliability gaps from the review prompt:
+
+- Successful chunk write without `verification.passed === true` now becomes `written_not_verified`, not `verified`.
+- Progress counts only chunks with `status` verified/skipped and `verificationStatus: passed`.
+- Resume re-enters `written_not_verified`, `partial`, and failed chunks; verified chunks are the only normal skip path.
+- Chunk execution ensures `Chapter -> Section -> Chunk` placement with idempotent chapter/section root creation.
+- Duplicate chapter/section roots are detected by normalized title under parent and reported for manual review.
+- `verify_note_import_job` returns `not_verifiable` when readback is unavailable and can verify from supplied text or live `get_rem_tree`.
+- Timeout details include idempotency key when available.
+- Readiness audit now includes registry/schema versions plus optional local gate result table.
+
+Live RemNote proof remains `LIVE_TEST_NOT_RUN` until a connected plugin socket and disposable root are available.

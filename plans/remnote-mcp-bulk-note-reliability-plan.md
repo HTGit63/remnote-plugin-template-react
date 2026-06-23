@@ -159,6 +159,7 @@ No site URL, navigation, or page hierarchy changes are needed. This is backend/t
 - Unit tests for planner, chunking, hash stability, idempotency, source-fidelity reporting, timeout budget config, and job transitions.
 - Existing fake RemNote tests for small writer regressions.
 - No live RemNote writes in this pass.
+- Fake bridge tests for timeout, disconnect, missing verification, successful verification, resume retry with same idempotency key, duplicate chapter/section prevention, and readback-unavailable honesty.
 
 ## Potential Risks & Gotchas
 
@@ -171,3 +172,13 @@ No site URL, navigation, or page hierarchy changes are needed. This is backend/t
 
 - Revert the new bulk import modules, tool registrations, docs, and tests.
 - Keep existing `create_or_replace_note_from_markdown` behavior unchanged.
+
+## 2026-06-23 Review Follow-Up
+
+Additional acceptance criteria from follow-up prompt:
+
+- No `verified` chunk without explicit `verification.passed === true` or later readback proof.
+- Manifest tracks `chapterRootRemId`, `sectionRootRemId`, and `chunkParentRemId`.
+- Resume does not skip `written_not_verified` chunks.
+- `verify_note_import_job` returns `not_verifiable` when live/readback evidence is absent.
+- Readiness audit includes branch, SHA, registry/schema versions, default profile, live proof flag, local gate results, and static-only rows.

@@ -1,10 +1,16 @@
 import { z } from 'zod';
 import {
+  bulkSectionIdempotencyKey,
+  normalizeBulkImportTitle,
   planNoteImport,
   summarizeBulkImportProgress,
+  verifyBulkImportReadback,
   verifyBulkImportSourceText,
   type BulkImportChunk,
+  type BulkImportChunkStatus,
+  type BulkImportJob,
 } from '../../../shared/bridge/bulk-import.js';
+import type { BridgeFailure, BridgeResponse } from '../../../shared/bridge/protocol.js';
 import { BRIDGE_TOOL_OUTPUT_SCHEMA } from './schemas.js';
 import {
   estimateWriteTimeoutMs,
@@ -62,9 +68,54 @@ function chunkSummary(chunk: BulkImportChunk) {
     estimatedRemCount: chunk.estimatedRemCount,
     createdRemIds: chunk.createdRemIds,
     updatedRemIds: chunk.updatedRemIds,
+    chapterRootRemId: chunk.chapterRootRemId,
+    sectionRootRemId: chunk.sectionRootRemId,
+    chunkParentRemId: chunk.chunkParentRemId,
     error: chunk.error,
     idempotencyKey: chunk.idempotencyKey,
   };
+}
+
+function resultRecord(response: BridgeResponse): Record<string, unknown> {
+  return response.ok && typeof response.result === 'object' && response.result !== null
+    ? response.result as Record<string, unknown>
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function bridgeFailureMessage(response: BridgeFailure): string {
+  return `${response.error.code}: ${response.error.message}`;
+}
+
+function partialFailureStatus(response: BridgeFailure): BulkImportChunkStatus {
+  return response.error.code === 'TIMEOUT' || response.error.code === 'RETRYABLE_UNKNOWN_WRITE_STATUS'
+    ? 'partial'
+    : 'failed';
+}
+
+function childTitle(child: Record<string, unknown>): string {
+  for (const key of ['title', 'frontText', 'plainText']) {
+    const value = child[key];
+    if (typeof value === 'string' && value.trim()) {
+      return value;
+    }
+  }
+  return '';
+}
+
+function findChildByTitle(children: unknown, title: string): { remId: string; duplicateCount: number } | null {
+  if (!Array.isArray(children)) {
+    return null;
+  }
+  const normalized = normalizeBulkImportTitle(title);
+  const matches = children
+    .filter((child): child is Record<string, unknown> => typeof child === 'object' && child !== null)
+    .filter((child) => normalizeBulkImportTitle(childTitle(child)) === normalized);
+  const first = matches.find((child) => typeof child.remId === 'string' && child.remId);
+  return first ? { remId: first.remId as string, duplicateCount: matches.length } : null;
 }
 
 export function registerBulkImportTools({
@@ -196,8 +247,27 @@ export function registerBulkImportTools({
       retryCount: chunk.retryCount + (chunk.status === 'failed' || chunk.status === 'partial' ? 1 : 0),
     });
 
+    const hierarchy = await ensureChunkHierarchy(jobId, chunk, dryRun);
+    if (!hierarchy.ok) {
+      const status = partialFailureStatus(hierarchy.response);
+      const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+        status,
+        verificationStatus: status === 'partial' ? 'partial' : 'failed',
+        finishedAt: new Date().toISOString(),
+        error: bridgeFailureMessage(hierarchy.response),
+      });
+      bulkImportJobStore.saveCheckpoint(jobId, {
+        chunkId: chunk.chunkId,
+        sectionKey: chunk.sectionKey,
+        chunkIndex: chunk.chunkIndex,
+        status,
+        message: hierarchy.response.error.message,
+      });
+      return { response: hierarchy.response, job, status };
+    }
+
     const markdownArgs = {
-      parentRemId: chunk.expectedParent,
+      parentRemId: hierarchy.parentRemId,
       markdownText: chunk.sourceText,
       mode: 'create_child' as const,
       duplicatePolicy: 'skip' as const,
@@ -231,43 +301,49 @@ export function registerBulkImportTools({
     );
     const finishedAt = new Date().toISOString();
     if (!response.ok) {
-      const partial = response.error.code === 'TIMEOUT' || response.error.code === 'RETRYABLE_UNKNOWN_WRITE_STATUS';
+      const status = partialFailureStatus(response);
       const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-        status: partial ? 'partial' : 'failed',
-        verificationStatus: partial ? 'partial' : 'failed',
+        status,
+        verificationStatus: status === 'partial' ? 'partial' : 'failed',
         finishedAt,
-        error: `${response.error.code}: ${response.error.message}`,
+        error: bridgeFailureMessage(response),
       });
       bulkImportJobStore.saveCheckpoint(jobId, {
         chunkId: chunk.chunkId,
         sectionKey: chunk.sectionKey,
         chunkIndex: chunk.chunkIndex,
-        status: partial ? 'partial' : 'failed',
+        status,
         message: response.error.message,
       });
-      return { response, job, status: partial ? 'partial' : 'failed' };
+      return { response, job, status };
     }
 
-    const result = typeof response.result === 'object' && response.result !== null
-      ? response.result as Record<string, unknown>
-      : {};
-    const createdRemIds = Array.isArray(result.createdRemIds)
-      ? result.createdRemIds.filter((id): id is string => typeof id === 'string')
-      : [];
-    const updatedRemIds = Array.isArray(result.updatedRemIds)
-      ? result.updatedRemIds.filter((id): id is string => typeof id === 'string')
-      : [];
+    const result = resultRecord(response);
+    const createdRemIds = Array.from(new Set([
+      ...hierarchy.createdRemIds,
+      ...stringArray(result.createdRemIds),
+      ...stringArray(result.createdRemId ? [result.createdRemId] : undefined),
+    ]));
+    const updatedRemIds = stringArray(result.updatedRemIds);
     const verification = typeof result.verification === 'object' && result.verification !== null
       ? result.verification as { passed?: boolean }
       : undefined;
     const nextStatus = dryRun
       ? 'pending'
-      : verification?.passed === false
+      : verification?.passed === true
+        ? 'verified'
+        : verification?.passed === false
         ? 'partial'
-        : 'verified';
+        : 'written_not_verified';
     const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
       status: nextStatus,
-      verificationStatus: dryRun ? 'not_verifiable' : verification?.passed === false ? 'partial' : 'passed',
+      verificationStatus: dryRun
+        ? 'not_verifiable'
+        : verification?.passed === true
+          ? 'passed'
+          : verification?.passed === false
+            ? 'source_fidelity_failed'
+            : 'written_not_verified',
       finishedAt,
       createdRemIds,
       updatedRemIds,
@@ -278,9 +354,140 @@ export function registerBulkImportTools({
       sectionKey: chunk.sectionKey,
       chunkIndex: chunk.chunkIndex,
       status: nextStatus,
-      message: dryRun ? 'Dry run completed; chunk not marked written.' : 'Chunk written and manifest checkpoint saved.',
+      message: dryRun
+        ? 'Dry run completed; chunk not marked written.'
+        : nextStatus === 'verified'
+          ? 'Chunk written and explicit verification passed.'
+          : nextStatus === 'written_not_verified'
+            ? 'Chunk written but explicit verification evidence was missing.'
+            : 'Chunk write needs verification review.',
     });
     return { response, job, status: nextStatus };
+  }
+
+  async function ensureChildRem(input: {
+    parentRemId: string;
+    title: string;
+    idempotencyKey: string;
+    dryRun: boolean;
+  }): Promise<
+    | { ok: true; remId: string; createdRemIds: string[]; duplicateCount: number }
+    | { ok: false; response: BridgeFailure }
+  > {
+    if (input.dryRun) {
+      return { ok: true, remId: input.parentRemId, createdRemIds: [], duplicateCount: 0 };
+    }
+
+    const childrenResponse = await callPlugin('get_children', {
+      parentRemId: input.parentRemId,
+      maxChildren: 100,
+    });
+    if (!childrenResponse.ok) {
+      return { ok: false, response: childrenResponse };
+    }
+    const existing = findChildByTitle(resultRecord(childrenResponse).children, input.title);
+    if (existing) {
+      return { ok: true, remId: existing.remId, createdRemIds: [], duplicateCount: existing.duplicateCount };
+    }
+
+    const createResponse = await callPlugin('create_rem', {
+      parentId: input.parentRemId,
+      markdown: input.title,
+      idempotencyKey: input.idempotencyKey,
+    });
+    if (!createResponse.ok) {
+      return { ok: false, response: createResponse };
+    }
+    const createdRemId = resultRecord(createResponse).createdRemId;
+    if (typeof createdRemId !== 'string' || !createdRemId) {
+      return {
+        ok: false,
+        response: {
+          id: createResponse.id,
+          ok: false,
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: `create_rem did not return createdRemId for ${input.title}.`,
+          },
+          lifecycle: createResponse.lifecycle,
+        },
+      };
+    }
+    return { ok: true, remId: createdRemId, createdRemIds: [createdRemId], duplicateCount: 0 };
+  }
+
+  async function ensureChunkHierarchy(
+    jobId: string,
+    chunk: BulkImportChunk,
+    dryRun: boolean
+  ): Promise<
+    | { ok: true; parentRemId: string; createdRemIds: string[] }
+    | { ok: false; response: BridgeFailure }
+  > {
+    const job = bulkImportJobStore.getJob(jobId);
+    if (!job) {
+      throw new Error(`Unknown import job: ${jobId}`);
+    }
+    const createdRemIds: string[] = [];
+    let chapterRootRemId = job.chapterRootRemId;
+    if (!chapterRootRemId) {
+      const chapter = await ensureChildRem({
+        parentRemId: job.targetRootId,
+        title: job.chapterTitle,
+        idempotencyKey: job.chapterIdempotencyKey,
+        dryRun,
+      });
+      if (!chapter.ok) {
+        return chapter;
+      }
+      chapterRootRemId = chapter.remId;
+      createdRemIds.push(...chapter.createdRemIds);
+      if (!dryRun) {
+        bulkImportJobStore.recordChapterRoot(jobId, chapterRootRemId);
+        if (chapter.duplicateCount > 1) {
+          bulkImportJobStore.appendEvent(jobId, {
+            status: 'needs_manual_review',
+            message: `Duplicate chapter roots detected for "${job.chapterTitle}". Reused first match.`,
+          });
+        }
+      }
+    }
+
+    const latestJob = bulkImportJobStore.getJob(jobId) as BulkImportJob;
+    const section = latestJob.sections.find((candidate) => candidate.sectionKey === chunk.sectionKey);
+    if (!section) {
+      throw new Error(`Unknown import section: ${chunk.sectionKey}`);
+    }
+    let sectionRootRemId = section.sectionRootRemId;
+    if (!sectionRootRemId) {
+      const sectionRoot = await ensureChildRem({
+        parentRemId: chapterRootRemId,
+        title: section.title,
+        idempotencyKey: bulkSectionIdempotencyKey(jobId, section.sectionKey, section.sourceHash),
+        dryRun,
+      });
+      if (!sectionRoot.ok) {
+        return sectionRoot;
+      }
+      sectionRootRemId = sectionRoot.remId;
+      createdRemIds.push(...sectionRoot.createdRemIds);
+      if (!dryRun) {
+        bulkImportJobStore.recordSectionRoot(jobId, section.sectionKey, sectionRootRemId);
+        if (sectionRoot.duplicateCount > 1) {
+          bulkImportJobStore.appendEvent(jobId, {
+            sectionKey: section.sectionKey,
+            status: 'needs_manual_review',
+            message: `Duplicate section roots detected for "${section.title}". Reused first match.`,
+          });
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      parentRemId: dryRun ? chunk.expectedParent : sectionRootRemId,
+      createdRemIds,
+    };
   }
 
   registerTool(
@@ -303,7 +510,7 @@ export function registerBulkImportTools({
         for (let index = 0; index < maxChunks; index += 1) {
           const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
           if (!chunk) {
-            bulkImportJobStore.updateJobStatus(jobId, 'completed', 'All chunks are verified or skipped.');
+            bulkImportJobStore.updateJobStatus(jobId, 'completed', 'All chunks are verified or safely skipped.');
             break;
           }
           if (maxChars && chunk.charCount > maxChars) {
@@ -321,7 +528,12 @@ export function registerBulkImportTools({
             chunkId: chunk.chunkId,
             status: step.status,
           });
-          if (step.status === 'failed' || step.status === 'partial') {
+          if (
+            step.status === 'failed' ||
+            step.status === 'partial' ||
+            step.status === 'partial_needs_verification' ||
+            step.status === 'written_not_verified'
+          ) {
             break;
           }
         }
@@ -357,7 +569,7 @@ export function registerBulkImportTools({
     'resume_note_import_job',
     {
       title: 'Resume note import job',
-      description: 'Resume a note import job from first pending, partial, or failed chunk without rewriting verified chunks.',
+      description: 'Resume a note import job from first pending, unverified, partial, or failed chunk without rewriting verified chunks.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256), dryRun: z.boolean().default(false) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: false, openWorldHint: false },
@@ -403,29 +615,78 @@ export function registerBulkImportTools({
     'verify_note_import_job',
     {
       title: 'Verify note import job',
-      description: 'Verify import manifest progress. Live source-fidelity readback remains not verifiable until actual RemNote text is supplied.',
+      description: 'Verify import source fidelity from supplied text or live RemNote readback when available.',
       inputSchema: z.object({
         jobId: z.string().trim().min(1).max(256),
         actualTextByChunkId: z.record(z.string(), z.string()).optional(),
+        readbackTree: z.unknown().optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ jobId, actualTextByChunkId }) => {
+    async ({ jobId, actualTextByChunkId, readbackTree }) => {
       try {
         const job = bulkImportJobStore.getJob(jobId);
         if (!job) {
           throw new Error(`Unknown import job: ${jobId}`);
         }
-        const reports = job.chunks.map((chunk) =>
-          verifyBulkImportSourceText({
-            expectedText: chunk.sourceText,
-            actualText: actualTextByChunkId?.[chunk.chunkId],
-            jobId,
-            sectionKey: chunk.sectionKey,
-            chunkIndex: chunk.chunkIndex,
-          })
-        );
+        let liveReadbackFailed: string | undefined;
+        let liveReadbackTree = readbackTree;
+        if (!liveReadbackTree && !actualTextByChunkId && job.chapterRootRemId) {
+          const readback = await callPlugin('get_rem_tree', {
+            remId: job.chapterRootRemId,
+            depth: 12,
+          });
+          if (readback.ok) {
+            liveReadbackTree = readback.result;
+          } else {
+            liveReadbackFailed = `${readback.error.code}: ${readback.error.message}`;
+          }
+        }
+        const reports = liveReadbackTree || actualTextByChunkId
+          ? verifyBulkImportReadback({ job, readbackTree: liveReadbackTree, actualTextByChunkId })
+          : job.chunks.map((chunk) =>
+              verifyBulkImportSourceText({
+                expectedText: chunk.sourceText,
+                actualText: undefined,
+                jobId,
+                sectionKey: chunk.sectionKey,
+                chunkIndex: chunk.chunkIndex,
+              })
+            );
+        for (const report of reports) {
+          const chunk = job.chunks.find((candidate) =>
+            candidate.sectionKey === report.sectionKey && candidate.chunkIndex === report.chunkIndex
+          );
+          if (!chunk) {
+            continue;
+          }
+          const hasMutationIds = chunk.createdRemIds.length > 0 || chunk.updatedRemIds.length > 0;
+          if (report.ok && hasMutationIds) {
+            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+              status: 'verified',
+              verificationStatus: 'passed',
+              error: undefined,
+            });
+          } else if (report.ok && !hasMutationIds) {
+            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+              status: 'partial_needs_verification',
+              verificationStatus: 'partial',
+              error: 'Readback text matched, but created/updated Rem IDs are missing.',
+            });
+            report.ok = false;
+            report.status = 'partial';
+            report.missingChunks = [...(report.missingChunks ?? []), chunk.chunkId];
+            report.warnings.push('Created/updated Rem IDs are missing for this chunk.');
+          } else if (report.status === 'source_fidelity_failed') {
+            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+              status: 'partial_needs_verification',
+              verificationStatus: 'source_fidelity_failed',
+              error: 'Source fidelity verification failed.',
+            });
+          }
+        }
+        const updatedJob = bulkImportJobStore.getJob(jobId) ?? job;
         const failed = reports.filter((report) => !report.ok && report.status !== 'not_verifiable');
         const notVerifiable = reports.filter((report) => report.status === 'not_verifiable');
         return toolResult('Note import verification report generated.', {
@@ -433,12 +694,12 @@ export function registerBulkImportTools({
           status: failed.length > 0 ? 'FAIL' : notVerifiable.length > 0 ? 'PARTIAL' : 'PASS',
           toolName: 'verify_note_import_job',
           jobId,
-          jobStatus: job.status,
+          jobStatus: updatedJob.status,
           verificationStatus: failed.length > 0 ? 'source_fidelity_failed' : notVerifiable.length > 0 ? 'not_verifiable' : 'passed',
           reports,
-          progress: summarizeBulkImportProgress(job),
-          limitation: notVerifiable.length > 0
-            ? 'No live RemNote readback was supplied for some chunks; only manifest state was checked.'
+          progress: summarizeBulkImportProgress(updatedJob),
+          limitation: notVerifiable.length > 0 || liveReadbackFailed
+            ? `Live/readback verification unavailable for some chunks.${liveReadbackFailed ? ` ${liveReadbackFailed}` : ''}`
             : undefined,
           recommendedAction: failed.length > 0 ? 'resume_note_import_job' : 'manual live readback check if needed',
         });

@@ -4,10 +4,12 @@ import { join } from 'node:path';
 import {
   getPublicMcpToolNames,
   getToolRegistrySummary,
+  TOOL_REGISTRY_VERSION,
 } from './tool-registry.js';
 import {
   DEFAULT_TOOL_PROFILE,
   MASS_NOTE_WRITER_TIER_TOOLS,
+  TOOL_SCHEMA_VERSION,
 } from './tool-policy.js';
 import {
   assertAuditStatusHonesty,
@@ -86,8 +88,12 @@ const formattingSource = readRepoFile(repoRoot, 'src/remnote/write/formattingWri
 const invariantSource = readRepoFile(repoRoot, 'src/remnote/write/styleMutationInvariant.ts');
 const cardSource = readRepoFile(repoRoot, 'src/remnote/write/designedNoteTools.ts');
 const markdownSource = readRepoFile(repoRoot, 'src/remnote/write/markdownImportExecutor.ts');
+const bulkImportSource = readRepoFile(repoRoot, 'shared/bridge/bulk-import.ts');
+const bulkToolSource = readRepoFile(repoRoot, 'server/src/tools/register-bulk-import-tools.ts');
+const bulkJobStoreSource = readRepoFile(repoRoot, 'server/src/bulk-import/job-store.ts');
 const templateSource = readRepoFile(repoRoot, 'src/remnote/templates/designTemplates.ts');
 const regressionSource = readRepoFile(repoRoot, 'src/remnote/write/style-correctness-regression.ts');
+const localGateResults = parseLocalGateResults(process.env.REMNOTE_LOCAL_GATE_RESULTS_JSON);
 
 const forbiddenDefaultTools = [
   'delete_rem_by_id',
@@ -149,6 +155,45 @@ const designHashReady =
   templateSource.includes('normalizeNoteDesignTemplate') &&
   templateSource.includes('normalizedTemplateHash') &&
   regressionSource.includes('S12 design template');
+const bulkJobReliabilityReady =
+  bulkImportSource.includes("'written_not_verified'") &&
+  bulkImportSource.includes('verifyBulkImportReadback') &&
+  bulkImportSource.includes("chunk.verificationStatus === 'passed'") &&
+  bulkToolSource.includes('verification?.passed === true') &&
+  bulkToolSource.includes('ensureChunkHierarchy') &&
+  bulkToolSource.includes('get_rem_tree') &&
+  bulkJobStoreSource.includes("'written_not_verified'") &&
+  bulkJobStoreSource.includes('recordSectionRoot') &&
+  bulkJobStoreSource.includes("storageDurability: 'memory_only'");
+
+function parseLocalGateResults(raw: string | undefined): Array<{ command: string; result: string; note?: string }> {
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((item) => {
+        if (!item || typeof item !== 'object') {
+          return null;
+        }
+        const record = item as Record<string, unknown>;
+        return typeof record.command === 'string' && typeof record.result === 'string'
+          ? {
+              command: record.command,
+              result: record.result,
+              ...(typeof record.note === 'string' ? { note: record.note } : {}),
+            }
+          : null;
+      })
+      .filter((item): item is { command: string; result: string; note?: string } => Boolean(item));
+  } catch {
+    return [];
+  }
+}
 
 const rows: AuditRow[] = [
   row({
@@ -351,6 +396,23 @@ const rows: AuditRow[] = [
     fixRecommendation: staticStatusFix(designHashReady, 'Normalize design templates and compare stable hash after import.'),
   }),
   row({
+    suite: 'S14',
+    testName: 'resumable bulk import job honesty',
+    toolName: 'plan/start/run/resume/verify_note_import_job',
+    status: sourceReadinessStatus(bulkJobReliabilityReady),
+    verificationLayer: 'static_source',
+    verification: {
+      noFalseVerified: bulkToolSource.includes('verification?.passed === true'),
+      unverifiedWriteStatus: bulkImportSource.includes("'written_not_verified'"),
+      hierarchyRoots: ['chapterRootRemId', 'sectionRootRemId', 'chunkParentRemId'].every((field) => bulkImportSource.includes(field)),
+      readbackVerification: bulkImportSource.includes('verifyBulkImportReadback') && bulkToolSource.includes('get_rem_tree'),
+      memoryDurabilityHonest: bulkJobStoreSource.includes("storageDurability: 'memory_only'"),
+    },
+    errorCode: staticStatusError(bulkJobReliabilityReady, 'BULK_JOB_RELIABILITY_INCOMPLETE'),
+    rootCauseClass: staticStatusRoot(bulkJobReliabilityReady, 'bulk_import_reliability'),
+    fixRecommendation: staticStatusFix(bulkJobReliabilityReady, 'Keep unverified writes out of verified progress and verify with readback before marking complete.'),
+  }),
+  row({
     suite: 'S13',
     testName: 'card creation lifecycle live proof',
     toolName: 'create_basic_flashcard/create_cloze_card/create_flashcards_from_markdown',
@@ -370,8 +432,11 @@ const report = {
   durationMs: Date.now() - startedAt,
   branchName: gitValue('git branch --show-current'),
   gitSha: gitValue('git rev-parse HEAD'),
+  toolRegistryVersion: TOOL_REGISTRY_VERSION,
+  toolSchemaVersion: TOOL_SCHEMA_VERSION,
   defaultToolProfile: DEFAULT_TOOL_PROFILE,
   liveProof: false,
+  localGateResults,
   note: 'This report mixes local registry execution and static source readiness checks. It is not live RemNote proof.',
   summary: {
     pass: rows.filter((item) => item.status === 'PASS').length,
@@ -398,10 +463,21 @@ writeFileSync(
     `Generated: ${report.generatedAt}`,
     `Branch: ${report.branchName}`,
     `Git SHA: ${report.gitSha}`,
+    `Tool registry version: ${report.toolRegistryVersion}`,
+    `Tool schema version: ${report.toolSchemaVersion}`,
     `Default profile: ${report.defaultToolProfile}`,
     `Live proof: ${report.liveProof ? 'yes' : 'no'}`,
     '',
     '> This report is not live RemNote proof. Static/source rows use SOURCE_PRESENT, REGISTRY_PRESENT, or READY_FOR_RUNTIME_TEST, never runtime PASS.',
+    '',
+    '## Local Gate Results',
+    '',
+    localGateResults.length
+      ? '| Command | Result | Note |\n| --- | --- | --- |\n' +
+        localGateResults.map((item) => `| ${item.command} | ${item.result} | ${item.note ?? ''} |`).join('\n')
+      : 'No local gate result payload supplied to this audit run.',
+    '',
+    '## Readiness Rows',
     '',
     '| Suite | Test Name | Tool Name | Status | Verification Layer | Evidence Mode | Live Proof | Duration Ms | Error Code | Root Cause Class | Fix Recommendation |',
     '| --- | --- | --- | --- | --- | --- | --- | ---: | --- | --- | --- |',
