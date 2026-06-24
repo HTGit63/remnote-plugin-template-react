@@ -1,4 +1,5 @@
 import { WebSocket } from 'ws';
+import { resolve } from 'node:path';
 import type {
   BridgePluginHello,
   BridgeRequest,
@@ -25,6 +26,7 @@ const mode = process.argv[2] ?? 'all';
 const token = 'area3-certification-token';
 const parentId = 'area3-parent';
 const targetRemId = 'area3-rem';
+const repoRoot = process.cwd().endsWith('/server') ? resolve(process.cwd(), '..') : process.cwd();
 const bulkImportSampleText = [
   '# Area 3 Chapter',
   '',
@@ -43,6 +45,7 @@ const bulkImportSamplePlan = planNoteImport({
   chapterSelector: 'Area 3 Chapter',
 });
 const bulkImportSampleJobId = 'bulk-job:area3-certification';
+const bulkImportSampleFilePath = resolve(repoRoot, 'README.md');
 const fakeRem: SerializedRem = {
   remId: targetRemId,
   frontText: 'Area 3 certification Rem',
@@ -181,8 +184,21 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         targetRootId: parentId,
         chapterSelector: 'Area 3 Chapter',
       };
+    case 'plan_note_import_from_file':
+      return {
+        sourceFilePath: bulkImportSampleFilePath,
+        targetRootId: parentId,
+        rootTitle: 'Area 3 file import sample',
+      };
     case 'start_note_import_job':
       return { planId: bulkImportSamplePlan.planId, jobId: bulkImportSampleJobId };
+    case 'start_note_import_from_file':
+      return {
+        sourceFilePath: bulkImportSampleFilePath,
+        targetRootId: parentId,
+        rootTitle: 'Area 3 file import sample',
+        jobId: `${bulkImportSampleJobId}:file`,
+      };
     case 'run_note_import_job_step':
       return { jobId: bulkImportSampleJobId, maxChunks: 1, dryRun: true };
     case 'get_note_import_job_status':

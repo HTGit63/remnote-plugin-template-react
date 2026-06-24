@@ -91,6 +91,7 @@ const markdownSource = readRepoFile(repoRoot, 'src/remnote/write/markdownImportE
 const bulkImportSource = readRepoFile(repoRoot, 'shared/bridge/bulk-import.ts');
 const bulkToolSource = readRepoFile(repoRoot, 'server/src/tools/register-bulk-import-tools.ts');
 const bulkJobStoreSource = readRepoFile(repoRoot, 'server/src/bulk-import/job-store.ts');
+const stylePresetSource = readRepoFile(repoRoot, 'shared/bridge/style-presets.ts');
 const templateSource = readRepoFile(repoRoot, 'src/remnote/templates/designTemplates.ts');
 const regressionSource = readRepoFile(repoRoot, 'src/remnote/write/style-correctness-regression.ts');
 const localGateResults = parseLocalGateResults(process.env.REMNOTE_LOCAL_GATE_RESULTS_JSON);
@@ -155,14 +156,25 @@ const designHashReady =
   templateSource.includes('normalizeNoteDesignTemplate') &&
   templateSource.includes('normalizedTemplateHash') &&
   regressionSource.includes('S12 design template');
+const namedDesignPresetsReady =
+  ['clean_academic', 'exam_ready', 'colorful_study', 'minimal', 'formula_heavy'].every((preset) =>
+    stylePresetSource.includes(preset)
+  ) &&
+  stylePresetSource.includes('DEFAULT_NOTE_STYLE_PRESET') &&
+  stylePresetSource.includes('applyStylePresetToMarkdownArgs');
 const bulkJobReliabilityReady =
   bulkImportSource.includes("'written_not_verified'") &&
   bulkImportSource.includes('verifyBulkImportReadback') &&
+  bulkImportSource.includes('verifyBulkImportFinalReadback') &&
+  bulkImportSource.includes('extractMarkedSourceText') &&
   bulkImportSource.includes("chunk.verificationStatus === 'passed'") &&
+  bulkToolSource.includes('plan_note_import_from_file') &&
+  bulkToolSource.includes('start_note_import_from_file') &&
   bulkToolSource.includes('verification?.passed === true') &&
   bulkToolSource.includes('ensureChunkHierarchy') &&
   bulkToolSource.includes('get_rem_tree') &&
   bulkJobStoreSource.includes("'written_not_verified'") &&
+  bulkJobStoreSource.includes('recordImportRoot') &&
   bulkJobStoreSource.includes('recordSectionRoot') &&
   bulkJobStoreSource.includes("storageDurability: 'memory_only'");
 
@@ -396,6 +408,21 @@ const rows: AuditRow[] = [
     fixRecommendation: staticStatusFix(designHashReady, 'Normalize design templates and compare stable hash after import.'),
   }),
   row({
+    suite: 'S12',
+    testName: 'named note design presets',
+    toolName: 'stylePreset',
+    status: sourceReadinessStatus(namedDesignPresetsReady),
+    verificationLayer: 'static_source',
+    verification: {
+      presets: ['clean_academic', 'exam_ready', 'colorful_study', 'minimal', 'formula_heavy'],
+      defaultPreset: stylePresetSource.includes('DEFAULT_NOTE_STYLE_PRESET'),
+      markdownArgsPresetAdapter: stylePresetSource.includes('applyStylePresetToMarkdownArgs'),
+    },
+    errorCode: staticStatusError(namedDesignPresetsReady, 'NAMED_DESIGN_PRESETS_MISSING'),
+    rootCauseClass: staticStatusRoot(namedDesignPresetsReady, 'design_preset_contract'),
+    fixRecommendation: staticStatusFix(namedDesignPresetsReady, 'Expose named presets and keep styling optional after source verification.'),
+  }),
+  row({
     suite: 'S14',
     testName: 'resumable bulk import job honesty',
     toolName: 'plan/start/run/resume/verify_note_import_job',
@@ -404,8 +431,10 @@ const rows: AuditRow[] = [
     verification: {
       noFalseVerified: bulkToolSource.includes('verification?.passed === true'),
       unverifiedWriteStatus: bulkImportSource.includes("'written_not_verified'"),
-      hierarchyRoots: ['chapterRootRemId', 'sectionRootRemId', 'chunkParentRemId'].every((field) => bulkImportSource.includes(field)),
-      readbackVerification: bulkImportSource.includes('verifyBulkImportReadback') && bulkToolSource.includes('get_rem_tree'),
+      fileSourceTools: ['plan_note_import_from_file', 'start_note_import_from_file'].every((tool) => bulkToolSource.includes(tool)),
+      sourceExtraction: bulkImportSource.includes('extractMarkedSourceText'),
+      hierarchyRoots: ['importRootRemId', 'chapterRootRemId', 'sectionRootRemId', 'chunkParentRemId'].every((field) => bulkImportSource.includes(field)),
+      readbackVerification: bulkImportSource.includes('verifyBulkImportReadback') && bulkImportSource.includes('verifyBulkImportFinalReadback') && bulkToolSource.includes('get_rem_tree'),
       memoryDurabilityHonest: bulkJobStoreSource.includes("storageDurability: 'memory_only'"),
     },
     errorCode: staticStatusError(bulkJobReliabilityReady, 'BULK_JOB_RELIABILITY_INCOMPLETE'),

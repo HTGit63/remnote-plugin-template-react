@@ -66,7 +66,7 @@ import type {
   VerifyNoteDesignResult,
 } from '../../../shared/bridge/protocol';
 import {
-  NUCLEAR_PHYSICS_STYLE_PRESET,
+  isNoteStylePreset,
   NUCLEAR_PHYSICS_SPACER_TEXT,
 } from '../../../shared/bridge/style-presets';
 import { RICH_TEXT_FONT_COLOR_FIELD, RICH_TEXT_HIGHLIGHT_FIELD } from '../richTextFormatting';
@@ -213,8 +213,8 @@ async function verifyNuclearPhysicsPreset(
       type: 'rootHeadingLevel',
       expected: expected.rootHeadingLevel ?? 'H1',
       actual: rootFont,
-      message: 'Nuclear Physics preset requires H1 root.',
-      fixSuggestion: 'Use create_polished_note_tree or apply_style_plan with stylePreset=nuclear_physics_h1_h3_spacer_math.',
+      message: 'Selected note style preset requires H1 root.',
+      fixSuggestion: 'Use create_polished_note_tree or apply_style_plan with a named stylePreset.',
     });
   }
 
@@ -255,7 +255,7 @@ async function verifyNuclearPhysicsPreset(
         type: 'sectionHeadingLevel',
         expected: expected.sectionHeadingLevel ?? 'H3',
         actual: child.childFont,
-        message: 'Nuclear Physics preset requires direct section headings to be H3.',
+        message: 'Selected note style preset requires direct section headings to be H3.',
         fixSuggestion: 'Use apply_style_plan with heading value H3.',
       });
     }
@@ -348,7 +348,7 @@ export async function verifyNoteDesign(
     }
 
     checkedRemIds.push(remId);
-    if (remId === args.rootRemId && args.stylePreset === NUCLEAR_PHYSICS_STYLE_PRESET) {
+    if (remId === args.rootRemId && args.stylePreset && isNoteStylePreset(args.stylePreset)) {
       presetVerification = await verifyNuclearPhysicsPreset(plugin, rem, args, checkedRemIds, mismatches);
     }
     const plainText = await getRemPlainString(plugin, rem);

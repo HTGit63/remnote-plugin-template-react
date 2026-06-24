@@ -12,7 +12,7 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-23.bulk-import-reliability-catalog';
+export const TOOL_REGISTRY_VERSION = '2026-06-23.bulk-import-file-source-catalog';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
@@ -24,7 +24,9 @@ export const SERVER_LOCAL_MCP_TOOLS = [
   'run_bridge_health_check',
   'get_remnote_capability_guide',
   'plan_note_import',
+  'plan_note_import_from_file',
   'start_note_import_job',
+  'start_note_import_from_file',
   'run_note_import_job_step',
   'get_note_import_job_status',
   'resume_note_import_job',

@@ -91,7 +91,9 @@ export const MASS_NOTE_WRITER_TIER_TOOLS = [
   'get_document_or_folder_tree',
   'create_or_replace_note_from_markdown',
   'plan_note_import',
+  'plan_note_import_from_file',
   'start_note_import_job',
+  'start_note_import_from_file',
   'run_note_import_job_step',
   'get_note_import_job_status',
   'resume_note_import_job',
@@ -205,9 +207,19 @@ export const TOOL_POLICY_ENTRIES = [
     preferredFor: ['planning long Markdown imports into bounded chunks without writing'],
   },
   {
+    name: 'plan_note_import_from_file',
+    policy: 'preferred',
+    preferredFor: ['planning full-source Markdown imports from server-side source files without tool-call text loss'],
+  },
+  {
     name: 'start_note_import_job',
     policy: 'preferred',
     preferredFor: ['creating resumable bulk import manifests'],
+  },
+  {
+    name: 'start_note_import_from_file',
+    policy: 'preferred',
+    preferredFor: ['creating resumable bulk import jobs from server-side source files'],
   },
   {
     name: 'run_note_import_job_step',
@@ -448,7 +460,9 @@ function defaultSdkCapability(name: string, category: ToolCategory): string | nu
   if (
     [
       'plan_note_import',
+      'plan_note_import_from_file',
       'start_note_import_job',
+      'start_note_import_from_file',
       'get_note_import_job_status',
       'verify_note_import_job',
       'cancel_note_import_job',
@@ -664,6 +678,16 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
   }),
+  meta('plan_note_import_from_file', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'approved-root',
+    supportsDryRun: true,
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    agentWarning:
+      'Reads only server-side source files under allowed roots. Configure REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS for additional import locations.',
+  }),
   meta('start_note_import_job', 'markdown_note', 'low', {
     requiresWrite: false,
     scopeRequirement: 'none',
@@ -671,6 +695,16 @@ export const TOOL_METADATA = [
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
+  }),
+  meta('start_note_import_from_file', 'markdown_note', 'low', {
+    requiresWrite: false,
+    scopeRequirement: 'approved-root',
+    supportsDryRun: true,
+    liveVerificationRequired: false,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    agentWarning:
+      'Creates a memory-only resumable job from a server-side source file; chunk writes still require run_note_import_job_step.',
   }),
   meta('run_note_import_job_step', 'markdown_note', 'medium', {
     supportsDryRun: true,

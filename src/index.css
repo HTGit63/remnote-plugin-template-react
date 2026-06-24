@@ -1,21 +1,23 @@
 /* RemNote bridge operator panel */
 
 :root {
-  --bridge-bg: #05070a;
-  --bridge-panel: #0d1117;
-  --bridge-panel-strong: #111827;
-  --bridge-muted: #9ca3af;
-  --bridge-text: #f9fafb;
-  --bridge-border: #374151;
-  --bridge-soft-border: rgba(255, 255, 255, 0.12);
-  --bridge-green: #34d399;
-  --bridge-green-soft: rgba(52, 211, 153, 0.14);
-  --bridge-amber: #fbbf24;
-  --bridge-amber-soft: rgba(251, 191, 36, 0.16);
-  --bridge-red: #f87171;
-  --bridge-red-soft: rgba(248, 113, 113, 0.14);
-  --bridge-blue: #60a5fa;
-  --bridge-blue-soft: rgba(96, 165, 250, 0.14);
+  --bridge-bg: #11111d;
+  --bridge-panel: #1b1a2a;
+  --bridge-panel-strong: #222136;
+  --bridge-muted: #a9acc7;
+  --bridge-text: #f1f2ff;
+  --bridge-border: #4a4862;
+  --bridge-soft-border: rgba(186, 190, 220, 0.16);
+  --bridge-green: #61d394;
+  --bridge-green-soft: rgba(97, 211, 148, 0.14);
+  --bridge-amber: #e8b558;
+  --bridge-amber-soft: rgba(232, 181, 88, 0.16);
+  --bridge-red: #ff7777;
+  --bridge-red-soft: rgba(255, 119, 119, 0.14);
+  --bridge-blue: #22c7d8;
+  --bridge-blue-soft: rgba(34, 199, 216, 0.13);
+  --bridge-violet: #8b7cf6;
+  --bridge-violet-soft: rgba(139, 124, 246, 0.16);
 }
 
 .bridge-shell {
@@ -29,11 +31,12 @@
   padding: 0;
   font-family: var(
     --font-primary,
-    Aptos,
-    "Iowan Old Style",
-    Charter,
+    Inter,
+    ui-sans-serif,
     -apple-system,
     BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
     sans-serif
   );
 }
@@ -59,7 +62,7 @@
 .approval-footer {
   flex: 0 0 auto;
   border-top: 1px solid var(--bridge-soft-border);
-  background: rgba(5, 7, 10, 0.98);
+  background: rgba(17, 17, 29, 0.98);
   padding: 10px 12px 12px;
 }
 
@@ -88,27 +91,34 @@
 
 .bridge-hero {
   display: grid;
-  grid-template-columns: 40px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   padding: 12px;
-  background:
-    linear-gradient(135deg, rgba(40, 101, 90, 0.10), transparent 34%),
-    var(--bridge-panel);
+  background: var(--bridge-panel);
 }
 
 .bridge-mark {
-  display: grid;
-  width: 40px;
+  display: flex;
+  width: 52px;
   height: 40px;
-  place-items: center;
-  border: 1px solid rgba(40, 101, 90, 0.38);
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px solid rgba(139, 124, 246, 0.42);
   border-radius: 8px;
-  background: var(--bridge-green);
-  color: #04110d;
-  font-size: 11px;
+  background: #f5f2e8;
+  color: #1b1a2a;
+  font-size: 10px;
   font-weight: 800;
   line-height: 1;
+}
+
+.bridge-mark-glyph {
+  width: 20px;
+  height: 20px;
+  color: #1b1a2a;
+  fill: currentColor;
 }
 
 .bridge-hero-copy {
@@ -161,7 +171,7 @@
 }
 
 .bridge-task-banner--ready {
-  border-color: rgba(34, 197, 94, 0.38);
+  border-color: rgba(97, 211, 148, 0.38);
   background: var(--bridge-green-soft);
 }
 
@@ -199,7 +209,7 @@
   min-width: 0;
   border: 1px solid var(--bridge-soft-border);
   border-radius: 8px;
-  background: rgba(17, 24, 39, 0.72);
+  background: rgba(34, 33, 54, 0.72);
   padding: 8px;
   overflow-wrap: anywhere;
   color: var(--bridge-text);
@@ -215,7 +225,7 @@
   gap: 6px;
   border: 1px solid var(--bridge-soft-border);
   border-radius: 8px;
-  background: rgba(13, 17, 23, 0.82);
+  background: rgba(27, 26, 42, 0.82);
   padding: 10px;
 }
 
@@ -238,7 +248,7 @@
 }
 
 .bridge-mode-card--success {
-  border-color: rgba(34, 197, 94, 0.32);
+  border-color: rgba(97, 211, 148, 0.32);
 }
 
 .bridge-mode-card--warning {
@@ -254,7 +264,7 @@
 }
 
 .bridge-tool-tier-card--selected {
-  background: rgba(34, 197, 94, 0.09);
+  background: var(--bridge-violet-soft);
 }
 
 .bridge-step-list {
@@ -270,7 +280,7 @@
   align-items: start;
   border: 1px solid var(--bridge-soft-border);
   border-radius: 8px;
-  background: rgba(13, 17, 23, 0.82);
+  background: rgba(27, 26, 42, 0.82);
   padding: 9px 10px;
 }
 
@@ -321,7 +331,7 @@
 }
 
 .bridge-metric--success {
-  border-color: rgba(34, 197, 94, 0.32);
+  border-color: rgba(97, 211, 148, 0.32);
 }
 
 .bridge-metric--warning {
@@ -360,7 +370,7 @@
 }
 
 .bridge-panel--notice {
-  border-color: rgba(56, 189, 248, 0.32);
+  border-color: rgba(34, 199, 216, 0.32);
   background: var(--bridge-blue-soft);
 }
 
@@ -400,9 +410,9 @@
 }
 
 .bridge-pill-success {
-  border-color: rgba(34, 197, 94, 0.38);
+  border-color: rgba(97, 211, 148, 0.38);
   background: var(--bridge-green-soft);
-  color: #bbf7d0;
+  color: #c8f7db;
 }
 
 .bridge-pill-warning {
@@ -424,9 +434,9 @@
 }
 
 .bridge-pill-accent {
-  border-color: rgba(56, 189, 248, 0.44);
+  border-color: rgba(34, 199, 216, 0.44);
   background: var(--bridge-blue-soft);
-  color: #bfdbfe;
+  color: #c6f4fa;
 }
 
 .bridge-detail-list,
@@ -454,7 +464,7 @@
 
 .bridge-detail-row {
   border: 1px solid var(--bridge-soft-border);
-  background: rgba(13, 17, 23, 0.82);
+  background: rgba(27, 26, 42, 0.82);
   padding: 9px 10px;
 }
 
@@ -504,7 +514,7 @@
   margin: 0;
   overflow-y: auto;
   border: 1px solid var(--bridge-soft-border);
-  background: #090d13;
+  background: #141424;
   padding: 10px;
   white-space: pre-wrap;
   color: var(--bridge-text);
@@ -571,12 +581,17 @@
   transition:
     background-color 150ms ease,
     border-color 150ms ease,
-    opacity 150ms ease;
+    opacity 150ms ease,
+    transform 120ms ease;
 }
 
 .bridge-button:focus-visible {
-  outline: 2px solid #7dd3fc;
+  outline: 2px solid var(--bridge-violet);
   outline-offset: 2px;
+}
+
+.bridge-button:not(:disabled):active {
+  transform: scale(0.97);
 }
 
 .bridge-button:disabled {
@@ -585,13 +600,13 @@
 }
 
 .bridge-button-approve {
-  border: 1px solid rgba(34, 197, 94, 0.72);
-  background: var(--bridge-green);
-  color: #04110d;
+  border: 1px solid rgba(139, 124, 246, 0.72);
+  background: var(--bridge-violet);
+  color: #ffffff;
 }
 
 .bridge-button-approve:not(:disabled):hover {
-  background: #6ee7b7;
+  background: #9b8cff;
 }
 
 .bridge-button-danger {
@@ -613,8 +628,8 @@
 
 .bridge-button-reject:hover,
 .bridge-button-secondary:hover {
-  border-color: #64748b;
-  background: #1f2937;
+  border-color: #6c6a88;
+  background: #2a2942;
 }
 
 .bridge-button-full {
@@ -641,7 +656,7 @@
   gap: 10px;
   border: 1px solid var(--bridge-soft-border);
   border-radius: 8px;
-  background: rgba(17, 24, 39, 0.72);
+  background: rgba(34, 33, 54, 0.72);
   padding: 10px;
 }
 
@@ -672,7 +687,7 @@
 }
 
 .bridge-field select:focus-visible {
-  outline: 2px solid #7dd3fc;
+  outline: 2px solid var(--bridge-violet);
   outline-offset: 2px;
 }
 
@@ -685,7 +700,7 @@
 
 .bridge-empty {
   border: 1px dashed rgba(148, 163, 184, 0.34);
-  background: rgba(17, 24, 39, 0.72);
+  background: rgba(34, 33, 54, 0.72);
   padding: 10px 11px;
   color: #d1d5db;
   font-size: 13.5px;

@@ -11,6 +11,7 @@ import {
   bulkChapterIdempotencyKey,
   bulkChunkId,
   bulkChunkIdempotencyKey,
+  bulkImportRootIdempotencyKey,
   bulkSectionIdempotencyKey,
   summarizeBulkImportProgress,
 } from '../../../shared/bridge/bulk-import.js';
@@ -55,7 +56,12 @@ export class BulkImportJobStore {
       planId,
       sourceName: plan.sourceName,
       sourceHash: plan.sourceHash,
+      sourceMetadata: plan.sourceMetadata,
+      plannedSourceLength: plan.plannedSourceLength,
+      extractedSourceLength: plan.extractedSourceLength,
       targetRootId: plan.targetRootId,
+      importRootTitle: plan.importRootTitle,
+      importRootIdempotencyKey: plan.importRootTitle ? bulkImportRootIdempotencyKey(jobId, plan.sourceHash) : undefined,
       chapterTitle: plan.chapterTitle,
       chapterIdempotencyKey: bulkChapterIdempotencyKey(jobId, plan.sourceHash),
       status: 'planned',
@@ -129,6 +135,9 @@ export class BulkImportJobStore {
     if (patch.sourceText && patch.sourceText !== chunk.sourceText) {
       throw new Error('Cannot change chunk sourceText after planning.');
     }
+    if (patch.expectedSourceText && patch.expectedSourceText !== chunk.expectedSourceText) {
+      throw new Error('Cannot change chunk expectedSourceText after planning.');
+    }
     Object.assign(chunk, patch);
     for (const section of job.sections) {
       const sectionChunk = section.chunks.find((candidate) => candidate.chunkId === chunkId);
@@ -157,6 +166,21 @@ export class BulkImportJobStore {
     for (const section of job.sections) {
       for (const chunk of section.chunks) {
         chunk.chapterRootRemId = chapterRootRemId;
+      }
+    }
+    job.updatedAt = new Date().toISOString();
+    return job;
+  }
+
+  recordImportRoot(jobId: string, importRootRemId: string): BulkImportJob {
+    const job = this.requireJob(jobId);
+    job.importRootRemId = importRootRemId;
+    for (const chunk of job.chunks) {
+      chunk.importRootRemId = importRootRemId;
+    }
+    for (const section of job.sections) {
+      for (const chunk of section.chunks) {
+        chunk.importRootRemId = importRootRemId;
       }
     }
     job.updatedAt = new Date().toISOString();

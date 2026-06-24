@@ -9,6 +9,7 @@ import type {
   ListNoteDesignTemplatesArgs,
   ListNoteDesignTemplatesResult,
   NoteDesignRules,
+  NoteStylePreset,
   NoteDesignTemplate,
   NoteDesignTemplateSummary,
   PreviewNoteDesignPlanArgs,
@@ -25,6 +26,7 @@ const DESIGN_TEMPLATE_STORAGE_KEY = 'bridge-note-design-templates-v1';
 const TEMPLATE_SCHEMA_VERSION = 1;
 const DEFAULT_MAX_DEPTH = 4;
 const DEFAULT_MAX_NODES = 200;
+const DEFAULT_STYLE_PRESET: NoteStylePreset = 'clean_academic';
 
 const COLOR_BY_NUMBER: Record<number, RemColorName> = {
   1: 'red',
@@ -127,6 +129,62 @@ function incrementCount(record: Record<string, number>, key: string | undefined)
     return;
   }
   record[key] = (record[key] ?? 0) + 1;
+}
+
+export function defaultNoteDesignRules(stylePreset: NoteStylePreset = DEFAULT_STYLE_PRESET): NoteDesignRules {
+  const formulaHeavy = stylePreset === 'formula_heavy';
+  const colorful = stylePreset === 'colorful_study';
+  const examReady = stylePreset === 'exam_ready';
+  return {
+    headingPattern: {
+      rootHeadingLevel: 'H1',
+      sectionHeadingLevel: 'H3',
+      headingCounts: {},
+      directChildHeadingCounts: {},
+    },
+    colorPattern: {
+      textColors: {},
+      highlightColors: colorful || examReady || formulaHeavy ? { Yellow: 1 } : {},
+      wholeRemHighlights: {},
+    },
+    spacingPattern: {
+      spacerCount: 0,
+      spacerTexts: [],
+      blankRemCount: 0,
+      siblingSpacerLikely: false,
+    },
+    mathPattern: {
+      inlineMathCount: 0,
+      blockMathCount: 0,
+      visibleDelimiterCount: 0,
+      malformedMathLikely: false,
+    },
+    bulletNesting: {
+      maxDepth: formulaHeavy ? 5 : 4,
+      maxChildrenPerRem: formulaHeavy ? 20 : 14,
+      averageChildrenPerNonLeaf: 0,
+    },
+    formulaPlacement: {
+      displayFormulasAsSeparateRems: formulaHeavy,
+      inlineFormulasInsideText: true,
+      rawDisplayDelimitersVisible: false,
+    },
+    tableStyle: {
+      tableLikeRemCount: 0,
+      markdownTableCount: 0,
+      tableHeadings: [],
+    },
+    cardStyle: {
+      cardLikeRemCount: examReady ? 1 : 0,
+      clozeLikeRemCount: 0,
+      doubleColonMarkerCount: 0,
+    },
+    workedExampleStyle: {
+      workedExampleCount: 0,
+      labels: examReady ? ['Exam Tip', 'Common Mistake'] : [],
+    },
+    stylePreset,
+  };
 }
 
 function richTextRecords(richText: RichTextInterface | undefined): Array<Record<string, unknown>> {
@@ -557,7 +615,7 @@ async function resolveRulesForPreview(
     }
     return { rules: template.rules, templateId: template.templateId };
   }
-  throw new RemnoteWriteError('INVALID_ARGS', 'Provide templateId, templateJson, or rules.');
+  return { rules: defaultNoteDesignRules(args.stylePreset ?? DEFAULT_STYLE_PRESET) };
 }
 
 export async function previewNoteDesignPlan(
@@ -568,6 +626,7 @@ export async function previewNoteDesignPlan(
   const mode = args.mode ?? (args.targetRemId ? 'repair' : 'create');
   const plannedChanges = [
     `Mode: ${mode}.`,
+    `Style preset: ${rules.stylePreset ?? DEFAULT_STYLE_PRESET}.`,
     `Heading pattern: root ${rules.headingPattern.rootHeadingLevel ?? 'normal'}, sections ${rules.headingPattern.sectionHeadingLevel ?? 'mixed'}.`,
     `Nesting: max depth ${rules.bulletNesting.maxDepth}, max children ${rules.bulletNesting.maxChildrenPerRem}.`,
     `Math: inline ${rules.mathPattern.inlineMathCount}, block ${rules.mathPattern.blockMathCount}, visible delimiters ${rules.mathPattern.visibleDelimiterCount}.`,

@@ -28,6 +28,8 @@ export type BulkImportVerificationStatus =
   | 'source_fidelity_failed'
   | 'not_verifiable';
 
+export type BulkImportSourceNormalization = 'none' | 'auto' | 'remnote_export';
+
 export interface BulkImportPlannerOptions {
   maxCharsPerChunk?: number;
   maxRemsPerChunk?: number;
@@ -37,15 +39,43 @@ export interface BulkImportPlannerOptions {
 
 export interface PlanNoteImportInput {
   sourceName?: string;
-  sourceText: string;
+  sourceKind?: 'inline_text' | 'file';
+  sourceFilePath?: string;
+  sourceText?: string;
   targetRootId: string;
   chapterSelector?: string;
+  startMarker?: string;
+  stopBeforeMarker?: string;
+  rootTitle?: string;
+  chapterTitle?: string;
+  sourceNormalization?: BulkImportSourceNormalization;
   options?: BulkImportPlannerOptions;
+}
+
+export interface BulkImportSourceMetadata {
+  sourceKind: 'inline_text' | 'file';
+  sourceFilePath?: string;
+  sourceName?: string;
+  startMarker?: string;
+  stopBeforeMarker?: string;
+  startLine?: number;
+  stopLine?: number;
+  stopMarkerFound?: boolean;
+  rawSourceLength: number;
+  rawSourceHash: string;
+  extractedSourceLength: number;
+  extractedSourceHash: string;
+  plannedSourceLength: number;
+  plannedSourceHash: string;
+  normalization: BulkImportSourceNormalization;
+  normalizationDescription: string;
 }
 
 export interface BulkImportChunk {
   chunkId: string;
   targetRootId: string;
+  importRootTitle?: string;
+  importRootRemId?: string;
   chapterRootRemId?: string;
   chapterTitle: string;
   sectionRootRemId?: string;
@@ -54,12 +84,15 @@ export interface BulkImportChunk {
   chunkIndex: number;
   sourceText: string;
   sourceHash: string;
+  expectedSourceText: string;
+  expectedSourceHash: string;
   expectedParent: string;
   chunkParentRemId?: string;
   createdRemIds: string[];
   updatedRemIds: string[];
   startedAt?: string;
   finishedAt?: string;
+  durationMs?: number;
   verificationStatus: BulkImportVerificationStatus;
   status: BulkImportChunkStatus;
   error?: string;
@@ -74,6 +107,7 @@ export interface BulkImportSection {
   title: string;
   sourceHash: string;
   sourceText: string;
+  bodySourceText: string;
   sectionRootRemId?: string;
   idempotencyKey?: string;
   chunkCount: number;
@@ -85,7 +119,13 @@ export interface BulkImportPlan {
   planId: string;
   sourceName?: string;
   sourceHash: string;
+  sourceMetadata: BulkImportSourceMetadata;
+  plannedSourceLength: number;
+  extractedSourceLength: number;
   targetRootId: string;
+  importRootTitle?: string;
+  importRootRemId?: string;
+  importRootIdempotencyKey?: string;
   chapterRootRemId?: string;
   chapterIdempotencyKey: string;
   chapterSelector?: string;
@@ -130,7 +170,13 @@ export interface BulkImportJob {
   planId: string;
   sourceName?: string;
   sourceHash: string;
+  sourceMetadata: BulkImportSourceMetadata;
+  plannedSourceLength: number;
+  extractedSourceLength: number;
   targetRootId: string;
+  importRootTitle?: string;
+  importRootRemId?: string;
+  importRootIdempotencyKey?: string;
   chapterTitle: string;
   status: BulkImportJobStatus;
   storageDurability: 'memory_only' | 'persistent';
@@ -199,23 +245,50 @@ function slugKey(input: string, fallback: string): string {
 }
 
 function normalizeHeadingText(line: string): string {
-  return line.replace(/^#{1,6}\s+/, '').trim();
+  return stripLeadingOutlineMarker(line).replace(/^#{1,6}\s+/, '').trim();
+}
+
+function normalizeChapterTitle(line: string): string {
+  return normalizeHeadingText(line).replace(/:\s*$/, '').trim() || 'Imported chapter';
+}
+
+function stripLeadingOutlineMarker(line: string): string {
+  return line.replace(/^\s*(?:[-*+]|\d+[.)])\s+/, '').trimEnd();
+}
+
+function normalizeMarkerComparable(value: string): string {
+  return stripLeadingOutlineMarker(value)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function normalizeMarkerWithoutHash(value: string): string {
+  return normalizeMarkerComparable(value).replace(/^#{1,6}\s+/, '');
+}
+
+function markerMatchesLine(line: string, marker: string): boolean {
+  const normalizedLine = normalizeMarkerComparable(line);
+  const normalizedMarker = normalizeMarkerComparable(marker);
+  return normalizedLine === normalizedMarker ||
+    normalizeMarkerWithoutHash(line) === normalizeMarkerWithoutHash(marker);
 }
 
 function lineStartsSelectedChapter(line: string, selector: string): boolean {
-  if (!line.startsWith('#')) {
+  const outlineText = stripLeadingOutlineMarker(line);
+  if (!outlineText.startsWith('#')) {
     return false;
   }
-  return normalizeHeadingText(line).toLowerCase().includes(selector.toLowerCase());
+  return normalizeHeadingText(outlineText).toLowerCase().includes(selector.toLowerCase());
 }
 
 function selectedChapterText(sourceText: string, selector?: string): { chapterTitle: string; text: string; warnings: string[] } {
   const warnings: string[] = [];
   const lines = sourceText.replace(/\r\n/g, '\n').split('\n');
   if (!selector?.trim()) {
-    const firstHeading = lines.find((line) => /^#\s+/.test(line));
+    const firstHeading = lines.find((line) => /^#{1,6}\s+/.test(stripLeadingOutlineMarker(line)));
     return {
-      chapterTitle: firstHeading ? normalizeHeadingText(firstHeading) : 'Imported chapter',
+      chapterTitle: firstHeading ? normalizeChapterTitle(firstHeading) : 'Imported chapter',
       text: sourceText,
       warnings,
     };
@@ -231,10 +304,10 @@ function selectedChapterText(sourceText: string, selector?: string): { chapterTi
     };
   }
 
-  const startLevel = (lines[start].match(/^#+/)?.[0].length ?? 1);
+  const startLevel = (stripLeadingOutlineMarker(lines[start]).match(/^#+/)?.[0].length ?? 1);
   let end = lines.length;
   for (let index = start + 1; index < lines.length; index += 1) {
-    const heading = lines[index].match(/^(#{1,6})\s+/);
+    const heading = stripLeadingOutlineMarker(lines[index]).match(/^(#{1,6})\s+/);
     if (heading && heading[1].length <= startLevel) {
       end = index;
       break;
@@ -242,10 +315,105 @@ function selectedChapterText(sourceText: string, selector?: string): { chapterTi
   }
 
   return {
-    chapterTitle: normalizeHeadingText(lines[start]),
+    chapterTitle: normalizeChapterTitle(lines[start]),
     text: lines.slice(start, end).join('\n'),
     warnings,
   };
+}
+
+function looksLikeRemNoteExportMarkdown(text: string): boolean {
+  return text.replace(/\r\n/g, '\n').split('\n').some((line) => /^\s*[-*+]\s+#{1,6}\s+/.test(line));
+}
+
+export function normalizeRemNoteExportMarkdown(text: string): string {
+  return text.replace(/\r\n/g, '\n').split('\n').map((line) => {
+    if (/^\s*[-*+]\s*$/.test(line)) {
+      return '';
+    }
+    const headingBullet = line.match(/^\s*[-*+]\s+(#{1,6}\s+.*)$/);
+    if (headingBullet) {
+      return headingBullet[1].trimEnd();
+    }
+    return line;
+  }).join('\n').trimEnd();
+}
+
+export function extractMarkedSourceText(input: {
+  sourceText: string;
+  startMarker?: string;
+  stopBeforeMarker?: string;
+  sourceNormalization?: BulkImportSourceNormalization;
+  sourceKind?: 'inline_text' | 'file';
+  sourceName?: string;
+  sourceFilePath?: string;
+}): { chapterTitle: string; text: string; metadata: BulkImportSourceMetadata; warnings: string[] } {
+  const warnings: string[] = [];
+  const normalizedSource = input.sourceText.replace(/\r\n/g, '\n');
+  const lines = normalizedSource.split('\n');
+  let start = 0;
+  let end = lines.length;
+  let stopMarkerFound = false;
+
+  if (input.startMarker?.trim()) {
+    start = lines.findIndex((line) => markerMatchesLine(line, input.startMarker as string));
+    if (start < 0) {
+      throw new Error(`startMarker "${input.startMarker}" was not found in source.`);
+    }
+  }
+
+  if (input.stopBeforeMarker?.trim()) {
+    const stop = lines.findIndex((line, index) => index > start && markerMatchesLine(line, input.stopBeforeMarker as string));
+    if (stop < 0) {
+      throw new Error(`stopBeforeMarker "${input.stopBeforeMarker}" was not found after startMarker.`);
+    }
+    end = stop;
+    stopMarkerFound = true;
+  } else if (input.startMarker?.trim()) {
+    const startLevel = (stripLeadingOutlineMarker(lines[start]).match(/^#+/)?.[0].length ?? 1);
+    for (let index = start + 1; index < lines.length; index += 1) {
+      const heading = stripLeadingOutlineMarker(lines[index]).match(/^(#{1,6})\s+/);
+      if (heading && heading[1].length <= startLevel) {
+        end = index;
+        break;
+      }
+    }
+  }
+
+  const extracted = lines.slice(start, end).join('\n').trimEnd();
+  const normalization = input.sourceNormalization ?? 'auto';
+  const shouldNormalizeRemNoteExport =
+    normalization === 'remnote_export' ||
+    (normalization === 'auto' && looksLikeRemNoteExportMarkdown(extracted));
+  const planned = shouldNormalizeRemNoteExport ? normalizeRemNoteExportMarkdown(extracted) : extracted;
+  const firstHeading = planned.split('\n').find((line) => /^#{1,6}\s+/.test(line));
+  const chapterTitle = firstHeading ? normalizeChapterTitle(firstHeading) : normalizeChapterTitle(input.startMarker ?? 'Imported chapter');
+  const metadata: BulkImportSourceMetadata = {
+    sourceKind: input.sourceKind ?? 'inline_text',
+    sourceFilePath: input.sourceFilePath,
+    sourceName: input.sourceName,
+    startMarker: input.startMarker,
+    stopBeforeMarker: input.stopBeforeMarker,
+    startLine: input.startMarker?.trim() ? start + 1 : undefined,
+    stopLine: end < lines.length ? end + 1 : undefined,
+    stopMarkerFound,
+    rawSourceLength: normalizedSource.length,
+    rawSourceHash: stableBulkImportHash(normalizedSource),
+    extractedSourceLength: extracted.length,
+    extractedSourceHash: stableBulkImportHash(extracted),
+    plannedSourceLength: planned.length,
+    plannedSourceHash: stableBulkImportHash(planned),
+    normalization,
+    normalizationDescription: shouldNormalizeRemNoteExport
+      ? 'RemNote exported heading bullets were normalized to Markdown headings before chunk planning.'
+      : 'Source text was planned without RemNote export heading normalization.',
+  };
+  if (shouldNormalizeRemNoteExport) {
+    warnings.push(metadata.normalizationDescription);
+  }
+  if (input.stopBeforeMarker && stopMarkerFound) {
+    warnings.push(`Stopped before marker "${input.stopBeforeMarker}".`);
+  }
+  return { chapterTitle, text: planned, metadata, warnings };
 }
 
 function isSectionHeading(line: string): boolean {
@@ -255,7 +423,7 @@ function isSectionHeading(line: string): boolean {
   return /^\s*\d+(?:\.\d+)+\s+\S/.test(line);
 }
 
-function splitSections(chapterText: string): Array<{ title: string; text: string; sectionKey: string }> {
+function splitSections(chapterText: string): Array<{ title: string; text: string; bodyText: string; sectionKey: string }> {
   const lines = chapterText.replace(/\r\n/g, '\n').split('\n');
   const starts = lines
     .map((line, index) => ({ line, index }))
@@ -263,16 +431,18 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
 
   if (!starts.length) {
     const title = normalizeHeadingText(lines.find((line) => line.startsWith('#')) ?? 'Imported chapter');
-    return [{ title, text: chapterText, sectionKey: slugKey(title, 'chapter') }];
+    return [{ title, text: chapterText, bodyText: chapterText, sectionKey: slugKey(title, 'chapter') }];
   }
 
   return starts.map((start, startIndex) => {
     const end = starts[startIndex + 1]?.index ?? lines.length;
     const text = lines.slice(start.index, end).join('\n').trimEnd();
+    const bodyText = lines.slice(start.index + 1, end).join('\n').replace(/^\n+/, '').trimEnd();
     const title = normalizeHeadingText(start.line);
     return {
       title,
       text,
+      bodyText,
       sectionKey: slugKey(title, `section-${startIndex + 1}`),
     };
   });
@@ -347,6 +517,10 @@ export function bulkChapterIdempotencyKey(jobId: string, sourceHash: string): st
   return `bulk-import:${jobId}:chapter:source:${sourceHash}`;
 }
 
+export function bulkImportRootIdempotencyKey(jobId: string, sourceHash: string): string {
+  return `bulk-import:${jobId}:import-root:source:${sourceHash}`;
+}
+
 export function bulkSectionIdempotencyKey(jobId: string, sectionKey: string, sourceHash: string): string {
   return `bulk-import:${jobId}:section-root:${sectionKey}:source:${sourceHash}`;
 }
@@ -370,23 +544,65 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
   }
 
   const options = normalizePlannerOptions(input.options);
-  const selected = selectedChapterText(sourceText, input.chapterSelector);
+  const selected = input.startMarker?.trim() || input.stopBeforeMarker?.trim()
+    ? extractMarkedSourceText({
+        sourceText,
+        startMarker: input.startMarker,
+        stopBeforeMarker: input.stopBeforeMarker,
+        sourceNormalization: input.sourceNormalization,
+        sourceKind: input.sourceKind,
+        sourceName: input.sourceName,
+        sourceFilePath: input.sourceFilePath,
+      })
+    : (() => {
+        const chapter = selectedChapterText(sourceText, input.chapterSelector);
+        const normalized = input.sourceNormalization === 'remnote_export' ||
+          ((input.sourceNormalization ?? 'auto') === 'auto' && looksLikeRemNoteExportMarkdown(chapter.text))
+          ? normalizeRemNoteExportMarkdown(chapter.text)
+          : chapter.text;
+        const metadata: BulkImportSourceMetadata = {
+          sourceKind: input.sourceKind ?? 'inline_text',
+          sourceFilePath: input.sourceFilePath,
+          sourceName: input.sourceName,
+          rawSourceLength: sourceText.length,
+          rawSourceHash: stableBulkImportHash(sourceText),
+          extractedSourceLength: chapter.text.length,
+          extractedSourceHash: stableBulkImportHash(chapter.text),
+          plannedSourceLength: normalized.length,
+          plannedSourceHash: stableBulkImportHash(normalized),
+          normalization: input.sourceNormalization ?? 'auto',
+          normalizationDescription: normalized === chapter.text
+            ? 'Source text was planned without RemNote export heading normalization.'
+            : 'RemNote exported heading bullets were normalized to Markdown headings before chunk planning.',
+        };
+        return {
+          chapterTitle: input.chapterTitle?.trim() || chapter.chapterTitle,
+          text: normalized,
+          metadata,
+          warnings: normalized === chapter.text ? chapter.warnings : [...chapter.warnings, metadata.normalizationDescription],
+        };
+      })();
+  const chapterTitle = input.chapterTitle?.trim() || selected.chapterTitle;
   const sourceHash = stableBulkImportHash(selected.text);
-  const planId = `plan:${stableBulkImportHash(`${input.sourceName ?? ''}:${input.targetRootId}:${sourceHash}`)}`;
+  const planId = `plan:${stableBulkImportHash(`${input.sourceName ?? ''}:${input.targetRootId}:${input.rootTitle ?? ''}:${chapterTitle}:${sourceHash}`)}`;
   const sections = splitSections(selected.text).map((section) => {
-    const chunkTexts = splitSectionIntoChunks(section.text, options);
+    const writableSectionText = section.bodyText.trim() ? section.bodyText : section.text;
+    const chunkTexts = splitSectionIntoChunks(writableSectionText, options);
     const chunks = chunkTexts.map((chunkText, index): BulkImportChunk => {
       const chunkSourceHash = stableBulkImportHash(chunkText);
       const chunkIndex = index + 1;
       return {
         chunkId: bulkChunkId(planId, section.sectionKey, chunkIndex, chunkSourceHash),
         targetRootId: input.targetRootId,
-        chapterTitle: selected.chapterTitle,
+        importRootTitle: input.rootTitle?.trim() || undefined,
+        chapterTitle,
         sectionKey: section.sectionKey,
         sectionTitle: section.title,
         chunkIndex,
         sourceText: chunkText,
         sourceHash: chunkSourceHash,
+        expectedSourceText: chunkText,
+        expectedSourceHash: chunkSourceHash,
         expectedParent: input.targetRootId,
         createdRemIds: [],
         updatedRemIds: [],
@@ -403,6 +619,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
       title: section.title,
       sourceHash: stableBulkImportHash(section.text),
       sourceText: section.text,
+      bodySourceText: writableSectionText,
       chunkCount: chunks.length,
       chunks,
     };
@@ -419,10 +636,15 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
     planId,
     sourceName: input.sourceName,
     sourceHash,
+    sourceMetadata: selected.metadata,
+    plannedSourceLength: selected.metadata.plannedSourceLength,
+    extractedSourceLength: selected.metadata.extractedSourceLength,
     targetRootId: input.targetRootId,
+    importRootTitle: input.rootTitle?.trim() || undefined,
+    importRootIdempotencyKey: input.rootTitle?.trim() ? bulkImportRootIdempotencyKey('job-pending', sourceHash) : undefined,
     chapterIdempotencyKey: bulkChapterIdempotencyKey('job-pending', sourceHash),
     chapterSelector: input.chapterSelector,
-    chapterTitle: selected.chapterTitle,
+    chapterTitle,
     sections,
     chunks,
     estimatedChunks: chunks.length,
@@ -437,7 +659,8 @@ export function normalizeForSourceFidelity(text: string): string {
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+$/gm, '')
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/^[ \t]*[-*+]\s+/gm, '- ')
+    .replace(/^[ \t]*#{1,6}\s+/gm, '')
+    .replace(/^[ \t]*[-*+]\s+/gm, '')
     .trim();
 }
 
@@ -485,8 +708,12 @@ export function verifyBulkImportSourceText(input: {
     };
   }
 
-  const missingTextPreview = actual.includes(expected.slice(0, 80)) ? undefined : previewAround(expected);
-  const extraTextPreview = expected.includes(actual.slice(0, 80)) ? undefined : previewAround(actual);
+  const expectedUnits = expected.split('\n').map((line) => line.trim()).filter(Boolean);
+  const actualUnits = actual.split('\n').map((line) => line.trim()).filter(Boolean);
+  const missingUnits = expectedUnits.filter((unit) => !actual.includes(unit)).slice(0, 5);
+  const extraUnits = actualUnits.filter((unit) => !expected.includes(unit)).slice(0, 5);
+  const missingTextPreview = missingUnits.length ? previewAround(missingUnits.join('\n')) : previewAround(expected);
+  const extraTextPreview = extraUnits.length ? previewAround(extraUnits.join('\n')) : undefined;
   return {
     ok: false,
     status: 'source_fidelity_failed',
@@ -500,6 +727,167 @@ export function verifyBulkImportSourceText(input: {
     warnings: ['Normalized plain-text source fidelity failed. Rich text/math formatting was not fully verified.'],
     recommendedAction: 'resume_note_import_job',
     method: 'normalized_plain_text',
+  };
+}
+
+export interface BulkImportFinalVerificationReport extends BulkImportVerificationResult {
+  normalizedMatchPercentage: number;
+  expectedSourceLength: number;
+  actualReadbackLength?: number;
+  failedChunkIds: string[];
+  structure: {
+    rootTitle?: string;
+    chapterTitle: string;
+    sectionOrderOk: boolean;
+    duplicateSectionTitles: string[];
+    missingSectionTitles: string[];
+  };
+  checks: {
+    noChapterTwo: boolean;
+    noVisibleDashPrefixes: boolean;
+    noDuplicateChunkContent: boolean;
+  };
+}
+
+function normalizedUnits(text: string): string[] {
+  return normalizeForSourceFidelity(text)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function expectedBulkImportReadbackText(job: BulkImportJob): string {
+  return [
+    job.chapterTitle,
+    ...job.sections.flatMap((section) => [
+      section.title,
+      ...section.chunks.map((chunk) => chunk.expectedSourceText ?? chunk.sourceText),
+    ]),
+  ].filter(Boolean).join('\n');
+}
+
+function duplicateValues(values: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const value of values) {
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  }
+  return Array.from(counts.entries()).filter(([, count]) => count > 1).map(([value]) => value);
+}
+
+export function verifyBulkImportFinalReadback(input: {
+  job: BulkImportJob;
+  readbackTree?: unknown;
+  actualText?: string;
+  chunkReports?: BulkImportVerificationResult[];
+}): BulkImportFinalVerificationReport {
+  const actualRaw = input.actualText ?? (input.readbackTree ? flattenBulkImportReadbackText(input.readbackTree) : undefined);
+  const expectedRaw = expectedBulkImportReadbackText(input.job);
+  const expected = normalizeForSourceFidelity(expectedRaw);
+  const expectedHash = stableBulkImportHash(expected);
+  const failedChunkIds = (input.chunkReports ?? [])
+    .filter((report) => !report.ok && report.status !== 'not_verifiable')
+    .map((report) => {
+      const chunk = input.job.chunks.find((candidate) =>
+        candidate.sectionKey === report.sectionKey && candidate.chunkIndex === report.chunkIndex
+      );
+      return chunk?.chunkId;
+    })
+    .filter((chunkId): chunkId is string => Boolean(chunkId));
+  if (actualRaw === undefined) {
+    return {
+      ok: false,
+      status: 'not_verifiable',
+      jobId: input.job.jobId,
+      expectedHash,
+      warnings: ['No full readback text was supplied; final source verification was not run.'],
+      recommendedAction: 'Run verify_note_import_job after live readback is available.',
+      method: 'manifest_only',
+      normalizedMatchPercentage: 0,
+      expectedSourceLength: expectedRaw.length,
+      failedChunkIds,
+      structure: {
+        rootTitle: input.job.importRootTitle,
+        chapterTitle: input.job.chapterTitle,
+        sectionOrderOk: false,
+        duplicateSectionTitles: [],
+        missingSectionTitles: input.job.sections.map((section) => section.title),
+      },
+      checks: {
+        noChapterTwo: false,
+        noVisibleDashPrefixes: false,
+        noDuplicateChunkContent: false,
+      },
+    };
+  }
+
+  const actual = normalizeForSourceFidelity(actualRaw);
+  const actualHash = stableBulkImportHash(actual);
+  const expectedUnits = normalizedUnits(expectedRaw);
+  const actualUnits = normalizedUnits(actualRaw);
+  const missingUnits = expectedUnits.filter((unit) => !actual.includes(unit));
+  const extraUnits = actualUnits.filter((unit) => !expected.includes(unit));
+  const sectionOffsets = input.job.sections.map((section) => actual.indexOf(normalizeForSourceFidelity(section.title)));
+  const missingSectionTitles = input.job.sections
+    .filter((_, index) => sectionOffsets[index] < 0)
+    .map((section) => section.title);
+  const sectionOrderOk = sectionOffsets.every((offset) => offset >= 0) &&
+    sectionOffsets.every((offset, index) => index === 0 || offset > sectionOffsets[index - 1]);
+  const sectionOccurrences = input.job.sections.flatMap((section) => {
+    const title = normalizeForSourceFidelity(section.title);
+    return countOccurrences(actual, title) > 1 ? [section.title] : [];
+  });
+  const duplicateSectionTitles = duplicateValues(sectionOccurrences).length ? duplicateValues(sectionOccurrences) : sectionOccurrences;
+  const noChapterTwo = !/\bchapter\s+two\b/i.test(actualRaw) && !/^2\.\d+\b/m.test(actual);
+  const noVisibleDashPrefixes = !/^\s*-\s*(?:#{1,6}\s+|chapter\b|\d+(?:\.\d+)+\b)/im.test(actualRaw);
+  const duplicateChunkContent = input.job.chunks.filter((chunk) => {
+    const normalizedChunk = normalizeForSourceFidelity(chunk.expectedSourceText ?? chunk.sourceText);
+    return normalizedChunk && countOccurrences(actual, normalizedChunk) > 1;
+  });
+  const matchedCount = expectedUnits.length - missingUnits.length;
+  const normalizedMatchPercentage = expectedUnits.length === 0
+    ? 100
+    : Math.round((matchedCount / expectedUnits.length) * 10000) / 100;
+  const ok =
+    missingUnits.length === 0 &&
+    extraUnits.length === 0 &&
+    failedChunkIds.length === 0 &&
+    missingSectionTitles.length === 0 &&
+    duplicateSectionTitles.length === 0 &&
+    sectionOrderOk &&
+    noChapterTwo &&
+    noVisibleDashPrefixes &&
+    duplicateChunkContent.length === 0;
+  return {
+    ok,
+    status: ok ? 'passed' : 'source_fidelity_failed',
+    jobId: input.job.jobId,
+    expectedHash,
+    actualHash,
+    missingTextPreview: missingUnits.length ? previewAround(missingUnits.slice(0, 5).join('\n')) : undefined,
+    extraTextPreview: extraUnits.length ? previewAround(extraUnits.slice(0, 5).join('\n')) : undefined,
+    duplicateSections: duplicateSectionTitles.length ? duplicateSectionTitles : undefined,
+    missingChunks: failedChunkIds.length ? failedChunkIds : undefined,
+    warnings: ok
+      ? []
+      : ['Final readback did not match the planned source after documented normalization.'],
+    recommendedAction: ok ? undefined : 'resume_note_import_job',
+    method: 'normalized_plain_text',
+    normalizedMatchPercentage,
+    expectedSourceLength: expectedRaw.length,
+    actualReadbackLength: actualRaw.length,
+    failedChunkIds,
+    structure: {
+      rootTitle: input.job.importRootTitle,
+      chapterTitle: input.job.chapterTitle,
+      sectionOrderOk,
+      duplicateSectionTitles,
+      missingSectionTitles,
+    },
+    checks: {
+      noChapterTwo,
+      noVisibleDashPrefixes,
+      noDuplicateChunkContent: duplicateChunkContent.length === 0,
+    },
   };
 }
 
@@ -548,7 +936,7 @@ export function verifyBulkImportReadback(input: {
     const explicitText = input.actualTextByChunkId?.[chunk.chunkId];
     const actualText = explicitText ?? normalizedTree;
     const report = verifyBulkImportSourceText({
-      expectedText: chunk.sourceText,
+      expectedText: chunk.expectedSourceText ?? chunk.sourceText,
       actualText,
       jobId: input.job.jobId,
       sectionKey: chunk.sectionKey,
@@ -557,7 +945,7 @@ export function verifyBulkImportReadback(input: {
     if (!normalizedTree || !report.ok) {
       return report;
     }
-    const expected = normalizeForSourceFidelity(chunk.sourceText);
+    const expected = normalizeForSourceFidelity(chunk.expectedSourceText ?? chunk.sourceText);
     const offset = normalizedTree.indexOf(expected);
     const duplicateCount = countOccurrences(normalizedTree, expected);
     const wrongOrder = offset >= 0 && offset < previousOffset;

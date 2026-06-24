@@ -8,14 +8,27 @@ import type {
   StyledRemTreeNode,
 } from './protocol-write-args.js';
 
+export const CLEAN_ACADEMIC_STYLE_PRESET = 'clean_academic' as const;
+export const EXAM_READY_STYLE_PRESET = 'exam_ready' as const;
+export const COLORFUL_STUDY_STYLE_PRESET = 'colorful_study' as const;
+export const MINIMAL_STYLE_PRESET = 'minimal' as const;
+export const FORMULA_HEAVY_STYLE_PRESET = 'formula_heavy' as const;
 export const NUCLEAR_PHYSICS_STYLE_PRESET = 'nuclear_physics_h1_h3_spacer_math' as const;
+export const DEFAULT_NOTE_STYLE_PRESET = CLEAN_ACADEMIC_STYLE_PRESET;
 export const NUCLEAR_PHYSICS_SPACER_TEXT = '\u200b';
 export const DEFAULT_NUCLEAR_PHYSICS_COURSE = 'Nuclear Physics I';
 
-export const NOTE_STYLE_PRESETS: readonly NoteStylePreset[] = [NUCLEAR_PHYSICS_STYLE_PRESET];
+export const NOTE_STYLE_PRESETS: readonly NoteStylePreset[] = [
+  CLEAN_ACADEMIC_STYLE_PRESET,
+  EXAM_READY_STYLE_PRESET,
+  COLORFUL_STUDY_STYLE_PRESET,
+  MINIMAL_STYLE_PRESET,
+  FORMULA_HEAVY_STYLE_PRESET,
+  NUCLEAR_PHYSICS_STYLE_PRESET,
+];
 
-export interface NormalizedNuclearPhysicsPreset {
-  stylePreset: typeof NUCLEAR_PHYSICS_STYLE_PRESET;
+export interface NormalizedNoteStylePreset {
+  stylePreset: NoteStylePreset;
   course: string;
   rootHeadingLevel: 'H1';
   sectionHeadingLevel: 'H3';
@@ -23,35 +36,52 @@ export interface NormalizedNuclearPhysicsPreset {
   spacerText: string;
   majorFormulaMode: 'mathBlockRem';
   verifyAfterWrite: boolean;
+  emphasis: 'quiet' | 'exam' | 'colorful' | 'minimal' | 'formula';
 }
 
 export function isNoteStylePreset(value: unknown): value is NoteStylePreset {
-  return value === NUCLEAR_PHYSICS_STYLE_PRESET;
+  return typeof value === 'string' && (NOTE_STYLE_PRESETS as readonly string[]).includes(value);
 }
 
 export function normalizeNuclearPhysicsPresetFields(
   fields: NoteStylePresetFields = {}
-): NormalizedNuclearPhysicsPreset {
-  return {
+): NormalizedNoteStylePreset {
+  return normalizeStylePresetFields({
+    ...fields,
     stylePreset: NUCLEAR_PHYSICS_STYLE_PRESET,
-    course: fields.course?.trim() || DEFAULT_NUCLEAR_PHYSICS_COURSE,
-    rootHeadingLevel: 'H1',
-    sectionHeadingLevel: 'H3',
-    insertSiblingSpacers: fields.insertSiblingSpacers ?? true,
-    spacerText: fields.spacerText ?? NUCLEAR_PHYSICS_SPACER_TEXT,
-    majorFormulaMode: 'mathBlockRem',
-    verifyAfterWrite: fields.verifyAfterWrite ?? true,
-  };
+  }) as NormalizedNoteStylePreset;
 }
 
 export function normalizeStylePresetFields(
   fields: NoteStylePresetFields = {}
-): NormalizedNuclearPhysicsPreset | null {
-  if (fields.stylePreset !== NUCLEAR_PHYSICS_STYLE_PRESET) {
+): NormalizedNoteStylePreset | null {
+  if (fields.stylePreset && !isNoteStylePreset(fields.stylePreset)) {
     return null;
   }
-
-  return normalizeNuclearPhysicsPresetFields(fields);
+  const stylePreset = fields.stylePreset ?? DEFAULT_NOTE_STYLE_PRESET;
+  const minimal = stylePreset === MINIMAL_STYLE_PRESET;
+  const formulaFocused = stylePreset === FORMULA_HEAVY_STYLE_PRESET || stylePreset === NUCLEAR_PHYSICS_STYLE_PRESET;
+  const examFocused = stylePreset === EXAM_READY_STYLE_PRESET;
+  const colorful = stylePreset === COLORFUL_STUDY_STYLE_PRESET;
+  return {
+    stylePreset,
+    course: fields.course?.trim() || DEFAULT_NUCLEAR_PHYSICS_COURSE,
+    rootHeadingLevel: 'H1',
+    sectionHeadingLevel: 'H3',
+    insertSiblingSpacers: fields.insertSiblingSpacers ?? !minimal,
+    spacerText: fields.spacerText ?? NUCLEAR_PHYSICS_SPACER_TEXT,
+    majorFormulaMode: 'mathBlockRem',
+    verifyAfterWrite: fields.verifyAfterWrite ?? true,
+    emphasis: minimal
+      ? 'minimal'
+      : formulaFocused
+        ? 'formula'
+        : examFocused
+          ? 'exam'
+          : colorful
+            ? 'colorful'
+            : 'quiet',
+  };
 }
 
 function isMathOrCardNode(node: StyledRemTreeNode): boolean {
@@ -99,7 +129,7 @@ function normalizeNestedNode(node: StyledRemTreeNode): StyledRemTreeNode {
 
 function normalizeRootChildren(
   children: readonly StyledRemTreeNode[],
-  preset: NormalizedNuclearPhysicsPreset
+  preset: NormalizedNoteStylePreset
 ): StyledRemTreeNode[] {
   const output: StyledRemTreeNode[] = [];
   let sectionCount = 0;
@@ -158,21 +188,31 @@ export function applyStylePresetToTree(
   tree: StyledRemTreeNode,
   fields: NoteStylePresetFields = {}
 ): StyledRemTreeNode {
-  if (fields.stylePreset === NUCLEAR_PHYSICS_STYLE_PRESET) {
-    return applyNuclearPhysicsStylePresetToTree(tree, fields);
+  const preset = normalizeStylePresetFields(fields);
+  if (!preset || !fields.stylePreset) {
+    return tree;
   }
 
-  return tree;
+  return withHeading(
+    {
+      ...tree,
+      children: normalizeRootChildren(tree.children ?? [], preset),
+    },
+    preset.rootHeadingLevel
+  );
 }
 
 export function applyStylePresetToMarkdownArgs<T extends CreateOrReplaceNoteFromMarkdownArgs>(
   args: T
 ): T {
-  if (args.stylePreset !== NUCLEAR_PHYSICS_STYLE_PRESET) {
+  if (!args.stylePreset) {
     return args;
   }
 
-  const preset = normalizeNuclearPhysicsPresetFields(args);
+  const preset = normalizeStylePresetFields(args);
+  if (!preset) {
+    return args;
+  }
   const headingMapping: MarkdownImportHeadingMapping = {
     ...(args.headingMapping ?? {}),
     rootHeadingLevel: preset.rootHeadingLevel,

@@ -1,7 +1,7 @@
 {
   "manifestVersion": 1,
   "id": "remnote-chatgpt-bridge",
-  "name": "RemnoteMCP",
+  "name": "RemNote MCP",
   "author": "HTGit63",
   "repoUrl": "https://github.com/HTGit63/remnote-plugin-template-react",
   "projectUrl": "https://github.com/HTGit63/remnote-plugin-template-react",
@@ -14,7 +14,7 @@
   },
   "theme": [],
   "enableOnMobile": false,
-  "description": "Secure MCP bridge for ChatGPT/Vivy to create, verify, and style RemNote notes and flashcards.",
+  "description": "Secure MCP bridge for ChatGPT to create, verify, and style RemNote notes under approved roots.",
   "requestNative": false,
   "unlisted": true,
   "requiredScopes": [

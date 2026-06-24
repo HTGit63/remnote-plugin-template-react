@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import {
+  NOTE_STYLE_PRESETS,
   NUCLEAR_PHYSICS_SPACER_TEXT,
-  NUCLEAR_PHYSICS_STYLE_PRESET,
 } from '../../../shared/bridge/protocol.js';
 
 export const REM_ID_SCHEMA = z.string().trim().min(1).max(256);
@@ -38,7 +38,7 @@ export const COLOR_SCHEMA = z.enum([
   'Pink',
 ]);
 export const HEADING_LEVEL_SCHEMA = z.enum(['H1', 'H2', 'H3', 'normal']);
-export const NOTE_STYLE_PRESET_SCHEMA = z.literal(NUCLEAR_PHYSICS_STYLE_PRESET);
+export const NOTE_STYLE_PRESET_SCHEMA = z.enum(NOTE_STYLE_PRESETS as [typeof NOTE_STYLE_PRESETS[number], ...typeof NOTE_STYLE_PRESETS[number][]]);
 export const NOTE_STYLE_PRESET_FIELDS_SCHEMA = {
   stylePreset: NOTE_STYLE_PRESET_SCHEMA.optional().describe('Reusable note style preset.'),
   course: z.string().trim().min(1).max(120).default('Nuclear Physics I').optional(),

@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { registerBulkImportTools } from '../server/src/tools/register-bulk-import-tools';
 import type { McpToolResult, ToolRegistrationContext } from '../server/src/tools/tool-context';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../shared/bridge/protocol';
@@ -15,6 +18,17 @@ const chapter = [
   '## 1.2 Mass defect',
   '',
   'Beta source text.',
+].join('\n');
+
+const exportedChapter = [
+  '- # Chapter One:',
+  '    - ## 1.1 Atomic nuclei',
+  '        - Alpha source text.',
+  '    - ## 1.2 Mass defect',
+  '        - Beta source text with $E=mc^2$.',
+  '- # Chapter Two:',
+  '    - ## 2.1 Excluded',
+  '        - This must not be imported.',
 ].join('\n');
 
 function success(id: string, result: Record<string, unknown>): BridgeResponse {
@@ -155,6 +169,41 @@ function makeHarness(options: {
 }
 
 describe('bulk import MCP tools', () => {
+  test('plans and starts a file-backed import without passing full source through tool args', async () => {
+    const h = makeHarness();
+    const folder = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-'));
+    const sourceFilePath = join(folder, 'Nuclear Phyiscs.md');
+    writeFileSync(sourceFilePath, exportedChapter, 'utf8');
+
+    const plan = text(await h.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+
+    expect(plan.status).toBe('PASS');
+    expect(plan.sourceMetadata.sourceKind).toBe('file');
+    expect(plan.sourceMetadata.stopMarkerFound).toBe(true);
+    expect(plan.chapterTitle).toBe('Chapter One');
+    expect(plan.importRootTitle).toBe('Nuclear Physics — Chapter One Bulk Import Test');
+    expect(plan.sections.map((section: any) => section.sectionKey)).toEqual(['1.1', '1.2']);
+    expect(JSON.stringify(plan)).not.toContain('This must not be imported');
+
+    const started = text(await h.handlers.start_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+      jobId: 'bulk-job:file-backed',
+    }));
+    expect(started.jobId).toBe('bulk-job:file-backed');
+    expect(started.progress.chunksTotal).toBe(2);
+    expect(started.nextAction).toBe('call run_note_import_job_step');
+  });
+
   test('does not mark chunk verified when write lacks explicit verification', async () => {
     const h = makeHarness({ writeResponses: [success('write', { createdRemIds: ['chunk-1'] })] });
     const { jobId } = await h.createJob('bulk-job:no-false-verified');

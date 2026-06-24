@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  expectedBulkImportReadbackText,
+  extractMarkedSourceText,
   planNoteImport,
   stableBulkImportHash,
+  verifyBulkImportFinalReadback,
   verifyBulkImportSourceText,
 } from '../shared/bridge/bulk-import';
 import { BulkImportJobStore } from '../server/src/bulk-import/job-store';
@@ -27,6 +30,24 @@ const chapter = [
   '$$',
 ].join('\n');
 
+const remnoteExportedChapter = [
+  '- # Chapter One:',
+  '    - ## 1.1 — Nuclear terminology and nuclide notation',
+  '        - Nuclide notation is preserved word for word.',
+  '        - $^{A}_{Z}X$ keeps formula text.',
+  '    - ## 1.2 — Units, dimensions, and order-of-magnitude scales in nuclear physics',
+  '        - Nuclear radii are measured in femtometres.',
+  '    - ## 1.3 — Atomic mass, nuclear mass, atomic weight, and isotopic abundance',
+  '        - Mass defect examples remain in order.',
+  '    - ## 1.4 — Measuring atomic masses and isotopic abundances: velocity selector and mass spectrometer',
+  '        - Velocity selector formula: $qE = qvB$.',
+  '    - ## 1.5 — Rutherford alpha scattering experiment and the nuclear hypothesis',
+  '        - Rutherford scattering supports the nuclear hypothesis.',
+  '- # Chapter Two:',
+  '    - ## 2.1 Should not import',
+  '        - This line must never appear in Chapter One output.',
+].join('\n');
+
 describe('bulk import planner', () => {
   test('plans sections in source order with stable chunk idempotency', () => {
     const plan = planNoteImport({
@@ -42,6 +63,56 @@ describe('bulk import planner', () => {
     expect(plan.chunks.length).toBeGreaterThanOrEqual(2);
     expect(plan.chunks[0].idempotencyKey).toContain('bulk-import:job-pending:section:1.1:chunk:1');
     expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).toContain('const x = 1;');
+  });
+
+  test('extracts RemNote-exported Chapter One only and normalizes heading bullets', () => {
+    const extracted = extractMarkedSourceText({
+      sourceName: 'Nuclear Phyiscs.md',
+      sourceText: remnoteExportedChapter,
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+      sourceNormalization: 'auto',
+    });
+
+    expect(extracted.metadata.startLine).toBe(1);
+    expect(extracted.metadata.stopMarkerFound).toBe(true);
+    expect(extracted.text).toContain('# Chapter One:');
+    expect(extracted.text).toContain('## 1.5 — Rutherford alpha scattering experiment and the nuclear hypothesis');
+    expect(extracted.text).not.toContain('Chapter Two');
+    expect(extracted.text).not.toMatch(/^\s*-\s*#/m);
+    expect(extracted.metadata.extractedSourceLength).toBe(
+      remnoteExportedChapter.split('\n').slice(0, 12).join('\n').length
+    );
+    expect(extracted.metadata.plannedSourceHash).toBe(stableBulkImportHash(extracted.text));
+  });
+
+  test('plans file-style Chapter One sections without duplicating section headings into chunks', () => {
+    const plan = planNoteImport({
+      sourceName: 'Nuclear Phyiscs.md',
+      sourceKind: 'file',
+      sourceFilePath: '/mnt/data/Nuclear Phyiscs.md',
+      sourceText: remnoteExportedChapter,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+      options: { maxCharsPerChunk: 24000, maxRemsPerChunk: 120 },
+    });
+
+    expect(plan.importRootTitle).toBe('Nuclear Physics — Chapter One Bulk Import Test');
+    expect(plan.chapterTitle).toBe('Chapter One');
+    expect(plan.sections.map((section) => section.title)).toEqual([
+      '1.1 — Nuclear terminology and nuclide notation',
+      '1.2 — Units, dimensions, and order-of-magnitude scales in nuclear physics',
+      '1.3 — Atomic mass, nuclear mass, atomic weight, and isotopic abundance',
+      '1.4 — Measuring atomic masses and isotopic abundances: velocity selector and mass spectrometer',
+      '1.5 — Rutherford alpha scattering experiment and the nuclear hypothesis',
+    ]);
+    expect(plan.plannedSourceLength).toBe(plan.sourceMetadata.plannedSourceLength);
+    expect(plan.extractedSourceLength).toBe(plan.sourceMetadata.extractedSourceLength);
+    expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).toContain('$qE = qvB$');
+    expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).not.toContain('Chapter Two');
+    expect(plan.sections[0].chunks[0].sourceText).not.toContain('## 1.1');
   });
 
   test('hashes are deterministic and source fidelity reports mismatch previews', () => {
@@ -62,6 +133,47 @@ describe('bulk import planner', () => {
     expect(failed.ok).toBe(false);
     expect(failed.status).toBe('source_fidelity_failed');
     expect(failed.missingTextPreview).toContain('Expected physics text');
+  });
+});
+
+describe('bulk import final verification', () => {
+  test('detects full readback match, missing text, extra Chapter Two text, and visible dash pollution', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: remnoteExportedChapter,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:final-verify');
+    const expected = expectedBulkImportReadbackText(job);
+
+    const passed = verifyBulkImportFinalReadback({ job, actualText: expected });
+    expect(passed.ok).toBe(true);
+    expect(passed.normalizedMatchPercentage).toBe(100);
+
+    const missing = verifyBulkImportFinalReadback({
+      job,
+      actualText: expected.replace('Velocity selector formula: $qE = qvB$.', ''),
+    });
+    expect(missing.ok).toBe(false);
+    expect(missing.missingTextPreview).toContain('Velocity selector formula');
+
+    const extra = verifyBulkImportFinalReadback({
+      job,
+      actualText: `${expected}\nChapter Two:\n2.1 Should not import`,
+    });
+    expect(extra.ok).toBe(false);
+    expect(extra.extraTextPreview).toContain('Chapter Two');
+    expect(extra.checks.noChapterTwo).toBe(false);
+
+    const dashPolluted = verifyBulkImportFinalReadback({
+      job,
+      actualText: expected.replace('Chapter One', '- # Chapter One'),
+    });
+    expect(dashPolluted.ok).toBe(false);
+    expect(dashPolluted.checks.noVisibleDashPrefixes).toBe(false);
   });
 });
 

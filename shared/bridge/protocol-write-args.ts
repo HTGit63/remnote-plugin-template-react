@@ -22,7 +22,13 @@ export interface CreateFolderArgs {
   markdown: string;
 }
 
-export type NoteStylePreset = 'nuclear_physics_h1_h3_spacer_math';
+export type NoteStylePreset =
+  | 'clean_academic'
+  | 'exam_ready'
+  | 'colorful_study'
+  | 'minimal'
+  | 'formula_heavy'
+  | 'nuclear_physics_h1_h3_spacer_math';
 
 export interface NoteStylePresetFields {
   stylePreset?: NoteStylePreset;
@@ -622,6 +628,7 @@ export interface PreviewNoteDesignPlanArgs {
   content?: string;
   mode?: NoteDesignPreviewMode;
   rules?: NoteDesignRules;
+  stylePreset?: NoteStylePreset;
 }
 
 export interface ExportNoteDesignTemplateArgs {

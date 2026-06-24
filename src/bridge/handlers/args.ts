@@ -469,6 +469,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         content: getStringField(args, 'content'),
         mode: getStringField(args, 'mode') as PreviewNoteDesignPlanArgs['mode'],
         rules: isPlainObject(raw.rules) ? (raw.rules as unknown as PreviewNoteDesignPlanArgs['rules']) : undefined,
+        stylePreset: getStringField(args, 'stylePreset') as PreviewNoteDesignPlanArgs['stylePreset'],
       } as BridgeToolArgs[TTool];
     }
     case 'export_note_design_template':

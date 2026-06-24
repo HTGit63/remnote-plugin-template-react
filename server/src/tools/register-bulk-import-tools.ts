@@ -1,9 +1,13 @@
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
+import { basename, resolve } from 'node:path';
 import { z } from 'zod';
 import {
   bulkSectionIdempotencyKey,
   normalizeBulkImportTitle,
   planNoteImport,
   summarizeBulkImportProgress,
+  verifyBulkImportFinalReadback,
   verifyBulkImportReadback,
   verifyBulkImportSourceText,
   type BulkImportChunk,
@@ -31,8 +35,20 @@ const PLAN_IMPORT_INPUT_SCHEMA = z.object({
   sourceText: z.string().min(1).max(240000),
   targetRootId: z.string().trim().min(1).max(256),
   chapterSelector: z.string().trim().max(256).optional(),
+  startMarker: z.string().trim().max(256).optional(),
+  stopBeforeMarker: z.string().trim().max(256).optional(),
+  rootTitle: z.string().trim().max(256).optional(),
+  chapterTitle: z.string().trim().max(256).optional(),
+  sourceNormalization: z.enum(['none', 'auto', 'remnote_export']).default('auto'),
   options: BULK_IMPORT_OPTIONS_SCHEMA,
 });
+
+const PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA = PLAN_IMPORT_INPUT_SCHEMA.omit({ sourceText: true, sourceName: true }).extend({
+  sourceFilePath: z.string().trim().min(1).max(4096),
+  sourceName: z.string().trim().max(256).optional(),
+});
+
+const MAX_BULK_IMPORT_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
 
 function toolResult(
   text: string,
@@ -61,16 +77,20 @@ function chunkSummary(chunk: BulkImportChunk) {
   return {
     chunkId: chunk.chunkId,
     sectionKey: chunk.sectionKey,
+    sectionTitle: chunk.sectionTitle,
     chunkIndex: chunk.chunkIndex,
     status: chunk.status,
     verificationStatus: chunk.verificationStatus,
     charCount: chunk.charCount,
     estimatedRemCount: chunk.estimatedRemCount,
+    expectedSourceHash: chunk.expectedSourceHash,
     createdRemIds: chunk.createdRemIds,
     updatedRemIds: chunk.updatedRemIds,
+    importRootRemId: chunk.importRootRemId,
     chapterRootRemId: chunk.chapterRootRemId,
     sectionRootRemId: chunk.sectionRootRemId,
     chunkParentRemId: chunk.chunkParentRemId,
+    durationMs: chunk.durationMs,
     error: chunk.error,
     idempotencyKey: chunk.idempotencyKey,
   };
@@ -84,6 +104,88 @@ function resultRecord(response: BridgeResponse): Record<string, unknown> {
 
 function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function configuredSourceRoots(): string[] {
+  const cwd = process.cwd();
+  const repoRoot = cwd.endsWith('/server') ? resolve(cwd, '..') : cwd;
+  const envRoots = (process.env.REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS ?? '')
+    .split(',')
+    .map((root) => root.trim())
+    .filter(Boolean);
+  return Array.from(new Set([
+    ...envRoots,
+    cwd,
+    repoRoot,
+    tmpdir(),
+    '/mnt/data',
+    resolve(homedir(), 'Downloads', 'Remnote'),
+  ].map((root) => resolve(root))));
+}
+
+function isPathUnderRoot(pathname: string, root: string): boolean {
+  const normalizedPath = resolve(pathname);
+  const normalizedRoot = resolve(root);
+  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
+}
+
+function readBulkImportSourceFile(sourceFilePath: string): {
+  sourceText: string;
+  resolvedPath: string;
+  sourceName: string;
+  byteLength: number;
+} {
+  const resolvedPath = resolve(sourceFilePath);
+  const allowedRoots = configuredSourceRoots();
+  if (!allowedRoots.some((root) => isPathUnderRoot(resolvedPath, root))) {
+    throw new Error(
+      `sourceFilePath is outside allowed roots. Configure REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS or place the file under ${allowedRoots.join(', ')}.`
+    );
+  }
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`sourceFilePath does not exist: ${resolvedPath}`);
+  }
+  const stats = statSync(resolvedPath);
+  if (!stats.isFile()) {
+    throw new Error(`sourceFilePath must be a regular file: ${resolvedPath}`);
+  }
+  if (stats.size > MAX_BULK_IMPORT_SOURCE_FILE_BYTES) {
+    throw new Error(`sourceFilePath exceeds ${MAX_BULK_IMPORT_SOURCE_FILE_BYTES} bytes.`);
+  }
+  return {
+    sourceText: readFileSync(resolvedPath, 'utf8'),
+    resolvedPath,
+    sourceName: basename(resolvedPath),
+    byteLength: stats.size,
+  };
+}
+
+function planStructuredOutput(plan: ReturnType<typeof planNoteImport>, toolName: string) {
+  return {
+    ok: true,
+    status: 'PASS',
+    toolName,
+    planId: plan.planId,
+    sourceHash: plan.sourceHash,
+    sourceMetadata: plan.sourceMetadata,
+    plannedSourceLength: plan.plannedSourceLength,
+    extractedSourceLength: plan.extractedSourceLength,
+    targetRootId: plan.targetRootId,
+    importRootTitle: plan.importRootTitle,
+    chapterTitle: plan.chapterTitle,
+    sections: plan.sections.map((section) => ({
+      sectionKey: section.sectionKey,
+      title: section.title,
+      sourceHash: section.sourceHash,
+      sourceLength: section.sourceText.length,
+      bodySourceLength: section.bodySourceText.length,
+      chunkCount: section.chunkCount,
+    })),
+    estimatedChunks: plan.estimatedChunks,
+    estimatedRems: plan.estimatedRems,
+    warnings: plan.warnings,
+    nextAction: 'call start_note_import_job with this planId',
+  };
 }
 
 function bridgeFailureMessage(response: BridgeFailure): string {
@@ -136,30 +238,53 @@ export function registerBulkImportTools({
       try {
         const plan = planNoteImport(args);
         bulkImportJobStore.savePlan(plan);
-        return toolResult('Note import plan created.', {
-          ok: true,
-          status: 'PASS',
-          toolName: 'plan_note_import',
-          planId: plan.planId,
-          sourceHash: plan.sourceHash,
-          targetRootId: plan.targetRootId,
-          chapterTitle: plan.chapterTitle,
-          sections: plan.sections.map((section) => ({
-            sectionKey: section.sectionKey,
-            title: section.title,
-            chunkCount: section.chunkCount,
-          })),
-          estimatedChunks: plan.estimatedChunks,
-          estimatedRems: plan.estimatedRems,
-          warnings: plan.warnings,
-          nextAction: 'call start_note_import_job with this planId',
-        });
+        return toolResult('Note import plan created.', planStructuredOutput(plan, 'plan_note_import'));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
         return toolResult(`${message}`, {
           ok: false,
           status: 'FAIL',
           toolName: 'plan_note_import',
+          errorCode: 'INVALID_ARGS',
+          errorMessage: message,
+        }, true);
+      }
+    }
+  );
+
+  registerTool(
+    'plan_note_import_from_file',
+    {
+      title: 'Plan note import from file',
+      description: 'Read a local source file on the server, extract a bounded chapter span, and plan a resumable import without writing.',
+      inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        const file = readBulkImportSourceFile(args.sourceFilePath);
+        const plan = planNoteImport({
+          ...args,
+          sourceKind: 'file',
+          sourceFilePath: file.resolvedPath,
+          sourceName: args.sourceName ?? file.sourceName,
+          sourceText: file.sourceText,
+        });
+        bulkImportJobStore.savePlan(plan);
+        return toolResult('File-backed note import plan created.', {
+          ...planStructuredOutput(plan, 'plan_note_import_from_file'),
+          sourceFile: {
+            path: file.resolvedPath,
+            byteLength: file.byteLength,
+          },
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return toolResult(message, {
+          ok: false,
+          status: 'FAIL',
+          toolName: 'plan_note_import_from_file',
           errorCode: 'INVALID_ARGS',
           errorMessage: message,
         }, true);
@@ -189,7 +314,11 @@ export function registerBulkImportTools({
           jobId: job.jobId,
           jobStatus: job.status,
           targetRootId: job.targetRootId,
+          importRootTitle: job.importRootTitle,
           chapterTitle: job.chapterTitle,
+          sourceMetadata: job.sourceMetadata,
+          plannedSourceLength: job.plannedSourceLength,
+          extractedSourceLength: job.extractedSourceLength,
           storageDurability: job.storageDurability,
           warning: 'memory storage is not durable across server restart',
           progress: summarizeBulkImportProgress(job),
@@ -201,6 +330,55 @@ export function registerBulkImportTools({
           ok: false,
           status: 'FAIL',
           toolName: 'start_note_import_job',
+          errorCode: 'INVALID_ARGS',
+          errorMessage: message,
+        }, true);
+      }
+    }
+  );
+
+  registerTool(
+    'start_note_import_from_file',
+    {
+      title: 'Start note import from file',
+      description: 'Read a local source file, create a safe import plan, and start a resumable job without writing chunks yet.',
+      inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA.extend({
+        jobId: z.string().trim().min(1).max(256).optional(),
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: { readOnlyHint: true, openWorldHint: false },
+    },
+    async (args) => {
+      try {
+        const file = readBulkImportSourceFile(args.sourceFilePath);
+        const plan = planNoteImport({
+          ...args,
+          sourceKind: 'file',
+          sourceFilePath: file.resolvedPath,
+          sourceName: args.sourceName ?? file.sourceName,
+          sourceText: file.sourceText,
+        });
+        bulkImportJobStore.savePlan(plan);
+        const job = bulkImportJobStore.createJob(plan.planId, args.jobId);
+        return toolResult('File-backed note import job started.', {
+          ...planStructuredOutput(plan, 'start_note_import_from_file'),
+          jobId: job.jobId,
+          jobStatus: job.status,
+          storageDurability: job.storageDurability,
+          warning: 'memory storage is not durable across server restart',
+          progress: summarizeBulkImportProgress(job),
+          sourceFile: {
+            path: file.resolvedPath,
+            byteLength: file.byteLength,
+          },
+          nextAction: 'call run_note_import_job_step',
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return toolResult(message, {
+          ok: false,
+          status: 'FAIL',
+          toolName: 'start_note_import_from_file',
           errorCode: 'INVALID_ARGS',
           errorMessage: message,
         }, true);
@@ -250,10 +428,12 @@ export function registerBulkImportTools({
     const hierarchy = await ensureChunkHierarchy(jobId, chunk, dryRun);
     if (!hierarchy.ok) {
       const status = partialFailureStatus(hierarchy.response);
+      const finishedAt = new Date().toISOString();
       const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
         status,
         verificationStatus: status === 'partial' ? 'partial' : 'failed',
-        finishedAt: new Date().toISOString(),
+        finishedAt,
+        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
         error: bridgeFailureMessage(hierarchy.response),
       });
       bulkImportJobStore.saveCheckpoint(jobId, {
@@ -302,10 +482,12 @@ export function registerBulkImportTools({
     const finishedAt = new Date().toISOString();
     if (!response.ok) {
       const status = partialFailureStatus(response);
+      const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
       const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
         status,
         verificationStatus: status === 'partial' ? 'partial' : 'failed',
         finishedAt,
+        durationMs,
         error: bridgeFailureMessage(response),
       });
       bulkImportJobStore.saveCheckpoint(jobId, {
@@ -319,6 +501,7 @@ export function registerBulkImportTools({
     }
 
     const result = resultRecord(response);
+    const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
     const createdRemIds = Array.from(new Set([
       ...hierarchy.createdRemIds,
       ...stringArray(result.createdRemIds),
@@ -345,6 +528,7 @@ export function registerBulkImportTools({
             ? 'source_fidelity_failed'
             : 'written_not_verified',
       finishedAt,
+      durationMs,
       createdRemIds,
       updatedRemIds,
       error: undefined,
@@ -429,10 +613,37 @@ export function registerBulkImportTools({
       throw new Error(`Unknown import job: ${jobId}`);
     }
     const createdRemIds: string[] = [];
+    let chapterParentRemId = job.targetRootId;
+    if (job.importRootTitle) {
+      let importRootRemId = job.importRootRemId;
+      if (!importRootRemId) {
+        const importRoot = await ensureChildRem({
+          parentRemId: job.targetRootId,
+          title: job.importRootTitle,
+          idempotencyKey: job.importRootIdempotencyKey ?? `bulk-import:${jobId}:import-root`,
+          dryRun,
+        });
+        if (!importRoot.ok) {
+          return importRoot;
+        }
+        importRootRemId = importRoot.remId;
+        createdRemIds.push(...importRoot.createdRemIds);
+        if (!dryRun) {
+          bulkImportJobStore.recordImportRoot(jobId, importRootRemId);
+          if (importRoot.duplicateCount > 1) {
+            bulkImportJobStore.appendEvent(jobId, {
+              status: 'needs_manual_review',
+              message: `Duplicate import roots detected for "${job.importRootTitle}". Reused first match.`,
+            });
+          }
+        }
+      }
+      chapterParentRemId = importRootRemId;
+    }
     let chapterRootRemId = job.chapterRootRemId;
     if (!chapterRootRemId) {
       const chapter = await ensureChildRem({
-        parentRemId: job.targetRootId,
+        parentRemId: chapterParentRemId,
         title: job.chapterTitle,
         idempotencyKey: job.chapterIdempotencyKey,
         dryRun,
@@ -647,7 +858,7 @@ export function registerBulkImportTools({
           ? verifyBulkImportReadback({ job, readbackTree: liveReadbackTree, actualTextByChunkId })
           : job.chunks.map((chunk) =>
               verifyBulkImportSourceText({
-                expectedText: chunk.sourceText,
+                expectedText: chunk.expectedSourceText ?? chunk.sourceText,
                 actualText: undefined,
                 jobId,
                 sectionKey: chunk.sectionKey,
@@ -687,21 +898,35 @@ export function registerBulkImportTools({
           }
         }
         const updatedJob = bulkImportJobStore.getJob(jobId) ?? job;
+        const finalReport = verifyBulkImportFinalReadback({
+          job: updatedJob,
+          readbackTree: liveReadbackTree,
+          chunkReports: reports,
+        });
         const failed = reports.filter((report) => !report.ok && report.status !== 'not_verifiable');
+        const finalFailed = !finalReport.ok && finalReport.status !== 'not_verifiable';
         const notVerifiable = reports.filter((report) => report.status === 'not_verifiable');
+        if (finalReport.status === 'not_verifiable') {
+          notVerifiable.push(finalReport);
+        }
         return toolResult('Note import verification report generated.', {
-          ok: failed.length === 0,
-          status: failed.length > 0 ? 'FAIL' : notVerifiable.length > 0 ? 'PARTIAL' : 'PASS',
+          ok: failed.length === 0 && !finalFailed,
+          status: failed.length > 0 || finalFailed ? 'FAIL' : notVerifiable.length > 0 ? 'PARTIAL' : 'PASS',
           toolName: 'verify_note_import_job',
           jobId,
           jobStatus: updatedJob.status,
-          verificationStatus: failed.length > 0 ? 'source_fidelity_failed' : notVerifiable.length > 0 ? 'not_verifiable' : 'passed',
+          verificationStatus: failed.length > 0 || finalFailed
+            ? 'source_fidelity_failed'
+            : notVerifiable.length > 0
+              ? 'not_verifiable'
+              : 'passed',
           reports,
+          finalReport,
           progress: summarizeBulkImportProgress(updatedJob),
           limitation: notVerifiable.length > 0 || liveReadbackFailed
             ? `Live/readback verification unavailable for some chunks.${liveReadbackFailed ? ` ${liveReadbackFailed}` : ''}`
             : undefined,
-          recommendedAction: failed.length > 0 ? 'resume_note_import_job' : 'manual live readback check if needed',
+          recommendedAction: failed.length > 0 || finalFailed ? 'resume_note_import_job' : 'manual live readback check if needed',
         });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
