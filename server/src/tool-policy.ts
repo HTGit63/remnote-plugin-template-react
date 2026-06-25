@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-06-23.bulk-import-reliability';
+export const TOOL_SCHEMA_VERSION = '2026-06-25.problem-tool-status-matrix';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
@@ -194,7 +194,7 @@ export const TOOL_POLICY_ENTRIES = [
   {
     name: 'preview_markdown_note_tree',
     policy: 'preferred',
-    preferredFor: ['dry-run Markdown import preview', 'checking formulas and hierarchy before writing'],
+    preferredFor: ['server-local Markdown import preview', 'checking formulas and hierarchy without writing'],
   },
   {
     name: 'create_or_replace_note_from_markdown',
@@ -748,8 +748,16 @@ export const TOOL_METADATA = [
     scopeRequirement: 'none',
     supportsDryRun: true,
     supportsIdempotency: true,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    liveVerificationRequired: false,
   }),
-  meta('create_note_from_markdown_tree', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
+  meta('create_note_from_markdown_tree', 'markdown_note', 'medium', {
+    supportsDryRun: true,
+    supportsIdempotency: true,
+    agentWarning:
+      'Legacy hierarchy writer. Prefer create_or_replace_note_from_markdown or the resumable bulk import job flow for normal ChatGPT note writing.',
+  }),
   meta('append_markdown_as_rem_tree', 'markdown_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_structured_note_batch', 'structured_note', 'medium', { supportsDryRun: true, supportsIdempotency: true }),
   meta('apply_style_plan', 'repair', 'medium', { supportsDryRun: true, supportsIdempotency: true }),

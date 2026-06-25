@@ -12,7 +12,7 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-23.bulk-import-file-source-catalog';
+export const TOOL_REGISTRY_VERSION = '2026-06-25.problem-tool-status-matrix';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
@@ -32,6 +32,7 @@ export const SERVER_LOCAL_MCP_TOOLS = [
   'resume_note_import_job',
   'verify_note_import_job',
   'cancel_note_import_job',
+  'preview_markdown_note_tree',
 ] as const;
 
 export type McpToolExposure = 'public' | 'gated';

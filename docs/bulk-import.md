@@ -284,3 +284,11 @@ Verdict rules:
 - `STATIC_READY_NEEDS_LIVE_TEST`: code checks pass, but live plugin/socket is unavailable.
 - `READY_FOR_CONTROLLED_LIVE_TEST`: local/static gates pass and live test instructions are ready.
 - `LIVE_PROVEN_READY`: only after a real live Plugin Test run passes readback with full-source proof.
+
+## Related Release Docs
+
+- Tool visibility, profile policy, and problem-tool classifications: `docs/tool-audit.md`.
+- Optional design/styling rules and mutation invariants: `docs/design-tools.md`.
+- Controlled live test checklist and verdict definitions: `docs/live-testing.md`.
+
+Normal ChatGPT bulk-note work should stay on the `mass_note_writer` profile. Use `create_or_replace_note_from_markdown` for bounded notes and the resumable `plan/start/run/resume/verify` job flow for long chapters. Legacy Markdown-tree and style/design/card tools remain higher-tier or hidden until live proof supports broader exposure.

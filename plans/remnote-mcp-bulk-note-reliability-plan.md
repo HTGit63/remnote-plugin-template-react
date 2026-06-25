@@ -182,3 +182,13 @@ Additional acceptance criteria from follow-up prompt:
 - Resume does not skip `written_not_verified` chunks.
 - `verify_note_import_job` returns `not_verifiable` when live/readback evidence is absent.
 - Readiness audit includes branch, SHA, registry/schema versions, default profile, live proof flag, local gate results, and static-only rows.
+
+## 2026-06-25 Release-Finalization Follow-Up
+
+Additional acceptance criteria from tool-matrix prompt:
+
+- `preview_markdown_note_tree` is treated as a server-local preview when exposed.
+- `create_note_from_markdown_tree` remains a legacy/fallback writer with `create_or_replace_note_from_markdown` as replacement.
+- Problem tools have explicit status, hidden reason, or safety gate in `docs/tool-audit.md`.
+- Design/styling work is optional after content verification and documented in `docs/design-tools.md`.
+- Controlled live proof and final verdict rules are documented in `docs/live-testing.md`.

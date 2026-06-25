@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import {
+  markdownImportOutputTextFromTree,
+  parseMarkdownImportPlan,
+  verifyMarkdownSourceFidelity,
+} from '../../../shared/bridge/markdown-importer.js';
+import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
   APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA,
   COLOR_SCHEMA,
@@ -36,7 +41,100 @@ import {
   STYLING_PLAN_SCHEMA,
   TREE_DEPTH_SCHEMA,
 } from './schemas.js';
-import { annotationsFor, bridgeToolResult, type ToolRegistrationContext } from './tool-context.js';
+import { annotationsFor, bridgeToolResult, type McpToolResult, type ToolRegistrationContext } from './tool-context.js';
+
+function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA>): McpToolResult {
+  const startedAt = Date.now();
+  const plan = parseMarkdownImportPlan(args.markdownText, {
+    headingMapping: args.headingMapping,
+    remnoteLayout: args.remnoteLayout,
+    mathOptions: args.mathOptions,
+    fidelityOptions: args.fidelityOptions,
+    flashcardOptions: args.flashcardOptions,
+    limits: args.limits,
+    stylePreset: args.stylePreset,
+    course: args.course,
+    rootHeadingLevel: args.rootHeadingLevel,
+    sectionHeadingLevel: args.sectionHeadingLevel,
+    insertSiblingSpacers: args.insertSiblingSpacers,
+    spacerText: args.spacerText,
+    majorFormulaMode: args.majorFormulaMode,
+    verifyAfterWrite: args.verifyAfterWrite,
+  });
+  const outputText = markdownImportOutputTextFromTree(plan.tree);
+  const verification = verifyMarkdownSourceFidelity(
+    plan.sourceSnippets,
+    outputText,
+    plan.options.fidelityOptions,
+    plan.stats
+  );
+  const result = {
+    ok: true,
+    status: 'previewed',
+    dryRun: true,
+    serverLocal: true,
+    tree: plan.tree,
+    nodeCount: plan.stats.nodeCount,
+    maxDepth: plan.stats.maxDepth,
+    sourceHash: plan.sourceHash,
+    outputHash: plan.outputHash,
+    outputText,
+    formulaValidation: plan.formulaValidation,
+    flashcardOptions: plan.options.flashcardOptions,
+    verification,
+    plan: {
+      previewOutline: plan.previewOutline,
+      headingCount: plan.stats.headingCount,
+      mathBlockCount: plan.stats.mathBlockCount,
+      inlineMathCount: plan.stats.inlineMathCount,
+      codeBlockCount: plan.stats.codeBlockCount,
+      tableCount: plan.stats.tableCount,
+      tableRowCount: plan.stats.tableRowCount,
+      tableCellCount: plan.stats.tableCellCount,
+      paragraphCount: plan.stats.paragraphCount,
+      bulletCount: plan.stats.bulletCount,
+      calloutCount: plan.stats.calloutCount,
+      workedExampleCount: plan.stats.workedExampleCount,
+      flashcardCount: plan.stats.flashcardCount,
+      splitChunkCount: plan.stats.splitChunkCount,
+    },
+  };
+  const warnings = [
+    ...verification.structureMismatches,
+    ...verification.missingTextSnippets.map((snippet) => `Missing source snippet: ${snippet.slice(0, 80)}`),
+  ];
+  const standard = {
+    status: 'PASS',
+    toolName: 'preview_markdown_note_tree',
+    operationId: `server-local-preview-${startedAt}`,
+    target: null,
+    created: [],
+    updated: [],
+    deleted: [],
+    counts: {
+      nodes: plan.stats.nodeCount,
+    },
+    verification: {
+      attempted: true,
+      passed: verification.passed,
+      method: 'server_local_markdown_parse',
+      warnings,
+    },
+    phaseDurations: {
+      totalMs: Date.now() - startedAt,
+    },
+    warnings,
+  };
+  return {
+    content: [{ type: 'text', text: 'Markdown note tree preview generated.' }],
+    structuredContent: {
+      ok: true,
+      ...standard,
+      result,
+      standard,
+    },
+  };
+}
 
 export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegistrationContext): void {
   registerTool(
@@ -282,16 +380,12 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
     {
       title: 'Preview Markdown note tree',
       description:
-        'Parse Markdown into the exact RemNote-native hierarchy plan without writing. Use before creating long notes, formula-heavy notes, tables, or flashcard-marker content.',
+        'Parse Markdown into a RemNote hierarchy preview without writing.',
       inputSchema: PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('preview_markdown_note_tree'),
     },
-    async (args) =>
-      bridgeToolResult(
-        () => callPlugin('preview_markdown_note_tree', args),
-        'Markdown note tree preview generated.'
-      )
+    async (args) => markdownPreviewToolResult(args)
   );
 
   registerTool(
@@ -299,7 +393,7 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
     {
       title: 'Create note from Markdown tree',
       description:
-        'Preferred safe writer for creating a clean RemNote-native hierarchy from Markdown. Headings, bullets, formulas, tables, and worked examples become Rem structure instead of visible Markdown syntax.',
+        'Legacy hierarchy writer for small Markdown notes. Prefer create_or_replace_note_from_markdown or the bulk import job flow for normal ChatGPT note writing.',
       inputSchema: CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_note_from_markdown_tree'),

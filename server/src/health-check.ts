@@ -698,7 +698,12 @@ function healthCheckArgsFor(
         : undefined;
     case 'update_rem_rich':
       return options.includeExistingRemMutations && targetRemId
-        ? { remId: targetRemId, richText: [{ text: 'Bridge health check rich update' }] }
+        ? {
+            remId: targetRemId,
+            richText: [
+              { text: 'Bridge health disposable mutation target', styles: { bold: true } },
+            ],
+          }
         : undefined;
     case 'set_rem_heading_level':
       return options.includeExistingRemMutations && targetRemId ? { remId: targetRemId, level: 'H3' } : undefined;

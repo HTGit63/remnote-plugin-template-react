@@ -109,3 +109,22 @@ Fixed remaining bulk-job reliability gaps from the review prompt:
 - Readiness audit now includes registry/schema versions plus optional local gate result table.
 
 Live RemNote proof remains `LIVE_TEST_NOT_RUN` until a connected plugin socket and disposable root are available.
+
+## 2026-06-25 Problem Tool Matrix Checkpoint
+
+Added/updated:
+
+- `docs/tool-audit.md`
+- `docs/design-tools.md`
+- `docs/live-testing.md`
+- `tests/tool-status-matrix.test.ts`
+
+Current policy:
+
+- default profile remains `mass_note_writer`
+- `preview_markdown_note_tree` is server-local when exposed
+- `create_note_from_markdown_tree` is documented as legacy/fallback
+- `update_rem_rich`, `apply_remnote_command`, and `clear_rem_formatting` remain higher-tier style tools
+- `create_folder`, `delete_rem_by_id`, and `replace_rem` remain hidden/gated with explicit reasons
+
+Local proof must be rerun after this checkpoint. Live RemNote proof is still gated by connected plugin and disposable root.
