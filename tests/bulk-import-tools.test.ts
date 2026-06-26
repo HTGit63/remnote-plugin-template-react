@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { registerBulkImportTools } from '../server/src/tools/register-bulk-import-tools';
 import type { McpToolResult, ToolRegistrationContext } from '../server/src/tools/tool-context';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../shared/bridge/protocol';
@@ -202,6 +203,41 @@ describe('bulk import MCP tools', () => {
     expect(started.jobId).toBe('bulk-job:file-backed');
     expect(started.progress.chunksTotal).toBe(2);
     expect(started.nextAction).toBe('call run_note_import_job_step');
+  });
+
+  test('accepts connector-style mounted file references and returns source hashes', async () => {
+    const h = makeHarness();
+    const folder = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-mounted-'));
+    const sourceFilePath = join(folder, 'Nuclear Phyiscs.md');
+    writeFileSync(sourceFilePath, exportedChapter, 'utf8');
+
+    const plan = text(await h.handlers.plan_note_import_from_file({
+      sourceFilePath: pathToFileURL(sourceFilePath).href,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+
+    expect(plan.status).toBe('PASS');
+    expect(plan.sourceFile.path).toBe(sourceFilePath);
+    expect(plan.sourceFile.byteLength).toBeGreaterThan(0);
+    expect(plan.sourceFile.sourceHash).toBe(plan.sourceMetadata.rawSourceHash);
+    expect(plan.sourceFile.extractedChapterHash).toBe(plan.sourceMetadata.extractedSourceHash);
+    expect(plan.sourceFile.plannedSourceHash).toBe(plan.sourceMetadata.plannedSourceHash);
+    expect(plan.standard.operationId).toMatch(/^plan_note_import_from_file-/);
+    expect(plan.standard.parentRemId).toBe('Plugin Test');
+    expect(plan.standard.phaseDurations.totalMs).toBe(0);
+
+    const sandboxPlan = text(await h.handlers.plan_note_import_from_file({
+      sourceFilePath: `sandbox:${sourceFilePath}`,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+    expect(sandboxPlan.status).toBe('PASS');
+    expect(sandboxPlan.sourceFile.path).toBe(sourceFilePath);
   });
 
   test('does not mark chunk verified when write lacks explicit verification', async () => {

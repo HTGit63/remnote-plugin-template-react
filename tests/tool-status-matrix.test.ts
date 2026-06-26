@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  bridgeToolResult,
+  failureToToolResult,
+  type McpToolResult,
+} from '../server/src/tools/tool-context';
+import {
   getPublicMcpToolNames,
   getToolRegistrySummary,
   SERVER_LOCAL_MCP_TOOLS,
@@ -77,5 +82,76 @@ describe('tool status matrix policy', () => {
     expect(hiddenReasons.get('create_folder')).toContain('no modern RemNote SDK folder creation path');
     expect(hiddenReasons.get('delete_rem_by_id')).toContain('REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1');
     expect(hiddenReasons.get('replace_rem')).toContain('replacement guards');
+  });
+
+  test('exposes diagnostics aliases required for runtime/source alignment', () => {
+    const summary = getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE);
+
+    expect(summary.gitSha).toBeDefined();
+    expect(summary.branchName).toBeDefined();
+    expect(summary.buildTime).toBeDefined();
+    expect(summary.toolSchemaVersion).toBeDefined();
+    expect(summary.toolRegistryVersion).toBeDefined();
+    expect(summary.defaultToolProfile).toBe('mass_note_writer');
+    expect(summary.activeToolProfile).toBe('mass_note_writer');
+    expect(summary.registeredToolNames).toEqual(summary.mcpRegisteredTools);
+    expect(summary.mcpListedToolNames).toEqual(summary.mcpListedTools);
+    expect(summary.runtimeVerifiedTools).toEqual(summary.actualMcpCallableTools);
+  });
+
+  test('standard bridge envelope exposes required write-audit fields', async () => {
+    const output = await bridgeToolResult(
+      async () => ({
+        id: 'op-1',
+        ok: true,
+        result: {
+          toolName: 'create_or_replace_note_from_markdown',
+          status: 'already_applied',
+          idempotencyKey: 'idem-1',
+          parentRemId: 'parent-1',
+          rootRemId: 'root-1',
+          createdRemIds: ['root-1'],
+          updatedRemIds: ['child-1'],
+          verification: { passed: true, method: 'readback' },
+          phaseDurationsMs: { planning: 1, verification: 2, total: 3 },
+          warnings: ['minor'],
+        },
+        lifecycle: [],
+      }),
+      'ok'
+    ) as McpToolResult;
+
+    expect(output.structuredContent?.status).toBe('PASS');
+    expect(output.structuredContent?.operationId).toBe('op-1');
+    expect(output.structuredContent?.idempotencyKey).toBe('idem-1');
+    expect(output.structuredContent?.idempotencyResult).toBe('already_applied');
+    expect(output.structuredContent?.targetRemId).toBe('root-1');
+    expect(output.structuredContent?.parentRemId).toBe('parent-1');
+    expect(output.structuredContent?.createdRemIds).toEqual(['root-1']);
+    expect(output.structuredContent?.updatedRemIds).toEqual(['child-1']);
+    expect((output.structuredContent?.verification as any).attempted).toBe(true);
+    expect((output.structuredContent?.verification as any).passed).toBe(true);
+    expect((output.structuredContent?.phaseDurations as any).totalMs).toBe(3);
+    expect(output.structuredContent?.warnings).toEqual(['minor']);
+  });
+
+  test('standard failure envelope exposes error code and retryable flag', () => {
+    const output = failureToToolResult({
+      id: 'fail-1',
+      ok: false,
+      error: {
+        code: 'TIMEOUT',
+        message: 'timed out',
+        retryable: true,
+      },
+      lifecycle: [],
+    }, 'run_note_import_job_step');
+
+    expect(output.structuredContent?.status).toBe('PLATFORM_BLOCKED');
+    expect(output.structuredContent?.toolName).toBe('run_note_import_job_step');
+    expect(output.structuredContent?.errorCode).toBe('TIMEOUT');
+    expect(output.structuredContent?.errorMessage).toBe('timed out');
+    expect(output.structuredContent?.retryable).toBe(true);
+    expect((output.structuredContent?.phaseDurations as any).totalMs).toBe(0);
   });
 });

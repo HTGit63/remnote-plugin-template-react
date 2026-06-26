@@ -312,6 +312,7 @@ export function getToolRegistrySummary(
     activeToolTier: profile,
     activeToolProfile: profile,
     defaultToolTier: DEFAULT_TOOL_PROFILE,
+    defaultToolProfile: DEFAULT_TOOL_PROFILE,
     permissionMode: 'request_principal_or_bridge_runtime',
     permissionScope: 'request_principal_or_bridge_runtime',
     operationPermissionTiers: [
@@ -374,8 +375,10 @@ export function getToolRegistrySummary(
     publicTools,
     listedToolCount: publicTools.length,
     exposedTools: [...publicTools],
+    registeredToolNames: [...registeredTools],
     registryDeclaredTools: sourceRegistryTools,
     mcpRegisteredTools: [...registeredTools],
+    mcpListedToolNames: [...publicTools],
     mcpListedTools: [...publicTools],
     callabilitySource: 'runtime_matrix_not_live_execution' as const,
     callabilitySourceExplanation:
@@ -400,6 +403,7 @@ export function getToolRegistrySummary(
         ? [...publicTools]
         : [],
     realPluginVerifiedTools: [...liveVerifiedTools],
+    runtimeVerifiedTools: [...actualMcpCallableTools],
     verifiedToolCount: actualMcpCallableTools.length,
     runtimeUnverifiedTools,
     runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,

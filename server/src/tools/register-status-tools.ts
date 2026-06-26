@@ -20,10 +20,12 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
       },
     },
     async () => {
+      const startedAt = Date.now();
       const registry = currentRegistry();
       const status = hub.getStatus();
       const diagnostics = hub.getDiagnostics();
       const operationId = `status-${Date.now().toString(36)}`;
+      const phaseDurations = { totalMs: Date.now() - startedAt };
       return {
         content: [{ type: 'text', text: status.connected ? 'RemNote plugin connected.' : 'RemNote plugin not connected.' }],
         structuredContent: {
@@ -35,9 +37,12 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
           created: [],
           updated: [],
           deleted: [],
+          createdRemIds: [],
+          updatedRemIds: [],
+          deletedRemIds: [],
           counts: { created: 0, updated: 0, deleted: 0 },
-          verification: { pluginConnected: status.connected },
-          phaseDurations: {},
+          verification: { attempted: true, passed: status.connected, method: 'bridge_hub_status', pluginConnected: status.connected },
+          phaseDurations,
           warnings: [],
           result: {
             ...status,
@@ -63,9 +68,12 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
             created: [],
             updated: [],
             deleted: [],
+            createdRemIds: [],
+            updatedRemIds: [],
+            deletedRemIds: [],
             counts: { created: 0, updated: 0, deleted: 0 },
-            verification: { pluginConnected: status.connected },
-            phaseDurations: {},
+            verification: { attempted: true, passed: status.connected, method: 'bridge_hub_status', pluginConnected: status.connected },
+            phaseDurations,
             warnings: [],
           },
         },

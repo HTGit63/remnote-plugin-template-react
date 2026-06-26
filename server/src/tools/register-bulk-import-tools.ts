@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { basename, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
   bulkSectionIdempotencyKey,
@@ -10,6 +11,7 @@ import {
   verifyBulkImportFinalReadback,
   verifyBulkImportReadback,
   verifyBulkImportSourceText,
+  stableBulkImportHash,
   type BulkImportChunk,
   type BulkImportChunkStatus,
   type BulkImportJob,
@@ -55,10 +57,77 @@ function toolResult(
   structuredContent: Record<string, unknown>,
   isError = false
 ): McpToolResult {
+  const toolName = typeof structuredContent.toolName === 'string' ? structuredContent.toolName : 'unknown';
+  const operationId = typeof structuredContent.operationId === 'string'
+    ? structuredContent.operationId
+    : `${toolName}-${Date.now().toString(36)}`;
+  const status = typeof structuredContent.status === 'string'
+    ? structuredContent.status
+    : isError || structuredContent.ok === false
+      ? 'FAIL'
+      : 'PASS';
+  const warnings = Array.isArray(structuredContent.warnings)
+    ? structuredContent.warnings.filter((warning): warning is string => typeof warning === 'string')
+    : typeof structuredContent.warning === 'string'
+      ? [structuredContent.warning]
+      : [];
+  const createdRemIds = Array.isArray(structuredContent.createdRemIds)
+    ? structuredContent.createdRemIds.filter((remId): remId is string => typeof remId === 'string')
+    : [];
+  const updatedRemIds = Array.isArray(structuredContent.updatedRemIds)
+    ? structuredContent.updatedRemIds.filter((remId): remId is string => typeof remId === 'string')
+    : [];
+  const deletedRemIds = Array.isArray(structuredContent.deletedRemIds)
+    ? structuredContent.deletedRemIds.filter((remId): remId is string => typeof remId === 'string')
+    : [];
+  const phaseDurations =
+    typeof structuredContent.phaseDurations === 'object' && structuredContent.phaseDurations !== null
+      ? structuredContent.phaseDurations as Record<string, number>
+      : { totalMs: 0 };
+  if (typeof phaseDurations.totalMs !== 'number') {
+    phaseDurations.totalMs = 0;
+  }
+  const verification =
+    typeof structuredContent.verification === 'object' && structuredContent.verification !== null
+      ? structuredContent.verification as Record<string, unknown>
+      : {
+          attempted: false,
+          passed: undefined,
+          method: undefined,
+          warnings,
+        };
+  const standard = {
+    status,
+    toolName,
+    operationId,
+    idempotencyKey: typeof structuredContent.idempotencyKey === 'string' ? structuredContent.idempotencyKey : undefined,
+    idempotencyResult: typeof structuredContent.idempotencyResult === 'string' ? structuredContent.idempotencyResult : undefined,
+    targetRemId: typeof structuredContent.targetRemId === 'string' ? structuredContent.targetRemId : undefined,
+    parentRemId:
+      typeof structuredContent.parentRemId === 'string'
+        ? structuredContent.parentRemId
+        : typeof structuredContent.targetRootId === 'string'
+          ? structuredContent.targetRootId
+          : undefined,
+    createdRemIds,
+    updatedRemIds,
+    deletedRemIds,
+    verification,
+    errorCode: typeof structuredContent.errorCode === 'string' ? structuredContent.errorCode : undefined,
+    errorMessage: typeof structuredContent.errorMessage === 'string' ? structuredContent.errorMessage : undefined,
+    retryable: typeof structuredContent.retryable === 'boolean' ? structuredContent.retryable : undefined,
+    phaseDurations,
+    warnings,
+  };
   return {
     isError,
     content: [{ type: 'text', text }],
-    structuredContent,
+    structuredContent: {
+      ...standard,
+      ...structuredContent,
+      operationId,
+      standard,
+    },
   };
 }
 
@@ -135,7 +204,7 @@ function readBulkImportSourceFile(sourceFilePath: string): {
   sourceName: string;
   byteLength: number;
 } {
-  const resolvedPath = resolve(sourceFilePath);
+  const resolvedPath = resolveConnectorSourcePath(sourceFilePath);
   const allowedRoots = configuredSourceRoots();
   if (!allowedRoots.some((root) => isPathUnderRoot(resolvedPath, root))) {
     throw new Error(
@@ -158,6 +227,34 @@ function readBulkImportSourceFile(sourceFilePath: string): {
     sourceName: basename(resolvedPath),
     byteLength: stats.size,
   };
+}
+
+function resolveConnectorSourcePath(sourceFilePath: string): string {
+  const trimmed = sourceFilePath.trim();
+  if (!trimmed) {
+    throw new Error('sourceFilePath is required.');
+  }
+
+  if (trimmed.startsWith('file://')) {
+    return resolve(fileURLToPath(trimmed));
+  }
+
+  const sandboxMatch = trimmed.match(/^sandbox:(?:\/\/)?(.+)$/);
+  if (sandboxMatch) {
+    const pathPart = decodeURIComponent(sandboxMatch[1]);
+    return resolve(pathPart.startsWith('/') ? pathPart : `/${pathPart}`);
+  }
+
+  const mountedFileMatch = trimmed.match(/^(?:connector|chatgpt|openai-file|mnt-data):(?:\/\/)?(.+)$/);
+  if (mountedFileMatch) {
+    const pathPart = decodeURIComponent(mountedFileMatch[1]);
+    if (pathPart.startsWith('/')) {
+      return resolve(pathPart);
+    }
+    return resolve('/mnt/data', pathPart.replace(/^mnt\/data\//, ''));
+  }
+
+  return resolve(decodeURIComponent(trimmed.replace(/^\/?mnt\/data\//, '/mnt/data/')));
 }
 
 function planStructuredOutput(plan: ReturnType<typeof planNoteImport>, toolName: string) {
@@ -277,6 +374,9 @@ export function registerBulkImportTools({
           sourceFile: {
             path: file.resolvedPath,
             byteLength: file.byteLength,
+            sourceHash: stableBulkImportHash(file.sourceText),
+            extractedChapterHash: plan.sourceMetadata.extractedSourceHash,
+            plannedSourceHash: plan.sourceMetadata.plannedSourceHash,
           },
         });
       } catch (error: unknown) {
@@ -370,6 +470,9 @@ export function registerBulkImportTools({
           sourceFile: {
             path: file.resolvedPath,
             byteLength: file.byteLength,
+            sourceHash: stableBulkImportHash(file.sourceText),
+            extractedChapterHash: plan.sourceMetadata.extractedSourceHash,
+            plannedSourceHash: plan.sourceMetadata.plannedSourceHash,
           },
           nextAction: 'call run_note_import_job_step',
         });

@@ -235,6 +235,16 @@ function stringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
 }
 
+function numberRecord(value: unknown): Record<string, number> {
+  const record = asRecord(value);
+  if (!record) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(record).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+  );
+}
+
 function firstString(...values: unknown[]): string | undefined {
   return values.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 }
@@ -257,6 +267,7 @@ function phaseDurationsFromLifecycle(lifecycle: readonly BridgeLifecycleEvent[] 
     const lastAt = Date.parse(lifecycle[lifecycle.length - 1].at);
     if (Number.isFinite(firstAt) && Number.isFinite(lastAt) && lastAt >= firstAt) {
       phaseDurations.total = lastAt - firstAt;
+      phaseDurations.totalMs = phaseDurations.total;
     }
   }
   return phaseDurations;
@@ -299,6 +310,25 @@ function statusFromResult(result: unknown): StandardToolStatus {
   return 'PASS';
 }
 
+function verificationFromResult(result: Record<string, unknown> | undefined) {
+  const verification = asRecord(result?.verification);
+  if (!verification) {
+    return {
+      attempted: false,
+      passed: undefined,
+      method: undefined,
+      warnings: stringArray(result?.warnings),
+    };
+  }
+  return {
+    attempted: verification.attempted ?? true,
+    passed: verification.passed ?? verification.ok,
+    method: verification.method,
+    warnings: stringArray(verification.warnings).concat(stringArray(result?.warnings)),
+    ...verification,
+  };
+}
+
 function standardResponse(input: {
   ok: boolean;
   status: StandardToolStatus;
@@ -312,6 +342,29 @@ function standardResponse(input: {
   const result = asRecord(input.result);
   const partialExecution = asRecord(result?.partialExecution);
   const idempotency = asRecord(result?.idempotency);
+  const targetRecord = asRecord(result?.target);
+  const idempotencyKey = firstString(result?.idempotencyKey, idempotency?.key);
+  const rawStatus = firstString(result?.status)?.toLowerCase();
+  const idempotencyResult = firstString(
+    result?.idempotencyResult,
+    idempotency?.status,
+    rawStatus === 'already_applied' ? 'already_applied' : undefined
+  );
+  const lifecycleDurations = phaseDurationsFromLifecycle(input.lifecycle);
+  const resultDurations = {
+    ...numberRecord(result?.phaseDurations),
+    ...numberRecord(result?.phaseDurationsMs),
+  };
+  const phaseDurations = {
+    ...resultDurations,
+    ...lifecycleDurations,
+  };
+  if (typeof phaseDurations.totalMs !== 'number') {
+    phaseDurations.totalMs = phaseDurations.total ?? resultDurations.total ?? 0;
+  }
+  if (typeof phaseDurations.total !== 'number') {
+    phaseDurations.total = phaseDurations.totalMs;
+  }
   const target = result?.target ?? {
     remId: result?.remId,
     parentId: result?.parentId,
@@ -342,19 +395,51 @@ function standardResponse(input: {
         ? result.createdNodeCount
         : undefined,
   };
+  const targetRemId = firstString(
+    result?.targetRemId,
+    result?.remId,
+    result?.rootRemId,
+    targetRecord?.targetRemId,
+    targetRecord?.remId,
+    targetRecord?.rootRemId
+  );
+  const parentRemId = firstString(
+    result?.parentRemId,
+    result?.parentId,
+    targetRecord?.parentRemId,
+    targetRecord?.parentId
+  );
+  const errorCode = firstString(input.error?.code, result?.errorCode);
+  const errorMessage = firstString(input.error?.message, result?.errorMessage);
+  const errorRecord = asRecord(input.error);
+  const retryable = typeof errorRecord?.retryable === 'boolean'
+    ? errorRecord.retryable
+    : typeof result?.retryable === 'boolean'
+      ? result.retryable
+      : undefined;
   return {
     status: input.status,
     toolName: input.toolName ?? firstString(result?.toolName) ?? 'unknown',
     operationId: input.operationId,
-    idempotency: firstString(result?.idempotencyKey, idempotency?.key),
+    idempotency: idempotencyKey,
+    idempotencyKey,
+    idempotencyResult,
+    targetRemId,
+    parentRemId,
     target,
     created,
     updated,
     deleted,
+    createdRemIds: created,
+    updatedRemIds: updated,
+    deletedRemIds: deleted,
     counts,
-    verification: result?.verification,
+    verification: verificationFromResult(result),
     error: input.error,
-    phaseDurations: phaseDurationsFromLifecycle(input.lifecycle),
+    errorCode,
+    errorMessage,
+    retryable,
+    phaseDurations,
     warnings: stringArray(result?.warnings),
     blockedByProfile: input.blockedByProfile,
   };
