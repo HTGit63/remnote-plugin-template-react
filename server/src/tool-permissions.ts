@@ -3,6 +3,7 @@ import type { ChatGptAccessScope } from './storage/types.js';
 import type { PermissionMode, PermissionScope } from '../../shared/bridge/protocol.js';
 import { isDryRunRequest } from '../../shared/bridge/protocol.js';
 import { bridgeToolNameForPublicMcpTool } from './mcp-tool-map.js';
+import { classifyDisposableAuditPayload } from './audit-payload-safety.js';
 
 export type ToolPermissionCategory = 'read' | 'write' | 'destructive' | 'status';
 
@@ -41,6 +42,8 @@ export interface TrustedWriteDecision {
 export interface ToolPermissionBlockDetails {
   layer: 'server_policy';
   code: string;
+  errorCode?: string;
+  rootCauseClass?: string;
   toolName: string;
   requiredAccessScope: ChatGptAccessScope;
   actualAccessScope: ChatGptAccessScope;
@@ -181,7 +184,10 @@ export function getDirectWritePolicySnapshot(principal?: AuthenticatedPrincipal)
 
 export function validateMcpToolPermission(
   body: unknown,
-  principal: AuthenticatedPrincipal
+  principal: AuthenticatedPrincipal,
+  options: {
+    currentSessionCreatedRemIds?: ReadonlySet<string> | readonly string[];
+  } = {}
 ): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; details: ToolPermissionBlockDetails; decision?: TrustedWriteDecision } {
   if (principal.authMode !== 'hosted_oauth' && principal.authMode !== 'connector_compat_noauth') {
     return { ok: true };
@@ -208,6 +214,11 @@ export function validateMcpToolPermission(
       : {};
   const bridgeToolName = bridgeToolNameForPublicMcpTool(request.params.name);
   const dryRunRequest = bridgeToolName ? isDryRunRequest(bridgeToolName, args as never) : false;
+  const currentSessionCreatedRemIds = new Set(
+    Array.isArray(options.currentSessionCreatedRemIds)
+      ? options.currentSessionCreatedRemIds
+      : [...(options.currentSessionCreatedRemIds ?? [])]
+  );
   let requiredAccessScope = permission.requiredAccessScope;
   if (request.params.name === 'search_rems') {
     const hasContextRemId = typeof args.contextRemId === 'string' && args.contextRemId.trim().length > 0;
@@ -215,12 +226,36 @@ export function validateMcpToolPermission(
       requiredAccessScope = 'current-rem-tree';
     }
   }
+  if (
+    request.params.name === 'get_rem' &&
+    typeof args.remId === 'string' &&
+    currentSessionCreatedRemIds.has(args.remId)
+  ) {
+    requiredAccessScope = 'focused-rem-only';
+  }
+  const rootCauseClassForCode = (code: string): string => {
+    switch (code) {
+      case 'OUT_OF_SCOPE':
+        return 'server_scope_policy';
+      case 'INSUFFICIENT_SCOPE':
+      case 'TRUSTED_WRITE_REQUIRED':
+        return 'server_write_scope_policy';
+      case 'COMPACT_REPORT_TOO_LARGE':
+        return 'safe_audit_payload_limit';
+      case 'TOOL_HIDDEN_BY_PROFILE':
+        return 'tool_profile_policy';
+      default:
+        return 'server_permission_policy';
+    }
+  };
   const baseDetails = (
     code: string,
     recommendedFix: string
   ): ToolPermissionBlockDetails => ({
     layer: 'server_policy',
     code,
+    errorCode: code,
+    rootCauseClass: rootCauseClassForCode(code),
     toolName: permission.toolName,
     requiredAccessScope,
     actualAccessScope: approvedScope,
@@ -259,10 +294,31 @@ export function validateMcpToolPermission(
   const scopeGrants = new Set(principal.scopeGrants);
 
   if (permission.requiresTrustedWrite && !dryRunRequest) {
+    const auditPayload = classifyDisposableAuditPayload({
+      operation: request.params.name,
+      parentId: args.parentId,
+      parentRemId: args.parentRemId,
+      markdown: args.markdown,
+      tree: args.tree,
+    });
+    if (auditPayload.errorCode === 'COMPACT_REPORT_TOO_LARGE') {
+      return {
+        ok: false,
+        error: 'COMPACT_REPORT_TOO_LARGE: Compact report exceeds the safe audit payload limit. Chunk it or provide a shorter verdict/stage summary.',
+        auditReason: 'compact_report_too_large',
+        code: 'COMPACT_REPORT_TOO_LARGE',
+        layer: 'server_policy',
+        details: baseDetails(
+          'COMPACT_REPORT_TOO_LARGE',
+          'Chunk the compact report or provide a shorter verdict/stage summary under Stage 12.'
+        ),
+      };
+    }
     const trustedWriteModeEffective = principal.trustedWriteMode === 'trusted-inside-scope';
     const hasWriteScope = scopeGrants.has('bridge:write');
     const hasTrustedWriteScope = scopeGrants.has('bridge:trusted_write');
-    const allowed = hasWriteScope;
+    const safeDisposableAuditWrite = auditPayload.safe && requiredAccessScope === 'current-rem-tree';
+    const allowed = hasWriteScope || safeDisposableAuditWrite;
     const decision = recordTrustedWriteDecision({
       tool: request.params.name,
       allowed,
@@ -270,7 +326,9 @@ export function validateMcpToolPermission(
       code: allowed ? null : 'INSUFFICIENT_SCOPE',
       layer: allowed ? 'direct_mcp_tool' : 'server_policy',
       reason: allowed
-        ? trustedWriteModeEffective
+        ? safeDisposableAuditWrite && !hasWriteScope
+          ? 'Narrow disposable audit/test container write permitted inside current Rem tree; plugin scope and approval still apply.'
+          : trustedWriteModeEffective
           ? hasTrustedWriteScope
             ? 'Full Control With Delete Approval permits safe write inside approved scope'
             : 'Full Control With Delete Approval permits safe write inside approved scope; bridge:trusted_write scope is recommended'

@@ -35,6 +35,19 @@ export const SERVER_LOCAL_MCP_TOOLS = [
   'preview_markdown_note_tree',
 ] as const;
 
+const TOOL_PROFILE_RANK: Record<ToolProfile, number> = {
+  basic: 0,
+  mass_note_writer: 1,
+  note_writer: 2,
+  power_user: 3,
+  developer: 4,
+  danger: 5,
+};
+
+function embeddedBuildTime(): string {
+  return process.env.REMNOTE_BRIDGE_BUILD_TIME?.trim() || process.env.BUILD_TIME?.trim() || 'dev_runtime_not_embedded';
+}
+
 export type McpToolExposure = 'public' | 'gated';
 
 export interface McpToolRegistryEntry {
@@ -305,7 +318,7 @@ export function getToolRegistrySummary(
       process.env.GIT_BRANCH?.trim() ||
       process.env.BRANCH?.trim() ||
       'unknown',
-    buildTime: process.env.REMNOTE_BRIDGE_BUILD_TIME?.trim() || process.env.BUILD_TIME?.trim() || 'unknown',
+    buildTime: embeddedBuildTime(),
     deploymentEnvironment: process.env.RENDER ? 'render' : process.env.NODE_ENV || 'development',
     toolProfile: profile,
     toolTier: profile,
@@ -313,6 +326,16 @@ export function getToolRegistrySummary(
     activeToolProfile: profile,
     defaultToolTier: DEFAULT_TOOL_PROFILE,
     defaultToolProfile: DEFAULT_TOOL_PROFILE,
+    effectivePublicToolNames: [...publicTools],
+    activeProfileExceedsDefault: TOOL_PROFILE_RANK[profile] > TOOL_PROFILE_RANK[DEFAULT_TOOL_PROFILE],
+    activeProfileReason:
+      profile === 'danger'
+        ? 'danger exposes the broadest non-hidden tool profile for explicit diagnostics/testing only.'
+        : profile === DEFAULT_TOOL_PROFILE
+          ? 'active profile matches default mass_note_writer.'
+          : `active profile ${profile} selected by config, request metadata, header, query, or pairing session.`,
+    profileSwitchHint:
+      'Set REMNOTE_MCP_TOOL_PROFILE=mass_note_writer or REMNOTE_BRIDGE_TOOL_PROFILE=mass_note_writer, then refresh the connector/tool list.',
     permissionMode: 'request_principal_or_bridge_runtime',
     permissionScope: 'request_principal_or_bridge_runtime',
     operationPermissionTiers: [

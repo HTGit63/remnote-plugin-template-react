@@ -1058,7 +1058,9 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return;
     }
 
-    const toolPermission = validateMcpToolPermission(body, auth.principal);
+    const toolPermission = validateMcpToolPermission(body, auth.principal, {
+      currentSessionCreatedRemIds: hub.getRecentlyCreatedRemIds(),
+    });
     if (!toolPermission.ok) {
       const blockedTool =
         typeof body === 'object' &&
@@ -1087,6 +1089,8 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       writeJson(res, 403, {
         error: toolPermission.error,
         code: toolPermission.code,
+        errorCode: toolPermission.code,
+        rootCauseClass: toolPermission.details.rootCauseClass,
         layer: toolPermission.layer,
         toolName: toolPermission.details.toolName,
         requiredAccessScope: toolPermission.details.requiredAccessScope,

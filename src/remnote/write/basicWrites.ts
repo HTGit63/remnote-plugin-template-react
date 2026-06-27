@@ -102,11 +102,11 @@ async function verifyCreatedRemNotBlank(
   createdRem: Rem,
   expectedMarkdown: string,
   failedStage: string
-): Promise<{ afterPlainText: string; matchesRequestedMarkdownText: boolean }> {
+): Promise<{ afterPlainText: string; matchesRequestedMarkdownText: boolean; afterParentId: string | null }> {
   const refreshed = await findRequiredRem(plugin, createdRem._id, 'Target', 'REM_NOT_FOUND');
   const afterPlainText = await getRemPlainString(plugin, refreshed);
-  const expectedText = expectedMarkdown.replace(/[#*_`>\-[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
-  const actualText = afterPlainText.replace(/\s+/g, ' ').trim();
+  const expectedText = normalizeMarkdownTextForComparison(expectedMarkdown);
+  const actualText = normalizePlainTextForComparison(afterPlainText);
   const matchesRequestedMarkdownText = Boolean(
     actualText && (!expectedText || expectedText.includes(actualText) || actualText.includes(expectedText))
   );
@@ -127,7 +127,33 @@ async function verifyCreatedRemNotBlank(
     });
   }
 
-  return { afterPlainText, matchesRequestedMarkdownText };
+  return { afterPlainText, matchesRequestedMarkdownText, afterParentId: refreshed.parent ?? null };
+}
+
+function stripMarkdownPrefixForComparison(line: string): string {
+  return line
+    .trim()
+    .replace(/^#{1,6}\s+/, '')
+    .replace(/^>\s*/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/^`([^`]+)`$/, '$1')
+    .trim();
+}
+
+function normalizePlainTextForComparison(text: string): string {
+  return text.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeMarkdownTextForComparison(markdown: string): string {
+  return normalizePlainTextForComparison(
+    markdown
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map(stripMarkdownPrefixForComparison)
+      .filter(Boolean)
+      .join(' ')
+  );
 }
 
 async function createRemFromMarkdownSafely(
@@ -161,6 +187,11 @@ async function createRemFromMarkdownSafely(
       ...verification,
       creationPath: useFastPath ? 'createSingleRemWithMarkdown' : 'manual_parse_create_setText_setParent',
       singleMarkdownFastPathEnabled: useFastPath,
+      parentProof: {
+        requestedParentId: parent?._id ?? null,
+        afterParentId: verification.afterParentId,
+        parentMatches: (parent?._id ?? null) === verification.afterParentId,
+      },
     },
   };
 }
@@ -174,11 +205,11 @@ async function findSameTitleChild(
     return null;
   }
 
-  const requestedText = markdown.replace(/[#*_`>\-[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const requestedText = normalizeMarkdownTextForComparison(markdown);
   const children = await runSdkOperation('rem.getChildrenRem', () => parent.getChildrenRem());
   for (const child of children) {
     const plainText = await getRemPlainString(plugin, child);
-    const normalizedChildText = plainText.replace(/\s+/g, ' ').trim();
+    const normalizedChildText = normalizePlainTextForComparison(plainText);
     if (normalizedChildText && normalizedChildText === requestedText) {
       return { remId: child._id, plainText };
     }

@@ -77,6 +77,7 @@ import {
   POLISHED_TREE_RESULT_CACHE,
   getWriteIdempotencyKey,
   rememberCachedResult,
+  rememberCreatedRemIds,
 } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT, type TreeValidationState } from './writeTypes';
 import { assertTreeLimits, collectStyledTreePlan, simpleTreeToStyledNode, validateTreeNode } from './writeValidation';
@@ -215,6 +216,7 @@ export async function createRemTree(
           fallback: { used: false },
           durationMs: Date.now() - startedAt,
         };
+        rememberCreatedRemIds(createdRemIds);
         rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
         return result;
       }
@@ -238,6 +240,7 @@ export async function createRemTree(
         : { used: false },
       durationMs: Date.now() - startedAt,
     };
+    rememberCreatedRemIds(created.createdRemIds);
     rememberCachedResult(CREATE_TREE_RESULT_CACHE, idempotencyKey, result);
     return result;
   } catch (error: unknown) {

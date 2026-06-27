@@ -245,6 +245,21 @@ export class BridgeHub {
     };
   }
 
+  getRecentlyCreatedRemIds(): string[] {
+    const ids = new Set<string>();
+    for (const request of this.recentRequests) {
+      for (const remId of request.createdRemIds ?? []) {
+        ids.add(remId);
+      }
+    }
+    for (const response of this.lateResponses) {
+      for (const remId of response.createdRemIds ?? []) {
+        ids.add(remId);
+      }
+    }
+    return [...ids];
+  }
+
   recordHealthCheck(result: BridgeHealthCheckResult) {
     this.lastHealthCheck = result;
     for (const toolResult of result.results) {

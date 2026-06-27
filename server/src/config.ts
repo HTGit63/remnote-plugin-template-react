@@ -492,7 +492,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     bridgePath: env.REMNOTE_BRIDGE_WS_PATH?.trim() || env.PLUGIN_WS_PATH?.trim() || '/remnote-bridge',
     mcpPath: env.REMNOTE_BRIDGE_MCP_PATH?.trim() || '/mcp',
     bridgeToken,
-    toolProfile: normalizeToolProfile(env.REMNOTE_BRIDGE_TOOL_PROFILE ?? DEFAULT_TOOL_PROFILE),
+    toolProfile: normalizeToolProfile(
+      env.REMNOTE_MCP_TOOL_PROFILE ??
+        env.REMNOTE_BRIDGE_TOOL_PROFILE ??
+        DEFAULT_TOOL_PROFILE
+    ),
     allowNoToken,
     connectorCompatNoAuthTools,
     allowRemote,

@@ -399,6 +399,8 @@ function standardResponse(input: {
     result?.targetRemId,
     result?.remId,
     result?.rootRemId,
+    result?.createdRemId,
+    result?.rootCreatedRemId,
     targetRecord?.targetRemId,
     targetRecord?.remId,
     targetRecord?.rootRemId

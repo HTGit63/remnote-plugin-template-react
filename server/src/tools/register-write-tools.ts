@@ -41,7 +41,8 @@ import {
   STYLING_PLAN_SCHEMA,
   TREE_DEPTH_SCHEMA,
 } from './schemas.js';
-import { annotationsFor, bridgeToolResult, type McpToolResult, type ToolRegistrationContext } from './tool-context.js';
+import { COMPACT_REPORT_MAX_CHARS, classifyDisposableAuditPayload } from '../audit-payload-safety.js';
+import { annotationsFor, bridgeToolResult, failureToToolResult, type McpToolResult, type ToolRegistrationContext } from './tool-context.js';
 
 function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA>): McpToolResult {
   const startedAt = Date.now();
@@ -136,6 +137,41 @@ function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TR
   };
 }
 
+function compactReportPreflight(input: {
+  operation: 'create_rem' | 'create_rem_tree';
+  parentId: string | null | undefined;
+  markdown?: string;
+  tree?: unknown;
+}): McpToolResult | null {
+  const classification = classifyDisposableAuditPayload({
+    operation: input.operation,
+    parentId: input.parentId ?? undefined,
+    markdown: input.markdown,
+    tree: input.tree,
+  });
+  if (classification.errorCode !== 'COMPACT_REPORT_TOO_LARGE') {
+    return null;
+  }
+
+  return failureToToolResult({
+    id: `compact-report-preflight-${Date.now().toString(36)}`,
+    ok: false,
+    error: {
+      code: 'COMPACT_REPORT_TOO_LARGE',
+      message: 'COMPACT_REPORT_TOO_LARGE: Compact report exceeds the safe audit payload limit. Chunk it or provide a shorter verdict/stage summary.',
+      details: {
+        title: classification.title,
+        totalCharCount: classification.totalCharCount,
+        bodyCharCount: classification.bodyCharCount,
+        maxCharCount: COMPACT_REPORT_MAX_CHARS,
+        recommendedFix: 'Chunk the report or provide a shorter compact verdict/stage summary under Stage 12.',
+        rootCauseClass: 'safe_audit_payload_limit',
+      },
+    },
+    lifecycle: [],
+  }, input.operation);
+}
+
 export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegistrationContext): void {
   registerTool(
     'create_rem',
@@ -151,6 +187,7 @@ export function registerBasicWriteTools({ registerTool, callPlugin }: ToolRegist
       annotations: annotationsFor('create_rem'),
     },
     async ({ parentId, markdown, idempotencyKey }) =>
+      compactReportPreflight({ operation: 'create_rem', parentId, markdown }) ??
       bridgeToolResult(
         () => callPlugin('create_rem', { parentId: parentId ?? null, markdown, idempotencyKey }),
         'Create Rem request processed.'
@@ -321,6 +358,7 @@ export function registerTreeWriteTools({ registerTool, callPlugin }: ToolRegistr
       annotations: annotationsFor('create_rem_tree'),
     },
     async ({ parentId, position, tree, idempotencyKey }) =>
+      compactReportPreflight({ operation: 'create_rem_tree', parentId, tree }) ??
       bridgeToolResult(
         () => callPlugin('create_rem_tree', { parentId, position, tree, idempotencyKey }),
         'Create Rem tree request processed.'
