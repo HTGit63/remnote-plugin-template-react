@@ -165,6 +165,27 @@ async function createRemFromMarkdownSafely(
   };
 }
 
+async function findSameTitleChild(
+  plugin: RNPlugin,
+  parent: Rem | null,
+  markdown: string
+): Promise<{ remId: string; plainText: string } | null> {
+  if (!parent) {
+    return null;
+  }
+
+  const requestedText = markdown.replace(/[#*_`>\-[\]()]/g, ' ').replace(/\s+/g, ' ').trim();
+  const children = await runSdkOperation('rem.getChildrenRem', () => parent.getChildrenRem());
+  for (const child of children) {
+    const plainText = await getRemPlainString(plugin, child);
+    const normalizedChildText = plainText.replace(/\s+/g, ' ').trim();
+    if (normalizedChildText && normalizedChildText === requestedText) {
+      return { remId: child._id, plainText };
+    }
+  }
+  return null;
+}
+
 export async function createRemFromMarkdown(
   plugin: RNPlugin,
   args: CreateRemArgs
@@ -172,12 +193,25 @@ export async function createRemFromMarkdown(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-rem');
   const cached = CREATE_REM_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const markdown = normalizeMarkdown(args.markdown);
   const parentId = args.parentId ?? null;
   const parent = parentId ? await findRequiredRem(plugin, parentId, 'Parent', 'PARENT_NOT_FOUND') : null;
+  const duplicate = await findSameTitleChild(plugin, parent, markdown);
+  if (duplicate) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'A sibling Rem with the same plain text already exists under this parent.', {
+      parentId,
+      duplicateRemId: duplicate.remId,
+      duplicatePlainText: duplicate.plainText,
+      duplicateBehavior: 'refused_same_title_same_parent_different_key',
+      idempotencyKey,
+    });
+  }
   const { createdRem, insertIndex, verification } = await createRemFromMarkdownSafely(plugin, markdown, parent);
 
   const result: CreateRemResult = {
@@ -200,7 +234,10 @@ export async function createDocumentFromMarkdown(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'create-document');
   const cached = CREATE_DOCUMENT_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const markdown = normalizeMarkdown(args.markdown);
@@ -245,7 +282,10 @@ export async function appendMarkdownToRem(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'append-rem');
   const cached = APPEND_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const parent = await findRequiredRem(plugin, args.remId, 'Target');
@@ -338,7 +378,10 @@ export async function updateRemRich(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'update-rich');
   const cached = UPDATE_RICH_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const rem = await findRequiredRem(plugin, args.remId, 'Target');

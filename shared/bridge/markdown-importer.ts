@@ -163,9 +163,15 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function stripUnderscoreEmphasis(value: string): string {
+  return value
+    .replace(/(^|[^A-Za-z0-9_])__([^_\n]+?)__(?=$|[^A-Za-z0-9_])/g, '$1$2')
+    .replace(/(^|[^A-Za-z0-9_])_([^_\n]+?)_(?=$|[^A-Za-z0-9_])/g, '$1$2');
+}
+
 function stripMarkdownInline(value: string): string {
   return normalizeWhitespace(
-    value
+    stripUnderscoreEmphasis(value)
       .replace(/\$\$([\s\S]+?)\$\$/g, '$1')
       .replace(/\\\[([\s\S]+?)\\\]/g, '$1')
       .replace(/\$([^$\n]+?)\$/g, '$1')
@@ -665,13 +671,11 @@ export function splitTextFormulaSafe(
 }
 
 function cleanMarkdownTextSegment(value: string): string {
-  return value
+  return stripUnderscoreEmphasis(value)
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     .replace(/`([^`]+)`/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/_([^_]+)_/g, '$1');
+    .replace(/\*([^*]+)\*/g, '$1');
 }
 
 function markdownInlineToRichText(text: string): {

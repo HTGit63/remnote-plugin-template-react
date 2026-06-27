@@ -154,4 +154,25 @@ describe('tool status matrix policy', () => {
     expect(output.structuredContent?.retryable).toBe(true);
     expect((output.structuredContent?.phaseDurations as any).totalMs).toBe(0);
   });
+
+  test('unknown write state is retryable but platform-blocked, never a generic success/fail', () => {
+    const output = failureToToolResult({
+      id: 'unknown-write-1',
+      ok: false,
+      error: {
+        code: 'RETRYABLE_UNKNOWN_WRITE_STATUS',
+        message: 'The write may have reached RemNote before the bridge connection ended.',
+        retryable: true,
+      },
+      lifecycle: [],
+    }, 'create_or_replace_note_from_markdown');
+
+    expect(output.structuredContent?.status).toBe('PLATFORM_BLOCKED');
+    expect(output.structuredContent?.errorCode).toBe('RETRYABLE_UNKNOWN_WRITE_STATUS');
+    expect(output.structuredContent?.retryable).toBe(true);
+    expect(output.structuredContent?.standard).toMatchObject({
+      status: 'PLATFORM_BLOCKED',
+      retryable: true,
+    });
+  });
 });

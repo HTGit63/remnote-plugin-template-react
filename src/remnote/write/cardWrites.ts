@@ -210,7 +210,10 @@ export async function createBasicFlashcard(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, `card-${cardType}`);
   const cached = FLASHCARD_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
@@ -252,7 +255,10 @@ export async function createClozeCard(
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'card-cloze');
   const cached = FLASHCARD_RESULT_CACHE.get(idempotencyKey);
   if (cached) {
-    return cached;
+    return {
+      ...cached,
+      status: 'already_applied',
+    };
   }
 
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');

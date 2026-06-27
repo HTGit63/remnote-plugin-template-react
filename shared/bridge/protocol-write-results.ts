@@ -80,7 +80,7 @@ export interface CreateRemResult {
   parentId: string | null;
   insertIndex?: number;
   insertPosition?: 'end';
-  status: 'created';
+  status: 'created' | 'already_applied';
   idempotencyKey?: string;
   verification?: Record<string, unknown>;
 }
@@ -91,7 +91,7 @@ export interface CreateDocumentResult {
   insertIndex?: number;
   insertPosition?: 'end';
   document: true;
-  status: 'created_document';
+  status: 'created_document' | 'already_applied';
   idempotencyKey?: string;
   verification?: Record<string, unknown>;
 }
@@ -110,7 +110,7 @@ export interface AppendToRemResult {
   createdRemId: string;
   insertIndex?: number;
   position?: 'start' | 'end';
-  status: 'appended';
+  status: 'appended' | 'already_applied';
   idempotencyKey?: string;
 }
 
@@ -182,7 +182,8 @@ export interface FormatRemResult {
     | 'hide_bullet_set'
     | 'formatting_cleared'
     | 'formatting_partially_cleared'
-    | 'command_applied';
+    | 'command_applied'
+    | 'already_applied';
   ok?: boolean;
   requestedColor?: string;
   normalizedColor?: string;
@@ -669,7 +670,7 @@ export interface CreateFlashcardResult {
   direction: PracticeDirection;
   ok?: boolean;
   createdChildRemIds?: string[];
-  status: 'created_flashcard';
+  status: 'created_flashcard' | 'already_applied';
   idempotencyKey?: string;
   verification?: {
     attempted: boolean;

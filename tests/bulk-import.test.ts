@@ -7,6 +7,11 @@ import {
   verifyBulkImportFinalReadback,
   verifyBulkImportSourceText,
 } from '../shared/bridge/bulk-import';
+import {
+  markdownImportOutputTextFromTree,
+  parseMarkdownImportPlan,
+  verifyMarkdownSourceFidelity,
+} from '../shared/bridge/markdown-importer';
 import { BulkImportJobStore } from '../server/src/bulk-import/job-store';
 
 const chapter = [
@@ -133,6 +138,28 @@ describe('bulk import planner', () => {
     expect(failed.ok).toBe(false);
     expect(failed.status).toBe('source_fidelity_failed');
     expect(failed.missingTextPreview).toContain('Expected physics text');
+  });
+
+  test('preserves underscore anchors and rejects visible style metadata pollution', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Chapter One',
+      '',
+      '## 1.1 Anchors',
+      '',
+      'Keep CN_01_03_anchor and formula $qE = qvB$ exact.',
+    ].join('\n'));
+    const output = markdownImportOutputTextFromTree(plan.tree);
+
+    expect(output).toContain('CN_01_03_anchor');
+    expect(output).not.toContain('CN01_03_anchor');
+    expect(output.split('\n').map((line) => line.trim())).not.toEqual(expect.arrayContaining(['Size', 'H1', 'H2', 'H3', 'normal']));
+
+    const verified = verifyMarkdownSourceFidelity(plan.sourceSnippets, output, {}, plan.stats);
+    expect(verified.passed).toBe(true);
+
+    const polluted = verifyMarkdownSourceFidelity(plan.sourceSnippets, `${output}\nSize\nH1`, {}, plan.stats);
+    expect(polluted.passed).toBe(false);
+    expect(polluted.pollutionRems).toEqual(['Size', 'H1']);
   });
 });
 

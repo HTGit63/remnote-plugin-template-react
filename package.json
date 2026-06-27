@@ -5,6 +5,7 @@
   "license": "MIT",
   "scripts": {
     "test": "vitest run",
+    "test:agents-simulated-live": "vitest run tests/agents-staged-repair-simulation.test.ts",
     "test:watch": "vitest",
     "check-types": "node ./node_modules/typescript/bin/tsc",
     "validate": "node ./node_modules/@remnote/plugin-sdk/scripts/index.js validate",
