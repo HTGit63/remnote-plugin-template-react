@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
   bulkSectionIdempotencyKey,
+  flattenBulkImportReadbackText,
   normalizeBulkImportTitle,
   planNoteImport,
   summarizeBulkImportProgress,
@@ -45,9 +46,34 @@ const PLAN_IMPORT_INPUT_SCHEMA = z.object({
   options: BULK_IMPORT_OPTIONS_SCHEMA,
 });
 
+const SOURCE_FILE_REFERENCE_SCHEMA = z.union([
+  z.string().trim().min(1).max(4096),
+  z.object({
+    path: z.string().trim().min(1).max(4096).optional(),
+    filePath: z.string().trim().min(1).max(4096).optional(),
+    sourceFilePath: z.string().trim().min(1).max(4096).optional(),
+    uri: z.string().trim().min(1).max(4096).optional(),
+    url: z.string().trim().min(1).max(4096).optional(),
+    href: z.string().trim().min(1).max(4096).optional(),
+    name: z.string().trim().max(256).optional(),
+  }).passthrough(),
+]);
+
 const PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA = PLAN_IMPORT_INPUT_SCHEMA.omit({ sourceText: true, sourceName: true }).extend({
-  sourceFilePath: z.string().trim().min(1).max(4096),
+  sourceFilePath: z.string().trim().min(1).max(4096).optional(),
+  filePath: z.string().trim().min(1).max(4096).optional(),
+  path: z.string().trim().min(1).max(4096).optional(),
+  sourceFileUri: z.string().trim().min(1).max(4096).optional(),
+  sourceFile: SOURCE_FILE_REFERENCE_SCHEMA.optional(),
   sourceName: z.string().trim().max(256).optional(),
+}).refine((value) => Boolean(
+  value.sourceFilePath ||
+  value.filePath ||
+  value.path ||
+  value.sourceFileUri ||
+  value.sourceFile
+), {
+  message: 'Provide sourceFilePath, filePath, path, sourceFileUri, or sourceFile.',
 });
 
 const MAX_BULK_IMPORT_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
@@ -229,6 +255,29 @@ function readBulkImportSourceFile(sourceFilePath: string): {
   };
 }
 
+function sourceFilePathFromArgs(args: {
+  sourceFilePath?: unknown;
+  filePath?: unknown;
+  path?: unknown;
+  sourceFileUri?: unknown;
+  sourceFile?: unknown;
+}): string {
+  for (const candidate of [args.sourceFilePath, args.filePath, args.path, args.sourceFileUri, args.sourceFile]) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+    if (typeof candidate === 'object' && candidate !== null) {
+      for (const key of ['path', 'filePath', 'sourceFilePath', 'uri', 'url', 'href']) {
+        const value = (candidate as Record<string, unknown>)[key];
+        if (typeof value === 'string' && value.trim()) {
+          return value.trim();
+        }
+      }
+    }
+  }
+  throw new Error('sourceFilePath is required.');
+}
+
 function resolveConnectorSourcePath(sourceFilePath: string): string {
   const trimmed = sourceFilePath.trim();
   if (!trimmed) {
@@ -360,7 +409,8 @@ export function registerBulkImportTools({
     },
     async (args) => {
       try {
-        const file = readBulkImportSourceFile(args.sourceFilePath);
+        const sourceFilePath = sourceFilePathFromArgs(args);
+        const file = readBulkImportSourceFile(sourceFilePath);
         const plan = planNoteImport({
           ...args,
           sourceKind: 'file',
@@ -450,7 +500,8 @@ export function registerBulkImportTools({
     },
     async (args) => {
       try {
-        const file = readBulkImportSourceFile(args.sourceFilePath);
+        const sourceFilePath = sourceFilePathFromArgs(args);
+        const file = readBulkImportSourceFile(sourceFilePath);
         const plan = planNoteImport({
           ...args,
           sourceKind: 'file',
@@ -614,27 +665,56 @@ export function registerBulkImportTools({
     const verification = typeof result.verification === 'object' && result.verification !== null
       ? result.verification as { passed?: boolean }
       : undefined;
+    let readbackVerification = null as ReturnType<typeof verifyBulkImportSourceText> | null;
+    let readbackError: string | undefined;
+    if (!dryRun) {
+      const readback = await callPlugin('get_rem_tree', {
+        remId: hierarchy.parentRemId,
+        depth: 12,
+      });
+      if (readback.ok) {
+        readbackVerification = verifyBulkImportSourceText({
+          expectedText: chunk.expectedSourceText ?? chunk.sourceText,
+          actualText: flattenBulkImportReadbackText(readback.result),
+          jobId,
+          sectionKey: chunk.sectionKey,
+          chunkIndex: chunk.chunkIndex,
+        });
+      } else {
+        readbackError = bridgeFailureMessage(readback);
+      }
+    }
     const nextStatus = dryRun
       ? 'pending'
-      : verification?.passed === true
+      : readbackVerification?.ok === true && verification?.passed !== false
         ? 'verified'
-        : verification?.passed === false
+        : readbackVerification?.ok === false || verification?.passed === false
         ? 'partial'
         : 'written_not_verified';
     const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
       status: nextStatus,
       verificationStatus: dryRun
         ? 'not_verifiable'
-        : verification?.passed === true
+        : readbackVerification?.ok === true && verification?.passed !== false
           ? 'passed'
-          : verification?.passed === false
+          : readbackVerification?.ok === false || verification?.passed === false
             ? 'source_fidelity_failed'
             : 'written_not_verified',
       finishedAt,
       durationMs,
       createdRemIds,
       updatedRemIds,
-      error: undefined,
+      error: readbackVerification?.ok === false
+        ? [
+            readbackVerification.missingTextPreview
+              ? `Missing: ${readbackVerification.missingTextPreview}`
+              : '',
+            readbackVerification.extraTextPreview
+              ? `Extra: ${readbackVerification.extraTextPreview}`
+              : '',
+            ...readbackVerification.warnings,
+          ].filter(Boolean).join(' ')
+        : readbackError,
     });
     bulkImportJobStore.saveCheckpoint(jobId, {
       chunkId: chunk.chunkId,
@@ -650,6 +730,39 @@ export function registerBulkImportTools({
             : 'Chunk write needs verification review.',
     });
     return { response, job, status: nextStatus };
+  }
+
+  function previewRunnableChunks(jobId: string, maxChunks = 1, maxChars?: number) {
+    const job = bulkImportJobStore.getJob(jobId);
+    if (!job) {
+      throw new Error(`Unknown import job: ${jobId}`);
+    }
+    const runnable = job.chunks
+      .filter((chunk) =>
+        ['pending', 'partial', 'partial_needs_verification', 'written_not_verified', 'failed'].includes(chunk.status)
+      )
+      .slice(0, maxChunks);
+    const blocked = maxChars
+      ? runnable.find((chunk) => chunk.charCount > maxChars)
+      : undefined;
+    const steps = runnable.map((chunk) => ({
+      sectionKey: chunk.sectionKey,
+      chunkIndex: chunk.chunkIndex,
+      chunkId: chunk.chunkId,
+      status: blocked?.chunkId === chunk.chunkId ? 'would_block_max_chars' : 'would_run',
+      currentStatus: chunk.status,
+      idempotencyKey: chunk.idempotencyKey,
+      charCount: chunk.charCount,
+    }));
+    return {
+      job,
+      steps,
+      chunk: runnable[0],
+      blocked,
+      nextAction: runnable.length === 0
+        ? 'call verify_note_import_job'
+        : 'retry with dryRun=false to write the previewed chunk',
+    };
   }
 
   async function ensureChildRem(input: {
@@ -744,6 +857,19 @@ export function registerBulkImportTools({
       chapterParentRemId = importRootRemId;
     }
     let chapterRootRemId = job.chapterRootRemId;
+    const importRootIsChapter =
+      Boolean(job.importRootTitle) &&
+      normalizeBulkImportTitle(job.importRootTitle ?? '') === normalizeBulkImportTitle(job.chapterTitle);
+    if (!chapterRootRemId && importRootIsChapter) {
+      chapterRootRemId = chapterParentRemId;
+      if (!dryRun) {
+        bulkImportJobStore.recordChapterRoot(jobId, chapterRootRemId);
+        bulkImportJobStore.appendEvent(jobId, {
+          status: 'skipped_already_verified',
+          message: `Chapter root reused import root because titles match "${job.chapterTitle}".`,
+        });
+      }
+    }
     if (!chapterRootRemId) {
       const chapter = await ensureChildRem({
         parentRemId: chapterParentRemId,
@@ -820,6 +946,24 @@ export function registerBulkImportTools({
     },
     async ({ jobId, maxChunks, maxChars, dryRun }) => {
       try {
+        if (dryRun) {
+          const preview = previewRunnableChunks(jobId, maxChunks, maxChars);
+          return toolResult('Dry run: note import job step previewed without mutating job state.', {
+            ok: true,
+            status: preview.blocked ? 'PARTIAL' : 'PASS',
+            toolName: 'run_note_import_job_step',
+            dryRun: true,
+            jobId,
+            jobStatus: preview.job.status,
+            progress: summarizeBulkImportProgress(preview.job),
+            lastStep: preview.steps[0],
+            steps: preview.steps,
+            nextAction: preview.nextAction,
+            warning: preview.blocked
+              ? `Chunk ${preview.blocked.chunkId} exceeds maxChars ${maxChars}.`
+              : undefined,
+          });
+        }
         const steps = [];
         for (let index = 0; index < maxChunks; index += 1) {
           const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
@@ -889,6 +1033,32 @@ export function registerBulkImportTools({
       annotations: { readOnlyHint: false, openWorldHint: false },
     },
     async ({ jobId, dryRun }) => {
+      if (dryRun) {
+        try {
+          const preview = previewRunnableChunks(jobId, 1);
+          return toolResult('Dry run: note import resume previewed without mutating job state.', {
+            ok: true,
+            status: 'PASS',
+            toolName: 'resume_note_import_job',
+            dryRun: true,
+            jobId,
+            jobStatus: preview.job.status,
+            progress: summarizeBulkImportProgress(preview.job),
+            lastStep: preview.chunk ? chunkSummary(preview.chunk) : undefined,
+            previewStep: preview.steps[0],
+            nextAction: preview.nextAction,
+          });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          return toolResult(message, {
+            ok: false,
+            status: 'FAIL',
+            toolName: 'resume_note_import_job',
+            errorCode: 'INVALID_ARGS',
+            errorMessage: message,
+          }, true);
+        }
+      }
       const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
       if (!chunk) {
         const job = bulkImportJobStore.updateJobStatus(jobId, 'completed', 'No pending chunks remain.');

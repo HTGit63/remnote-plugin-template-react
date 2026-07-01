@@ -310,8 +310,9 @@ export async function readDocumentOrFolderTree(
   let root: Rem | undefined;
   let source: GetDocumentOrFolderTreeResult['source'] = 'requested_root';
 
-  if (args.rootRemId) {
-    root = await plugin.rem.findOne(args.rootRemId);
+  const requestedRootId = args.rootRemId ?? args.remId;
+  if (requestedRootId) {
+    root = await plugin.rem.findOne(requestedRootId);
   } else {
     root = await plugin.focus.getFocusedPortal();
     source = 'focused_portal';

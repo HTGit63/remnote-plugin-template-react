@@ -8,6 +8,7 @@ export class FakeRem {
   backText: RichTextInterface = [];
   children: string[] = [];
   parent: string | null = null;
+  fontSize: 'H1' | 'H2' | 'H3' | undefined;
   private practiceEnabled = false;
   private practiceDirection = 'both';
   private cardItem = false;
@@ -57,9 +58,18 @@ export class FakeRem {
     return this.cardItem;
   }
 
-  async setFontSize() {}
+  async setFontSize(level: 'H1' | 'H2' | 'H3' | undefined) {
+    this.fontSize = level;
+    this.plugin.fontSizeCalls.push({ remId: this._id, level });
+    if (this.plugin.polluteFontSizeAsChildren && level) {
+      const size = this.plugin.addRem(`font-size-${this.plugin.fontSizeCalls.length}-size`, 'Size');
+      await size.setParent(this, this.children.length);
+      const value = this.plugin.addRem(`font-size-${this.plugin.fontSizeCalls.length}-${level}`, level);
+      await value.setParent(size, 0);
+    }
+  }
   async getFontSize() {
-    return undefined;
+    return this.fontSize;
   }
   async setHighlightColor() {}
   async getHighlightColor() {
@@ -121,6 +131,8 @@ export class FakePlugin {
   createRemCount = 0;
   failSetTextIncludes?: string;
   failRemoveIds = new Set<string>();
+  polluteFontSizeAsChildren = false;
+  fontSizeCalls: Array<{ remId: string; level: 'H1' | 'H2' | 'H3' | undefined }> = [];
   private nextId = 1;
 
   richText = {

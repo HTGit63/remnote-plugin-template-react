@@ -44,9 +44,15 @@ function text(result: McpToolResult): Record<string, any> {
   return result.structuredContent as Record<string, any>;
 }
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 function makeHarness(options: {
   writeResponses?: BridgeResponse[];
   readbackFails?: boolean;
+  readbackFailures?: number;
+  polluteWriteReadback?: boolean;
 } = {}) {
   const handlers: Record<string, Handler> = {};
   const childMap = new Map<string, Array<{ remId: string; title: string; frontText: string; plainText: string; children: any[] }>>();
@@ -77,6 +83,7 @@ function makeHarness(options: {
   };
 
   const writeResponses = [...(options.writeResponses ?? [])];
+  let readbackFailuresRemaining = options.readbackFails ? Number.POSITIVE_INFINITY : options.readbackFailures ?? 0;
   const callPlugin = async <TTool extends BridgeToolName>(
     tool: TTool,
     args: BridgeToolArgs[TTool]
@@ -130,6 +137,25 @@ function makeHarness(options: {
         plainText: input.markdownText,
         children: [],
       });
+      if (options.polluteWriteReadback) {
+        const sizeId = nextId();
+        const hId = nextId();
+        const sizeNode = {
+          remId: sizeId,
+          title: 'Size',
+          frontText: 'Size',
+          plainText: 'Size',
+          children: [],
+        };
+        ensureList(input.parentRemId).push(sizeNode);
+        ensureList(sizeId).push({
+          remId: hId,
+          title: 'H3',
+          frontText: 'H3',
+          plainText: 'H3',
+          children: [],
+        });
+      }
       return queued ?? success('write', {
         createdRemIds: [createdRemId],
         updatedRemIds: [],
@@ -137,7 +163,8 @@ function makeHarness(options: {
       });
     }
     if (tool === 'get_rem_tree') {
-      if (options.readbackFails) {
+      if (readbackFailuresRemaining > 0) {
+        readbackFailuresRemaining -= 1;
         return failure('readback', 'PLUGIN_NOT_CONNECTED', 'No fake readback.');
       }
       return success('tree', nodeById((args as any).remId));
@@ -240,8 +267,65 @@ describe('bulk import MCP tools', () => {
     expect(sandboxPlan.sourceFile.path).toBe(sourceFilePath);
   });
 
+  test('accepts mounted file object aliases from connector file pickers', async () => {
+    const h = makeHarness();
+    const folder = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-object-'));
+    const sourceFilePath = join(folder, 'Nuclear Phyiscs.md');
+    writeFileSync(sourceFilePath, exportedChapter, 'utf8');
+
+    const plan = text(await h.handlers.plan_note_import_from_file({
+      sourceFile: { path: sourceFilePath, name: 'Nuclear Phyiscs.md' },
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Nuclear Physics — Chapter One Bulk Import Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+
+    expect(plan.status).toBe('PASS');
+    expect(plan.sourceFile.path).toBe(sourceFilePath);
+    expect(plan.sourceMetadata.sourceKind).toBe('file');
+  });
+
+  test('dry-run resume previews next chunk without mutating job state', async () => {
+    const h = makeHarness();
+    const { jobId } = await h.createJob('bulk-job:resume-dry-run');
+    const before = clone(text(await h.handlers.get_note_import_job_status({ jobId })).job);
+    const resume = text(await h.handlers.resume_note_import_job({ jobId, dryRun: true }));
+    const after = clone(text(await h.handlers.get_note_import_job_status({ jobId })).job);
+
+    expect(resume.status).toBe('PASS');
+    expect(resume.dryRun).toBe(true);
+    expect(resume.previewStep.status).toBe('would_run');
+    expect(after.status).toBe(before.status);
+    expect(after.updatedAt).toBe(before.updatedAt);
+    expect(after.checkpoints).toEqual(before.checkpoints);
+    expect(after.chunks).toEqual(before.chunks);
+    expect(h.createCalls).toHaveLength(0);
+    expect(h.writeCalls).toHaveLength(0);
+  });
+
+  test('dry-run job step previews chunks without mutating job state', async () => {
+    const h = makeHarness();
+    const { jobId } = await h.createJob('bulk-job:step-dry-run');
+    const before = clone(text(await h.handlers.get_note_import_job_status({ jobId })).job);
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 2, dryRun: true }));
+    const after = clone(text(await h.handlers.get_note_import_job_status({ jobId })).job);
+
+    expect(run.status).toBe('PASS');
+    expect(run.dryRun).toBe(true);
+    expect(run.steps.map((step: any) => step.status)).toEqual(['would_run', 'would_run']);
+    expect(after.updatedAt).toBe(before.updatedAt);
+    expect(after.checkpoints).toEqual(before.checkpoints);
+    expect(after.chunks).toEqual(before.chunks);
+    expect(h.createCalls).toHaveLength(0);
+    expect(h.writeCalls).toHaveLength(0);
+  });
+
   test('does not mark chunk verified when write lacks explicit verification', async () => {
-    const h = makeHarness({ writeResponses: [success('write', { createdRemIds: ['chunk-1'] })] });
+    const h = makeHarness({
+      readbackFails: true,
+      writeResponses: [success('write', { createdRemIds: ['chunk-1'] })],
+    });
     const { jobId } = await h.createJob('bulk-job:no-false-verified');
     const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
 
@@ -263,8 +347,61 @@ describe('bulk import MCP tools', () => {
     expect(run.progress.chunksVerified).toBe(1);
   });
 
+  test('collapses matching import root and chapter titles during small bulk import', async () => {
+    const h = makeHarness();
+    const source = [
+      '# Mini Bulk Import Test — Test 07',
+      '',
+      '## Section A — Nuclear Notation',
+      '',
+      'Formula: $A=Z+N$',
+      '',
+      '## Section B — Mass Spectrometer',
+      '',
+      'Formula: $qV=\\frac{1}{2}mv^2$',
+      '',
+      '## Section C — Verification Anchor',
+      '',
+      'TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR',
+    ].join('\n');
+    const plan = text(await h.handlers.plan_note_import({
+      sourceText: source,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Mini Bulk Import Test — Test 07',
+      chapterTitle: 'Mini Bulk Import Test — Test 07',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
+    }));
+    await h.handlers.start_note_import_job({ planId: plan.planId, jobId: 'bulk-job:collapse-matching-title' });
+    await h.handlers.run_note_import_job_step({ jobId: 'bulk-job:collapse-matching-title', maxChunks: 3, dryRun: false });
+
+    expect(h.createCalls.filter((call) => call.markdown === 'Mini Bulk Import Test — Test 07')).toHaveLength(1);
+    expect(h.createCalls.map((call) => call.markdown)).toEqual(expect.arrayContaining([
+      'Section A — Nuclear Notation',
+      'Section B — Mass Spectrometer',
+      'Section C — Verification Anchor',
+    ]));
+    expect(h.writeCalls.some((call) => call.markdownText.includes('# Mini Bulk Import Test — Test 07'))).toBe(false);
+    expect(h.writeCalls.some((call) => call.markdownText.includes('## Section A — Nuclear Notation'))).toBe(false);
+  });
+
+  test('chunk step refuses verified status when live readback contains visible style pollution', async () => {
+    const h = makeHarness({
+      polluteWriteReadback: true,
+      writeResponses: [success('write', { createdRemIds: ['chunk-1'], verification: { passed: true } })],
+    });
+    const { jobId } = await h.createJob('bulk-job:polluted-readback');
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+
+    expect(run.progress.chunksVerified).toBe(0);
+    expect(run.lastStep.status).toBe('partial');
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+    expect(status.job.chunks[0].verificationStatus).toBe('source_fidelity_failed');
+    expect(status.job.chunks[0].error).toContain('Formatting pollution');
+  });
+
   test('resume retries unverified chunk with same idempotency key', async () => {
     const h = makeHarness({
+      readbackFailures: 1,
       writeResponses: [
         success('write-1', { createdRemIds: ['chunk-1'] }),
         success('write-2', { createdRemIds: ['chunk-1'], verification: { passed: true } }),

@@ -169,6 +169,37 @@ function markdownFallbackForPlan(
   };
 }
 
+function markdownContentWriteNode(node: StyledRemTreeNode): StyledRemTreeNode {
+  const { style, children, ...rest } = node;
+  const safeStyle = style
+    ? (Object.fromEntries(
+        Object.entries(style).filter(([key, value]) => key !== 'headingLevel' && value !== undefined)
+      ) as StyledRemTreeNode['style'])
+    : undefined;
+
+  return {
+    ...rest,
+    ...(safeStyle && Object.keys(safeStyle).length ? { style: safeStyle } : {}),
+    ...(children ? { children: children.map(markdownContentWriteNode) } : {}),
+  };
+}
+
+async function collectPlainTextSubtree(plugin: RNPlugin, remId: string): Promise<string> {
+  const root = await findRequiredRem(plugin, remId, 'Target', 'REM_NOT_FOUND');
+  const parts: string[] = [];
+
+  async function visit(rem: Rem) {
+    parts.push(await getRemPlainString(plugin, rem));
+    const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
+    for (const child of children) {
+      await visit(child);
+    }
+  }
+
+  await visit(root);
+  return parts.filter((part) => part.trim()).join('\n');
+}
+
 function chunkMaxDepth(nodes: readonly StyledRemTreeNode[]): number {
   if (!nodes.length) {
     return 0;
@@ -506,6 +537,7 @@ export async function createOrReplaceNoteFromMarkdown(
     })
   );
   const fallback = markdownFallbackForPlan(plan);
+  const writeTree = markdownContentWriteNode(plan.tree);
   const notePlan = createNotePlanSummary(plan.tree, 'markdown', {
     mathCount: plan.stats.mathBlockCount + plan.stats.inlineMathCount,
     tableCount: plan.stats.tableCount,
@@ -570,7 +602,7 @@ export async function createOrReplaceNoteFromMarkdown(
 
     async function createRootThenAppendSectionChunks(parentId: string): Promise<ApplyStructuredNoteBatchResult> {
       const rootShell: StyledRemTreeNode = {
-        ...plan.tree,
+        ...writeTree,
         children: [],
       };
       const rootBatch = await applyStructuredNoteBatch(plugin, {
@@ -606,7 +638,7 @@ export async function createOrReplaceNoteFromMarkdown(
         });
       }
 
-      const chunks = chunkTopLevelChildren(plan.tree.children ?? []);
+      const chunks = chunkTopLevelChildren(writeTree.children ?? []);
       for (let index = 0; index < chunks.length; index += 1) {
         const chunk = chunks[index];
         if (!chunk.length) {
@@ -694,7 +726,7 @@ export async function createOrReplaceNoteFromMarkdown(
         batchResult = await applyStructuredNoteBatch(plugin, {
           target: { mode: 'rem_id', remId: duplicate._id },
           operation: 'update_root_and_replace_children',
-          root: plan.tree,
+          root: writeTree,
           dryRun: false,
           idempotencyKey,
           rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
@@ -712,7 +744,7 @@ export async function createOrReplaceNoteFromMarkdown(
           operation: 'create_child_tree',
           parentId: normalized.parentRemId,
           position: 'end',
-          root: plan.tree,
+          root: writeTree,
           dryRun: false,
           idempotencyKey,
           rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
@@ -731,7 +763,7 @@ export async function createOrReplaceNoteFromMarkdown(
         : await applyStructuredNoteBatch(plugin, {
             target: { mode: 'rem_id', remId: normalized.targetRemId },
             operation: 'append_children',
-            note: { children: [plan.tree] },
+            note: { children: [writeTree] },
             dryRun: false,
             idempotencyKey,
             rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
@@ -750,7 +782,7 @@ export async function createOrReplaceNoteFromMarkdown(
       batchResult = await applyStructuredNoteBatch(plugin, {
         target: { mode: 'rem_id', remId: normalized.targetRemId },
         operation: 'replace_children',
-        note: { children: plan.tree.children ?? [] },
+        note: { children: writeTree.children ?? [] },
         dryRun: false,
         idempotencyKey,
         rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
@@ -769,7 +801,7 @@ export async function createOrReplaceNoteFromMarkdown(
       batchResult = await applyStructuredNoteBatch(plugin, {
         target: { mode: 'rem_id', remId: normalized.targetRemId },
         operation: 'update_root_and_replace_children',
-        root: plan.tree,
+        root: writeTree,
         dryRun: false,
         idempotencyKey,
         rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,
@@ -780,18 +812,16 @@ export async function createOrReplaceNoteFromMarkdown(
       rootRemId = normalized.targetRemId;
     }
 
-    const idsForVerification = Array.from(
-      new Set([
-        ...(rootRemId ? [rootRemId] : []),
-        ...batchResult.createdRemIds,
-        ...(batchResult.updatedRemIds ?? []),
-      ])
-    );
     let outputText = markdownImportOutputTextFromTree(plan.tree);
     let verification: CreateOrReplaceNoteFromMarkdownResult['verification'];
     if (normalized.safetyOptions.verifyAfterWrite) {
       const verificationStartedAt = Date.now();
-      outputText = await collectPlainTextForRemIds(plugin, idsForVerification);
+      outputText = rootRemId
+        ? await collectPlainTextSubtree(plugin, rootRemId)
+        : await collectPlainTextForRemIds(plugin, [
+            ...batchResult.createdRemIds,
+            ...(batchResult.updatedRemIds ?? []),
+          ]);
       verification = verifyMarkdownSourceFidelity(
         normalized.mode === 'replace_target_children'
           ? plan.sourceSnippets.slice(1)

@@ -416,9 +416,15 @@ export function extractMarkedSourceText(input: {
   return { chapterTitle, text: planned, metadata, warnings };
 }
 
+function markdownHeadingLevel(line: string): number | null {
+  const heading = stripLeadingOutlineMarker(line).match(/^(#{1,6})\s+\S/);
+  return heading ? heading[1].length : null;
+}
+
 function isSectionHeading(line: string): boolean {
-  if (/^#{1,6}\s+\d+(?:\.\d+)+\b/.test(line)) {
-    return true;
+  const headingLevel = markdownHeadingLevel(line);
+  if (headingLevel !== null) {
+    return headingLevel >= 2;
   }
   return /^\s*\d+(?:\.\d+)+\s+\S/.test(line);
 }
@@ -430,8 +436,19 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
     .filter(({ line }) => isSectionHeading(line));
 
   if (!starts.length) {
-    const title = normalizeHeadingText(lines.find((line) => line.startsWith('#')) ?? 'Imported chapter');
-    return [{ title, text: chapterText, bodyText: chapterText, sectionKey: slugKey(title, 'chapter') }];
+    const firstHeadingIndex = lines.findIndex((line) => markdownHeadingLevel(line) !== null);
+    const title = normalizeHeadingText(
+      firstHeadingIndex >= 0 ? lines[firstHeadingIndex] : 'Imported chapter'
+    );
+    const bodyText = firstHeadingIndex >= 0
+      ? lines.slice(firstHeadingIndex + 1).join('\n').replace(/^\n+/, '').trimEnd()
+      : chapterText;
+    return [{
+      title,
+      text: chapterText,
+      bodyText: bodyText.trim() ? bodyText : chapterText,
+      sectionKey: slugKey(title, 'chapter'),
+    }];
   }
 
   return starts.map((start, startIndex) => {
@@ -669,6 +686,13 @@ function previewAround(value: string, maxLength = 240): string {
   return normalized.length > maxLength ? `${normalized.slice(0, maxLength)}...` : normalized;
 }
 
+function visibleStylePollutionRems(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => ['Size', 'H1', 'H2', 'H3', 'normal'].includes(line));
+}
+
 export function verifyBulkImportSourceText(input: {
   expectedText: string;
   actualText?: string;
@@ -694,6 +718,23 @@ export function verifyBulkImportSourceText(input: {
   const actual = normalizeForSourceFidelity(input.actualText);
   const expectedHash = stableBulkImportHash(expected);
   const actualHash = stableBulkImportHash(actual);
+  const pollutionRems = visibleStylePollutionRems(input.actualText);
+  if (pollutionRems.length > 0) {
+    const unique = Array.from(new Set(pollutionRems));
+    return {
+      ok: false,
+      status: 'source_fidelity_failed',
+      jobId: input.jobId,
+      sectionKey: input.sectionKey,
+      chunkIndex: input.chunkIndex,
+      expectedHash,
+      actualHash,
+      extraTextPreview: previewAround(unique.join('\n')),
+      warnings: [`Formatting pollution Rems detected: ${unique.join(', ')}.`],
+      recommendedAction: 'Inspect readback tree before resume.',
+      method: 'normalized_plain_text',
+    };
+  }
   if (expectedHash === actualHash || actual.includes(expected)) {
     return {
       ok: true,
@@ -822,6 +863,7 @@ export function verifyBulkImportFinalReadback(input: {
 
   const actual = normalizeForSourceFidelity(actualRaw);
   const actualHash = stableBulkImportHash(actual);
+  const pollutionRems = visibleStylePollutionRems(actualRaw);
   const expectedUnits = normalizedUnits(expectedRaw);
   const actualUnits = normalizedUnits(actualRaw);
   const missingUnits = expectedUnits.filter((unit) => !actual.includes(unit));
@@ -850,6 +892,7 @@ export function verifyBulkImportFinalReadback(input: {
   const ok =
     missingUnits.length === 0 &&
     extraUnits.length === 0 &&
+    pollutionRems.length === 0 &&
     failedChunkIds.length === 0 &&
     missingSectionTitles.length === 0 &&
     duplicateSectionTitles.length === 0 &&
@@ -869,7 +912,12 @@ export function verifyBulkImportFinalReadback(input: {
     missingChunks: failedChunkIds.length ? failedChunkIds : undefined,
     warnings: ok
       ? []
-      : ['Final readback did not match the planned source after documented normalization.'],
+      : [
+          'Final readback did not match the planned source after documented normalization.',
+          ...(pollutionRems.length
+            ? [`Formatting pollution Rems detected: ${Array.from(new Set(pollutionRems)).join(', ')}.`]
+            : []),
+        ],
     recommendedAction: ok ? undefined : 'resume_note_import_job',
     method: 'normalized_plain_text',
     normalizedMatchPercentage,

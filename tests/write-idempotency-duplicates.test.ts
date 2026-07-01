@@ -4,9 +4,11 @@ import {
   CREATE_DOCUMENT_RESULT_CACHE,
   CREATE_REM_RESULT_CACHE,
   FLASHCARD_RESULT_CACHE,
+  MARKDOWN_IMPORT_RESULT_CACHE,
   UPDATE_RICH_RESULT_CACHE,
 } from '../src/remnote/write/writeCaches';
 import { createRemFromMarkdown } from '../src/remnote/write/basicWrites';
+import { createOrReplaceNoteFromMarkdown } from '../src/remnote/write/markdownImportExecutor';
 import {
   createBasicFlashcard,
   createClozeCard,
@@ -22,7 +24,19 @@ beforeEach(() => {
   APPEND_RESULT_CACHE.clear();
   UPDATE_RICH_RESULT_CACHE.clear();
   FLASHCARD_RESULT_CACHE.clear();
+  MARKDOWN_IMPORT_RESULT_CACHE.clear();
 });
+
+async function plainTreeAsync(fake: FakePlugin, remId: string): Promise<string[]> {
+  const rem = fake.rems.get(remId);
+  if (!rem) {
+    return [];
+  }
+  return [
+    await fake.richText.toString(rem.text),
+    ...(await Promise.all(rem.children.map((childId) => plainTreeAsync(fake, childId)))).flat(),
+  ].filter(Boolean);
+}
 
 describe('write idempotency and duplicate protection', () => {
   test('create_rem same-key replay reports already_applied and creates no duplicate sibling', async () => {
@@ -70,6 +84,40 @@ describe('write idempotency and duplicate protection', () => {
     });
     expect(parent.children).toHaveLength(1);
     expect(fake.createRemCount).toBe(1);
+  });
+
+  test('markdown content writer does not emit visible heading metadata Rems', async () => {
+    const fake = new FakePlugin();
+    fake.polluteFontSizeAsChildren = true;
+    const parent = fake.addRem('parent', 'Plugin Test');
+
+    const result = await createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      parentRemId: parent._id,
+      markdownText: [
+        '# Tiny Markdown Write Test',
+        '',
+        '## Section A',
+        '',
+        'Formula: $A=Z+N$',
+        '',
+        '## Section B',
+        '',
+        'Formula: $qV=\\frac{1}{2}mv^2$',
+      ].join('\n'),
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:markdown-no-heading-pollution',
+      },
+    });
+
+    expect(result.verification?.passed).toBe(true);
+    expect(fake.fontSizeCalls).toEqual([]);
+    const visibleText = (await plainTreeAsync(fake, result.rootRemId as string)).map((line) => line.trim());
+    expect(visibleText).toEqual(expect.arrayContaining(['Tiny Markdown Write Test', 'Section A', 'Section B']));
+    expect(visibleText).not.toEqual(expect.arrayContaining(['Size', 'H1', 'H2', 'H3', 'normal']));
   });
 });
 

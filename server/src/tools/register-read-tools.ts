@@ -5,6 +5,7 @@ import {
   DELETE_CONFIRM_SCHEMA,
   EXPECTED_STYLE_MAP_ENTRY_SCHEMA,
   GET_CHILDREN_INPUT_SCHEMA,
+  GET_DOCUMENT_OR_FOLDER_TREE_INPUT_SCHEMA,
   HEADING_LEVEL_SCHEMA,
   MARKDOWN_SCHEMA,
   MAX_CHILDREN_SCHEMA,
@@ -211,19 +212,15 @@ export function registerReadTools({ registerTool, callPlugin }: ToolRegistration
       title: 'Get document or folder tree',
       description:
         'Use this when the user needs the current document/folder context or a bounded tree rooted at a document-like Rem.',
-      inputSchema: z.object({
-        rootRemId: REM_ID_SCHEMA.nullable().optional().describe('Optional document, folder, portal, or Rem root ID.'),
-        depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 3.'),
-        maxChildren: MAX_CHILDREN_SCHEMA.optional().describe('Maximum children per node, capped at 100.'),
-      }),
+      inputSchema: GET_DOCUMENT_OR_FOLDER_TREE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('get_document_or_folder_tree'),
     },
-    async ({ rootRemId, depth, maxChildren }) =>
+    async ({ rootRemId, remId, depth, maxChildren }) =>
       bridgeToolResult(
         () =>
           callPlugin('get_document_or_folder_tree', {
-            rootRemId: rootRemId ?? null,
+            rootRemId: rootRemId ?? remId ?? null,
             depth,
             maxChildren,
           }),

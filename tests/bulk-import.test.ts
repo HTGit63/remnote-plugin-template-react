@@ -120,6 +120,46 @@ describe('bulk import planner', () => {
     expect(plan.sections[0].chunks[0].sourceText).not.toContain('## 1.1');
   });
 
+  test('plans generic H2 sections for small synthetic bulk import without wrapper duplication', () => {
+    const source = [
+      '# Mini Bulk Import Test — Test 07',
+      '',
+      '## Section A — Nuclear Notation',
+      '',
+      'Formula: $A=Z+N$',
+      '',
+      'Formula: $N=A-Z$',
+      '',
+      '## Section B — Mass Spectrometer',
+      '',
+      'Formula: $qV=\\frac{1}{2}mv^2$',
+      '',
+      'Formula: $r=\\frac{mv}{qB}$',
+      '',
+      '## Section C — Verification Anchor',
+      '',
+      'TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR',
+    ].join('\n');
+
+    const plan = planNoteImport({
+      sourceText: source,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Mini Bulk Import Test — Test 07',
+      chapterTitle: 'Mini Bulk Import Test — Test 07',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
+    });
+
+    expect(plan.chapterTitle).toBe('Mini Bulk Import Test — Test 07');
+    expect(plan.sections.map((section) => section.title)).toEqual([
+      'Section A — Nuclear Notation',
+      'Section B — Mass Spectrometer',
+      'Section C — Verification Anchor',
+    ]);
+    expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).not.toContain('# Mini Bulk Import Test — Test 07');
+    expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).not.toContain('## Section A — Nuclear Notation');
+    expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).toContain('TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR');
+  });
+
   test('hashes are deterministic and source fidelity reports mismatch previews', () => {
     const hashA = stableBulkImportHash('same source');
     const hashB = stableBulkImportHash('same source');

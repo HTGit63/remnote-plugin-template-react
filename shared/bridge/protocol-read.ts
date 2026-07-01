@@ -141,6 +141,7 @@ export interface SearchRemsArgs {
 
 export interface GetDocumentOrFolderTreeArgs {
   rootRemId?: string | null;
+  remId?: string | null;
   depth?: number;
   maxChildren?: number;
 }
