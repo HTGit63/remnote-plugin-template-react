@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import type {
   ChatGptPairingSession,
+  CodexClientLink,
+  CodexPairingSession,
   IdempotencyRecord,
   McpAuthorizationCode,
   McpClient,
@@ -20,6 +22,8 @@ export class MemoryStorageProvider implements StorageProvider {
   private clients = new Map<string, McpClient>();
   private authorizationCodes = new Map<string, McpAuthorizationCode>();
   private chatGptPairingSessions = new Map<string, ChatGptPairingSession>();
+  private codexPairingSessions = new Map<string, CodexPairingSession>();
+  private codexClientLinks = new Map<string, CodexClientLink>();
   private auditEvents: StoredAuditEvent[] = [];
   private idempotencyRecords = new Map<string, IdempotencyRecord>();
 
@@ -241,6 +245,51 @@ export class MemoryStorageProvider implements StorageProvider {
       .map((session) => this.clonePairing(session));
   }
 
+  async createCodexPairingSession(session: CodexPairingSession): Promise<CodexPairingSession> {
+    const stored = this.cloneCodexPairing(session);
+    this.codexPairingSessions.set(stored.pairingId, stored);
+    return this.cloneCodexPairing(stored);
+  }
+
+  async getCodexPairingSessionById(pairingId: string): Promise<CodexPairingSession | null> {
+    const session = this.codexPairingSessions.get(pairingId);
+    return session ? this.cloneCodexPairing(session) : null;
+  }
+
+  async getCodexPairingSessionByUserCode(userCode: string): Promise<CodexPairingSession | null> {
+    const targetHash = hashToken(userCode);
+    for (const session of this.codexPairingSessions.values()) {
+      if (session.userCodeHash === targetHash && !session.revokedAt) {
+        return this.cloneCodexPairing(session);
+      }
+    }
+    return null;
+  }
+
+  async updateCodexPairingSession(
+    pairingId: string,
+    updates: Partial<Omit<CodexPairingSession, 'pairingId' | 'createdAt'>>
+  ): Promise<CodexPairingSession> {
+    const session = this.codexPairingSessions.get(pairingId);
+    if (!session) {
+      throw new Error(`Codex pairing session with ID ${pairingId} not found.`);
+    }
+    const updated = this.cloneCodexPairing({ ...session, ...updates });
+    this.codexPairingSessions.set(pairingId, updated);
+    return this.cloneCodexPairing(updated);
+  }
+
+  async getCodexClientLink(codexClientHash: string): Promise<CodexClientLink | null> {
+    const link = this.codexClientLinks.get(codexClientHash);
+    return link ? this.cloneCodexLink(link) : null;
+  }
+
+  async upsertCodexClientLink(link: CodexClientLink): Promise<CodexClientLink> {
+    const stored = this.cloneCodexLink(link);
+    this.codexClientLinks.set(stored.codexClientHash, stored);
+    return this.cloneCodexLink(stored);
+  }
+
   async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
     const stored: StoredAuditEvent = {
       id: randomUUID(),
@@ -297,5 +346,13 @@ export class MemoryStorageProvider implements StorageProvider {
       toolTier: normalizeToolProfile(session.toolTier),
       requiresConnectorRefresh: false,
     };
+  }
+
+  private cloneCodexPairing(session: CodexPairingSession): CodexPairingSession {
+    return { ...session };
+  }
+
+  private cloneCodexLink(link: CodexClientLink): CodexClientLink {
+    return { ...link };
   }
 }

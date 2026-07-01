@@ -5,6 +5,7 @@
 | Track | Status | Source | Notes |
 | --- | --- | --- | --- |
 | `fix/remnote-mcp-mass-note-creation-stability` | active | `Agents.md` | Complete stages 0-13, keep live proof honest. |
+| `codex-hosted-mcp-plugin-routing` | active-local | pasted Codex routing brief | Add stable Codex bearer principal, explicit plugin-session link, safe single-active fallback, and diagnostics without weakening write/delete policy. |
 
 ## Completed
 

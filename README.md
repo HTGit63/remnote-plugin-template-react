@@ -85,7 +85,7 @@ REMNOTE_CODEX_TOKEN for optional Codex bearer access
 
 Render config is documented in `docs/deployment/render.md`.
 
-Codex can use the same hosted `/mcp` endpoint with `Authorization: Bearer <REMNOTE_CODEX_TOKEN>` instead of `codex mcp login`. ChatGPT keeps using `/connect?pairing_id=...`. See `CODEX_MCP_SETUP.md`.
+Codex can use the same hosted `/mcp?tool_tier=mass_note_writer` endpoint with `Authorization: Bearer <REMNOTE_CODEX_TOKEN>` instead of `codex mcp login`. ChatGPT keeps using `/connect?pairing_id=...`. Codex bearer auth proves server identity only; Codex still routes through one safe active plugin fallback or an explicit `/codex/pair/start` link to a RemNote plugin session. See `CODEX_MCP_SETUP.md`.
 
 ## Tool Access Tiers
 

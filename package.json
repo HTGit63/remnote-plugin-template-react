@@ -18,6 +18,8 @@
     "server:smoke": "npm run smoke --prefix server",
     "server:test:auth": "npm run test:auth --prefix server",
     "server:test:codex-bearer": "npm run test:codex-bearer --prefix server",
+    "server:test:codex-routing": "npm run test:codex-routing --prefix server",
+    "server:test:codex-pairing": "npm run test:codex-pairing --prefix server",
     "server:test:pairing": "npm run test:pairing --prefix server",
     "server:test:routing": "npm run test:routing --prefix server",
     "server:test:connector-compat-routing": "npm run test:connector-compat-routing --prefix server",

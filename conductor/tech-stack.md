@@ -13,6 +13,8 @@
 - `server/src/tool-policy.ts`: tool profiles, risk tiers, default profile.
 - `server/src/tool-registry.ts`: registry, diagnostics, runtime/source metadata.
 - `server/src/tools/*`: MCP tool registration.
+- `server/src/auth/codex-pairing-routes.ts`: Codex bearer-to-plugin-session pairing routes.
+- `server/src/bridge-hub.ts`: hosted plugin routing, including Codex linked-session and single-active fallback routing.
 - `shared/bridge/bulk-import.ts`: bulk import planner and verification model.
 - `server/src/bulk-import/job-store.ts`: resumable import job state.
 - `src/remnote/write/*`: RemNote write implementation and verification.

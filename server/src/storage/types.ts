@@ -128,6 +128,33 @@ export interface ChatGptPairingSession {
   revokedAt?: string;
 }
 
+export interface CodexPairingSession {
+  pairingId: string;
+  userCodeHash: string;
+  codexClientHash: string;
+  status: 'pending' | 'approved' | 'expired' | 'revoked';
+  createdAt: string;
+  expiresAt: string;
+  approvedAt?: string;
+  linkedPairingId?: string;
+  linkedPluginInstanceId?: string;
+  linkedPluginConnectionId?: string;
+  linkedUserId?: string;
+  lastSeenAt?: string;
+  revokedAt?: string;
+}
+
+export interface CodexClientLink {
+  codexClientHash: string;
+  linkedPairingId: string;
+  linkedUserId: string;
+  linkedPluginInstanceId?: string;
+  linkedPluginConnectionId?: string;
+  createdAt: string;
+  updatedAt: string;
+  revokedAt?: string;
+}
+
 export interface StoredAuditEvent {
   id: string;
   type: string;
@@ -200,6 +227,17 @@ export interface StorageProvider {
     updates: Partial<Omit<ChatGptPairingSession, 'pairingId' | 'createdAt'>>
   ): Promise<ChatGptPairingSession>;
   listChatGptPairingSessions(limit?: number): Promise<ChatGptPairingSession[]>;
+
+  // Codex bearer linking operations
+  createCodexPairingSession(session: CodexPairingSession): Promise<CodexPairingSession>;
+  getCodexPairingSessionById(pairingId: string): Promise<CodexPairingSession | null>;
+  getCodexPairingSessionByUserCode(userCode: string): Promise<CodexPairingSession | null>;
+  updateCodexPairingSession(
+    pairingId: string,
+    updates: Partial<Omit<CodexPairingSession, 'pairingId' | 'createdAt'>>
+  ): Promise<CodexPairingSession>;
+  getCodexClientLink(codexClientHash: string): Promise<CodexClientLink | null>;
+  upsertCodexClientLink(link: CodexClientLink): Promise<CodexClientLink>;
 
   // Audit and idempotency operations
   createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent>;

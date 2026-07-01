@@ -30,7 +30,7 @@ services:
       - key: REMNOTE_BRIDGE_MCP_PATH
         value: "/mcp"
       - key: REMNOTE_BRIDGE_TOOL_PROFILE
-        value: "core"
+        value: "mass_note_writer"
       - key: REMNOTE_BRIDGE_ENABLE_DELETE_TOOL
         value: "0"
       - key: REMNOTE_BRIDGE_AUDIT_LOG

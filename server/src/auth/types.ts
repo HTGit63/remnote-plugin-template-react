@@ -28,6 +28,9 @@ export interface AuthenticatedPrincipal {
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
   toolTier?: 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
   requiresConnectorRefresh?: boolean;
+  codexClientHash?: string;
+  codexLinkId?: string;
+  codexPairingStatus?: 'linked' | 'not_linked' | 'pending' | 'expired' | 'revoked';
 }
 
 export type AuthResult =
