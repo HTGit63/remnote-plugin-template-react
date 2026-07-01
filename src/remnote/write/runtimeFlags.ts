@@ -32,6 +32,10 @@ export function nativeRemHighlightEnabled(): boolean {
   return boolFromRuntimeEnv('REMNOTE_BRIDGE_ENABLE_NATIVE_REM_HIGHLIGHT') ?? false;
 }
 
+export function existingRemHeadingStyleEnabled(): boolean {
+  return boolFromRuntimeEnv('REMNOTE_BRIDGE_ENABLE_EXISTING_REM_HEADING_STYLE') ?? false;
+}
+
 export function singleMarkdownFastPathEnabled(): boolean {
   return boolFromRuntimeEnv('REMNOTE_BRIDGE_ENABLE_SINGLE_MARKDOWN_FAST_PATH') ?? false;
 }

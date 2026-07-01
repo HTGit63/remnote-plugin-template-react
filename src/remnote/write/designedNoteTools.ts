@@ -807,6 +807,22 @@ export async function verifyCardSet(
           sourceRemId: child._id,
           cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
         });
+      } else if (practiceEnabled && cardItemChildren.length > 0) {
+        const itemTexts: string[] = [];
+        for (const cardItem of cardItemChildren) {
+          const itemText = await getRemPlainText(plugin, cardItem).catch(() => ({ frontText: '', backText: '', plainText: '' }));
+          const value = (itemText.frontText || itemText.plainText).trim();
+          if (value) {
+            itemTexts.push(value);
+          }
+        }
+        const back = itemTexts.join('\n');
+        cards.push({
+          front: text.frontText || child._id,
+          back,
+          sourceRemId: child._id,
+          cardType: cardTypeFromBackText(back, remType, cardItemChildren.length),
+        });
       } else if (
         /\{\{.+?\}\}/.test(text.frontText) ||
         richTextHasClozeMetadata(child.text as RichTextInterface | undefined)

@@ -188,6 +188,11 @@ describe('card lifecycle simulation', () => {
     ]);
     expect(new Set([basic.createdRemId, cloze.createdRemId, multipleChoice.createdRemId, listAnswer.createdRemId]).size).toBe(4);
     expect(parent.children).toHaveLength(4);
+    expect(cloze.verification?.passed).toBe(true);
+    expect(multipleChoice.verification?.passed).toBe(true);
+    expect(listAnswer.verification?.passed).toBe(true);
+    expect(fake.rems.get(multipleChoice.createdRemId)?.backText).toEqual([]);
+    expect(fake.rems.get(listAnswer.createdRemId)?.backText).toEqual([]);
   });
 
   test('verify_card_set detects created card types and stays bounded', async () => {

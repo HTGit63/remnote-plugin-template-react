@@ -82,18 +82,35 @@ import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeE
 import { REMNOTE_COMMAND_RESULT_CACHE, STYLE_PLAN_RESULT_CACHE, getWriteIdempotencyKey } from './writeCaches';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getColorFormat, getFreshInsertIndex, getRemPlainString, getRemRichText, getRemTypeValue, headingLevelFromString, normalizeHeading, rangeInputFromArgs, remColorNameFromString, setTextColorInRange, setTextHighlightInRange } from './remnoteSdkHelpers';
-import { nativeRemHighlightEnabled } from './runtimeFlags';
+import { existingRemHeadingStyleEnabled, nativeRemHighlightEnabled } from './runtimeFlags';
 import {
   captureStyleMutationSnapshot,
   verifyStyleOnlyMutation,
   withStyleMutationProof,
 } from './styleMutationInvariant';
 
+function assertExistingRemHeadingStyleEnabled(operation: string): void {
+  if (existingRemHeadingStyleEnabled()) {
+    return;
+  }
+
+  throw new RemnoteWriteError(
+    'SDK_UNSUPPORTED',
+    'Direct heading/font-size mutation for existing Rems is disabled because the live RemNote SDK can materialize font size as a visible child Rem. Use Markdown note creation for headings, or opt in with REMNOTE_BRIDGE_ENABLE_EXISTING_REM_HEADING_STYLE=1 only after live validation.',
+    {
+      operation,
+      failedStage: 'heading_style_preflight',
+      rollbackStatus: 'not_started',
+    }
+  );
+}
+
 export async function setRemHeadingLevel(
   plugin: RNPlugin,
   args: SetRemHeadingLevelArgs
 ): Promise<FormatRemResult> {
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
+  assertExistingRemHeadingStyleEnabled('set_rem_heading_level');
   const before = await captureStyleMutationSnapshot(plugin, rem);
   await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(args.level)));
   const after = await captureStyleMutationSnapshot(plugin, rem);
@@ -434,15 +451,19 @@ export async function applyRemnoteCommand(
 
   switch (command) {
     case 'heading_1':
+      assertExistingRemHeadingStyleEnabled(command);
       await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H1'));
       break;
     case 'heading_2':
+      assertExistingRemHeadingStyleEnabled(command);
       await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H2'));
       break;
     case 'heading_3':
+      assertExistingRemHeadingStyleEnabled(command);
       await runSdkOperation('rem.setFontSize', () => rem.setFontSize('H3'));
       break;
     case 'normal_text':
+      assertExistingRemHeadingStyleEnabled(command);
       await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
       break;
     case 'highlight_yellow':

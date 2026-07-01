@@ -97,16 +97,19 @@ export async function createFlashcardRem(
   const backRichText = await buildRichTextFromSpans(plugin, [{ text: back }]);
   const rem = await createRemWithRichText(plugin, frontRichText, parent, index);
   const childIds: string[] = [];
+  const usesCardItemChildren = cardType === 'multiple_choice' || cardType === 'list_answer';
 
   if (remType) {
     await runSdkOperation('rem.setType', () => rem.setType(getRemTypeValue(remType)));
   }
 
-  await runSdkOperation('rem.setBackText', () => rem.setBackText(backRichText));
+  if (!usesCardItemChildren) {
+    await runSdkOperation('rem.setBackText', () => rem.setBackText(backRichText));
+  }
   await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
   await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(direction));
 
-  if (cardType === 'multiple_choice' || cardType === 'list_answer') {
+  if (usesCardItemChildren) {
     const choices = back
       .split('\n')
       .map((item) => item.trim())
@@ -147,6 +150,7 @@ async function verifyCreatedFlashcard(
     front?: string;
     back?: string;
     childIds?: string[];
+    cardType?: CreateFlashcardResult['cardType'];
   }
 ): Promise<CardCreationVerification> {
   const warnings: string[] = [];
@@ -170,9 +174,25 @@ async function verifyCreatedFlashcard(
   const practiceEnabled = await runSdkOperation('rem.getEnablePractice', () => readBack.getEnablePractice()).catch(() => undefined);
   const childIds = (await runSdkOperation('rem.getChildrenRem', () => readBack.getChildrenRem()).catch(() => []))
     .map((child) => child._id);
+  const cardItemMode = expected.cardType === 'multiple_choice' || expected.cardType === 'list_answer';
+  const expectedChildTexts = cardItemMode
+    ? (expected.back ?? '').split('\n').map((item) => item.trim()).filter(Boolean)
+    : [];
+  const childTexts: string[] = [];
+  if (cardItemMode && expectedChildTexts.length > 0) {
+    const children = await runSdkOperation('rem.getChildrenRem', () => readBack.getChildrenRem()).catch(() => []);
+    for (const child of children) {
+      if (!(expected.childIds ?? []).includes(child._id)) {
+        continue;
+      }
+      const childText = await getRemPlainText(plugin, child).catch(() => ({ frontText: '', backText: '', plainText: '' }));
+      childTexts.push((childText.frontText || childText.plainText).trim());
+    }
+  }
   const frontMatches = looseTextMatch(text.frontText, expected.front);
-  const backMatches = looseTextMatch(text.backText, expected.back);
+  const backMatches = cardItemMode ? true : looseTextMatch(text.backText, expected.back);
   const childrenMatch = (expected.childIds ?? []).every((childId) => childIds.includes(childId));
+  const childTextsMatch = expectedChildTexts.every((item) => childTexts.includes(item));
   if (!frontMatches) {
     warnings.push('Created card front text did not match requested front text.');
   }
@@ -185,10 +205,13 @@ async function verifyCreatedFlashcard(
   if (!childrenMatch) {
     warnings.push('Created card item children did not read back.');
   }
+  if (cardItemMode && !childTextsMatch) {
+    warnings.push('Created card item child text did not match requested card items.');
+  }
 
   return {
     attempted: true,
-    passed: frontMatches && backMatches && practiceEnabled === true && childrenMatch,
+    passed: frontMatches && backMatches && practiceEnabled === true && childrenMatch && childTextsMatch,
     method: 'rem.findOne/getRemPlainText/getEnablePractice/getChildrenRem',
     warnings,
     after: {
@@ -196,6 +219,7 @@ async function verifyCreatedFlashcard(
       frontText: text.frontText,
       ...(text.backText ? { backText: text.backText } : {}),
       childIds,
+      ...(childTexts.length ? { childTexts } : {}),
       practiceEnabled,
     },
   };
@@ -229,7 +253,7 @@ export async function createBasicFlashcard(
     remType
   );
   const verification: CardCreationVerification = (args.verifyAfterWrite ?? true)
-    ? await verifyCreatedFlashcard(plugin, rem, { front: args.front, back: args.back, childIds })
+    ? await verifyCreatedFlashcard(plugin, rem, { front: args.front, back: args.back, childIds, cardType })
     : { attempted: false, warnings: [] };
 
   const result: CreateFlashcardResult = {
@@ -263,9 +287,10 @@ export async function createClozeCard(
 
   const parent = await findRequiredRem(plugin, args.parentId, 'Parent', 'PARENT_NOT_FOUND');
   const insertIndex = await getFreshInsertIndex(plugin, parent, 'end');
-  const plainText = args.text;
-  let start = args.clozeText ? plainText.indexOf(args.clozeText) : -1;
-  let end = start >= 0 && args.clozeText ? start + args.clozeText.length : -1;
+  const normalized = normalizeClozeInput(args.text, args.clozeText);
+  const plainText = normalized.plainText;
+  let start = normalized.start;
+  let end = normalized.end;
 
   if (start < 0) {
     if (args.clozeText) {
@@ -295,7 +320,7 @@ export async function createClozeCard(
   await runSdkOperation('rem.setEnablePractice', () => rem.setEnablePractice(true));
   await runSdkOperation('rem.setPracticeDirection', () => rem.setPracticeDirection(args.direction ?? 'both'));
   const verification: CardCreationVerification = (args.verifyAfterWrite ?? true)
-    ? await verifyCreatedFlashcard(plugin, rem, { front: plainText.replace(/\{\{(.+?)\}\}/g, '$1') })
+    ? await verifyCreatedFlashcard(plugin, rem, { front: plainText, cardType: 'cloze' })
     : { attempted: false, warnings: [] };
 
   const result: CreateFlashcardResult = {
@@ -311,6 +336,46 @@ export async function createClozeCard(
   rememberCreatedRemIds([rem._id]);
   rememberCachedResult(FLASHCARD_RESULT_CACHE, idempotencyKey, result);
   return result;
+}
+
+function normalizeClozeInput(text: string, requestedClozeText?: string): { plainText: string; start: number; end: number } {
+  const markerPattern = /\{\{(.+?)\}\}/g;
+  let plainText = '';
+  let lastIndex = 0;
+  let selectedRange: { start: number; end: number } | undefined;
+
+  for (const match of text.matchAll(markerPattern)) {
+    const matchIndex = match.index ?? 0;
+    plainText += text.slice(lastIndex, matchIndex);
+    const inner = match[1] ?? '';
+    const start = plainText.length;
+    plainText += inner;
+    const end = plainText.length;
+    if (!selectedRange && (!requestedClozeText || requestedClozeText === inner)) {
+      selectedRange = { start, end };
+    }
+    lastIndex = matchIndex + match[0].length;
+  }
+
+  if (lastIndex > 0) {
+    plainText += text.slice(lastIndex);
+    if (selectedRange) {
+      return { plainText, ...selectedRange };
+    }
+  } else {
+    plainText = text;
+  }
+
+  if (requestedClozeText) {
+    const start = plainText.indexOf(requestedClozeText);
+    return {
+      plainText,
+      start,
+      end: start >= 0 ? start + requestedClozeText.length : -1,
+    };
+  }
+
+  return { plainText, start: -1, end: -1 };
 }
 
 export async function createMultipleChoiceCard(

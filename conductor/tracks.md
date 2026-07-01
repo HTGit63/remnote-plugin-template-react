@@ -4,7 +4,7 @@
 
 | Track | Status | Source | Notes |
 | --- | --- | --- | --- |
-| `fix/remnote-mcp-mass-note-creation-stability` | active | `Agents.md` | Complete stages 0-13, keep live proof honest. |
+| `fix/remnote-mcp-mass-note-creation-stability` | active-local-repaired | `Agents.md` + 15 supplied live reports | Reran tests 01-15 under `Plugin Test`; local fixes cover idempotency envelopes, bulk source-fidelity readback, unsafe heading style mutation, and card lifecycle verification. Hosted proof still needs redeploy before live-ready claims. |
 | `codex-hosted-mcp-plugin-routing` | active-local | pasted Codex routing brief | Add stable Codex bearer principal, explicit plugin-session link, safe single-active fallback, and diagnostics without weakening write/delete policy. |
 
 ## Completed

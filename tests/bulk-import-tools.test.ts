@@ -345,6 +345,8 @@ describe('bulk import MCP tools', () => {
 
     expect(run.lastStep.status).toBe('verified');
     expect(run.progress.chunksVerified).toBe(1);
+    expect(run.createdRemIds).toEqual(run.progress.createdRemIds);
+    expect(run.createdRemIds.length).toBeGreaterThan(0);
   });
 
   test('collapses matching import root and chapter titles during small bulk import', async () => {

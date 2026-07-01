@@ -97,9 +97,14 @@ function toolResult(
     : typeof structuredContent.warning === 'string'
       ? [structuredContent.warning]
       : [];
+  const progress = typeof structuredContent.progress === 'object' && structuredContent.progress !== null
+    ? structuredContent.progress as Record<string, unknown>
+    : undefined;
   const createdRemIds = Array.isArray(structuredContent.createdRemIds)
     ? structuredContent.createdRemIds.filter((remId): remId is string => typeof remId === 'string')
-    : [];
+    : Array.isArray(progress?.createdRemIds)
+      ? progress.createdRemIds.filter((remId): remId is string => typeof remId === 'string')
+      : [];
   const updatedRemIds = Array.isArray(structuredContent.updatedRemIds)
     ? structuredContent.updatedRemIds.filter((remId): remId is string => typeof remId === 'string')
     : [];

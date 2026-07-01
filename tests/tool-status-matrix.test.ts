@@ -127,8 +127,9 @@ describe('tool status matrix policy', () => {
     expect(output.structuredContent?.idempotencyResult).toBe('already_applied');
     expect(output.structuredContent?.targetRemId).toBe('root-1');
     expect(output.structuredContent?.parentRemId).toBe('parent-1');
-    expect(output.structuredContent?.createdRemIds).toEqual(['root-1']);
-    expect(output.structuredContent?.updatedRemIds).toEqual(['child-1']);
+    expect(output.structuredContent?.createdRemIds).toEqual([]);
+    expect(output.structuredContent?.updatedRemIds).toEqual([]);
+    expect(output.structuredContent?.counts).toMatchObject({ created: 0, updated: 0, deleted: 0 });
     expect((output.structuredContent?.verification as any).attempted).toBe(true);
     expect((output.structuredContent?.verification as any).passed).toBe(true);
     expect((output.structuredContent?.phaseDurations as any).totalMs).toBe(3);
@@ -153,6 +154,33 @@ describe('tool status matrix policy', () => {
     expect(output.structuredContent?.errorMessage).toBe('timed out');
     expect(output.structuredContent?.retryable).toBe(true);
     expect((output.structuredContent?.phaseDurations as any).totalMs).toBe(0);
+  });
+
+  test('standard bridge envelope never reports PASS for semantic failed results', async () => {
+    const output = await bridgeToolResult(
+      async () => ({
+        id: 'op-semantic-fail',
+        ok: true,
+        result: {
+          toolName: 'apply_style_plan',
+          status: 'failed',
+          operations: [
+            {
+              index: 0,
+              remId: 'rem-1',
+              type: 'heading',
+              status: 'failed',
+              error: { code: 'PARTIAL_FAILURE', message: 'Style-only operation created unexpected child Rems.' },
+            },
+          ],
+        },
+        lifecycle: [],
+      }),
+      'ok'
+    ) as McpToolResult;
+
+    expect(output.structuredContent?.status).toBe('FAIL');
+    expect(output.structuredContent?.standard).toMatchObject({ status: 'FAIL' });
   });
 
   test('unknown write state is retryable but platform-blocked, never a generic success/fail', () => {

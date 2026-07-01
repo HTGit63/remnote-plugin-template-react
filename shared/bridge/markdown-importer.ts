@@ -770,6 +770,7 @@ function bulletMatch(line: string): { indent: number; marker: string; text: stri
 function selectRootTitle(markdown: string, lines: string[], mapping: Required<MarkdownImportHeadingMapping>): {
   title: string;
   skipFirstHeading: boolean;
+  skipLineIndex?: number;
 } {
   if (mapping.rootHeading === 'explicit_title') {
     const title = mapping.explicitTitle?.trim();
@@ -784,10 +785,14 @@ function selectRootTitle(markdown: string, lines: string[], mapping: Required<Ma
     return { title: firstHeading.heading.title, skipFirstHeading: true };
   }
 
-  const firstNonEmpty = lines.find((line) => line.trim()) ?? markdown.slice(0, 1000);
+  const firstNonEmptyEntry = lines
+    .map((line, index) => ({ line, index }))
+    .find((entry) => entry.line.trim());
+  const firstNonEmpty = firstNonEmptyEntry?.line ?? markdown.slice(0, 1000);
   return {
     title: stripMarkdownInline(firstNonEmpty.replace(/^#+\s*/, '')) || 'Imported Markdown Note',
-    skipFirstHeading: mapping.rootHeading === 'title_from_first_line',
+    skipFirstHeading: false,
+    skipLineIndex: firstNonEmptyEntry?.index,
   };
 }
 
@@ -963,6 +968,10 @@ export function parseMarkdownImportPlan(
     const line = lines[index];
     const trimmed = line.trim();
     const heading = headingMatch(line);
+
+    if (rootSelection.skipLineIndex === index && !heading) {
+      continue;
+    }
 
     if (heading) {
       if (rootSelection.skipFirstHeading && !skippedRootHeading && heading.level === 1 && heading.title === rootSelection.title) {

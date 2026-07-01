@@ -298,6 +298,9 @@ function statusFromResult(result: unknown): StandardToolStatus {
   if (rawStatus.includes('partial')) {
     return 'PARTIAL';
   }
+  if (rawStatus.includes('failed') || rawStatus.includes('fail')) {
+    return 'FAIL';
+  }
   if (rawStatus.includes('unsupported')) {
     return 'UNSUPPORTED';
   }
@@ -350,6 +353,7 @@ function standardResponse(input: {
     idempotency?.status,
     rawStatus === 'already_applied' ? 'already_applied' : undefined
   );
+  const idempotencyReplay = idempotencyResult === 'already_applied';
   const lifecycleDurations = phaseDurationsFromLifecycle(input.lifecycle);
   const resultDurations = {
     ...numberRecord(result?.phaseDurations),
@@ -385,10 +389,13 @@ function standardResponse(input: {
     ...stringArray(result?.deletedRemIds),
     ...[firstString(result?.deletedRemId)].filter((value): value is string => Boolean(value)),
   ]));
+  const mutationCreated = idempotencyReplay ? [] : created;
+  const mutationUpdated = idempotencyReplay ? [] : updated;
+  const mutationDeleted = idempotencyReplay ? [] : deleted;
   const counts = {
-    created: created.length,
-    updated: updated.length,
-    deleted: deleted.length,
+    created: mutationCreated.length,
+    updated: mutationUpdated.length,
+    deleted: mutationDeleted.length,
     nodes: typeof result?.nodeCount === 'number'
       ? result.nodeCount
       : typeof result?.createdNodeCount === 'number'
@@ -429,12 +436,12 @@ function standardResponse(input: {
     targetRemId,
     parentRemId,
     target,
-    created,
-    updated,
-    deleted,
-    createdRemIds: created,
-    updatedRemIds: updated,
-    deletedRemIds: deleted,
+    created: mutationCreated,
+    updated: mutationUpdated,
+    deleted: mutationDeleted,
+    createdRemIds: mutationCreated,
+    updatedRemIds: mutationUpdated,
+    deletedRemIds: mutationDeleted,
     counts,
     verification: verificationFromResult(result),
     error: input.error,

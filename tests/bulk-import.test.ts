@@ -201,6 +201,15 @@ describe('bulk import planner', () => {
     expect(polluted.passed).toBe(false);
     expect(polluted.pollutionRems).toEqual(['Size', 'H1']);
   });
+
+  test('consumes first-line title so one-line chunk does not duplicate itself', () => {
+    const plan = parseMarkdownImportPlan('Formula: A=Z+N.');
+
+    expect(plan.tree.text).toBe('Formula: A=Z+N.');
+    expect(plan.tree.children ?? []).toEqual([]);
+    expect(markdownImportOutputTextFromTree(plan.tree)).toBe('Formula: A=Z+N.');
+    expect(plan.stats.nodeCount).toBe(1);
+  });
 });
 
 describe('bulk import final verification', () => {
@@ -241,6 +250,52 @@ describe('bulk import final verification', () => {
     });
     expect(dashPolluted.ok).toBe(false);
     expect(dashPolluted.checks.noVisibleDashPrefixes).toBe(false);
+  });
+
+  test('does not count equivalent frontText and plainText fields as duplicate readback', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: [
+        '# Mini Bulk Import Test — Test 07',
+        '',
+        '## Section A',
+        '',
+        'Formula: A=Z+N.',
+        '',
+        '## Section B',
+        '',
+        'Anchor: TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR.',
+      ].join('\n'),
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Mini Bulk Import Test — Test 07',
+      chapterTitle: 'Mini Bulk Import Test — Test 07',
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:readback-dedup');
+
+    const readbackTree = {
+      frontText: 'Mini Bulk Import Test — Test 07',
+      plainText: 'Mini Bulk Import Test — Test 07',
+      children: [
+        {
+          frontText: 'Section A',
+          plainText: 'Section A',
+          children: [{ frontText: 'Formula: A=Z+N.', plainText: 'Formula: A=Z+N.' }],
+        },
+        {
+          frontText: 'Section B',
+          plainText: 'Section B',
+          children: [{
+            frontText: 'Anchor: TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR.',
+            plainText: 'Anchor: TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR.',
+          }],
+        },
+      ],
+    };
+
+    const report = verifyBulkImportFinalReadback({ job, readbackTree });
+    expect(report.ok).toBe(true);
+    expect(report.structure.duplicateSectionTitles).toEqual([]);
+    expect(report.checks.noDuplicateChunkContent).toBe(true);
   });
 });
 

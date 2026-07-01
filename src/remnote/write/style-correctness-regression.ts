@@ -279,6 +279,26 @@ async function runTwoChildStyleCase(
   assertStyleInvariant(label, before, after, result?.verification);
 }
 
+async function runUnsupportedStyleCase(
+  fake: FakePlugin,
+  plugin: RNPlugin,
+  label: string,
+  operation: (root: FakeRem) => Promise<unknown>
+) {
+  const root = await createTwoChildStyleRoot(fake, label);
+  const before = await snapshotRem(plugin, root);
+  try {
+    await operation(root);
+    assert(false, `${label} unexpectedly applied instead of returning SDK_UNSUPPORTED.`);
+  } catch (error: unknown) {
+    const code = (error as { code?: unknown })?.code;
+    assert(code === 'SDK_UNSUPPORTED', `${label} returned ${String(code)} instead of SDK_UNSUPPORTED.`);
+  }
+  const after = await snapshotRem(plugin, root);
+  assert(JSON.stringify(after.childIds) === JSON.stringify(before.childIds), `${label} changed child IDs/order.`);
+  assert(after.plainText === before.plainText, `${label} changed plain text.`);
+}
+
 function simpleDesignRules() {
   return {
     headingPattern: { rootHeadingLevel: 'H1' as const, sectionHeadingLevel: 'H3' as const },
@@ -333,7 +353,7 @@ async function main() {
   const fake = new FakePlugin();
   const plugin = fake as unknown as RNPlugin;
 
-  await runTwoChildStyleCase(fake, plugin, 'set_rem_heading_level', (root) =>
+  await runUnsupportedStyleCase(fake, plugin, 'set_rem_heading_level', (root) =>
     setRemHeadingLevel(plugin, { remId: root._id, level: 'H1' })
   );
   await runTwoChildStyleCase(fake, plugin, 'set_rem_text_color', async (root) => {
@@ -375,13 +395,25 @@ async function main() {
     });
     return result.operations[0].result as { verification?: Record<string, unknown> };
   });
-  await runTwoChildStyleCase(fake, plugin, 'apply_remnote_command', (root) =>
+  await runUnsupportedStyleCase(fake, plugin, 'apply_remnote_command_heading', (root) =>
     applyRemnoteCommand(plugin, {
       target: { mode: 'rem_id', remId: root._id },
       command: 'heading_2',
       idempotencyKey: 'command-two-child',
     })
   );
+  const headingPlanRoot = await createTwoChildStyleRoot(fake, 'apply-style-plan-heading');
+  const headingPlanBefore = await snapshotRem(plugin, headingPlanRoot);
+  const headingPlan = await applyStylePlan(plugin, {
+    operations: [{ remId: headingPlanRoot._id, type: 'heading', headingLevel: 'H3' }],
+    dryRun: false,
+    idempotencyKey: 'style-plan-heading-unsupported',
+  });
+  const headingPlanAfter = await snapshotRem(plugin, headingPlanRoot);
+  assert(headingPlan.status === 'partial', 'Heading style plan should be partial when the heading operation is unsupported.');
+  assert(headingPlan.operations[0]?.status === 'unsupported', 'Heading style operation should be marked unsupported.');
+  assert(JSON.stringify(headingPlanAfter.childIds) === JSON.stringify(headingPlanBefore.childIds), 'Heading style plan changed child IDs/order.');
+  assert(headingPlanAfter.plainText === headingPlanBefore.plainText, 'Heading style plan changed plain text.');
   await runTwoChildStyleCase(fake, plugin, 'update_rem_rich', (root) =>
     updateRemRich(plugin, {
       remId: root._id,
@@ -391,7 +423,6 @@ async function main() {
   );
 
   const root = fake.addRem('root', 'Smoke alpha beta');
-  await setRemHeadingLevel(plugin, { remId: root._id, level: 'H3' });
   await setTextSpanColor(plugin, { remId: root._id, text: 'alpha', color: 'Blue' });
   await setTextSpanHighlight(plugin, { remId: root._id, text: 'beta', color: 'Yellow' });
 
@@ -419,7 +450,6 @@ async function main() {
     rootRemId: root._id,
     expectedStyleMap: {
       [root._id]: {
-        headingLevel: 'H3',
         expectedChildCount: 1,
         textColorSpans: [{ text: 'alpha', color: 'Blue' }],
         textHighlightSpans: [{ text: 'beta', color: 'Yellow' }],

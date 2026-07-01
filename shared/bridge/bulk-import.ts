@@ -944,11 +944,9 @@ export function flattenBulkImportReadbackText(value: unknown): string {
     return '';
   }
   const record = value as Record<string, unknown>;
-  const ownText = [
-    record.frontText,
-    record.plainText,
-    record.title,
-  ].filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const ownTextValue = [record.plainText, record.frontText, record.title]
+    .find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const ownText = ownTextValue ? [ownTextValue] : [];
   const childText = Array.isArray(record.children)
     ? record.children.map((child) => flattenBulkImportReadbackText(child)).filter(Boolean)
     : [];
