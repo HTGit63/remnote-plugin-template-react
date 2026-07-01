@@ -19,7 +19,7 @@ Hosted mode is for Render and ChatGPT connector access.
 ```text
 REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
 REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1
-MCP auth: ChatGPT OAuth/pairing bearer token
+MCP auth: ChatGPT OAuth/pairing bearer token, optional Codex REMNOTE_CODEX_TOKEN bearer token
 Plugin WebSocket auth: plugin_register + plugin session secret
 Local bridge token for MCP: not required and not accepted as hosted OAuth
 Expected missing-auth error: Missing bearer token.
@@ -41,6 +41,7 @@ REMNOTE_BRIDGE_STORAGE=postgres
 DATABASE_URL=postgresql://...
 SESSION_SECRET=...
 ADMIN_DEBUG_SECRET=...
+REMNOTE_CODEX_TOKEN=<strong random secret>
 REMNOTE_BRIDGE_ALLOWED_ORIGINS=https://chatgpt.com,https://chat.openai.com,https://www.remnote.com,https://remnote-plugin-template-react.onrender.com
 NODE_ENV=production
 ```
@@ -56,6 +57,9 @@ Hosted `/health` must show:
   "deploymentMode": "hosted",
   "toolCallAuthMode": "hosted_oauth_required",
   "hostedPairingEnabled": true,
+  "codexBearerAuthAvailable": true,
+  "codexBearerAuthConfigured": true,
+  "authModesSupported": ["hosted_pairing", "codex_bearer"],
   "mcpEndpoint": "https://remnote-plugin-template-react.onrender.com/mcp",
   "bridgeEndpoint": "wss://remnote-plugin-template-react.onrender.com/remnote"
 }

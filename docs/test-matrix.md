@@ -12,6 +12,7 @@ Status: Areas 1-3 repo/local checks added. Hosted public launch still needs live
 | `npm run server:build` | server TypeScript |
 | `npm run server:smoke` | local bridge/MCP regression |
 | `npm run server:test:auth` | OAuth metadata, DCR, PKCE, bearer, revoke, scope checks |
+| `npm run server:test:codex-bearer` | hosted Codex bearer auth, loopback redirect DCR, discovery, delete hiding, secret redaction |
 | `npm run server:test:pairing` | pairing start/confirm/status/revoke and token non-leak |
 | `npm run server:test:routing` | public-hosted plugin session routing |
 | `npm run server:test:security` | OAuth security smoke alias |
@@ -31,7 +32,7 @@ Status: Areas 1-3 repo/local checks added. Hosted public launch still needs live
 | `npm run server:test:tier-switching` | hosted plugin tier switch and stale-session smoke |
 | `npm run server:test:idempotency` | idempotency metadata plus MCP dry-run/delete guard certification |
 | `npm run server:test:performance` | registry cache checks plus MCP p95 latency report |
-| `npm run server:test:e2e-hosted-smoke` | hosted OAuth, plugin_register routing, hosted diagnostics, hosted matrix smoke |
+| `npm run server:test:e2e-hosted-smoke` | hosted OAuth, Codex bearer, plugin_register routing, hosted diagnostics, hosted matrix smoke |
 | `npm run server:test:area3` | danger-tier MCP certification for every public supported tool |
 | `npm audit` | dependency advisory scan |
 | `npm audit --omit=dev` | production dependency advisory scan |

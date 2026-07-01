@@ -29,9 +29,10 @@ ALLOWED_ORIGINS=https://chatgpt.com,https://chat.openai.com,https://www.remnote.
 REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=0
 NODE_ENV=production
 ALLOW_DEV_NO_AUTH=false
+REMNOTE_CODEX_TOKEN=<strong random secret>
 ```
 
-Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. Hosted MCP tool calls use ChatGPT OAuth/pairing bearer tokens. Local bridge tokens are local mode only.
+Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. Hosted MCP tool calls use ChatGPT OAuth/pairing bearer tokens or the optional Codex bearer token. Local bridge tokens are local mode only.
 
 If `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted` is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, startup must fail.
 
@@ -63,6 +64,9 @@ Expected `/health` facts:
   "deploymentMode": "hosted",
   "toolCallAuthMode": "hosted_oauth_required",
   "hostedPairingEnabled": true,
+  "codexBearerAuthAvailable": true,
+  "codexBearerAuthConfigured": true,
+  "authModesSupported": ["hosted_pairing", "codex_bearer"],
   "mcpEndpoint": "https://your-service.onrender.com/mcp",
   "bridgeEndpoint": "wss://your-service.onrender.com/remnote"
 }

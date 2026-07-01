@@ -1,6 +1,7 @@
 import { createServer, type Server as HttpServer, type ServerResponse } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from '../auth/local-token.js';
+import { hasValidCodexBearerToken } from '../auth/codex-token.js';
 import { validateDashboardSession } from '../auth/dashboard-session.js';
 import { handleChatGptPairingRoute } from '../auth/chatgpt-pairing-routes.js';
 import { handleDashboardRoute } from '../auth/dashboard-routes.js';
@@ -377,6 +378,51 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     };
   }
 
+  function codexScopeGrants(session?: ChatGptPairingSession | null): ScopeGrant[] {
+    const allowed = new Set<ScopeGrant>([
+      'bridge:read',
+      'bridge:write',
+      'bridge:trusted_write',
+      'bridge:pair',
+    ]);
+    const grants = (session?.approvedScopes ?? [])
+      .filter((scope): scope is ScopeGrant => allowed.has(scope as ScopeGrant));
+    return grants.length ? grants : ['bridge:read', 'bridge:write'];
+  }
+
+  async function latestCodexPairingContext(): Promise<ChatGptPairingSession | null> {
+    if (config.deploymentMode !== 'hosted') {
+      return null;
+    }
+    const sessions = await storage.listChatGptPairingSessions(25);
+    return (
+      sessions.find((session) => session.status === 'connected' && !session.revokedAt) ??
+      sessions.find((session) => session.status === 'approved' && !session.revokedAt) ??
+      null
+    );
+  }
+
+  async function authorizeCodexMcpRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]): Promise<AuthResult | null> {
+    if (config.deploymentMode !== 'hosted' || !config.codexToken || !hasValidCodexBearerToken(req, config)) {
+      return null;
+    }
+
+    const session = await latestCodexPairingContext();
+    return {
+      ok: true,
+      principal: {
+        subject: 'codex-bearer',
+        userId: session ? session.oauthSubject || session.pairingId : '__codex_bearer__',
+        authMode: 'codex_bearer',
+        scopeGrants: codexScopeGrants(session),
+        accessScope: session?.accessScope ?? 'current-rem-tree',
+        trustedWriteMode: session?.trustedWriteMode ?? 'ask-every-write',
+        toolTier: session?.toolTier ?? config.toolProfile,
+        requiresConnectorRefresh: false,
+      },
+    };
+  }
+
   function writeUnknownToolCall(body: unknown, res: ServerResponse, toolProfile: ToolProfile): boolean {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return false;
@@ -497,7 +543,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       };
     }
 
-    if (config.connectorCompatNoAuthTools && isMcpToolCallRequest(body)) {
+    if (config.connectorCompatNoAuthTools && !config.codexToken && isMcpToolCallRequest(body)) {
       return {
         ok: true,
         principal: connectorCompatPrincipal(),
@@ -505,6 +551,11 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     }
 
     if (config.deploymentMode === 'hosted') {
+      const codexAuth = await authorizeCodexMcpRequest(req);
+      if (codexAuth) {
+        return codexAuth;
+      }
+
       return authorizeHostedMcpRequest(req, config, storage, requiredScopesForMcpRequest(body));
     }
 
@@ -993,6 +1044,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
 
     if (req.method === 'GET') {
       writeJson(res, 200, {
+        ...runtimeInfoForRequest(req),
         ok: true,
         message: 'MCP endpoint is alive. Use POST initialize/tools/list for connector discovery.',
         mcpPath: config.mcpPath,

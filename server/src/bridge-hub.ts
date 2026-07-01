@@ -650,7 +650,7 @@ export class BridgeHub {
     | { ok: true; socket: WebSocket; userId: string }
     | { ok: false; error: BridgeErrorCode; message: string } {
     if (this.config.deploymentMode === 'hosted') {
-      if (principal?.authMode === 'connector_compat_noauth') {
+      if (principal?.authMode === 'connector_compat_noauth' || principal?.authMode === 'codex_bearer') {
         const singleActive = this.sessionRouter.getSingleActiveConnection();
         if (!singleActive.ok) {
           return {

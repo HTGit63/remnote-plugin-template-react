@@ -80,9 +80,12 @@ SESSION_SECRET
 PUBLIC_BASE_URL
 DATABASE_URL for postgres storage
 ADMIN_DEBUG_SECRET for protected diagnostics
+REMNOTE_CODEX_TOKEN for optional Codex bearer access
 ```
 
 Render config is documented in `docs/deployment/render.md`.
+
+Codex can use the same hosted `/mcp` endpoint with `Authorization: Bearer <REMNOTE_CODEX_TOKEN>` instead of `codex mcp login`. ChatGPT keeps using `/connect?pairing_id=...`. See `CODEX_MCP_SETUP.md`.
 
 ## Tool Access Tiers
 
@@ -142,7 +145,7 @@ npm run server:test:performance
 
 ## Security
 
-Hosted MCP calls validate token expiry, issuer/audience, OAuth scopes, RemNote access scope, trusted write mode, and destructive delete scope. Public hosted health/root routes expose only minimal status. `/diagnostics` requires dashboard session or `ADMIN_DEBUG_SECRET` in hosted mode.
+Hosted MCP calls validate token expiry, issuer/audience, OAuth scopes or the optional Codex bearer token, RemNote access scope, trusted write mode, and destructive delete scope. Public hosted health/root routes expose only minimal status. `/diagnostics` requires dashboard session or `ADMIN_DEBUG_SECRET` in hosted mode.
 
 See `docs/security/permissions.md`.
 

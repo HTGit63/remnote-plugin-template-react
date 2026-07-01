@@ -3,6 +3,7 @@ export type AuthMode =
   | 'local_no_token'
   | 'mcp_discovery_noauth'
   | 'connector_compat_noauth'
+  | 'codex_bearer'
   | 'hosted_oauth';
 
 export type ScopeGrant =

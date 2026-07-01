@@ -13,6 +13,7 @@ console.log(`RemNote MCP endpoint: ${runtimeInfo.mcpEndpoint}`);
 console.log(`RemNote bridge WebSocket: ${runtimeInfo.bridgeEndpoint}`);
 console.log(`RemNote local bearer auth required: ${runtimeInfo.localTokenRequired ? 'yes' : 'no'}`);
 console.log(`RemNote hosted pairing enabled: ${runtimeInfo.hostedPairingEnabled ? 'yes' : 'no'}`);
+console.log(`RemNote Codex bearer auth available: ${runtimeInfo.codexBearerAuthAvailable ? 'yes' : 'no'}`);
 console.log(`RemNote tool profile: ${app.config.toolProfile}`);
 if (!app.config.bridgeToken) {
   console.warn('No REMNOTE_BRIDGE_TOKEN set. Keep server bound to localhost only.');

@@ -189,7 +189,11 @@ export function validateMcpToolPermission(
     currentSessionCreatedRemIds?: ReadonlySet<string> | readonly string[];
   } = {}
 ): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; details: ToolPermissionBlockDetails; decision?: TrustedWriteDecision } {
-  if (principal.authMode !== 'hosted_oauth' && principal.authMode !== 'connector_compat_noauth') {
+  if (
+    principal.authMode !== 'hosted_oauth' &&
+    principal.authMode !== 'connector_compat_noauth' &&
+    principal.authMode !== 'codex_bearer'
+  ) {
     return { ok: true };
   }
 

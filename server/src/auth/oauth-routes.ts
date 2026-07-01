@@ -21,6 +21,7 @@ import {
 import type { ScopeGrant } from './types.js';
 
 const DEFAULT_CLIENT_ID = 'remnote-chatgpt-private-client';
+const CHATGPT_REDIRECT_HOSTS = new Set(['chat.openai.com', 'chatgpt.com']);
 const SUPPORTED_SCOPES: ScopeGrant[] = [
   'bridge:read',
   'bridge:write',
@@ -94,19 +95,40 @@ function redirect(res: ServerResponse, location: string): void {
   res.end();
 }
 
-function isHttpsOrLoopbackUrl(value: string, allowLoopbackHttp: boolean): boolean {
+function isLoopbackHttpRedirectUrl(url: URL): boolean {
+  if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost'].includes(url.hostname)) {
+    return false;
+  }
+
+  const port = Number(url.port);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+function isChatGptHttpsRedirectUrl(url: URL): boolean {
+  return url.protocol === 'https:' && CHATGPT_REDIRECT_HOSTS.has(url.hostname);
+}
+
+function isAllowedOAuthRedirectUri(value: string): boolean {
   try {
     const url = new URL(value);
-    if (url.protocol === 'https:') {
-      return true;
-    }
-    if (allowLoopbackHttp && url.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(url.hostname)) {
-      return true;
-    }
-    return false;
+    return isChatGptHttpsRedirectUrl(url) || isLoopbackHttpRedirectUrl(url);
   } catch {
     return false;
   }
+}
+
+function redirectUrisFromMetadata(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+
+  const redirectUris = value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
+  if (redirectUris.length !== value.length || !redirectUris.every(isAllowedOAuthRedirectUri)) {
+    return null;
+  }
+  return redirectUris;
 }
 
 function displayNameFromAuthorize(url: URL, clientName?: string): string | undefined {
@@ -215,13 +237,8 @@ export async function handleOAuthRoute(
       return true;
     }
 
-    const allowLoopbackHttp = config.allowNoToken || config.nodeEnv === 'development';
-    const redirectUris = Array.isArray(body.redirect_uris)
-      ? body.redirect_uris.filter((item): item is string =>
-          typeof item === 'string' && isHttpsOrLoopbackUrl(item, allowLoopbackHttp)
-        )
-      : [];
-    if (!redirectUris.length) {
+    const redirectUris = redirectUrisFromMetadata(body.redirect_uris);
+    if (!redirectUris) {
       writeJson(res, 400, { error: 'invalid_redirect_uri' });
       return true;
     }
@@ -263,6 +280,10 @@ export async function handleOAuthRoute(
       !state
     ) {
       writeJson(res, 400, { error: 'invalid_request' });
+      return true;
+    }
+    if (!isAllowedOAuthRedirectUri(redirectUri)) {
+      writeJson(res, 400, { error: 'invalid_redirect_uri' });
       return true;
     }
     if (requestedResource !== resource) {
@@ -327,6 +348,10 @@ export async function handleOAuthRoute(
 
     if (responseType !== 'code' || !redirectUri || !codeChallenge || codeChallengeMethod !== 'S256') {
       writeJson(res, 400, { error: 'invalid_request' });
+      return true;
+    }
+    if (!isAllowedOAuthRedirectUri(redirectUri)) {
+      writeJson(res, 400, { error: 'invalid_redirect_uri' });
       return true;
     }
     if (requestedResource !== resource) {

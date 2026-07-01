@@ -52,6 +52,17 @@ ALLOW_DEV_NO_AUTH=false
 
 Do not set `REMNOTE_BRIDGE_TOKEN` for hosted MCP access. If hosted mode is set without `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, startup must fail.
 
+Dynamic client registration accepts ChatGPT HTTPS callbacks and Codex loopback callbacks:
+
+```text
+https://chat.openai.com/...
+https://chatgpt.com/...
+http://127.0.0.1:<port>/...
+http://localhost:<port>/...
+```
+
+Remote HTTP callbacks, non-ChatGPT HTTPS callbacks, and `javascript:`, `file:`, `data:`, or `chrome-extension:` callbacks are rejected.
+
 ## Smoke
 
 ```bash
