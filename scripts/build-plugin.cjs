@@ -1,9 +1,10 @@
 const { spawnSync } = require('child_process');
-const { rmSync } = require('fs');
+const { copyFileSync, existsSync, rmSync } = require('fs');
 const path = require('path');
 const bestzip = require('bestzip');
 
 const rootDir = path.resolve(__dirname, '..');
+let temporaryReadmePath = null;
 
 function runNodeScript(relativePath, args = [], env = {}) {
   const result = spawnSync(process.execPath, [path.join(rootDir, relativePath), ...args], {
@@ -13,13 +14,40 @@ function runNodeScript(relativePath, args = [], env = {}) {
   });
 
   if (result.status !== 0) {
-    process.exit(result.status ?? 1);
+    const error = new Error(`${relativePath} failed with exit code ${result.status ?? 1}`);
+    error.exitStatus = result.status ?? 1;
+    throw error;
   }
+}
+
+function ensureTemporaryReadmeForSdkValidation() {
+  const readmePath = path.join(rootDir, 'README.md');
+  if (existsSync(readmePath)) {
+    return;
+  }
+
+  copyFileSync(path.join(rootDir, 'docs', 'engineering-guide.md'), readmePath);
+  temporaryReadmePath = readmePath;
+}
+
+function cleanupTemporaryReadme() {
+  if (!temporaryReadmePath) {
+    return;
+  }
+
+  rmSync(temporaryReadmePath, { force: true });
+  temporaryReadmePath = null;
 }
 
 async function main() {
   runNodeScript('node_modules/typescript/bin/tsc');
-  runNodeScript('node_modules/@remnote/plugin-sdk/scripts/index.js', ['validate']);
+
+  try {
+    ensureTemporaryReadmeForSdkValidation();
+    runNodeScript('node_modules/@remnote/plugin-sdk/scripts/index.js', ['validate']);
+  } finally {
+    cleanupTemporaryReadme();
+  }
 
   rmSync(path.join(rootDir, 'dist'), { force: true, recursive: true });
   rmSync(path.join(rootDir, 'PluginZip.zip'), { force: true });
@@ -39,6 +67,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(error);
-  process.exit(1);
+  process.exit(error.exitStatus ?? 1);
 });
-

@@ -45,7 +45,7 @@ const bulkImportSamplePlan = planNoteImport({
   chapterSelector: 'Area 3 Chapter',
 });
 const bulkImportSampleJobId = 'bulk-job:area3-certification';
-const bulkImportSampleFilePath = resolve(repoRoot, 'README.md');
+const bulkImportSampleFilePath = resolve(repoRoot, 'docs/engineering-guide.md');
 const fakeRem: SerializedRem = {
   remId: targetRemId,
   frontText: 'Area 3 certification Rem',

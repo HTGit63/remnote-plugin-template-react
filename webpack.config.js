@@ -108,7 +108,7 @@ const config = {
     new CopyPlugin({
       patterns: [
         { from: 'public', to: '' },
-        { from: 'README.md', to: '' },
+        { from: 'docs/engineering-guide.md', to: 'README.md' },
       ],
     }),
   ].filter(Boolean),

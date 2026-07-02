@@ -2,6 +2,15 @@
 
 This log tracks all changes, structural enhancements, and tests performed for the Hosted Authorization Refinement (Phases 0-3).
 
+## 2026-07-02 Markdown Compression Cleanup
+
+- User clarified root markdown policy: keep only `TOOL_REFERENCE.md` + `log.md`.
+- Compressed root/docs/conductor markdown into `docs/engineering-guide.md` + `docs/remnote-mcp-repair-and-testing.md`.
+- Compressed ChatGPT RemNote MCP report folder into `old-report.md` + `new-report.md`.
+- Removed stale markdown after compressed docs existed.
+- Patched build/sample refs from root `README.md` to `docs/engineering-guide.md`.
+- No source/test/package/lock/config deletion.
+
 ---
 
 ## Session 1: Baseline Recording & Preparation (Phase 0)
