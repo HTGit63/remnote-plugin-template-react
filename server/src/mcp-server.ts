@@ -3,6 +3,7 @@ import type { BridgeToolArgs, BridgeToolName } from '../../shared/bridge/protoco
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { BridgeRuntimeInfo, BridgeTimeoutBudgets } from './config.js';
+import type { StorageProvider } from './storage/types.js';
 import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
@@ -39,6 +40,7 @@ export interface CreateMcpServerOptions {
   runtimeInfo?: BridgeRuntimeInfo;
   timeoutBudgets?: BridgeTimeoutBudgets;
   principal?: AuthenticatedPrincipal;
+  storage?: StorageProvider;
 }
 
 export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions = {}): McpServer {
@@ -118,6 +120,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     timeoutBudgets: options.timeoutBudgets,
     toolProfile,
     principal: options.principal,
+    storage: options.storage,
   };
 
   registerStatusTools(context);

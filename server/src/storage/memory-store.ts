@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
   CodexClientLink,
@@ -26,6 +27,8 @@ export class MemoryStorageProvider implements StorageProvider {
   private codexClientLinks = new Map<string, CodexClientLink>();
   private auditEvents: StoredAuditEvent[] = [];
   private idempotencyRecords = new Map<string, IdempotencyRecord>();
+  private bulkImportPlans = new Map<string, BulkImportPlan>();
+  private bulkImportJobs = new Map<string, BulkImportJob>();
 
   async initialize(): Promise<void> {
     // No-op for in-memory
@@ -322,6 +325,35 @@ export class MemoryStorageProvider implements StorageProvider {
     return this.idempotencyRecords.get(this.idempotencyKey(userId, tool, idempotencyKey)) ?? null;
   }
 
+  bulkImportStorageDurability(): BulkImportJob['storageDurability'] {
+    return 'memory_only';
+  }
+
+  async saveBulkImportPlan(plan: BulkImportPlan): Promise<BulkImportPlan> {
+    const stored = this.cloneJson(plan);
+    this.bulkImportPlans.set(stored.planId, stored);
+    return this.cloneJson(stored);
+  }
+
+  async getBulkImportPlan(planId: string): Promise<BulkImportPlan | null> {
+    const plan = this.bulkImportPlans.get(planId);
+    return plan ? this.cloneJson(plan) : null;
+  }
+
+  async saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob> {
+    const stored = this.cloneJson({
+      ...job,
+      storageDurability: this.bulkImportStorageDurability(),
+    });
+    this.bulkImportJobs.set(stored.jobId, stored);
+    return this.cloneJson(stored);
+  }
+
+  async getBulkImportJob(jobId: string): Promise<BulkImportJob | null> {
+    const job = this.bulkImportJobs.get(jobId);
+    return job ? this.cloneJson(job) : null;
+  }
+
   private idempotencyKey(userId: string, tool: string, idempotencyKey: string): string {
     return `${userId}\u0000${tool}\u0000${idempotencyKey}`;
   }
@@ -354,5 +386,9 @@ export class MemoryStorageProvider implements StorageProvider {
 
   private cloneCodexLink(link: CodexClientLink): CodexClientLink {
     return { ...link };
+  }
+
+  private cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 }

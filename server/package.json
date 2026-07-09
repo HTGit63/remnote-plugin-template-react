@@ -38,6 +38,7 @@
     "test:tier-switching": "tsx src/area2-smoke.ts",
     "test:area2": "tsx src/area2-smoke.ts",
     "test:area3": "tsx src/area3-certification.ts all",
+    "test:bulk-storage": "tsx src/bulk-import-storage-smoke.ts",
     "test:idempotency": "tsx src/area1-smoke.ts idempotency && tsx src/area3-certification.ts idempotency",
     "test:performance": "tsx src/area1-smoke.ts performance && tsx src/area3-certification.ts performance && tsx src/performance-benchmark.ts",
     "mass-note-audit": "tsx src/mass-note-audit-report.ts",

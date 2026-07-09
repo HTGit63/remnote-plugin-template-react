@@ -8,19 +8,30 @@ import type {
   BulkImportPlan,
 } from '../../../shared/bridge/bulk-import.js';
 import {
+  canTransitionBulkImportChunkStatus,
   bulkChapterIdempotencyKey,
   bulkChunkId,
   bulkChunkIdempotencyKey,
   bulkImportRootIdempotencyKey,
   bulkSectionIdempotencyKey,
+  isBulkImportChunkRunnable,
+  isBulkImportJobComplete,
   summarizeBulkImportProgress,
 } from '../../../shared/bridge/bulk-import.js';
 
 type ChunkPatch = Partial<Omit<BulkImportChunk, 'chunkId' | 'sectionKey' | 'chunkIndex' | 'sourceHash'>>;
+type BulkImportJobStoreOptions = {
+  storageDurability?: BulkImportJob['storageDurability'];
+};
 
 export class BulkImportJobStore {
   private plans = new Map<string, BulkImportPlan>();
   private jobs = new Map<string, BulkImportJob>();
+  private readonly storageDurability: BulkImportJob['storageDurability'];
+
+  constructor(options: BulkImportJobStoreOptions = {}) {
+    this.storageDurability = options.storageDurability ?? 'memory_only';
+  }
 
   savePlan(plan: BulkImportPlan): BulkImportPlan {
     this.plans.set(plan.planId, plan);
@@ -31,7 +42,16 @@ export class BulkImportJobStore {
     return this.plans.get(planId) ?? null;
   }
 
-  createJob(planId: string, requestedJobId?: string): BulkImportJob {
+  saveJob(job: BulkImportJob): BulkImportJob {
+    this.jobs.set(job.jobId, job);
+    return job;
+  }
+
+  createJob(
+    planId: string,
+    requestedJobId?: string,
+    storageDurability: BulkImportJob['storageDurability'] = this.storageDurability
+  ): BulkImportJob {
     const plan = this.getPlan(planId);
     if (!plan) {
       throw new Error(`Unknown import plan: ${planId}`);
@@ -65,7 +85,7 @@ export class BulkImportJobStore {
       chapterTitle: plan.chapterTitle,
       chapterIdempotencyKey: bulkChapterIdempotencyKey(jobId, plan.sourceHash),
       status: 'planned',
-      storageDurability: 'memory_only',
+      storageDurability,
       sections,
       chunks,
       checkpoints: [],
@@ -73,7 +93,9 @@ export class BulkImportJobStore {
         {
           at: now,
           status: 'planned',
-          message: 'Bulk import job created. Memory storage is not durable across server restart.',
+          message: storageDurability === 'memory_only'
+            ? 'Bulk import job created. Memory storage is not durable across server restart.'
+            : 'Bulk import job created. Persistent storage is configured.',
         },
       ],
       createdAt: now,
@@ -111,6 +133,12 @@ export class BulkImportJobStore {
 
   updateJobStatus(jobId: string, status: BulkImportJobStatus, message?: string): BulkImportJob {
     const job = this.requireJob(jobId);
+    if (job.status === 'cancelled' && status !== 'cancelled') {
+      throw new Error('Cannot transition cancelled bulk import job. Create a new job to continue.');
+    }
+    if (status === 'completed' && !isBulkImportJobComplete(job)) {
+      throw new Error('Cannot complete bulk import job while unsafe chunks remain.');
+    }
     const now = new Date().toISOString();
     job.status = status;
     job.updatedAt = now;
@@ -138,6 +166,18 @@ export class BulkImportJobStore {
     if (patch.expectedSourceText && patch.expectedSourceText !== chunk.expectedSourceText) {
       throw new Error('Cannot change chunk expectedSourceText after planning.');
     }
+    const nextChunk: BulkImportChunk = {
+      ...chunk,
+      ...patch,
+      createdRemIds: patch.createdRemIds ?? chunk.createdRemIds,
+      updatedRemIds: patch.updatedRemIds ?? chunk.updatedRemIds,
+    };
+    if (
+      patch.status &&
+      !canTransitionBulkImportChunkStatus(chunk.status, patch.status, nextChunk)
+    ) {
+      throw new Error(`Cannot transition bulk import chunk ${chunk.chunkId} from ${chunk.status} to ${patch.status}.`);
+    }
     Object.assign(chunk, patch);
     for (const section of job.sections) {
       const sectionChunk = section.chunks.find((candidate) => candidate.chunkId === chunkId);
@@ -152,9 +192,10 @@ export class BulkImportJobStore {
 
   nextRunnableChunk(jobId: string): BulkImportChunk | null {
     const job = this.requireJob(jobId);
-    return job.chunks.find((chunk) =>
-      ['pending', 'partial', 'partial_needs_verification', 'written_not_verified', 'failed'].includes(chunk.status)
-    ) ?? null;
+    if (job.status === 'cancelled' || job.status === 'completed' || job.status === 'needs_manual_review') {
+      return null;
+    }
+    return job.chunks.find((chunk) => isBulkImportChunkRunnable(chunk.status)) ?? null;
   }
 
   recordChapterRoot(jobId: string, chapterRootRemId: string): BulkImportJob {

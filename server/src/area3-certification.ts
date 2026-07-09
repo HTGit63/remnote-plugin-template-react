@@ -1170,6 +1170,79 @@ async function assertWorkflowCompatibility(baseUrl: string, publicTools: readonl
   assert((retryStructured.counts as Record<string, unknown> | undefined)?.created === 0, 'Stage 5 retry created count was not zero.');
 }
 
+async function assertBulkResumeDurability(baseUrl: string, publicTools: readonly string[]) {
+  const required = [
+    'plan_note_import',
+    'start_note_import_job',
+    'run_note_import_job_step',
+    'get_note_import_job_status',
+    'resume_note_import_job',
+    'cancel_note_import_job',
+  ];
+  if (!required.every((tool) => publicTools.includes(tool))) {
+    return;
+  }
+
+  const jobId = `bulk-job:area3-stage7:${Date.now()}`;
+  const plan = await mcpToolCall(baseUrl, 'plan_note_import', {
+    sourceName: 'area3-stage7.md',
+    sourceText: bulkImportSampleText,
+    targetRootId: parentId,
+    chapterSelector: 'Area 3 Chapter',
+    options: { maxCharsPerChunk: 1000 },
+  });
+  assertToolResult('stage7:plan_note_import', plan);
+  const planStructured = structuredToolResult(plan);
+  assert(typeof planStructured.planId === 'string', 'Stage 7 plan did not return planId.');
+
+  const start = await mcpToolCall(baseUrl, 'start_note_import_job', {
+    planId: planStructured.planId,
+    jobId,
+  });
+  assertToolResult('stage7:start_note_import_job', start);
+  const startStructured = structuredToolResult(start);
+  assert(startStructured.storageDurability === 'memory_only', 'Stage 7 memory job did not expose memory_only durability.');
+  assert(
+    String(startStructured.durabilityWarning ?? '').includes('not durable across server restart'),
+    'Stage 7 memory job did not expose restart durability warning.'
+  );
+
+  const dryRun = await mcpToolCall(baseUrl, 'run_note_import_job_step', {
+    jobId,
+    maxChunks: 1,
+    dryRun: true,
+  });
+  assertToolResult('stage7:run_note_import_job_step:dryRun', dryRun);
+  const dryRunStructured = structuredToolResult(dryRun);
+  assert(dryRunStructured.dryRun === true, 'Stage 7 dry run did not stay dryRun.');
+  assert((dryRunStructured.lastStep as Record<string, unknown> | undefined)?.status === 'would_run', 'Stage 7 dry run did not preview runnable chunk.');
+
+  const resume = await mcpToolCall(baseUrl, 'resume_note_import_job', {
+    jobId,
+    dryRun: true,
+  });
+  assertToolResult('stage7:resume_note_import_job:dryRun', resume);
+  const resumeStructured = structuredToolResult(resume);
+  assert((resumeStructured.previewStep as Record<string, unknown> | undefined)?.status === 'would_run', 'Stage 7 resume did not preview first safe chunk.');
+
+  const cancel = await mcpToolCall(baseUrl, 'cancel_note_import_job', { jobId });
+  assertToolResult('stage7:cancel_note_import_job', cancel);
+  const cancelStructured = structuredToolResult(cancel);
+  assert(cancelStructured.jobStatus === 'cancelled', 'Stage 7 cancel did not mark job cancelled.');
+  assert(cancelStructured.deletionPerformed === false, 'Stage 7 cancel must not delete content.');
+
+  const runAfterCancel = await mcpToolCall(baseUrl, 'run_note_import_job_step', {
+    jobId,
+    maxChunks: 1,
+    dryRun: false,
+  });
+  assert(runAfterCancel.status === 200, `stage7:run_after_cancel returned HTTP ${runAfterCancel.status}: ${runAfterCancel.text}`);
+  assert(!runAfterCancel.json?.error, `stage7:run_after_cancel returned JSON-RPC error: ${runAfterCancel.text}`);
+  const cancelledStructured = structuredToolResult(runAfterCancel);
+  assert(cancelledStructured.status === 'FAIL', 'Stage 7 run after cancel must fail.');
+  assert(cancelledStructured.errorCode === 'JOB_CANCELLED', 'Stage 7 run after cancel must return JOB_CANCELLED.');
+}
+
 async function certifyProfile(profile: ToolProfile) {
   assertSchemaQuality(profile);
   const app = await startCompanionApp({
@@ -1210,6 +1283,7 @@ async function certifyProfile(profile: ToolProfile) {
     }
 
     await assertWorkflowCompatibility(baseUrl, tools);
+    await assertBulkResumeDurability(baseUrl, tools);
 
     const diagnostics = await getDiagnostics(baseUrl);
     const matrix = diagnostics?.runtimeVerificationMatrix as Array<Record<string, unknown>>;

@@ -695,6 +695,8 @@ export const TOOL_METADATA = [
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
+    agentWarning:
+      'Returns storageDurability. memory_only jobs are lost on server restart; persistent jobs require configured storage.',
   }),
   meta('start_note_import_from_file', 'markdown_note', 'low', {
     requiresWrite: false,
@@ -704,7 +706,7 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     agentWarning:
-      'Creates a memory-only resumable job from a server-side source file; chunk writes still require run_note_import_job_step.',
+      'Creates a resumable job from a server-side source file; check storageDurability before assuming restart durability.',
   }),
   meta('run_note_import_job_step', 'markdown_note', 'medium', {
     supportsDryRun: true,
@@ -713,6 +715,8 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     liveVerificationRequired: true,
+    agentWarning:
+      'Runs only resumable chunks. Cancelled jobs return JOB_CANCELLED and never delete existing Rems.',
   }),
   meta('get_note_import_job_status', 'markdown_note', 'low', {
     requiresWrite: false,
@@ -720,6 +724,8 @@ export const TOOL_METADATA = [
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
+    agentWarning:
+      'Check storageDurability and durabilityWarning before assuming resume will survive a server restart.',
   }),
   meta('resume_note_import_job', 'markdown_note', 'medium', {
     supportsDryRun: true,
@@ -728,6 +734,8 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     liveVerificationRequired: true,
+    agentWarning:
+      'Resumes only pending, failed-safe, partial, or unverified chunks; verified chunks are not rewritten.',
   }),
   meta('verify_note_import_job', 'markdown_note', 'low', {
     requiresWrite: false,
@@ -742,6 +750,8 @@ export const TOOL_METADATA = [
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
+    agentWarning:
+      'Cancels future work only. It does not clean up or delete already written Rems.',
   }),
   meta('preview_markdown_note_tree', 'markdown_note', 'low', {
     requiresWrite: false,

@@ -13,6 +13,7 @@ import {
   verifyMarkdownSourceFidelity,
 } from '../shared/bridge/markdown-importer';
 import { BulkImportJobStore } from '../server/src/bulk-import/job-store';
+import { MemoryStorageProvider } from '../server/src/storage/memory-store';
 
 const chapter = [
   '# Chapter 1 Nuclear Physics',
@@ -440,5 +441,80 @@ describe('bulk import job store', () => {
     expect(() => store.updateChunk(job.jobId, first?.chunkId ?? '', {
       sourceText: 'changed',
     })).toThrow(/Cannot change chunk sourceText/);
+  });
+
+  test('rejects ambiguous direct promotion from partial or failed to verified', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 160, maxRemsPerChunk: 5 },
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:transition-guard');
+    const first = store.nextRunnableChunk(job.jobId);
+    expect(first).toBeTruthy();
+
+    store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'partial',
+      verificationStatus: 'partial',
+      error: 'Readback missing.',
+    });
+
+    expect(() => store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'verified',
+    })).toThrow(/Cannot transition bulk import chunk/);
+
+    store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'failed',
+      verificationStatus: 'failed',
+      error: 'Plugin disconnected.',
+    });
+
+    expect(() => store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'verified',
+      verificationStatus: 'passed',
+    })).toThrow(/Cannot transition bulk import chunk/);
+  });
+
+  test('rejects manual job completion while unsafe chunks remain', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 160, maxRemsPerChunk: 5 },
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:job-transition-guard');
+    const first = store.nextRunnableChunk(job.jobId);
+    expect(first).toBeTruthy();
+    store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'failed',
+      verificationStatus: 'failed',
+      error: 'Plugin disconnected.',
+    });
+
+    expect(() => store.updateJobStatus(job.jobId, 'completed', 'Manual completion should fail.'))
+      .toThrow(/Cannot complete bulk import job/);
+  });
+
+  test('storage provider round-trips bulk plans and jobs with durability label', async () => {
+    const storage = new MemoryStorageProvider();
+    await storage.initialize();
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 160, maxRemsPerChunk: 5 },
+    }));
+    await storage.saveBulkImportPlan(plan);
+    const storedPlan = await storage.getBulkImportPlan(plan.planId);
+    expect(storedPlan?.sourceHash).toBe(plan.sourceHash);
+
+    const job = store.createJob(plan.planId, 'bulk-job:storage-round-trip');
+    await storage.saveBulkImportJob(job);
+    const storedJob = await storage.getBulkImportJob(job.jobId);
+    expect(storedJob?.jobId).toBe(job.jobId);
+    expect(storedJob?.storageDurability).toBe('memory_only');
+    expect(storedJob?.chunks).toHaveLength(job.chunks.length);
+    await storage.close();
   });
 });

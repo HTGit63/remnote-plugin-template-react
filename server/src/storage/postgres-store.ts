@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
   CodexClientLink,
@@ -176,6 +177,25 @@ export class PostgresStorageProvider implements StorageProvider {
         created_at TIMESTAMPTZ NOT NULL,
         updated_at TIMESTAMPTZ NOT NULL,
         revoked_at TIMESTAMPTZ
+      );
+
+      CREATE TABLE IF NOT EXISTS bulk_import_plans (
+        plan_id TEXT PRIMARY KEY,
+        source_hash TEXT NOT NULL,
+        target_root_id TEXT NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS bulk_import_jobs (
+        job_id TEXT PRIMARY KEY,
+        plan_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        storage_durability TEXT NOT NULL,
+        data JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
       );
     `);
 
@@ -775,6 +795,77 @@ export class PostgresStorageProvider implements StorageProvider {
     return res.rows[0] ? this.idempotencyFromRow(res.rows[0]) : null;
   }
 
+  bulkImportStorageDurability(): BulkImportJob['storageDurability'] {
+    return 'persistent';
+  }
+
+  async saveBulkImportPlan(plan: BulkImportPlan): Promise<BulkImportPlan> {
+    const stored = this.cloneJson(plan);
+    const now = new Date().toISOString();
+    await this.pool.query(
+      `INSERT INTO bulk_import_plans (
+        plan_id, source_hash, target_root_id, data, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (plan_id) DO UPDATE SET
+        source_hash = EXCLUDED.source_hash,
+        target_root_id = EXCLUDED.target_root_id,
+        data = EXCLUDED.data,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        stored.planId,
+        stored.sourceHash,
+        stored.targetRootId,
+        JSON.stringify(stored),
+        now,
+        now,
+      ]
+    );
+    return stored;
+  }
+
+  async getBulkImportPlan(planId: string): Promise<BulkImportPlan | null> {
+    const res = await this.pool.query('SELECT data FROM bulk_import_plans WHERE plan_id = $1', [planId]);
+    const data = res.rows[0]?.data;
+    return data ? this.cloneJson(data as BulkImportPlan) : null;
+  }
+
+  async saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob> {
+    const stored = this.cloneJson({
+      ...job,
+      storageDurability: this.bulkImportStorageDurability(),
+    });
+    await this.pool.query(
+      `INSERT INTO bulk_import_jobs (
+        job_id, plan_id, status, storage_durability, data, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (job_id) DO UPDATE SET
+        plan_id = EXCLUDED.plan_id,
+        status = EXCLUDED.status,
+        storage_durability = EXCLUDED.storage_durability,
+        data = EXCLUDED.data,
+        updated_at = EXCLUDED.updated_at`,
+      [
+        stored.jobId,
+        stored.planId,
+        stored.status,
+        stored.storageDurability,
+        JSON.stringify(stored),
+        stored.createdAt,
+        stored.updatedAt,
+      ]
+    );
+    return stored;
+  }
+
+  async getBulkImportJob(jobId: string): Promise<BulkImportJob | null> {
+    const res = await this.pool.query('SELECT data FROM bulk_import_jobs WHERE job_id = $1', [jobId]);
+    const data = res.rows[0]?.data;
+    return data ? this.cloneJson({
+      ...(data as BulkImportJob),
+      storageDurability: this.bulkImportStorageDurability(),
+    }) : null;
+  }
+
   private sessionSelectSql(): string {
     return `SELECT
       id, user_id, access_token_hash, access_token_expires_at,
@@ -921,5 +1012,9 @@ export class PostgresStorageProvider implements StorageProvider {
       ...link,
       updatedAt: link.updatedAt ?? new Date().toISOString(),
     };
+  }
+
+  private cloneJson<T>(value: T): T {
+    return JSON.parse(JSON.stringify(value)) as T;
   }
 }

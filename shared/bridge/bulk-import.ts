@@ -563,6 +563,53 @@ export function bulkSectionIdempotencyKey(jobId: string, sectionKey: string, sou
   return `bulk-import:${jobId}:section-root:${sectionKey}:source:${sourceHash}`;
 }
 
+export function bulkImportDurabilityWarning(storageDurability: BulkImportJob['storageDurability']): string | undefined {
+  return storageDurability === 'memory_only'
+    ? 'Bulk import job state is memory_only and is not durable across server restart.'
+    : undefined;
+}
+
+export function bulkImportChunkHasVerifiedEvidence(chunk: BulkImportChunk): boolean {
+  return chunk.verificationStatus === 'passed' && (chunk.createdRemIds.length > 0 || chunk.updatedRemIds.length > 0);
+}
+
+export function isBulkImportChunkRunnable(status: BulkImportChunkStatus): boolean {
+  return [
+    'pending',
+    'partial',
+    'partial_needs_verification',
+    'written_not_verified',
+    'failed',
+  ].includes(status);
+}
+
+export function canTransitionBulkImportChunkStatus(
+  from: BulkImportChunkStatus,
+  to: BulkImportChunkStatus,
+  nextChunk: BulkImportChunk
+): boolean {
+  if (from === to) {
+    return true;
+  }
+  if (to === 'verified') {
+    return bulkImportChunkHasVerifiedEvidence(nextChunk);
+  }
+  if (from === 'verified' || from === 'skipped_already_verified') {
+    return to === 'needs_manual_review';
+  }
+  if (from === 'needs_manual_review') {
+    return to === 'needs_manual_review';
+  }
+  return true;
+}
+
+export function isBulkImportJobComplete(job: BulkImportJob): boolean {
+  return job.chunks.every((chunk) =>
+    (chunk.status === 'verified' || chunk.status === 'skipped_already_verified') &&
+    chunk.verificationStatus === 'passed'
+  );
+}
+
 export function normalizeBulkImportTitle(title: string): string {
   return title
     .replace(/\r\n/g, '\n')

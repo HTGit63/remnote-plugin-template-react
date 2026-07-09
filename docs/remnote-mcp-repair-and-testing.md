@@ -98,13 +98,26 @@ Local Stage 6 regressions now cover the July 2 tiny bulk failure shape:
 
 This is local readiness for live retest, not live proof. Keep Test 07 marked live-failed until the gated live sequence passes against a disposable RemNote root.
 
+## Stage 7 Local Fix, 2026-07-09
+
+Local Stage 7 regressions now cover bulk resume/durability safety:
+
+- Bulk chunk/job transitions are guarded; failed or partial chunks cannot become `verified` without explicit passed verification and mutation IDs.
+- Status/start/run/resume/verify/cancel envelopes expose `storageDurability`; `memory_only` includes a restart-loss warning.
+- `cancel_note_import_job` only cancels future work. Later run/resume calls return `JOB_CANCELLED` and do not delete existing Rems.
+- Storage providers now expose bulk plan/job methods. Memory storage is proven process-local; Postgres persistence is wired and smoke-tested only when `DATABASE_URL` is configured.
+- `server:test:bulk-storage` reports Postgres as `BLOCKED` when `DATABASE_URL` is absent instead of pretending persistent proof ran.
+- Area 3 certification includes a dry-run resume/cancel sequence for the bulk import workflow.
+
+This is local/simulated proof plus a configured-DB smoke path, not live RemNote proof and not Postgres proof unless the smoke reports Postgres `PASS`.
+
 ## Failure Taxonomy
 
 - Connection/session: status can look connected while plugin calls time out.
 - Scope: broad `workspace_allowed` exists; agent must self-limit to disposable root.
 - Bulk source fidelity: missing source text, wrong chunk coverage, wrong hierarchy.
 - Idempotency: long generated keys can exceed 128-char validator.
-- Resume: jobs memory-only; restart-resume not proven.
+- Resume: `memory_only` jobs are restart-lossy; Postgres restart-resume is proven only with `DATABASE_URL` smoke `PASS`.
 - Formula: rich inline math can work, but full formula import not proven.
 - Cards: basic works; cloze/MC/list/parser still weak.
 - Style: simple color/highlight works; full design plan not proven.

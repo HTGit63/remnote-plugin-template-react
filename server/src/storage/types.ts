@@ -1,3 +1,5 @@
+import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
+
 export interface User {
   id: string;
   email: string;
@@ -243,6 +245,13 @@ export interface StorageProvider {
   createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent>;
   createOrUpdateIdempotencyRecord(record: Omit<IdempotencyRecord, 'id'>): Promise<IdempotencyRecord>;
   getIdempotencyRecord(userId: string, tool: string, idempotencyKey: string): Promise<IdempotencyRecord | null>;
+
+  // Bulk import job durability
+  bulkImportStorageDurability(): BulkImportJob['storageDurability'];
+  saveBulkImportPlan(plan: BulkImportPlan): Promise<BulkImportPlan>;
+  getBulkImportPlan(planId: string): Promise<BulkImportPlan | null>;
+  saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob>;
+  getBulkImportJob(jobId: string): Promise<BulkImportJob | null>;
 
   // Lifecycle
   initialize(): Promise<void>;

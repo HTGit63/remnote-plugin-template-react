@@ -11,6 +11,7 @@ import { BRIDGE_TOOL_ANNOTATIONS } from '../../../shared/bridge/protocol.js';
 import type { BridgeHub } from '../bridge-hub.js';
 import type { AuthenticatedPrincipal } from '../auth/types.js';
 import { DEFAULT_TIMEOUT_BUDGETS, type BridgeRuntimeInfo, type BridgeTimeoutBudgets } from '../config.js';
+import type { StorageProvider } from '../storage/types.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 import type { ToolProfile } from '../tool-policy.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
@@ -63,6 +64,7 @@ export interface ToolRegistrationContext {
   timeoutBudgets?: BridgeTimeoutBudgets;
   toolProfile?: ToolProfile;
   principal?: AuthenticatedPrincipal;
+  storage?: StorageProvider;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

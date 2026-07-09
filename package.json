@@ -44,6 +44,7 @@
     "server:test:tier-switching": "npm run test:tier-switching --prefix server",
     "server:test:area2": "npm run test:area2 --prefix server",
     "server:test:area3": "npm run test:area3 --prefix server",
+    "server:test:bulk-storage": "npm run test:bulk-storage --prefix server",
     "server:test:idempotency": "npm run test:idempotency --prefix server",
     "server:test:performance": "npm run test:performance --prefix server",
     "server:mass-note-audit": "npm run mass-note-audit --prefix server",

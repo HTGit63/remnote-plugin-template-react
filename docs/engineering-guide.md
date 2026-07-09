@@ -77,6 +77,13 @@ Important env/ops refs:
 - Preserve source order, headings, bullets, formulas, cards where requested.
 - Prefer chunked bulk import for long notes.
 - `written_not_verified`, `partial`, `failed`, `blocked`, `verified` stay distinct.
+- Bulk import job durability is explicit:
+  - `memory_only` means plan/job state is process-local and lost on server restart.
+  - `persistent` means plan/job JSON is stored through the configured storage provider.
+  - Persistent bulk jobs include source text and must be treated as note-content-sensitive DB data.
+  - Postgres persistence is proven only when `DATABASE_URL` is configured and `npm run server:test:bulk-storage` reports Postgres `PASS`.
+- Canceling a bulk import job stops future chunk execution. It never deletes already written Rems.
+- Resume only runs pending, partial, failed-safe, or written-not-verified chunks; verified chunks stay skipped.
 
 ## Development Workflow
 

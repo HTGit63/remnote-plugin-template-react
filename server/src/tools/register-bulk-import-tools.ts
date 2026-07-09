@@ -4,6 +4,7 @@ import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
+  bulkImportDurabilityWarning,
   bulkSectionIdempotencyKey,
   flattenBulkImportReadbackText,
   normalizeBulkImportTitle,
@@ -419,7 +420,84 @@ export function registerBulkImportTools({
   registerTool,
   callPlugin,
   timeoutBudgets,
+  storage,
 }: ToolRegistrationContext): void {
+  const storageDurability = storage?.bulkImportStorageDurability() ?? 'memory_only';
+
+  function durabilityFields(job: BulkImportJob) {
+    return {
+      storageDurability: job.storageDurability,
+      durabilityWarning: bulkImportDurabilityWarning(job.storageDurability),
+    };
+  }
+
+  async function savePlan(plan: ReturnType<typeof planNoteImport>) {
+    bulkImportJobStore.savePlan(plan);
+    if (storage) {
+      await storage.saveBulkImportPlan(plan);
+    }
+    return plan;
+  }
+
+  async function hydratePlan(planId: string) {
+    if (bulkImportJobStore.getPlan(planId) || !storage) {
+      return;
+    }
+    const plan = await storage.getBulkImportPlan(planId);
+    if (plan) {
+      bulkImportJobStore.savePlan(plan);
+    }
+  }
+
+  async function hydrateJob(jobId: string): Promise<BulkImportJob | null> {
+    const existing = bulkImportJobStore.getJob(jobId);
+    if (existing || !storage) {
+      return existing;
+    }
+    const stored = await storage.getBulkImportJob(jobId);
+    if (stored) {
+      bulkImportJobStore.saveJob(stored);
+    }
+    return stored;
+  }
+
+  async function persistJob(jobId: string): Promise<void> {
+    if (!storage) {
+      return;
+    }
+    const job = bulkImportJobStore.getJob(jobId);
+    if (job) {
+      const stored = await storage.saveBulkImportJob({
+        ...job,
+        storageDurability,
+      });
+      bulkImportJobStore.saveJob(stored);
+    }
+  }
+
+  async function createJob(planId: string, jobId?: string): Promise<BulkImportJob> {
+    await hydratePlan(planId);
+    const job = bulkImportJobStore.createJob(planId, jobId, storageDurability);
+    await persistJob(job.jobId);
+    return bulkImportJobStore.getJob(job.jobId) ?? job;
+  }
+
+  function cancelledJobResult(toolName: string, job: BulkImportJob): McpToolResult {
+    return toolResult('Bulk import job is cancelled. No content was deleted; create a new job to continue.', {
+      ok: false,
+      status: 'FAIL',
+      toolName,
+      jobId: job.jobId,
+      jobStatus: job.status,
+      ...durabilityFields(job),
+      deletionPerformed: false,
+      progress: summarizeBulkImportProgress(job),
+      errorCode: 'JOB_CANCELLED',
+      errorMessage: 'Job is cancelled. No content was deleted; create a new job to continue.',
+      nextAction: 'create a new bulk import job if more chunks should run',
+    }, true);
+  }
+
   registerTool(
     'plan_note_import',
     {
@@ -432,7 +510,7 @@ export function registerBulkImportTools({
     async (args) => {
       try {
         const plan = planNoteImport(args);
-        bulkImportJobStore.savePlan(plan);
+        await savePlan(plan);
         return toolResult('Note import plan created.', planStructuredOutput(plan, 'plan_note_import'));
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -467,7 +545,7 @@ export function registerBulkImportTools({
           sourceName: args.sourceName ?? file.sourceName,
           sourceText: file.sourceText,
         });
-        bulkImportJobStore.savePlan(plan);
+        await savePlan(plan);
         return toolResult('File-backed note import plan created.', {
           ...planStructuredOutput(plan, 'plan_note_import_from_file'),
           sourceFile: {
@@ -505,7 +583,7 @@ export function registerBulkImportTools({
     },
     async ({ planId, jobId }) => {
       try {
-        const job = bulkImportJobStore.createJob(planId, jobId);
+        const job = await createJob(planId, jobId);
         return toolResult('Note import job started.', {
           ok: true,
           status: 'PASS',
@@ -518,8 +596,8 @@ export function registerBulkImportTools({
           sourceMetadata: job.sourceMetadata,
           plannedSourceLength: job.plannedSourceLength,
           extractedSourceLength: job.extractedSourceLength,
-          storageDurability: job.storageDurability,
-          warning: 'memory storage is not durable across server restart',
+          ...durabilityFields(job),
+          warning: bulkImportDurabilityWarning(job.storageDurability),
           progress: summarizeBulkImportProgress(job),
           nextAction: 'call run_note_import_job_step',
         });
@@ -558,14 +636,14 @@ export function registerBulkImportTools({
           sourceName: args.sourceName ?? file.sourceName,
           sourceText: file.sourceText,
         });
-        bulkImportJobStore.savePlan(plan);
-        const job = bulkImportJobStore.createJob(plan.planId, args.jobId);
+        await savePlan(plan);
+        const job = await createJob(plan.planId, args.jobId);
         return toolResult('File-backed note import job started.', {
           ...planStructuredOutput(plan, 'start_note_import_from_file'),
           jobId: job.jobId,
           jobStatus: job.status,
-          storageDurability: job.storageDurability,
-          warning: 'memory storage is not durable across server restart',
+          ...durabilityFields(job),
+          warning: bulkImportDurabilityWarning(job.storageDurability),
           progress: summarizeBulkImportProgress(job),
           sourceFile: {
             path: file.resolvedPath,
@@ -600,11 +678,14 @@ export function registerBulkImportTools({
     },
     async ({ jobId }) => {
       try {
+        await hydrateJob(jobId);
+        const job = publicJob(jobId);
         return toolResult('Note import job status loaded.', {
           ok: true,
           status: 'PASS',
           toolName: 'get_note_import_job_status',
-          job: publicJob(jobId),
+          job,
+          ...durabilityFields(job),
         });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -627,6 +708,7 @@ export function registerBulkImportTools({
       startedAt,
       retryCount: chunk.retryCount + (chunk.status === 'failed' || chunk.status === 'partial' ? 1 : 0),
     });
+    await persistJob(jobId);
 
     const hierarchy = await ensureChunkHierarchy(jobId, chunk, dryRun);
     if (!hierarchy.ok) {
@@ -646,6 +728,7 @@ export function registerBulkImportTools({
         status,
         message: hierarchy.response.error.message,
       });
+      await persistJob(jobId);
       const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
       return {
         response: hierarchy.response,
@@ -711,6 +794,7 @@ export function registerBulkImportTools({
         status,
         message: response.error.message,
       });
+      await persistJob(jobId);
       const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
       return {
         response,
@@ -728,11 +812,15 @@ export function registerBulkImportTools({
     const result = resultRecord(response);
     const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
     const createdRemIds = Array.from(new Set([
+      ...chunk.createdRemIds,
       ...hierarchy.createdRemIds,
       ...stringArray(result.createdRemIds),
       ...stringArray(result.createdRemId ? [result.createdRemId] : undefined),
     ]));
-    const updatedRemIds = stringArray(result.updatedRemIds);
+    const updatedRemIds = Array.from(new Set([
+      ...chunk.updatedRemIds,
+      ...stringArray(result.updatedRemIds),
+    ]));
     const verification = typeof result.verification === 'object' && result.verification !== null
       ? result.verification as { passed?: boolean }
       : undefined;
@@ -799,8 +887,9 @@ export function registerBulkImportTools({
           ? 'Chunk written and explicit verification passed.'
           : nextStatus === 'written_not_verified'
             ? 'Chunk written but explicit verification evidence was missing.'
-            : 'Chunk write needs verification review.',
+          : 'Chunk write needs verification review.',
     });
+    await persistJob(jobId);
     const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
     const verificationEvidence = {
       attempted: !dryRun,
@@ -1035,6 +1124,13 @@ export function registerBulkImportTools({
     },
     async ({ jobId, maxChunks, maxChars, dryRun }) => {
       try {
+        const existingJob = await hydrateJob(jobId);
+        if (!existingJob) {
+          throw new Error(`Unknown import job: ${jobId}`);
+        }
+        if (existingJob.status === 'cancelled') {
+          return cancelledJobResult('run_note_import_job_step', existingJob);
+        }
         if (dryRun) {
           const preview = previewRunnableChunks(jobId, maxChunks, maxChars);
           return toolResult('Dry run: note import job step previewed without mutating job state.', {
@@ -1044,6 +1140,7 @@ export function registerBulkImportTools({
             dryRun: true,
             jobId,
             jobStatus: preview.job.status,
+            ...durabilityFields(preview.job),
             progress: summarizeBulkImportProgress(preview.job),
             lastStep: preview.steps[0],
             steps: preview.steps,
@@ -1058,6 +1155,7 @@ export function registerBulkImportTools({
           const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
           if (!chunk) {
             bulkImportJobStore.updateJobStatus(jobId, 'completed', 'All chunks are verified or safely skipped.');
+            await persistJob(jobId);
             break;
           }
           if (maxChars && chunk.charCount > maxChars) {
@@ -1066,6 +1164,7 @@ export function registerBulkImportTools({
               verificationStatus: 'not_verifiable',
               error: `Chunk ${chunk.chunkId} exceeds maxChars ${maxChars}.`,
             });
+            await persistJob(jobId);
             break;
           }
           const step = await runOneChunk(jobId, chunk, dryRun);
@@ -1089,6 +1188,7 @@ export function registerBulkImportTools({
           toolName: 'run_note_import_job_step',
           jobId,
           jobStatus: job.status,
+          ...durabilityFields(job),
           progress: summarizeBulkImportProgress(job),
           verification: bulkStepVerificationSummary(steps),
           lastStep: steps[steps.length - 1],
@@ -1118,6 +1218,19 @@ export function registerBulkImportTools({
       annotations: WRITE_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, dryRun }) => {
+      const existingJob = await hydrateJob(jobId);
+      if (!existingJob) {
+        return toolResult(`Unknown import job: ${jobId}`, {
+          ok: false,
+          status: 'FAIL',
+          toolName: 'resume_note_import_job',
+          errorCode: 'INVALID_ARGS',
+          errorMessage: `Unknown import job: ${jobId}`,
+        }, true);
+      }
+      if (existingJob.status === 'cancelled') {
+        return cancelledJobResult('resume_note_import_job', existingJob);
+      }
       if (dryRun) {
         try {
           const preview = previewRunnableChunks(jobId, 1);
@@ -1128,6 +1241,7 @@ export function registerBulkImportTools({
             dryRun: true,
             jobId,
             jobStatus: preview.job.status,
+            ...durabilityFields(preview.job),
             progress: summarizeBulkImportProgress(preview.job),
             lastStep: preview.chunk ? chunkSummary(preview.chunk) : undefined,
             previewStep: preview.steps[0],
@@ -1147,12 +1261,14 @@ export function registerBulkImportTools({
       const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
       if (!chunk) {
         const job = bulkImportJobStore.updateJobStatus(jobId, 'completed', 'No pending chunks remain.');
+        await persistJob(jobId);
         return toolResult('Import job already has no pending chunks.', {
           ok: true,
           status: 'PASS',
           toolName: 'resume_note_import_job',
           jobId,
           jobStatus: job.status,
+          ...durabilityFields(job),
           progress: summarizeBulkImportProgress(job),
         });
       }
@@ -1165,6 +1281,7 @@ export function registerBulkImportTools({
           toolName: 'resume_note_import_job',
           jobId,
           jobStatus: job.status,
+          ...durabilityFields(job),
           progress: summarizeBulkImportProgress(job),
           verification: bulkStepVerificationSummary([step]),
           lastStep: step,
@@ -1198,7 +1315,7 @@ export function registerBulkImportTools({
     },
     async ({ jobId, actualTextByChunkId, readbackTree }) => {
       try {
-        const job = bulkImportJobStore.getJob(jobId);
+        const job = await hydrateJob(jobId);
         if (!job) {
           throw new Error(`Unknown import job: ${jobId}`);
         }
@@ -1259,6 +1376,7 @@ export function registerBulkImportTools({
           }
         }
         const updatedJob = bulkImportJobStore.getJob(jobId) ?? job;
+        await persistJob(jobId);
         const finalReport = verifyBulkImportFinalReadback({
           job: updatedJob,
           readbackTree: liveReadbackTree,
@@ -1290,6 +1408,7 @@ export function registerBulkImportTools({
           toolName: 'verify_note_import_job',
           jobId,
           jobStatus: updatedJob.status,
+          ...durabilityFields(updatedJob),
           verificationStatus,
           verification: {
             attempted: true,
@@ -1335,13 +1454,16 @@ export function registerBulkImportTools({
     },
     async ({ jobId }) => {
       try {
+        await hydrateJob(jobId);
         const job = bulkImportJobStore.cancelJob(jobId);
+        await persistJob(jobId);
         return toolResult('Note import job cancelled.', {
           ok: true,
           status: 'PASS',
           toolName: 'cancel_note_import_job',
           jobId,
           jobStatus: job.status,
+          ...durabilityFields(job),
           deletionPerformed: false,
           progress: summarizeBulkImportProgress(job),
           nextAction: 'No future chunks will run for this job.',

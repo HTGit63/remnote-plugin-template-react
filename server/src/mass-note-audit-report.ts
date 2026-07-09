@@ -91,6 +91,10 @@ const markdownSource = readRepoFile(repoRoot, 'src/remnote/write/markdownImportE
 const bulkImportSource = readRepoFile(repoRoot, 'shared/bridge/bulk-import.ts');
 const bulkToolSource = readRepoFile(repoRoot, 'server/src/tools/register-bulk-import-tools.ts');
 const bulkJobStoreSource = readRepoFile(repoRoot, 'server/src/bulk-import/job-store.ts');
+const storageTypesSource = readRepoFile(repoRoot, 'server/src/storage/types.ts');
+const postgresStorageSource = readRepoFile(repoRoot, 'server/src/storage/postgres-store.ts');
+const bulkStorageSmokeSource = readRepoFile(repoRoot, 'server/src/bulk-import-storage-smoke.ts');
+const area3Source = readRepoFile(repoRoot, 'server/src/area3-certification.ts');
 const liveSmokeSource = readRepoFile(repoRoot, 'server/src/live-tool-smoke.ts');
 const liveRegressionSource = readRepoFile(repoRoot, 'server/src/live-tool-regression.ts');
 const stylePresetSource = readRepoFile(repoRoot, 'shared/bridge/style-presets.ts');
@@ -179,12 +183,23 @@ const bulkJobReliabilityReady =
   bulkToolSource.includes('plugin_write_verification_and_chunk_readback') &&
   bulkToolSource.includes('ensureChunkHierarchy') &&
   bulkToolSource.includes('get_rem_tree') &&
+  bulkToolSource.includes('JOB_CANCELLED') &&
+  bulkToolSource.includes('durabilityWarning') &&
+  bulkImportSource.includes('canTransitionBulkImportChunkStatus') &&
+  bulkImportSource.includes('isBulkImportJobComplete') &&
   liveSmokeSource.includes('Stage 6 Tiny Bulk Source Fidelity') &&
   liveRegressionSource.includes('tinyBulkBlocked') &&
   bulkJobStoreSource.includes("'written_not_verified'") &&
+  bulkJobStoreSource.includes('Cannot complete bulk import job') &&
+  bulkJobStoreSource.includes('saveJob') &&
   bulkJobStoreSource.includes('recordImportRoot') &&
   bulkJobStoreSource.includes('recordSectionRoot') &&
-  bulkJobStoreSource.includes("storageDurability: 'memory_only'");
+  bulkJobStoreSource.includes('storageDurability') &&
+  storageTypesSource.includes('saveBulkImportJob') &&
+  postgresStorageSource.includes('bulk_import_jobs') &&
+  postgresStorageSource.includes("storageDurability: this.bulkImportStorageDurability()") &&
+  bulkStorageSmokeSource.includes('DATABASE_URL is not configured') &&
+  area3Source.includes('assertBulkResumeDurability');
 
 function parseLocalGateResults(raw: string | undefined): Array<{ command: string; result: string; note?: string }> {
   if (!raw) {
@@ -447,11 +462,16 @@ const rows: AuditRow[] = [
       liveRetestDefined: liveSmokeSource.includes('Stage 6 Tiny Bulk Source Fidelity') && liveRegressionSource.includes('tinyBulkBlocked'),
       hierarchyRoots: ['importRootRemId', 'chapterRootRemId', 'sectionRootRemId', 'chunkParentRemId'].every((field) => bulkImportSource.includes(field)),
       readbackVerification: bulkImportSource.includes('verifyBulkImportReadback') && bulkImportSource.includes('verifyBulkImportFinalReadback') && bulkToolSource.includes('get_rem_tree'),
-      memoryDurabilityHonest: bulkJobStoreSource.includes("storageDurability: 'memory_only'"),
+      transitionGuards: bulkImportSource.includes('canTransitionBulkImportChunkStatus') && bulkJobStoreSource.includes('Cannot complete bulk import job'),
+      memoryDurabilityHonest: bulkToolSource.includes('durabilityWarning') && bulkStorageSmokeSource.includes('lostAfterNewProvider'),
+      persistentStoragePath: storageTypesSource.includes('saveBulkImportJob') && postgresStorageSource.includes('bulk_import_jobs'),
+      persistentProofBlockedWhenDbAbsent: bulkStorageSmokeSource.includes('DATABASE_URL is not configured'),
+      cancelBlocksFutureWork: bulkToolSource.includes('JOB_CANCELLED'),
+      area3ResumeScenario: area3Source.includes('assertBulkResumeDurability'),
     },
     errorCode: staticStatusError(bulkJobReliabilityReady, 'BULK_JOB_RELIABILITY_INCOMPLETE'),
     rootCauseClass: staticStatusRoot(bulkJobReliabilityReady, 'bulk_import_reliability'),
-    fixRecommendation: staticStatusFix(bulkJobReliabilityReady, 'Keep unverified writes out of verified progress and verify with readback before marking complete.'),
+    fixRecommendation: staticStatusFix(bulkJobReliabilityReady, 'Keep unverified writes out of verified progress, preserve storage durability labels, and prove Postgres persistence when DATABASE_URL is configured.'),
   }),
   row({
     suite: 'S13',

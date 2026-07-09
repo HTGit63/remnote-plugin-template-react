@@ -321,6 +321,17 @@ describe('bulk import MCP tools', () => {
     expect(h.writeCalls).toHaveLength(0);
   });
 
+  test('status exposes top-level memory-only durability warning', async () => {
+    const h = makeHarness();
+    const { jobId } = await h.createJob('bulk-job:durability-status');
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(status.status).toBe('PASS');
+    expect(status.storageDurability).toBe('memory_only');
+    expect(status.durabilityWarning).toContain('not durable across server restart');
+    expect(status.job.storageDurability).toBe('memory_only');
+  });
+
   test('does not mark chunk verified when write lacks explicit verification', async () => {
     const h = makeHarness({
       readbackFails: true,
@@ -481,6 +492,24 @@ describe('bulk import MCP tools', () => {
     expect(run.status).toBe('PARTIAL');
     expect(run.lastStep.status).toBe('failed');
     expect(run.progress.chunksVerified).toBe(0);
+  });
+
+  test('cancel blocks later run and resume without deleting written content', async () => {
+    const h = makeHarness();
+    const { jobId } = await h.createJob('bulk-job:cancel-blocks-future-work');
+    const cancelled = text(await h.handlers.cancel_note_import_job({ jobId }));
+    expect(cancelled.status).toBe('PASS');
+    expect(cancelled.jobStatus).toBe('cancelled');
+    expect(cancelled.deletionPerformed).toBe(false);
+
+    const runAfterCancel = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+    expect(runAfterCancel.status).toBe('FAIL');
+    expect(runAfterCancel.errorCode).toBe('JOB_CANCELLED');
+
+    const resumeAfterCancel = text(await h.handlers.resume_note_import_job({ jobId, dryRun: false }));
+    expect(resumeAfterCancel.status).toBe('FAIL');
+    expect(resumeAfterCancel.errorCode).toBe('JOB_CANCELLED');
+    expect(h.writeCalls).toHaveLength(0);
   });
 
   test('verify reports not_verifiable when live readback unavailable', async () => {
