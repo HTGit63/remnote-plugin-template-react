@@ -40,14 +40,29 @@ function acceptanceGate(report: JsonRecord) {
   }
   const gatewayFailures = failed.filter((result) => result.reachedPlugin === false);
   const structuredFailures = failed.filter((result) =>
-    typeof result.category === 'string' && ['complex_note', 'markdown_note'].includes(result.category)
+    typeof result.category === 'string' && ['complex_note', 'markdown_note', 'bulk_import'].includes(result.category)
   );
+  const bulkImportResults = results.filter((result) => result.category === 'bulk_import');
+  const bulkImportSkipped = bulkImportResults.filter((result) => result.status === 'skipped');
+  const bulkImportFailed = failed.filter((result) => result.category === 'bulk_import');
+  const tinyBulkBlocked = bulkImportResults.length === 0 || bulkImportSkipped.length > 0;
   return {
-    ok: !reportMissing && failed.length === 0,
+    ok: !reportMissing && failed.length === 0 && !tinyBulkBlocked,
     reportMissing,
     failedToolCount: failed.length,
     gatewayFailureCount: gatewayFailures.length,
     structuredFailureCount: structuredFailures.length,
+    bulkImportFailureCount: bulkImportFailed.length,
+    tinyBulkBlocked,
+    tinyBulkStatuses: bulkImportResults.map((result) => ({
+      tool: result.tool,
+      status: result.status,
+      verificationStatus: result.verificationStatus,
+      message: result.message,
+    })),
+    blockReason: tinyBulkBlocked
+      ? 'Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin.'
+      : undefined,
     passedSystemReadCount: passedByCategory.get('system/read') ?? 0,
     passedSimpleWriteCount: passedByCategory.get('simple_write') ?? 0,
     dangerousRealDeleteRan: results.some((result) =>
@@ -104,6 +119,9 @@ writeFileSync(
     `- Failed tools: ${gate.failedToolCount}`,
     `- Gateway failures: ${gate.gatewayFailureCount}`,
     `- Structured/markdown failures: ${gate.structuredFailureCount}`,
+    `- Bulk import failures: ${gate.bulkImportFailureCount}`,
+    `- Tiny bulk blocked: ${gate.tinyBulkBlocked ? 'yes' : 'no'}`,
+    gate.blockReason ? `- Block reason: ${gate.blockReason}` : '',
     `- System/read passed: ${gate.passedSystemReadCount}`,
     `- Simple write passed: ${gate.passedSimpleWriteCount}`,
     `- Dangerous real delete ran: ${gate.dangerousRealDeleteRan ? 'yes' : 'no'}`,

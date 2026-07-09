@@ -1,0 +1,35 @@
+{
+  "ok": false,
+  "generatedAt": "2026-07-09T19:41:46.090Z",
+  "mcpUrl": "http://127.0.0.1:47392/mcp?tool_tier=developer",
+  "disposableParentId": "missing",
+  "allowFocusedRoot": false,
+  "totals": {
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0,
+    "listedTools": 0,
+    "matrixUnknown": 0
+  },
+  "results": [
+    {
+      "tool": "mcp_initialize",
+      "category": "system/read",
+      "durationMs": 30,
+      "status": "failed",
+      "httpStatus": 599,
+      "errorCode": "MCP_ENDPOINT_UNREACHABLE",
+      "layer": "mcp_transport",
+      "recommendedFix": "Start the MCP server and reconnect the RemNote plugin, then rerun live regression.",
+      "reachedPlugin": false,
+      "remnoteChanged": false,
+      "createdRemIds": [],
+      "updatedRemIds": [],
+      "deletedRemIds": [],
+      "verificationStatus": "not_applicable",
+      "message": "fetch failed",
+      "resultSummary": {}
+    }
+  ],
+  "matrix": []
+}

@@ -34,8 +34,9 @@ interface ToolSmokeResult {
   createdRemIds: string[];
   updatedRemIds: string[];
   deletedRemIds: string[];
-  verificationStatus: 'passed' | 'failed' | 'not_applicable' | 'unknown';
+  verificationStatus: string;
   message?: string;
+  resultSummary?: JsonRecord;
 }
 
 interface ToolMatrixEntry {
@@ -56,6 +57,8 @@ interface SmokeState {
   createdRemId?: string;
   createdMarkdownRootId?: string;
   createdCardRootId?: string;
+  bulkPlanId?: string;
+  bulkJobId?: string;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -185,8 +188,18 @@ function collectIds(value: unknown, keys: Set<string>, out = new Set<string>()):
 function classifyToolResult(toolCase: ToolSmokeCase, rpc: RpcResult): ToolSmokeResult {
   const structured = getStructured(rpc.json);
   const error = getToolError(rpc.json, rpc.status, rpc.text);
-  const ok = rpc.status >= 200 && rpc.status < 300 && structured.ok === true && !error;
   const result = isRecord(structured.result) ? structured.result : structured;
+  const toolStatus = textField(result.status) ?? textField(structured.status);
+  const verification = isRecord(result.verification)
+    ? result.verification
+    : isRecord(structured.verification)
+      ? structured.verification
+      : {};
+  const verificationStatus = textField(result.verificationStatus) ?? textField(verification.status);
+  const semanticFailure =
+    ['FAIL', 'PARTIAL', 'BLOCKED'].includes(toolStatus ?? '') ||
+    verificationStatus === 'source_fidelity_failed';
+  const ok = rpc.status >= 200 && rpc.status < 300 && structured.ok === true && !error && !semanticFailure;
   const createdRemIds = collectIds(result, new Set(['createdRemId', 'rootCreatedRemId', 'createdRemIds']));
   const updatedRemIds = collectIds(result, new Set(['updatedRemId', 'updatedRemIds', 'targetRemId']));
   const deletedRemIds = collectIds(result, new Set(['deletedRemId', 'deletedRemIds']));
@@ -213,8 +226,9 @@ function classifyToolResult(toolCase: ToolSmokeCase, rpc: RpcResult): ToolSmokeR
     createdRemIds,
     updatedRemIds,
     deletedRemIds,
-    verificationStatus: toolCase.tool.startsWith('verify_') ? (ok ? 'passed' : 'failed') : 'not_applicable',
+    verificationStatus: verificationStatus ?? (toolCase.tool.startsWith('verify_') ? (ok ? 'passed' : 'failed') : 'not_applicable'),
     message: ok ? undefined : textField(error?.message) ?? rpc.text.slice(0, 500),
+    resultSummary: resultSummary(result),
   };
 }
 
@@ -257,6 +271,39 @@ const tinyMarkdown = [
   'F = ma',
   '$$',
 ].join('\n');
+
+const tinyBulkMarkdown = [
+  '# Stage 6 Tiny Bulk Source Fidelity',
+  '',
+  'Alpha source sentence.',
+  '',
+  '## Section A',
+  '',
+  '- Bullet A',
+  '- Bullet B',
+  '',
+  'Formula: $E=mc^2$',
+].join('\n');
+
+function resultSummary(result: JsonRecord): JsonRecord {
+  const summary: JsonRecord = {};
+  for (const key of [
+    'planId',
+    'jobId',
+    'jobStatus',
+    'verificationStatus',
+    'createdRemIds',
+    'updatedRemIds',
+    'lastStep',
+    'progress',
+    'finalReport',
+  ]) {
+    if (result[key] !== undefined) {
+      summary[key] = result[key];
+    }
+  }
+  return summary;
+}
 
 const cases: ToolSmokeCase[] = [
   { tool: 'get_bridge_status', category: 'system/read', mutation: 'none', args: () => ({}) },
@@ -334,6 +381,43 @@ const cases: ToolSmokeCase[] = [
     mutation: 'write',
     skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
     args: (state) => rootId(state) ? ({ parentId: rootId(state), root: { title: 'Structured smoke root', children: [{ title: 'Structured child' }] }, operation: 'create_child_tree', verifyAfterWrite: true, idempotencyKey: idempotency('structured') }) : null,
+  },
+  {
+    tool: 'plan_note_import',
+    category: 'bulk_import',
+    mutation: 'none',
+    skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
+    args: (state) => rootId(state) ? ({
+      sourceText: tinyBulkMarkdown,
+      targetRootId: rootId(state),
+      rootTitle: 'Stage 6 Tiny Bulk Source Fidelity',
+      chapterTitle: 'Stage 6 Tiny Bulk Source Fidelity',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
+    }) : null,
+  },
+  {
+    tool: 'start_note_import_job',
+    category: 'bulk_import',
+    mutation: 'none',
+    skipReason: (state) => (state.bulkPlanId ? null : 'Tiny bulk plan did not run.'),
+    args: (state) => state.bulkPlanId ? ({
+      planId: state.bulkPlanId,
+      jobId: state.bulkJobId ?? idempotency('bulk-tiny-job'),
+    }) : null,
+  },
+  {
+    tool: 'run_note_import_job_step',
+    category: 'bulk_import',
+    mutation: 'write',
+    skipReason: (state) => (state.bulkJobId ? null : 'Tiny bulk job did not start.'),
+    args: (state) => state.bulkJobId ? ({ jobId: state.bulkJobId, maxChunks: 2, dryRun: false }) : null,
+  },
+  {
+    tool: 'verify_note_import_job',
+    category: 'bulk_import',
+    mutation: 'none',
+    skipReason: (state) => (state.bulkJobId ? null : 'Tiny bulk job did not start.'),
+    args: (state) => state.bulkJobId ? ({ jobId: state.bulkJobId }) : null,
   },
   {
     tool: 'create_polished_note_tree',
@@ -460,11 +544,18 @@ const cases: ToolSmokeCase[] = [
 function updateStateFromResult(state: SmokeState, result: ToolSmokeResult) {
   if (result.status !== 'passed') return;
   const firstCreated = result.createdRemIds[0];
-  if (!firstCreated) return;
-  if (result.tool === 'create_rem') state.createdRemId = firstCreated;
-  if (result.tool === 'create_note_from_markdown_tree') state.createdMarkdownRootId = firstCreated;
-  if (result.tool === 'create_basic_flashcard' || result.tool === 'create_flashcards_from_markdown') {
-    state.createdCardRootId = firstCreated;
+  if (result.tool === 'plan_note_import' && typeof result.resultSummary?.planId === 'string') {
+    state.bulkPlanId = result.resultSummary.planId;
+  }
+  if (result.tool === 'start_note_import_job' && typeof result.resultSummary?.jobId === 'string') {
+    state.bulkJobId = result.resultSummary.jobId;
+  }
+  if (firstCreated) {
+    if (result.tool === 'create_rem') state.createdRemId = firstCreated;
+    if (result.tool === 'create_note_from_markdown_tree') state.createdMarkdownRootId = firstCreated;
+    if (result.tool === 'create_basic_flashcard' || result.tool === 'create_flashcards_from_markdown') {
+      state.createdCardRootId = firstCreated;
+    }
   }
 }
 

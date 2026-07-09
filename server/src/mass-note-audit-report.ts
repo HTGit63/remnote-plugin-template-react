@@ -91,6 +91,8 @@ const markdownSource = readRepoFile(repoRoot, 'src/remnote/write/markdownImportE
 const bulkImportSource = readRepoFile(repoRoot, 'shared/bridge/bulk-import.ts');
 const bulkToolSource = readRepoFile(repoRoot, 'server/src/tools/register-bulk-import-tools.ts');
 const bulkJobStoreSource = readRepoFile(repoRoot, 'server/src/bulk-import/job-store.ts');
+const liveSmokeSource = readRepoFile(repoRoot, 'server/src/live-tool-smoke.ts');
+const liveRegressionSource = readRepoFile(repoRoot, 'server/src/live-tool-regression.ts');
 const stylePresetSource = readRepoFile(repoRoot, 'shared/bridge/style-presets.ts');
 const templateSource = readRepoFile(repoRoot, 'src/remnote/templates/designTemplates.ts');
 const regressionSource = readRepoFile(repoRoot, 'src/remnote/write/style-correctness-regression.ts');
@@ -166,13 +168,19 @@ const bulkJobReliabilityReady =
   bulkImportSource.includes("'written_not_verified'") &&
   bulkImportSource.includes('verifyBulkImportReadback') &&
   bulkImportSource.includes('verifyBulkImportFinalReadback') &&
+  bulkImportSource.includes('verifyBulkImportHierarchy') &&
+  bulkImportSource.includes('Chapter introduction') &&
+  bulkImportSource.includes('wrongParentChunks') &&
   bulkImportSource.includes('extractMarkedSourceText') &&
   bulkImportSource.includes("chunk.verificationStatus === 'passed'") &&
   bulkToolSource.includes('plan_note_import_from_file') &&
   bulkToolSource.includes('start_note_import_from_file') &&
   bulkToolSource.includes('verification?.passed === true') &&
+  bulkToolSource.includes('plugin_write_verification_and_chunk_readback') &&
   bulkToolSource.includes('ensureChunkHierarchy') &&
   bulkToolSource.includes('get_rem_tree') &&
+  liveSmokeSource.includes('Stage 6 Tiny Bulk Source Fidelity') &&
+  liveRegressionSource.includes('tinyBulkBlocked') &&
   bulkJobStoreSource.includes("'written_not_verified'") &&
   bulkJobStoreSource.includes('recordImportRoot') &&
   bulkJobStoreSource.includes('recordSectionRoot') &&
@@ -433,6 +441,10 @@ const rows: AuditRow[] = [
       unverifiedWriteStatus: bulkImportSource.includes("'written_not_verified'"),
       fileSourceTools: ['plan_note_import_from_file', 'start_note_import_from_file'].every((tool) => bulkToolSource.includes(tool)),
       sourceExtraction: bulkImportSource.includes('extractMarkedSourceText'),
+      introTextPreserved: bulkImportSource.includes('Chapter introduction'),
+      wrongParentDetection: bulkImportSource.includes('verifyBulkImportHierarchy') && bulkImportSource.includes('wrongParentChunks'),
+      toolEnvelopeEvidence: bulkToolSource.includes('plugin_write_verification_and_chunk_readback'),
+      liveRetestDefined: liveSmokeSource.includes('Stage 6 Tiny Bulk Source Fidelity') && liveRegressionSource.includes('tinyBulkBlocked'),
       hierarchyRoots: ['importRootRemId', 'chapterRootRemId', 'sectionRootRemId', 'chunkParentRemId'].every((field) => bulkImportSource.includes(field)),
       readbackVerification: bulkImportSource.includes('verifyBulkImportReadback') && bulkImportSource.includes('verifyBulkImportFinalReadback') && bulkToolSource.includes('get_rem_tree'),
       memoryDurabilityHonest: bulkJobStoreSource.includes("storageDurability: 'memory_only'"),

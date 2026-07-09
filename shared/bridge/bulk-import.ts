@@ -451,7 +451,27 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
     }];
   }
 
-  return starts.map((start, startIndex) => {
+  const preSectionText = lines
+    .slice(0, starts[0].index)
+    .filter((line) => {
+      const level = markdownHeadingLevel(line);
+      return level === null || level > 1;
+    })
+    .join('\n')
+    .replace(/^\n+/, '')
+    .trimEnd();
+  const introSection = preSectionText.trim()
+    ? [{
+        title: 'Chapter introduction',
+        text: preSectionText,
+        bodyText: preSectionText,
+        sectionKey: 'chapter-introduction',
+      }]
+    : [];
+
+  return [
+    ...introSection,
+    ...starts.map((start, startIndex) => {
     const end = starts[startIndex + 1]?.index ?? lines.length;
     const text = lines.slice(start.index, end).join('\n').trimEnd();
     const bodyText = lines.slice(start.index + 1, end).join('\n').replace(/^\n+/, '').trimEnd();
@@ -462,7 +482,8 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
       bodyText,
       sectionKey: slugKey(title, `section-${startIndex + 1}`),
     };
-  });
+  }),
+  ];
 }
 
 function estimatedRemCount(text: string): number {
@@ -790,6 +811,11 @@ export interface BulkImportFinalVerificationReport extends BulkImportVerificatio
   };
 }
 
+interface ReadbackNodeView {
+  text: string;
+  children: ReadbackNodeView[];
+}
+
 function normalizedUnits(text: string): string[] {
   return normalizeForSourceFidelity(text)
     .split('\n')
@@ -813,6 +839,95 @@ function duplicateValues(values: string[]): string[] {
     counts.set(value, (counts.get(value) ?? 0) + 1);
   }
   return Array.from(counts.entries()).filter(([, count]) => count > 1).map(([value]) => value);
+}
+
+function readbackNodeView(value: unknown): ReadbackNodeView {
+  if (!value || typeof value !== 'object') {
+    return { text: '', children: [] };
+  }
+  const record = value as Record<string, unknown>;
+  const textValue = [record.plainText, record.frontText, record.title]
+    .find((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  const children = Array.isArray(record.children) ? record.children.map(readbackNodeView) : [];
+  return { text: textValue ?? '', children };
+}
+
+function directExpectedUnits(sourceText: string): string[] {
+  return sourceText
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        return '';
+      }
+      const bullet = /^(\s*)([-*+]|\d+[.)])\s+(.+)$/.exec(line);
+      if (bullet) {
+        return bullet[1].replace(/\t/g, '    ').length === 0
+          ? normalizeForSourceFidelity(bullet[3])
+          : '';
+      }
+      if (/^#{1,6}\s+/.test(trimmed) || /^\s/.test(line)) {
+        return '';
+      }
+      return normalizeForSourceFidelity(trimmed);
+    })
+    .filter(Boolean);
+}
+
+function findReadbackNodeByText(root: ReadbackNodeView, text: string): ReadbackNodeView | null {
+  const target = normalizeForSourceFidelity(text);
+  if (normalizeForSourceFidelity(root.text) === target) {
+    return root;
+  }
+  for (const child of root.children) {
+    const found = findReadbackNodeByText(child, text);
+    if (found) {
+      return found;
+    }
+  }
+  return null;
+}
+
+function directChildHasText(node: ReadbackNodeView, text: string): boolean {
+  const target = normalizeForSourceFidelity(text);
+  return node.children.some((child) => normalizeForSourceFidelity(child.text) === target);
+}
+
+function descendantHasText(node: ReadbackNodeView, text: string): boolean {
+  const target = normalizeForSourceFidelity(text);
+  return node.children.some((child) =>
+    normalizeForSourceFidelity(child.text) === target || descendantHasText(child, text)
+  );
+}
+
+function verifyBulkImportHierarchy(input: {
+  job: BulkImportJob;
+  readbackTree?: unknown;
+}): { wrongParentChunks: string[]; warnings: string[] } {
+  if (!input.readbackTree) {
+    return { wrongParentChunks: [], warnings: [] };
+  }
+  const root = readbackNodeView(input.readbackTree);
+  const wrongParentChunks = new Set<string>();
+  const warnings: string[] = [];
+  for (const chunk of input.job.chunks) {
+    const sectionNode = findReadbackNodeByText(root, chunk.sectionTitle);
+    if (!sectionNode) {
+      continue;
+    }
+    const expectedDirectUnits = directExpectedUnits(chunk.expectedSourceText ?? chunk.sourceText);
+    for (const unit of expectedDirectUnits) {
+      if (directChildHasText(sectionNode, unit)) {
+        continue;
+      }
+      if (descendantHasText(sectionNode, unit)) {
+        wrongParentChunks.add(chunk.chunkId);
+        warnings.push(`Hierarchy mismatch: "${unit}" is nested under the wrong parent in section "${chunk.sectionTitle}".`);
+      }
+    }
+  }
+  return { wrongParentChunks: Array.from(wrongParentChunks), warnings };
 }
 
 export function verifyBulkImportFinalReadback(input: {
@@ -863,6 +978,7 @@ export function verifyBulkImportFinalReadback(input: {
 
   const actual = normalizeForSourceFidelity(actualRaw);
   const actualHash = stableBulkImportHash(actual);
+  const hierarchy = verifyBulkImportHierarchy({ job: input.job, readbackTree: input.readbackTree });
   const pollutionRems = visibleStylePollutionRems(actualRaw);
   const expectedUnits = normalizedUnits(expectedRaw);
   const actualUnits = normalizedUnits(actualRaw);
@@ -895,6 +1011,7 @@ export function verifyBulkImportFinalReadback(input: {
     pollutionRems.length === 0 &&
     failedChunkIds.length === 0 &&
     missingSectionTitles.length === 0 &&
+    hierarchy.wrongParentChunks.length === 0 &&
     duplicateSectionTitles.length === 0 &&
     sectionOrderOk &&
     noChapterTwo &&
@@ -910,10 +1027,12 @@ export function verifyBulkImportFinalReadback(input: {
     extraTextPreview: extraUnits.length ? previewAround(extraUnits.slice(0, 5).join('\n')) : undefined,
     duplicateSections: duplicateSectionTitles.length ? duplicateSectionTitles : undefined,
     missingChunks: failedChunkIds.length ? failedChunkIds : undefined,
+    wrongParentChunks: hierarchy.wrongParentChunks.length ? hierarchy.wrongParentChunks : undefined,
     warnings: ok
       ? []
       : [
           'Final readback did not match the planned source after documented normalization.',
+          ...hierarchy.warnings,
           ...(pollutionRems.length
             ? [`Formatting pollution Rems detected: ${Array.from(new Set(pollutionRems)).join(', ')}.`]
             : []),

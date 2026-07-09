@@ -338,6 +338,22 @@ describe('bulk import MCP tools', () => {
     expect(status.job.chunks[0].verificationStatus).toBe('written_not_verified');
   });
 
+  test('does not mark chunk verified when readback passes but write omits explicit verification', async () => {
+    const h = makeHarness({
+      writeResponses: [success('write', { createdRemIds: ['chunk-1'] })],
+    });
+    const { jobId } = await h.createJob('bulk-job:readback-without-write-verification');
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+
+    expect(run.progress.chunksVerified).toBe(0);
+    expect(run.jobStatus).toBe('partial');
+    expect(run.lastStep.status).toBe('written_not_verified');
+
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+    expect(status.job.chunks[0].status).toBe('written_not_verified');
+    expect(status.job.chunks[0].verificationStatus).toBe('written_not_verified');
+  });
+
   test('marks chunk verified only when verification passed is true', async () => {
     const h = makeHarness({ writeResponses: [success('write', { createdRemIds: ['chunk-1'], verification: { passed: true } })] });
     const { jobId } = await h.createJob('bulk-job:verified-only');
@@ -347,6 +363,33 @@ describe('bulk import MCP tools', () => {
     expect(run.progress.chunksVerified).toBe(1);
     expect(run.createdRemIds).toEqual(run.progress.createdRemIds);
     expect(run.createdRemIds.length).toBeGreaterThan(0);
+  });
+
+  test('chunk step envelope exposes chunk verification and write evidence', async () => {
+    const h = makeHarness({
+      writeResponses: [success('write', { createdRemIds: ['chunk-1'], verification: { passed: true } })],
+    });
+    const { jobId } = await h.createJob('bulk-job:step-envelope');
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+
+    expect(run.verification).toMatchObject({
+      attempted: true,
+      passed: true,
+      method: 'plugin_write_verification_and_chunk_readback',
+    });
+    expect(run.standard.verification.passed).toBe(true);
+    expect(run.lastStep).toMatchObject({
+      status: 'verified',
+      verificationStatus: 'passed',
+      chunkId: expect.any(String),
+      idempotencyKey: expect.any(String),
+    });
+    expect(run.lastStep.createdRemIds.length).toBeGreaterThan(0);
+    expect(run.lastStep.verification).toMatchObject({
+      pluginPassed: true,
+      readbackPassed: true,
+      readbackStatus: 'passed',
+    });
   });
 
   test('collapses matching import root and chapter titles during small bulk import', async () => {
@@ -451,6 +494,11 @@ describe('bulk import MCP tools', () => {
 
     expect(verify.status).toBe('PARTIAL');
     expect(verify.verificationStatus).toBe('not_verifiable');
+    expect(verify.verification).toMatchObject({
+      attempted: true,
+      status: 'not_verifiable',
+      method: 'manifest_only',
+    });
     expect(verify.limitation).toContain('Live/readback verification unavailable');
   });
 
@@ -469,6 +517,11 @@ describe('bulk import MCP tools', () => {
 
     expect(verify.status).toBe('PARTIAL');
     expect(verify.reports[0].status).toBe('passed');
+    expect(verify.verification).toMatchObject({
+      attempted: true,
+      status: 'not_verifiable',
+      method: 'supplied_chunk_text',
+    });
     const verified = text(await h.handlers.get_note_import_job_status({ jobId }));
     expect(verified.job.chunks[0].status).toBe('verified');
   });

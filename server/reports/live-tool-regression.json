@@ -1,0 +1,57 @@
+{
+  "suite": "live-tool-regression",
+  "generatedAt": "2026-07-09T19:41:46.116Z",
+  "ok": false,
+  "smokeExitCode": 1,
+  "acceptanceGate": {
+    "ok": false,
+    "reportMissing": false,
+    "failedToolCount": 1,
+    "gatewayFailureCount": 1,
+    "structuredFailureCount": 0,
+    "bulkImportFailureCount": 0,
+    "tinyBulkBlocked": true,
+    "tinyBulkStatuses": [],
+    "blockReason": "Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin.",
+    "passedSystemReadCount": 0,
+    "passedSimpleWriteCount": 0,
+    "dangerousRealDeleteRan": false
+  },
+  "smokeReport": {
+    "ok": false,
+    "generatedAt": "2026-07-09T19:41:46.090Z",
+    "mcpUrl": "http://127.0.0.1:47392/mcp?tool_tier=developer",
+    "disposableParentId": "missing",
+    "allowFocusedRoot": false,
+    "totals": {
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "listedTools": 0,
+      "matrixUnknown": 0
+    },
+    "results": [
+      {
+        "tool": "mcp_initialize",
+        "category": "system/read",
+        "durationMs": 30,
+        "status": "failed",
+        "httpStatus": 599,
+        "errorCode": "MCP_ENDPOINT_UNREACHABLE",
+        "layer": "mcp_transport",
+        "recommendedFix": "Start the MCP server and reconnect the RemNote plugin, then rerun live regression.",
+        "reachedPlugin": false,
+        "remnoteChanged": false,
+        "createdRemIds": [],
+        "updatedRemIds": [],
+        "deletedRemIds": [],
+        "verificationStatus": "not_applicable",
+        "message": "fetch failed",
+        "resultSummary": {}
+      }
+    ],
+    "matrix": []
+  },
+  "stdoutTail": "\n> remnote-chatgpt-bridge-server@0.0.1 live-tool-smoke\n> tsx src/live-tool-smoke.ts\n\n{\n  \"ok\": false,\n  \"generatedAt\": \"2026-07-09T19:41:46.090Z\",\n  \"mcpUrl\": \"http://127.0.0.1:47392/mcp?tool_tier=developer\",\n  \"disposableParentId\": \"missing\",\n  \"allowFocusedRoot\": false,\n  \"totals\": {\n    \"passed\": 0,\n    \"failed\": 1,\n    \"skipped\": 0,\n    \"listedTools\": 0,\n    \"matrixUnknown\": 0\n  },\n  \"results\": [\n    {\n      \"tool\": \"mcp_initialize\",\n      \"category\": \"system/read\",\n      \"durationMs\": 30,\n      \"status\": \"failed\",\n      \"httpStatus\": 599,\n      \"errorCode\": \"MCP_ENDPOINT_UNREACHABLE\",\n      \"layer\": \"mcp_transport\",\n      \"recommendedFix\": \"Start the MCP server and reconnect the RemNote plugin, then rerun live regression.\",\n      \"reachedPlugin\": false,\n      \"remnoteChanged\": false,\n      \"createdRemIds\": [],\n      \"updatedRemIds\": [],\n      \"deletedRemIds\": [],\n      \"verificationStatus\": \"not_applicable\",\n      \"message\": \"fetch failed\",\n      \"resultSummary\": {}\n    }\n  ],\n  \"matrix\": []\n}\n",
+  "stderrTail": ""
+}

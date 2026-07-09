@@ -85,6 +85,19 @@ Failed or risky:
 - `apply_style_plan`: old pollution/stability risk; not rerun full.
 - `delete_rem_by_id`: keep gated.
 
+## Stage 6 Local Fix, 2026-07-09
+
+Local Stage 6 regressions now cover the July 2 tiny bulk failure shape:
+
+- H1 intro text before the first H2 is preserved as a `Chapter introduction` chunk, so `Alpha source sentence.` is no longer dropped during planning.
+- Final readback verification checks direct child hierarchy and reports `wrongParentChunks` when `Bullet B` or its formula is nested under `Bullet A`.
+- `run_note_import_job_step` only marks a chunk `verified` when plugin write verification is explicitly `passed` and readback source fidelity also passes.
+- Bulk tool envelopes now expose chunk IDs, idempotency keys, created IDs, readback status, plugin verification status, missing/extra previews, and top-level verification method/status.
+- `live-tool-smoke` defines a gated Stage 6 disposable-root sequence: `plan_note_import`, `start_note_import_job`, `run_note_import_job_step`, `verify_note_import_job`.
+- `live-tool-regression` reports that sequence as blocked unless a real connected plugin and `REMNOTE_LIVE_TOOL_PARENT_ID` or `REMNOTE_LIVE_TEST_PARENT_ID` are available.
+
+This is local readiness for live retest, not live proof. Keep Test 07 marked live-failed until the gated live sequence passes against a disposable RemNote root.
+
 ## Failure Taxonomy
 
 - Connection/session: status can look connected while plugin calls time out.

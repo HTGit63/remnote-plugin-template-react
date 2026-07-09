@@ -120,6 +120,59 @@ describe('bulk import planner', () => {
     expect(plan.sections[0].chunks[0].sourceText).not.toContain('## 1.1');
   });
 
+  test('preserves chapter intro text before the first H2 section', () => {
+    const source = [
+      '# Tiny Bulk Import Test',
+      '',
+      'Alpha source sentence.',
+      '',
+      '## Section A',
+      '',
+      '- Bullet A',
+      '- Bullet B',
+      '',
+      'Formula: $E=mc^2$',
+    ].join('\n');
+
+    const plan = planNoteImport({
+      sourceText: source,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Tiny Bulk Import Test',
+      chapterTitle: 'Tiny Bulk Import Test',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
+    });
+    const plannedChunkSource = plan.chunks.map((chunk) => chunk.sourceText).join('\n');
+
+    expect(plannedChunkSource).toContain('Alpha source sentence.');
+    expect(plan.sections[0].bodySourceText).toContain('Alpha source sentence.');
+    expect(plan.sections[1].bodySourceText).toContain('Bullet A');
+    expect(plan.sections[1].bodySourceText).toContain('Bullet B');
+    expect(plan.sections[1].bodySourceText).toContain('Formula: $E=mc^2$');
+  });
+
+  test('keeps sibling bullets and following formula as siblings in tiny import chunks', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Tiny Bulk Import Test',
+      '',
+      '## Section A',
+      '',
+      '- Bullet A',
+      '- Bullet B',
+      '',
+      'Formula: $E=mc^2$',
+    ].join('\n'));
+    const section = plan.tree.children?.find((child) => child.text === 'Section A');
+    const childTexts = section?.children?.map((child) => child.text) ?? [];
+    const bulletA = section?.children?.find((child) => child.text === 'Bullet A');
+    const bulletB = section?.children?.find((child) => child.text === 'Bullet B');
+
+    expect(childTexts).toContain('Bullet A');
+    expect(childTexts).toContain('Bullet B');
+    expect(childTexts).toContain('Formula: E=mc^2');
+    expect(bulletA?.children ?? []).toEqual([]);
+    expect(bulletB?.children ?? []).toEqual([]);
+  });
+
   test('plans generic H2 sections for small synthetic bulk import without wrapper duplication', () => {
     const source = [
       '# Mini Bulk Import Test — Test 07',
@@ -296,6 +349,60 @@ describe('bulk import final verification', () => {
     expect(report.ok).toBe(true);
     expect(report.structure.duplicateSectionTitles).toEqual([]);
     expect(report.checks.noDuplicateChunkContent).toBe(true);
+  });
+
+  test('detects Bullet B and formula moved under Bullet A in final readback', () => {
+    const store = new BulkImportJobStore();
+    const source = [
+      '# Tiny Bulk Import Test',
+      '',
+      'Alpha source sentence.',
+      '',
+      '## Section A',
+      '',
+      '- Bullet A',
+      '- Bullet B',
+      '',
+      'Formula: $E=mc^2$',
+    ].join('\n');
+    const plan = store.savePlan(planNoteImport({
+      sourceText: source,
+      targetRootId: 'Plugin Test',
+      rootTitle: 'Tiny Bulk Import Test',
+      chapterTitle: 'Tiny Bulk Import Test',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:wrong-bullet-parent');
+    const sectionChunk = job.chunks.find((chunk) => chunk.sectionTitle === 'Section A');
+
+    const wrongTree = {
+      plainText: 'Tiny Bulk Import Test',
+      children: [
+        {
+          plainText: 'Chapter introduction',
+          children: [{ plainText: 'Alpha source sentence.' }],
+        },
+        {
+          plainText: 'Section A',
+          children: [
+            {
+              plainText: 'Bullet A',
+              children: [
+                {
+                  plainText: 'Bullet B',
+                  children: [{ plainText: 'Formula: $E=mc^2$' }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const report = verifyBulkImportFinalReadback({ job, readbackTree: wrongTree });
+    expect(report.ok).toBe(false);
+    expect(report.wrongParentChunks).toEqual(expect.arrayContaining([sectionChunk?.chunkId]));
+    expect(report.warnings.join(' ')).toContain('Bullet B');
   });
 });
 

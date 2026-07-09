@@ -208,6 +208,38 @@ function chunkSummary(chunk: BulkImportChunk) {
   };
 }
 
+function chunkStepOutput(
+  chunk: BulkImportChunk,
+  status: BulkImportChunkStatus,
+  verification?: Record<string, unknown>
+) {
+  return {
+    ...chunkSummary(chunk),
+    status,
+    ...(verification ? { verification } : {}),
+  };
+}
+
+function bulkStepVerificationSummary(steps: Array<Record<string, unknown>>) {
+  const verificationSteps = steps
+    .map((step) => step.verification)
+    .filter((verification): verification is Record<string, unknown> =>
+      typeof verification === 'object' && verification !== null
+    );
+  const attempted = verificationSteps.some((verification) => verification.attempted === true);
+  const warnings = verificationSteps.flatMap((verification) =>
+    Array.isArray(verification.warnings)
+      ? verification.warnings.filter((warning): warning is string => typeof warning === 'string')
+      : []
+  );
+  return {
+    attempted,
+    passed: attempted ? steps.every((step) => step.status === 'verified') : undefined,
+    method: verificationSteps.length ? 'plugin_write_verification_and_chunk_readback' : undefined,
+    warnings,
+  };
+}
+
 function resultRecord(response: BridgeResponse): Record<string, unknown> {
   return response.ok && typeof response.result === 'object' && response.result !== null
     ? response.result as Record<string, unknown>
@@ -614,7 +646,18 @@ export function registerBulkImportTools({
         status,
         message: hierarchy.response.error.message,
       });
-      return { response: hierarchy.response, job, status };
+      const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
+      return {
+        response: hierarchy.response,
+        job,
+        status,
+        step: chunkStepOutput(updatedChunk, status, {
+          attempted: false,
+          method: 'plugin_write_verification_and_chunk_readback',
+          warnings: [hierarchy.response.error.message],
+          error: bridgeFailureMessage(hierarchy.response),
+        }),
+      };
     }
 
     const markdownArgs = {
@@ -668,7 +711,18 @@ export function registerBulkImportTools({
         status,
         message: response.error.message,
       });
-      return { response, job, status };
+      const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
+      return {
+        response,
+        job,
+        status,
+        step: chunkStepOutput(updatedChunk, status, {
+          attempted: false,
+          method: 'plugin_write_verification_and_chunk_readback',
+          warnings: [response.error.message],
+          error: bridgeFailureMessage(response),
+        }),
+      };
     }
 
     const result = resultRecord(response);
@@ -682,6 +736,7 @@ export function registerBulkImportTools({
     const verification = typeof result.verification === 'object' && result.verification !== null
       ? result.verification as { passed?: boolean }
       : undefined;
+    const pluginVerificationPassed = verification?.passed === true;
     let readbackVerification = null as ReturnType<typeof verifyBulkImportSourceText> | null;
     let readbackError: string | undefined;
     if (!dryRun) {
@@ -703,7 +758,7 @@ export function registerBulkImportTools({
     }
     const nextStatus = dryRun
       ? 'pending'
-      : readbackVerification?.ok === true && verification?.passed !== false
+      : readbackVerification?.ok === true && pluginVerificationPassed
         ? 'verified'
         : readbackVerification?.ok === false || verification?.passed === false
         ? 'partial'
@@ -712,7 +767,7 @@ export function registerBulkImportTools({
       status: nextStatus,
       verificationStatus: dryRun
         ? 'not_verifiable'
-        : readbackVerification?.ok === true && verification?.passed !== false
+        : readbackVerification?.ok === true && pluginVerificationPassed
           ? 'passed'
           : readbackVerification?.ok === false || verification?.passed === false
             ? 'source_fidelity_failed'
@@ -746,7 +801,24 @@ export function registerBulkImportTools({
             ? 'Chunk written but explicit verification evidence was missing.'
             : 'Chunk write needs verification review.',
     });
-    return { response, job, status: nextStatus };
+    const updatedChunk = job.chunks.find((candidate) => candidate.chunkId === chunk.chunkId) ?? chunk;
+    const verificationEvidence = {
+      attempted: !dryRun,
+      method: 'plugin_write_verification_and_chunk_readback',
+      pluginPassed: verification?.passed,
+      readbackPassed: readbackVerification?.ok,
+      readbackStatus: readbackVerification?.status ?? (readbackError ? 'not_verifiable' : undefined),
+      missingTextPreview: readbackVerification?.missingTextPreview,
+      extraTextPreview: readbackVerification?.extraTextPreview,
+      warnings: readbackVerification?.warnings ?? (readbackError ? [readbackError] : []),
+      error: readbackError,
+    };
+    return {
+      response,
+      job,
+      status: nextStatus,
+      step: chunkStepOutput(updatedChunk, nextStatus, verificationEvidence),
+    };
   }
 
   function previewRunnableChunks(jobId: string, maxChunks = 1, maxChars?: number) {
@@ -981,7 +1053,7 @@ export function registerBulkImportTools({
               : undefined,
           });
         }
-        const steps = [];
+        const steps: Array<Record<string, unknown>> = [];
         for (let index = 0; index < maxChunks; index += 1) {
           const chunk = bulkImportJobStore.nextRunnableChunk(jobId);
           if (!chunk) {
@@ -997,12 +1069,7 @@ export function registerBulkImportTools({
             break;
           }
           const step = await runOneChunk(jobId, chunk, dryRun);
-          steps.push({
-            sectionKey: chunk.sectionKey,
-            chunkIndex: chunk.chunkIndex,
-            chunkId: chunk.chunkId,
-            status: step.status,
-          });
+          steps.push(step.step);
           if (
             step.status === 'failed' ||
             step.status === 'partial' ||
@@ -1023,6 +1090,7 @@ export function registerBulkImportTools({
           jobId,
           jobStatus: job.status,
           progress: summarizeBulkImportProgress(job),
+          verification: bulkStepVerificationSummary(steps),
           lastStep: steps[steps.length - 1],
           steps,
           nextAction: job.status === 'completed' ? 'call verify_note_import_job' : 'call run_note_import_job_step again',
@@ -1089,14 +1157,17 @@ export function registerBulkImportTools({
         });
       }
       return runOneChunk(jobId, chunk, dryRun)
-        .then(({ job, status }) => toolResult('Note import job resumed.', {
+        .then(({ job, status, step }) => toolResult('Note import job resumed.', {
           ok: true,
-          status: status === 'partial' ? 'PARTIAL' : 'PASS',
+          status: ['failed', 'partial', 'partial_needs_verification', 'written_not_verified'].includes(status)
+            ? 'PARTIAL'
+            : 'PASS',
           toolName: 'resume_note_import_job',
           jobId,
           jobStatus: job.status,
           progress: summarizeBulkImportProgress(job),
-          lastStep: chunkSummary(chunk),
+          verification: bulkStepVerificationSummary([step]),
+          lastStep: step,
           nextAction: job.status === 'completed' ? 'call verify_note_import_job' : 'call run_note_import_job_step again',
         }))
         .catch((error: unknown) => {
@@ -1199,17 +1270,39 @@ export function registerBulkImportTools({
         if (finalReport.status === 'not_verifiable') {
           notVerifiable.push(finalReport);
         }
+        const verificationStatus = failed.length > 0 || finalFailed
+          ? 'source_fidelity_failed'
+          : notVerifiable.length > 0
+            ? 'not_verifiable'
+            : 'passed';
+        const verificationMethod = liveReadbackTree
+          ? 'live_readback_tree'
+          : actualTextByChunkId
+            ? 'supplied_chunk_text'
+            : 'manifest_only';
+        const verificationWarnings = Array.from(new Set([
+          ...reports.flatMap((report) => report.warnings),
+          ...finalReport.warnings,
+        ]));
         return toolResult('Note import verification report generated.', {
           ok: failed.length === 0 && !finalFailed,
           status: failed.length > 0 || finalFailed ? 'FAIL' : notVerifiable.length > 0 ? 'PARTIAL' : 'PASS',
           toolName: 'verify_note_import_job',
           jobId,
           jobStatus: updatedJob.status,
-          verificationStatus: failed.length > 0 || finalFailed
-            ? 'source_fidelity_failed'
-            : notVerifiable.length > 0
-              ? 'not_verifiable'
-              : 'passed',
+          verificationStatus,
+          verification: {
+            attempted: true,
+            passed: failed.length === 0 && !finalFailed && notVerifiable.length === 0,
+            status: verificationStatus,
+            method: verificationMethod,
+            reportCount: reports.length,
+            finalReportStatus: finalReport.status,
+            missingTextPreview: finalReport.missingTextPreview,
+            extraTextPreview: finalReport.extraTextPreview,
+            wrongParentChunks: finalReport.wrongParentChunks,
+            warnings: verificationWarnings,
+          },
           reports,
           finalReport,
           progress: summarizeBulkImportProgress(updatedJob),
