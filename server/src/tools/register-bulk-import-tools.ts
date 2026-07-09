@@ -26,6 +26,18 @@ import {
 } from './tool-context.js';
 import { bulkImportJobStore } from '../bulk-import/job-store.js';
 
+const READ_ONLY_BULK_TOOL_ANNOTATIONS = {
+  readOnlyHint: true,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
+const WRITE_BULK_TOOL_ANNOTATIONS = {
+  readOnlyHint: false,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
 const BULK_IMPORT_OPTIONS_SCHEMA = z.object({
   maxCharsPerChunk: z.number().int().min(500).max(24000).optional(),
   maxRemsPerChunk: z.number().int().min(1).max(120).optional(),
@@ -383,7 +395,7 @@ export function registerBulkImportTools({
       description: 'Plan a large Markdown note import into safe resumable chunks without writing to RemNote.',
       inputSchema: PLAN_IMPORT_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async (args) => {
       try {
@@ -410,7 +422,7 @@ export function registerBulkImportTools({
       description: 'Read a local source file on the server, extract a bounded chapter span, and plan a resumable import without writing.',
       inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async (args) => {
       try {
@@ -457,7 +469,7 @@ export function registerBulkImportTools({
         jobId: z.string().trim().min(1).max(256).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ planId, jobId }) => {
       try {
@@ -501,7 +513,7 @@ export function registerBulkImportTools({
         jobId: z.string().trim().min(1).max(256).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async (args) => {
       try {
@@ -552,7 +564,7 @@ export function registerBulkImportTools({
       description: 'Return resumable progress for a note import job without writing.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId }) => {
       try {
@@ -947,7 +959,7 @@ export function registerBulkImportTools({
         dryRun: z.boolean().default(false),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: false, openWorldHint: false },
+      annotations: WRITE_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, maxChunks, maxChars, dryRun }) => {
       try {
@@ -1035,7 +1047,7 @@ export function registerBulkImportTools({
       description: 'Resume a note import job from first pending, unverified, partial, or failed chunk without rewriting verified chunks.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256), dryRun: z.boolean().default(false) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: false, openWorldHint: false },
+      annotations: WRITE_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, dryRun }) => {
       if (dryRun) {
@@ -1111,7 +1123,7 @@ export function registerBulkImportTools({
         readbackTree: z.unknown().optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, actualTextByChunkId, readbackTree }) => {
       try {
@@ -1226,7 +1238,7 @@ export function registerBulkImportTools({
       description: 'Cancel future steps for a note import job. This never deletes created Rems.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: { readOnlyHint: true, openWorldHint: false },
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId }) => {
       try {

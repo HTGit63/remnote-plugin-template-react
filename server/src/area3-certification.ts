@@ -11,6 +11,7 @@ import type {
 import { planNoteImport } from '../../shared/bridge/bulk-import.js';
 import { startCompanionApp } from './app.js';
 import { bridgeToolNameForPublicMcpTool } from './mcp-tool-map.js';
+import { createMcpServer } from './mcp-server.js';
 import {
   STATIC_SDK_UNSUPPORTED_TOOLS,
   getPublicMcpToolNames,
@@ -74,6 +75,14 @@ type JsonResponse = {
 type SeenBridgeRequest = {
   tool: BridgeToolName;
   args: Record<string, unknown>;
+};
+
+type RegisteredToolDescriptor = {
+  annotations?: {
+    readOnlyHint?: unknown;
+    openWorldHint?: unknown;
+    destructiveHint?: unknown;
+  };
 };
 
 let nextJsonRpcId = 1;
@@ -888,6 +897,10 @@ function assertMatrixShape(matrix: readonly Record<string, unknown>[], tools: re
 function assertSchemaQuality(profile: ToolProfile = 'danger') {
   const publicTools = getPublicMcpToolNames(false, profile);
   assert(!publicTools.includes('create_folder'), `${profile} exposed unsupported create_folder.`);
+  const descriptorServer = createMcpServer({} as never, { toolProfile: profile, exposeDeleteTool: false });
+  const registeredDescriptors = (descriptorServer as unknown as {
+    _registeredTools?: Record<string, RegisteredToolDescriptor>;
+  })._registeredTools ?? {};
   const removedDeleteTools = [
     ['delete', 'rem'].join('_'),
     ['delete', 'focused', 'rem'].join('_'),
@@ -900,11 +913,15 @@ function assertSchemaQuality(profile: ToolProfile = 'danger') {
   for (const tool of publicTools) {
     const metadata = getToolMetadata(tool);
     const policy = getToolPolicyEntry(tool);
+    const annotations = registeredDescriptors[tool]?.annotations;
     assert(metadata.name === tool, `${tool} metadata name mismatch.`);
     assert(metadata.exposedNormally === true, `${tool} must be normally exposed metadata.`);
     assert(metadata.sdkSupported === true, `${tool} must be SDK-supported or removed from public exposure.`);
     assert(['low', 'medium', 'high', 'dangerous'].includes(metadata.riskLevel), `${tool} risk metadata invalid.`);
     assert(['basic', 'mass_note_writer', 'note_writer', 'power_user', 'developer', 'danger'].includes(String(metadata.tier)), `${tool} tier metadata invalid.`);
+    assert(typeof annotations?.readOnlyHint === 'boolean', `${tool} descriptor missing boolean readOnlyHint.`);
+    assert(typeof annotations?.openWorldHint === 'boolean', `${tool} descriptor missing boolean openWorldHint.`);
+    assert(typeof annotations?.destructiveHint === 'boolean', `${tool} descriptor missing boolean destructiveHint.`);
     if (policy.policy === 'unsupported') {
       throw new Error(`${tool} has unsupported policy while public.`);
     }

@@ -1,0 +1,9 @@
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/TOOL_REFERENCE.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/render.yaml
+/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/public/logo.svg

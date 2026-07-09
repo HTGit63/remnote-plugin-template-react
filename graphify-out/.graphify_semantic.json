@@ -1,0 +1,663 @@
+{
+  "nodes": [
+    {
+      "id": "doc_agents",
+      "label": "Existing Agent Contract",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_remnote_mcp_test_by_chagpt_result_with_report_new_report",
+      "label": "New MCP Test Report",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_remnote_mcp_test_by_chagpt_result_with_report_old_report",
+      "label": "Old MCP Test Report",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_tool_reference",
+      "label": "Tool Reference",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/TOOL_REFERENCE.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_docs_engineering_guide",
+      "label": "Engineering Guide",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_docs_remnote_mcp_repair_and_testing",
+      "label": "Repair And Testing Guide",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_log",
+      "label": "Project Log",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_render",
+      "label": "Render Deployment Config",
+      "file_type": "document",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/render.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "doc_public_logo",
+      "label": "Plugin Logo Asset",
+      "file_type": "image",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/public/logo.svg",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_partial_live_proof_only",
+      "label": "Partial Live Proof Only",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_tool_registry_profiles",
+      "label": "Tool Registry And Profiles",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_bulk_import_source_fidelity",
+      "label": "Bulk Import Source Fidelity",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_markdown_formula_cards",
+      "label": "Markdown Formula And Card Fidelity",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_chatgpt_codex_auth",
+      "label": "ChatGPT And Codex Auth Lanes",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_pairing_session_routing",
+      "label": "Pairing Session Routing",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_scope_write_permissions",
+      "label": "Scope And Write Permissions",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_ui_connection_status",
+      "label": "Plugin UI Connection Status",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_final_audit_gates",
+      "label": "Final Audit Gates",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_security_threat_model",
+      "label": "Security Threat Model",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_mass_note_workflows",
+      "label": "Mass Note Workflows",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "concept_performance_soak",
+      "label": "Performance And Soak Testing",
+      "file_type": "concept",
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "doc_agents",
+      "target": "concept_final_audit_gates",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_agents",
+      "target": "concept_security_threat_model",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_agents",
+      "target": "concept_tool_registry_profiles",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_agents",
+      "target": "concept_chatgpt_codex_auth",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_new_report",
+      "target": "concept_partial_live_proof_only",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_new_report",
+      "target": "concept_bulk_import_source_fidelity",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_new_report",
+      "target": "concept_markdown_formula_cards",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_new_report",
+      "target": "concept_final_audit_gates",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/new-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_old_report",
+      "target": "concept_partial_live_proof_only",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_old_report",
+      "target": "concept_bulk_import_source_fidelity",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_old_report",
+      "target": "concept_markdown_formula_cards",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_remnote_mcp_test_by_chagpt_result_with_report_old_report",
+      "target": "concept_final_audit_gates",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Remnote MCP test by Chagpt result with report/old-report.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_tool_reference",
+      "target": "concept_tool_registry_profiles",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/TOOL_REFERENCE.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_tool_reference",
+      "target": "concept_mass_note_workflows",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/TOOL_REFERENCE.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_tool_reference",
+      "target": "concept_final_audit_gates",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/TOOL_REFERENCE.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_engineering_guide",
+      "target": "concept_chatgpt_codex_auth",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_engineering_guide",
+      "target": "concept_pairing_session_routing",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_engineering_guide",
+      "target": "concept_scope_write_permissions",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_engineering_guide",
+      "target": "concept_security_threat_model",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_engineering_guide",
+      "target": "concept_performance_soak",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/engineering-guide.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_remnote_mcp_repair_and_testing",
+      "target": "concept_final_audit_gates",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_remnote_mcp_repair_and_testing",
+      "target": "concept_bulk_import_source_fidelity",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_remnote_mcp_repair_and_testing",
+      "target": "concept_tool_registry_profiles",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_docs_remnote_mcp_repair_and_testing",
+      "target": "concept_mass_note_workflows",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/docs/remnote-mcp-repair-and-testing.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_log",
+      "target": "concept_chatgpt_codex_auth",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_log",
+      "target": "concept_pairing_session_routing",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_log",
+      "target": "concept_tool_registry_profiles",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_log",
+      "target": "concept_bulk_import_source_fidelity",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/log.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_render",
+      "target": "concept_chatgpt_codex_auth",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/render.yaml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_render",
+      "target": "concept_security_threat_model",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/render.yaml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_render",
+      "target": "concept_pairing_session_routing",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/render.yaml",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "doc_public_logo",
+      "target": "concept_ui_connection_status",
+      "relation": "references",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/public/logo.svg",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_partial_live_proof_only",
+      "target": "concept_final_audit_gates",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_bulk_import_source_fidelity",
+      "target": "concept_mass_note_workflows",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_markdown_formula_cards",
+      "target": "concept_bulk_import_source_fidelity",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_chatgpt_codex_auth",
+      "target": "concept_pairing_session_routing",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_scope_write_permissions",
+      "target": "concept_security_threat_model",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_tool_registry_profiles",
+      "target": "concept_final_audit_gates",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_ui_connection_status",
+      "target": "concept_pairing_session_routing",
+      "relation": "conceptually_related_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.75,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    },
+    {
+      "source": "concept_performance_soak",
+      "target": "concept_mass_note_workflows",
+      "relation": "rationale_for",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md",
+      "source_location": null,
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "remaining_remnote_mcp_completion_work",
+      "label": "Remaining RemNote MCP Completion Work",
+      "nodes": [
+        "concept_partial_live_proof_only",
+        "concept_tool_registry_profiles",
+        "concept_bulk_import_source_fidelity",
+        "concept_markdown_formula_cards",
+        "concept_chatgpt_codex_auth",
+        "concept_pairing_session_routing",
+        "concept_scope_write_permissions",
+        "concept_ui_connection_status",
+        "concept_final_audit_gates",
+        "concept_security_threat_model",
+        "concept_mass_note_workflows",
+        "concept_performance_soak"
+      ],
+      "relation": "participate_in",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react/Agents.md"
+    }
+  ],
+  "input_tokens": 0,
+  "output_tokens": 0
+}
