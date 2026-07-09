@@ -20,7 +20,7 @@ services:
       - key: ALLOWED_ORIGINS
         value: "https://chatgpt.com,https://chat.openai.com,https://remnote.com,https://www.remnote.com"
       - key: REMNOTE_BRIDGE_DEPLOYMENT_MODE
-        value: "public_hosted_oauth"
+        value: "hosted"
       - key: REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING
         value: "1"
       - key: REMNOTE_BRIDGE_STORAGE

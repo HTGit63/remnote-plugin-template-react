@@ -29,6 +29,26 @@ try {
   assertHostedGuard(error, 'validateConfig');
 }
 
+const legacyModeAliases = [
+  ['local_dev', 'local'],
+  ['personal_hosted_token', 'hosted'],
+  ['public_hosted_oauth', 'hosted'],
+] as const;
+for (const [rawMode, expectedMode] of legacyModeAliases) {
+  const aliasConfig = loadConfig({
+    ...process.env,
+    REMNOTE_BRIDGE_HOSTED_MODE: '',
+    REMNOTE_BRIDGE_DEPLOYMENT_MODE: rawMode,
+    REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING: '',
+    SESSION_SECRET: 'auth-smoke-session-secret',
+  });
+  if (aliasConfig.deploymentMode !== expectedMode) {
+    throw new Error(
+      `REMNOTE_BRIDGE_DEPLOYMENT_MODE=${rawMode} did not canonicalize to ${expectedMode}.`
+    );
+  }
+}
+
 const enabledHostedConfig = loadConfig({
   ...process.env,
   REMNOTE_BRIDGE_DEPLOYMENT_MODE: 'hosted',
@@ -56,4 +76,4 @@ try {
   assertHostedGuard(error, 'startCompanionApp');
 }
 
-console.log('Hosted guard smoke passed.');
+console.log('Hosted guard and deployment-mode alias smoke passed.');

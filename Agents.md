@@ -583,13 +583,13 @@ personal_hosted_token -> hosted
 public_hosted_oauth -> hosted
 ```
 
-`render.yaml` currently uses:
+`render.yaml` should use the canonical hosted value:
 
 ```text
-REMNOTE_BRIDGE_DEPLOYMENT_MODE=public_hosted_oauth
+REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted
 ```
 
-This is accepted by `config.ts`, but future deployment cleanup should consider moving deployment config to the canonical `hosted` value after verifying no Render or docs dependency expects the legacy string.
+Legacy aliases remain accepted by `config.ts` for older local or Render environments. Do not remove those aliases until tests prove the migration is safe.
 
 ### 9.1 Local Mode
 

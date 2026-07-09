@@ -31,6 +31,9 @@ Runtime flow:
 
 - Local mode: local bearer token required unless explicit dev bypass env set.
 - Hosted mode: OAuth/pairing/Codex bearer. Local bridge token not used for hosted MCP tool calls.
+- Canonical deployment env values are `REMNOTE_BRIDGE_DEPLOYMENT_MODE=local` and `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted`.
+- Legacy mode aliases `local_dev`, `personal_hosted_token`, and `public_hosted_oauth` are still accepted by `server/src/config.ts` and covered by `npm run server:test:auth`; do not remove them without a migration test.
+- Render should use the canonical hosted value plus `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, `SESSION_SECRET`, and hosted allowed origins.
 - `get_bridge_status` proves server/bridge state only. Plugin-routed proof needs `ping_remnote_plugin`, `get_focused_rem`, `get_children`, `get_rem_rich`, or write+readback.
 - Hosted bridge WebSocket must not open to non-local URL until hosted session secret exists.
 - `PLUGIN_NOT_CONNECTED` = server reachable, plugin socket absent.
