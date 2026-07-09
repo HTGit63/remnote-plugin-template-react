@@ -1,5 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { validateMcpToolPermission } from './tool-permissions.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 
 const repoRoot = join(process.cwd(), '..');
 const remnotePluginSdkSpec = ['@remnote', 'plugin-sdk'].join('/');
@@ -35,6 +37,78 @@ function failIf(matches: string[], title: string) {
     console.error(`- ${match}`);
   }
   process.exitCode = 1;
+}
+
+function mcpBody(tool: string, args: Record<string, unknown>) {
+  return {
+    method: 'tools/call',
+    params: { name: tool, arguments: args },
+  };
+}
+
+function scopePrincipal(
+  authMode: 'local_bridge_token' | 'hosted_oauth' | 'codex_bearer',
+  overrides: Partial<AuthenticatedPrincipal> = {}
+): AuthenticatedPrincipal {
+  return {
+    subject: `boundary:${authMode}`,
+    userId: 'boundary-user',
+    authMode,
+    scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
+    accessScope: 'current-rem-tree',
+    trustedWriteMode: 'trusted-inside-scope',
+    toolTier: 'danger',
+    ...overrides,
+  };
+}
+
+function failStage3(message: string): void {
+  console.error(`Stage 3 permission boundary violation: ${message}`);
+  process.exitCode = 1;
+}
+
+function stage3PermissionBoundaryViolations(): string[] {
+  const violations: string[] = [];
+  for (const authMode of ['local_bridge_token', 'hosted_oauth', 'codex_bearer'] as const) {
+    const blocked = validateMcpToolPermission(
+      mcpBody('get_rem', { remId: 'outside-current-tree' }),
+      scopePrincipal(authMode, { accessScope: 'focused-rem-only' })
+    );
+    if (blocked.ok || blocked.code !== 'OUT_OF_SCOPE') {
+      violations.push(`${authMode} did not block out-of-scope get_rem before plugin routing`);
+    }
+  }
+
+  const missingTrustedWrite = validateMcpToolPermission(
+    mcpBody('create_or_replace_note_from_markdown', {
+      parentRemId: 'approved-root',
+      markdownText: '# Boundary trusted write check',
+      mode: 'create_child',
+      safetyOptions: { dryRun: false },
+    }),
+    scopePrincipal('hosted_oauth', { scopeGrants: ['bridge:read', 'bridge:write'] })
+  );
+  if (missingTrustedWrite.ok || missingTrustedWrite.code !== 'TRUSTED_WRITE_REQUIRED') {
+    violations.push('non-dry-run write without bridge:trusted_write was not blocked');
+  }
+
+  const underGuardedDelete = validateMcpToolPermission(
+    mcpBody('delete_rem_by_id', {
+      remId: 'delete-target',
+      expectedParentId: 'delete-parent',
+      confirmTitle: 'Delete target',
+      dryRun: false,
+      idempotencyKey: 'boundary-delete',
+    }),
+    scopePrincipal('hosted_oauth', {
+      scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write', 'bridge:delete'],
+    })
+  );
+  if (underGuardedDelete.ok || underGuardedDelete.code !== 'INVALID_ARGS') {
+    violations.push('real delete without prior dry-run, ancestor, and title guard set was not blocked');
+  }
+
+  return violations;
 }
 
 function importSpecifiers(source: string): string[] {
@@ -144,6 +218,9 @@ function localEsmImportViolations() {
 failIf(sourceImportViolations(), 'Boundary source import violations:');
 failIf(distViolations(), 'Boundary server/dist plugin runtime violations:');
 failIf(localEsmImportViolations(), 'ESM runtime import violations:');
+for (const violation of stage3PermissionBoundaryViolations()) {
+  failStage3(violation);
+}
 
 if (!process.exitCode) {
   console.log('Boundary smoke passed.');

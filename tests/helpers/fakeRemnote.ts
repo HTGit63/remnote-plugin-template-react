@@ -58,6 +58,10 @@ export class FakeRem {
     return this.cardItem;
   }
 
+  async isDocument() {
+    return false;
+  }
+
   async setFontSize(level: 'H1' | 'H2' | 'H3' | undefined) {
     this.fontSize = level;
     this.plugin.fontSizeCalls.push({ remId: this._id, level });
@@ -161,6 +165,11 @@ export class FakePlugin {
       this.rems.set(rem._id, rem);
       return rem as unknown as Rem;
     },
+  };
+
+  focus = {
+    getFocusedRem: async () => null as Rem | null,
+    getFocusedPortal: async () => null as Rem | null,
   };
 
   addRem(id: string, text: string): FakeRem {

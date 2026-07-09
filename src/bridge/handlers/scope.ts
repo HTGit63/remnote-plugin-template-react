@@ -16,10 +16,18 @@ import type {
   CreateStyledRemTreeArgs,
   CreatePolishedNoteTreeArgs,
   CreateOrReplaceNoteFromMarkdownArgs,
+  CreateCardSetFromNoteArgs,
   CreateNoteFromMarkdownTreeArgs,
+  CreateClozeCardsFromNoteArgs,
+  CreateDesignedNoteTreeArgs,
+  CreateFlashcardsFromMarkdownArgs,
   AppendMarkdownAsRemTreeArgs,
   ApplyStylePlanArgs,
+  RepairCardSetArgs,
+  RepairNoteDesignArgs,
   VerifyNoteDesignArgs,
+  VerifyNoteAgainstDesignArgs,
+  VerifyCardSetArgs,
   ApplyRemnoteCommandArgs,
   ApplyStructuredNoteBatchArgs,
   CreateListAnswerCardArgs,
@@ -27,6 +35,7 @@ import type {
   CreateClozeCardArgs,
   CreateFlashcardArgs,
   MoveRemArgs,
+  UpdateNoteWithDesignArgs,
 } from '../../../shared/bridge/protocol';
 import { createBridgeFailure } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError } from '../../remnote/write';
@@ -248,6 +257,39 @@ export function getStaticScopeTargetIds(request: BridgeRequest): string[] {
         (request.args as VerifyNoteDesignArgs).rootRemId,
         ...Object.keys((request.args as VerifyNoteDesignArgs).expectedStyleMap ?? {}),
       ]);
+    case 'create_designed_note_tree':
+      return uniqueRemIds([(request.args as CreateDesignedNoteTreeArgs).parentId]);
+    case 'update_note_with_design':
+      return uniqueRemIds([
+        (request.args as UpdateNoteWithDesignArgs).targetRemId,
+        ...((request.args as UpdateNoteWithDesignArgs).styleOperations ?? []).map((operation) => operation.remId),
+      ]);
+    case 'verify_note_against_design':
+      return uniqueRemIds([
+        (request.args as VerifyNoteAgainstDesignArgs).rootRemId,
+        ...Object.keys((request.args as VerifyNoteAgainstDesignArgs).expectedStyleMap ?? {}),
+      ]);
+    case 'repair_note_design':
+      return uniqueRemIds([
+        (request.args as RepairNoteDesignArgs).rootRemId,
+        ...((request.args as RepairNoteDesignArgs).operations ?? []).map((operation) => operation.remId),
+      ]);
+    case 'create_card_set_from_note':
+      return uniqueRemIds([
+        (request.args as CreateCardSetFromNoteArgs).rootRemId,
+        (request.args as CreateCardSetFromNoteArgs).parentId,
+      ]);
+    case 'create_flashcards_from_markdown':
+      return uniqueRemIds([(request.args as CreateFlashcardsFromMarkdownArgs).parentId]);
+    case 'create_cloze_cards_from_note':
+      return uniqueRemIds([
+        (request.args as CreateClozeCardsFromNoteArgs).rootRemId,
+        (request.args as CreateClozeCardsFromNoteArgs).parentId,
+      ]);
+    case 'verify_card_set':
+      return uniqueRemIds([(request.args as VerifyCardSetArgs).rootRemId]);
+    case 'repair_card_set':
+      return uniqueRemIds([(request.args as RepairCardSetArgs).rootRemId]);
     case 'apply_remnote_command':
       return getCommandStaticScopeTargetIds(request.args as ApplyRemnoteCommandArgs);
     case 'apply_structured_note_batch':

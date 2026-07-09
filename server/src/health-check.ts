@@ -745,9 +745,11 @@ function healthCheckArgsFor(
         ? {
             remId: targetRemId,
             expectedParentId: parentId,
+            expectedAncestorId: parentId,
             confirmTitle: 'Bridge health disposable delete target',
             dryRun: false,
             idempotencyKey: `health-delete-${targetRemId}`,
+            requirePriorDryRun: true,
           }
         : undefined;
     default:
@@ -917,6 +919,24 @@ export async function runBridgeHealthCheck(
     if (!args) {
       results.push(skipped(tool, 'Health check needs parentId, targetRemId, or a safer manual workflow for this tool.', toolStartedAt, bridgeTool));
       continue;
+    }
+
+    if (bridgeTool === 'delete_rem_by_id' && (args as BridgeToolArgs['delete_rem_by_id']).dryRun === false) {
+      const dryRunStartedAt = nowMs();
+      const dryRunResponse = await hub.callPlugin(
+        bridgeTool,
+        {
+          ...(args as BridgeToolArgs['delete_rem_by_id']),
+          dryRun: true,
+        },
+        timeoutMs,
+        options.signal,
+        options.principal
+      );
+      results.push(resultFromResponse('delete_rem_by_id_dry_run', bridgeTool, dryRunResponse, dryRunStartedAt));
+      if (!dryRunResponse.ok) {
+        continue;
+      }
     }
 
     const response = await hub.callPlugin(

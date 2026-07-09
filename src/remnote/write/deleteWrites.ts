@@ -179,6 +179,14 @@ export async function deleteRemByIdSafe(
     throw new RemnoteWriteError('INVALID_ARGS', 'delete_rem_by_id requires remId.');
   }
 
+  const explicitIdempotencyKey = args.idempotencyKey?.trim();
+  if (args.dryRun === false && !explicitIdempotencyKey) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Real delete requires an idempotencyKey reused from the prior dryRun.'
+    );
+  }
+
   const idempotencyKey = getWriteIdempotencyKey(args.idempotencyKey, 'delete-rem');
   if (args.dryRun === false) {
     const cached = DELETE_BY_ID_RESULT_CACHE.get(idempotencyKey);
@@ -218,10 +226,26 @@ export async function deleteRemByIdSafe(
     return baseResult;
   }
 
+  if (!args.expectedParentId?.trim() || !args.expectedAncestorId?.trim() || !args.confirmTitle?.trim()) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Real delete requires dryRun:false plus confirmTitle, expectedParentId, and expectedAncestorId guards.',
+      { guards }
+    );
+  }
+
+  if (args.requirePriorDryRun !== true) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'Real delete requires requirePriorDryRun=true and a prior dryRun with the same idempotencyKey.',
+      { idempotencyKey }
+    );
+  }
+
   await assertSafeDeleteTarget(plugin, rem, target);
 
   const priorDryRun = DELETE_BY_ID_DRY_RUN_CACHE.get(idempotencyKey);
-  if ((args.requirePriorDryRun || args.requireCreatedInCurrentSession) && !priorDryRun) {
+  if (!priorDryRun) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Real disposable cleanup requires a prior dryRun with the same idempotencyKey.', {
       idempotencyKey,
       requirePriorDryRun: args.requirePriorDryRun,
@@ -235,7 +259,7 @@ export async function deleteRemByIdSafe(
       priorTarget?.remId === target.remId &&
       priorTarget?.parentId === target.parentId &&
       priorTarget?.plainText === target.plainText;
-    if ((args.requirePriorDryRun || args.requireCreatedInCurrentSession) && !guards.priorDryRunMatches) {
+    if (!guards.priorDryRunMatches) {
       throw new RemnoteWriteError('INVALID_ARGS', 'Prior delete dryRun no longer matches the target.', {
         idempotencyKey,
         priorTarget,
@@ -272,11 +296,10 @@ export async function deleteRemByIdSafe(
     });
   }
 
-  const hasPassingGuard = Boolean(guards.expectedParentMatches || guards.expectedAncestorMatches);
-  if (!hasPassingGuard) {
+  if (!guards.expectedParentMatches || !guards.expectedAncestorMatches || !guards.confirmTitleMatches) {
     throw new RemnoteWriteError(
       'INVALID_ARGS',
-      'Real delete requires dryRun:false plus a matching expectedParentId or expectedAncestorId guard.',
+      'Real delete requires matching expectedParentId, expectedAncestorId, confirmTitle, and prior dryRun guards.',
       { guards }
     );
   }

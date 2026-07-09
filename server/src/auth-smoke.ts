@@ -4,11 +4,41 @@ import {
   loadConfig,
   validateConfig,
 } from './config.js';
+import { validateMcpToolPermission } from './tool-permissions.js';
+import type { AuthenticatedPrincipal } from './auth/types.js';
 
 function assertHostedGuard(error: unknown, label: string): void {
   const message = error instanceof Error ? error.message : String(error);
   if (!message.includes(HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE)) {
     throw new Error(`${label} did not fail with hosted mode guard. Received: ${message}`);
+  }
+}
+
+function toolCall(name: string, args: Record<string, unknown>) {
+  return {
+    method: 'tools/call',
+    params: { name, arguments: args },
+  };
+}
+
+function scopePrincipal(authMode: 'local_bridge_token' | 'hosted_oauth'): AuthenticatedPrincipal {
+  return {
+    subject: `scope-smoke:${authMode}`,
+    userId: 'scope-smoke',
+    authMode,
+    scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
+    accessScope: 'focused-rem-only',
+    trustedWriteMode: 'trusted-inside-scope',
+  };
+}
+
+for (const authMode of ['local_bridge_token', 'hosted_oauth'] as const) {
+  const blocked = validateMcpToolPermission(
+    toolCall('get_rem', { remId: 'outside-current-tree' }),
+    scopePrincipal(authMode)
+  );
+  if (blocked.ok || blocked.code !== 'OUT_OF_SCOPE') {
+    throw new Error(`${authMode} bypassed server scope boundary for get_rem.`);
   }
 }
 

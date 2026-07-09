@@ -446,7 +446,14 @@ const cases: ToolSmokeCase[] = [
     category: 'repair/danger',
     mutation: 'dry_run',
     skipReason: (state) => (targetId(state) ? null : 'Missing target Rem ID.'),
-    args: (state) => targetId(state) ? ({ remId: targetId(state), dryRun: true, expectedAncestorId: rootId(state) }) : null,
+    args: (state) => targetId(state) ? ({
+      remId: targetId(state),
+      dryRun: true,
+      expectedParentId: rootId(state),
+      expectedAncestorId: rootId(state),
+      requirePriorDryRun: true,
+      idempotencyKey: `live-tool-delete-${targetId(state)}`,
+    }) : null,
   },
 ];
 

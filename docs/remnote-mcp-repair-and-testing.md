@@ -41,6 +41,23 @@ Compressed from old docs, test matrix, repair plan, audits, live reports, and cl
 
 ## Tool Status
 
+## Stage 4 Tool Matrix Audit, 2026-07-09
+
+Current generated registry truth:
+
+- Declared tools: 75.
+- Public tools without delete gate: 72.
+- Default `mass_note_writer` public tools: 19.
+- Danger profile public tools with delete gate: 73.
+- Hidden or gated source-level tools: `delete_rem_by_id`, `replace_rem`, `create_folder`.
+- Default profile runtime-unverified tools: 9.
+
+`TOOL_REFERENCE.md` now includes a generated Tool Correctness Matrix for every declared tool.
+Rows separate profile exposure, schema status, local/server-local status, live status,
+idempotency, scope, error quality, ChatGPT/Codex status, known failures, and next test.
+`server_local_verified` is not live RemNote proof. Any row without a recent connected
+plugin success stays `live_not_run`.
+
 Working narrow path, still not broad readiness:
 
 - `get_bridge_status`: connected status OK; not enough alone.

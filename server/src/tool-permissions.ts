@@ -128,8 +128,8 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   create_multiple_choice_card: { toolName: 'create_multiple_choice_card', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
   create_list_answer_card: { toolName: 'create_list_answer_card', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
 
-  replace_rem: { toolName: 'replace_rem', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true },
-  delete_rem_by_id: { toolName: 'delete_rem_by_id', category: 'destructive', requiredAccessScope: 'current-rem-tree', alwaysRequirePluginApproval: true },
+  replace_rem: { toolName: 'replace_rem', category: 'destructive', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true, alwaysRequirePluginApproval: true },
+  delete_rem_by_id: { toolName: 'delete_rem_by_id', category: 'destructive', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true, alwaysRequirePluginApproval: true },
 };
 
 function permissionModeForPrincipal(principal: AuthenticatedPrincipal): PermissionMode {
@@ -190,6 +190,8 @@ export function validateMcpToolPermission(
   } = {}
 ): { ok: true } | { ok: false; error: string; auditReason: string; code: string; layer: DirectWriteLayer; details: ToolPermissionBlockDetails; decision?: TrustedWriteDecision } {
   if (
+    principal.authMode !== 'local_bridge_token' &&
+    principal.authMode !== 'local_no_token' &&
     principal.authMode !== 'hosted_oauth' &&
     principal.authMode !== 'connector_compat_noauth' &&
     principal.authMode !== 'codex_bearer'
@@ -282,7 +284,7 @@ export function validateMcpToolPermission(
   if (scopeRank[approvedScope] < scopeRank[requiredAccessScope]) {
     return {
       ok: false,
-      error: 'This tool requires a broader RemNote access scope. Reconnect and approve the required scope.',
+      error: `OUT_OF_SCOPE: ${permission.toolName} requires ${requiredAccessScope} RemNote access scope; principal provided ${approvedScope}. Reconnect and approve the required scope.`,
       auditReason: 'insufficient_remnote_access_scope',
       code: 'OUT_OF_SCOPE',
       layer: 'server_policy',
@@ -322,22 +324,25 @@ export function validateMcpToolPermission(
     const hasWriteScope = scopeGrants.has('bridge:write');
     const hasTrustedWriteScope = scopeGrants.has('bridge:trusted_write');
     const safeDisposableAuditWrite = auditPayload.safe && requiredAccessScope === 'current-rem-tree';
-    const allowed = hasWriteScope || safeDisposableAuditWrite;
+    const missingWriteScope = !hasWriteScope && !safeDisposableAuditWrite;
+    const missingTrustedWriteScope = !hasTrustedWriteScope && !safeDisposableAuditWrite;
+    const allowed = !missingWriteScope && !missingTrustedWriteScope;
+    const blockCode = missingWriteScope ? 'INSUFFICIENT_SCOPE' : missingTrustedWriteScope ? 'TRUSTED_WRITE_REQUIRED' : null;
     const decision = recordTrustedWriteDecision({
       tool: request.params.name,
       allowed,
       policy: allowed ? 'allowed' : 'blocked',
-      code: allowed ? null : 'INSUFFICIENT_SCOPE',
+      code: blockCode,
       layer: allowed ? 'direct_mcp_tool' : 'server_policy',
       reason: allowed
         ? safeDisposableAuditWrite && !hasWriteScope
           ? 'Narrow disposable audit/test container write permitted inside current Rem tree; plugin scope and approval still apply.'
           : trustedWriteModeEffective
-          ? hasTrustedWriteScope
-            ? 'Full Control With Delete Approval permits safe write inside approved scope'
-            : 'Full Control With Delete Approval permits safe write inside approved scope; bridge:trusted_write scope is recommended'
+          ? 'Full Control With Delete Approval permits trusted write inside approved scope'
           : 'Read + Create + Modify direct route allowed; RemNote plugin approval may be required'
-        : 'SERVER_POLICY_BLOCKED: Direct safe write requires bridge:write scope.',
+        : missingWriteScope
+          ? 'SERVER_POLICY_BLOCKED: Direct safe write requires bridge:write scope.'
+          : 'SERVER_POLICY_BLOCKED: Direct safe write requires bridge:trusted_write scope.',
       permissionMode: permissionModeForPrincipal(principal),
       permissionScope: permissionScopeForPrincipal(principal),
       trustedWriteModeEffective,
@@ -345,7 +350,7 @@ export function validateMcpToolPermission(
       oauthTrustedWriteScope: hasTrustedWriteScope,
       writeRoutingSource: 'direct_mcp_tool',
     });
-    if (!allowed) {
+    if (missingWriteScope) {
       return {
         ok: false,
         error: 'SERVER_POLICY_BLOCKED: INSUFFICIENT_SCOPE: Direct safe write requires bridge:write scope.',
@@ -355,6 +360,20 @@ export function validateMcpToolPermission(
         details: baseDetails(
           'INSUFFICIENT_SCOPE',
           'Reconnect the ChatGPT connector with bridge:write scope, or enable the plugin setting that grants safe writes inside the approved scope.'
+        ),
+        decision,
+      };
+    }
+    if (missingTrustedWriteScope) {
+      return {
+        ok: false,
+        error: 'SERVER_POLICY_BLOCKED: TRUSTED_WRITE_REQUIRED: Direct safe write requires bridge:trusted_write scope.',
+        auditReason: 'missing_trusted_write_scope',
+        code: 'TRUSTED_WRITE_REQUIRED',
+        layer: 'server_policy',
+        details: baseDetails(
+          'TRUSTED_WRITE_REQUIRED',
+          'Reconnect the ChatGPT connector with bridge:trusted_write scope, or keep the operation as dryRun until trusted writes are explicitly approved.'
         ),
         decision,
       };
@@ -377,35 +396,22 @@ export function validateMcpToolPermission(
     }
 
     if (request.params.name === 'delete_rem_by_id' && args.dryRun === false) {
-      const hasScopeGuard = typeof args.expectedParentId === 'string' || typeof args.expectedAncestorId === 'string';
+      const hasParentGuard = typeof args.expectedParentId === 'string' && args.expectedParentId.trim().length > 0;
+      const hasAncestorGuard = typeof args.expectedAncestorId === 'string' && args.expectedAncestorId.trim().length > 0;
       const hasTitleGuard = typeof args.confirmTitle === 'string' && args.confirmTitle.trim().length > 0;
-      const requiresPriorDryRun = args.requirePriorDryRun === true || args.requireCreatedInCurrentSession === true;
+      const requiresPriorDryRun = args.requirePriorDryRun === true;
       const hasDryRunReplayKey = typeof args.idempotencyKey === 'string' && args.idempotencyKey.trim().length > 0;
-      if (!hasScopeGuard || !hasTitleGuard) {
+      if (!hasParentGuard || !hasAncestorGuard || !hasTitleGuard || !requiresPriorDryRun || !hasDryRunReplayKey) {
         return {
           ok: false,
           error:
-            'INVALID_ARGS: Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId.',
+            'INVALID_ARGS: Real delete requires prior dryRun plus dryRun=false, idempotencyKey, confirmTitle, expectedParentId, expectedAncestorId, and requirePriorDryRun=true.',
           auditReason: 'missing_delete_guard',
           code: 'INVALID_ARGS',
           layer: 'server_policy',
           details: baseDetails(
             'INVALID_ARGS',
-            'Run delete_rem_by_id with dryRun=true first, then provide confirmTitle plus expectedParentId or expectedAncestorId for real delete.'
-          ),
-        };
-      }
-      if (requiresPriorDryRun && !hasDryRunReplayKey) {
-        return {
-          ok: false,
-          error:
-            'INVALID_ARGS: Guarded disposable cleanup requires an idempotencyKey reused from the prior dryRun.',
-          auditReason: 'missing_delete_dry_run_key',
-          code: 'INVALID_ARGS',
-          layer: 'server_policy',
-          details: baseDetails(
-            'INVALID_ARGS',
-            'Run delete_rem_by_id with dryRun=true first, then retry with dryRun=false, the same idempotencyKey, confirmTitle, and expectedParentId or expectedAncestorId.'
+            'Run delete_rem_by_id with dryRun=true first, then retry with the same idempotencyKey plus confirmTitle, expectedParentId, expectedAncestorId, and requirePriorDryRun=true.'
           ),
         };
       }

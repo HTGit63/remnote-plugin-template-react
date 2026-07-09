@@ -12,7 +12,7 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-06-25.problem-tool-status-matrix';
+export const TOOL_REGISTRY_VERSION = '2026-07-09.tool-correctness-matrix';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
@@ -86,6 +86,31 @@ export interface ToolStateModelEntry {
   sdkCapability: string | null;
 }
 
+export interface ToolCorrectnessMatrixEntry {
+  toolName: string;
+  category: string;
+  policy: string;
+  profileExposure: string;
+  schemaStatus: string;
+  localTestStatus: string;
+  serverLocalStatus: string;
+  liveStatus: string;
+  idempotencyStatus: string;
+  scopeStatus: string;
+  errorQualityStatus: string;
+  chatGptStatus: string;
+  codexStatus: string;
+  knownFailures: string[];
+  nextTest: string;
+  declared: boolean;
+  public: boolean;
+  listed: boolean;
+  registered: boolean;
+  callable: boolean;
+  hidden: boolean;
+  unsupported: boolean;
+}
+
 export const MCP_TOOL_REGISTRY = TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported).map(
   (tool): McpToolRegistryEntry => ({
     name: tool.name,
@@ -131,7 +156,10 @@ function buildToolStateEntry(
   const history = getToolHistoryEntry(name);
   const listed = publicTools.includes(name);
   const registered = registeredTools.includes(name);
-  const liveVerified = Boolean(history.lastSuccessAt) || serverLocalVerifiedTools.includes(name);
+  const liveVerified = Boolean(history.lastSuccessAt);
+  const serverLocalVerified =
+    serverLocalVerifiedTools.includes(name) ||
+    (SERVER_LOCAL_MCP_TOOLS as readonly string[]).includes(name);
   const sdkUnsupported =
     sdkUnsupportedTools.includes(name) ||
     !metadata.sdkSupported ||
@@ -146,7 +174,7 @@ function buildToolStateEntry(
     declared: declaredToolNames().includes(name),
     registered,
     listed,
-    callable: registered && !sdkUnsupported && (liveVerified || serverLocalVerifiedTools.includes(name)),
+    callable: registered && !sdkUnsupported && (liveVerified || serverLocalVerified),
     liveVerified,
     sdkUnsupported,
     hidden,
@@ -166,6 +194,188 @@ function buildToolStateEntry(
     toolAccessTier: String(metadata.toolAccessTier),
     scopeRequirement: metadata.scopeRequirement,
     sdkCapability: metadata.sdkCapability,
+  };
+}
+
+function profileExposureStatus(input: {
+  name: string;
+  listed: boolean;
+  allPublic: boolean;
+  metadataPublic: boolean;
+  hiddenReason?: string;
+}): string {
+  if (!input.metadataPublic || input.hiddenReason) return 'hidden_or_gated';
+  if (input.listed) return 'active_profile';
+  if (input.allPublic) return 'profile_hidden';
+  return 'not_public';
+}
+
+function schemaStatus(metadata: ReturnType<typeof getToolMetadata>, sdkUnsupported: boolean): string {
+  if (sdkUnsupported || !metadata.sdkSupported) return 'sdk_unsupported';
+  if (!metadata.isPublic || metadata.exposedNormally === false) return 'hidden_schema_present';
+  return 'schema_ok';
+}
+
+function localTestStatus(input: {
+  listed: boolean;
+  sdkUnsupported: boolean;
+  serverLocalVerified: boolean;
+  historySuccess: boolean;
+}): string {
+  if (input.sdkUnsupported) return 'unsupported';
+  if (!input.listed) return 'not_listed_in_active_profile';
+  if (input.serverLocalVerified) return 'server_local_verified';
+  if (input.historySuccess) return 'recent_plugin_call_recorded';
+  return 'local_runtime_required';
+}
+
+function idempotencyStatus(metadata: ReturnType<typeof getToolMetadata>): string {
+  if (metadata.supportsIdempotency) return 'idempotency_supported';
+  if (metadata.supportsDryRun) return 'dry_run_supported_no_idempotency';
+  if (!metadata.requiresWrite) return 'not_applicable_read_only';
+  return 'no_idempotency_support';
+}
+
+function errorQualityStatus(input: {
+  metadata: ReturnType<typeof getToolMetadata>;
+  hiddenReason?: string;
+  sdkUnsupported: boolean;
+}): string {
+  if (input.sdkUnsupported) return 'hidden_with_reason';
+  if (input.hiddenReason || input.metadata.hiddenReason) return 'hidden_or_gated_reason_present';
+  return 'standard_bridge_envelope';
+}
+
+function chatGptStatus(input: {
+  listed: boolean;
+  allPublic: boolean;
+  hiddenReason?: string;
+  sdkUnsupported: boolean;
+}): string {
+  if (input.sdkUnsupported || input.hiddenReason) return 'hidden_or_gated';
+  if (input.listed) return 'default_profile_available';
+  if (input.allPublic) return 'requires_profile_switch';
+  return 'not_discoverable';
+}
+
+function codexStatus(input: {
+  listed: boolean;
+  allPublic: boolean;
+  hiddenReason?: string;
+  sdkUnsupported: boolean;
+}): string {
+  if (input.sdkUnsupported || input.hiddenReason) return 'hidden_or_gated';
+  if (input.listed || input.allPublic) return 'same_registry_auth_and_scope_boundary';
+  return 'not_discoverable';
+}
+
+function nextTestForTool(metadata: ReturnType<typeof getToolMetadata>, status: {
+  hidden: boolean;
+  sdkUnsupported: boolean;
+  serverLocalVerified: boolean;
+}): string {
+  if (status.sdkUnsupported) {
+    return 'Add SDK-backed implementation, then run server:test:tool-schemas and targeted smoke.';
+  }
+  if (status.hidden) {
+    return metadata.isDangerous
+      ? 'Enable danger profile only for dry-run plus guarded disposable delete smoke.'
+      : 'Expose only after registry, schema, and live-proof gate are updated.';
+  }
+  if (metadata.category === 'debug') return 'npm run server:test:tools-diagnostics';
+  if (status.serverLocalVerified) return 'npm run server:test:tools-diagnostics or server-local smoke';
+  if (!metadata.requiresWrite) return 'npm run server:test:tools-core with connected plugin readback';
+  return 'npm run server:test:tools-advanced plus targeted Vitest/readback';
+}
+
+function buildKnownFailures(input: {
+  metadata: ReturnType<typeof getToolMetadata>;
+  policy: ReturnType<typeof getToolPolicyEntry>;
+  hiddenReason?: string;
+  listed: boolean;
+  sdkUnsupported: boolean;
+  liveVerified: boolean;
+  serverLocalVerified: boolean;
+}): string[] {
+  const failures: string[] = [];
+  if (input.hiddenReason) failures.push(input.hiddenReason);
+  if (input.sdkUnsupported) failures.push('SDK path unsupported or not exposed.');
+  if (!input.listed && input.metadata.isPublic && !input.hiddenReason) failures.push('Hidden by active tool profile.');
+  if (input.policy.replacement) failures.push(`Prefer ${input.policy.replacement}.`);
+  if (input.metadata.liveVerificationRequired && !input.liveVerified && !input.serverLocalVerified) {
+    failures.push('No recent live/plugin success recorded.');
+  }
+  if (input.metadata.isDangerous) failures.push('Danger tool requires explicit dry-run and approval guards.');
+  return failures;
+}
+
+function buildToolCorrectnessMatrixEntry(
+  name: string,
+  registeredTools: readonly string[],
+  publicTools: readonly string[],
+  allPublicTools: readonly string[],
+  serverLocalVerifiedTools: readonly string[],
+  sdkUnsupportedTools: readonly string[],
+  hiddenReasons: Record<string, string>
+): ToolCorrectnessMatrixEntry {
+  const metadata = getToolMetadata(name);
+  const policy = getToolPolicyEntry(name);
+  const history = getToolHistoryEntry(name);
+  const listed = publicTools.includes(name);
+  const allPublic = allPublicTools.includes(name);
+  const registered = registeredTools.includes(name);
+  const serverLocalVerified =
+    serverLocalVerifiedTools.includes(name) ||
+    (SERVER_LOCAL_MCP_TOOLS as readonly string[]).includes(name);
+  const liveVerified = Boolean(history.lastSuccessAt);
+  const hiddenReason = hiddenReasons[name] ?? metadata.hiddenReason;
+  const sdkUnsupported =
+    sdkUnsupportedTools.includes(name) ||
+    !metadata.sdkSupported ||
+    history.sdkUnsupportedCount > 0;
+  const hidden = !listed || Boolean(hiddenReason) || !metadata.isPublic || metadata.exposedNormally === false;
+  return {
+    toolName: name,
+    category: metadata.category,
+    policy: policy.policy,
+    profileExposure: profileExposureStatus({
+      name,
+      listed,
+      allPublic,
+      metadataPublic: metadata.isPublic,
+      hiddenReason,
+    }),
+    schemaStatus: schemaStatus(metadata, sdkUnsupported),
+    localTestStatus: localTestStatus({
+      listed,
+      sdkUnsupported,
+      serverLocalVerified,
+      historySuccess: liveVerified,
+    }),
+    serverLocalStatus: serverLocalVerified ? 'server_local_verified' : 'not_server_local',
+    liveStatus: liveVerified ? 'recent_plugin_call' : 'live_not_run',
+    idempotencyStatus: idempotencyStatus(metadata),
+    scopeStatus: metadata.scopeRequirement,
+    errorQualityStatus: errorQualityStatus({ metadata, hiddenReason, sdkUnsupported }),
+    chatGptStatus: chatGptStatus({ listed, allPublic, hiddenReason, sdkUnsupported }),
+    codexStatus: codexStatus({ listed, allPublic, hiddenReason, sdkUnsupported }),
+    knownFailures: buildKnownFailures({
+      metadata,
+      policy,
+      hiddenReason,
+      listed,
+      sdkUnsupported,
+      liveVerified,
+      serverLocalVerified,
+    }),
+    nextTest: nextTestForTool(metadata, { hidden, sdkUnsupported, serverLocalVerified }),
+    declared: declaredToolNames().includes(name),
+    public: metadata.isPublic,
+    listed,
+    registered,
+    callable: registered && !sdkUnsupported && (serverLocalVerified || liveVerified),
+    hidden,
+    unsupported: sdkUnsupported,
   };
 }
 
@@ -290,6 +500,17 @@ export function getToolRegistrySummary(
   const sourceRegistryTools = declaredToolNames();
   const toolStates = sourceRegistryTools.map((tool) =>
     buildToolStateEntry(tool, registeredTools, publicTools, allPublicTools, serverLocalVerifiedTools, sdkUnsupportedTools)
+  );
+  const toolCorrectnessMatrix = sourceRegistryTools.map((tool) =>
+    buildToolCorrectnessMatrixEntry(
+      tool,
+      registeredTools,
+      publicTools,
+      allPublicTools,
+      serverLocalVerifiedTools,
+      sdkUnsupportedTools,
+      hiddenReasons
+    )
   );
   const registryToMcpListMismatch = {
     hiddenFromList: sourceRegistryTools.filter((tool) => !publicTools.includes(tool)),
@@ -436,6 +657,9 @@ export function getToolRegistrySummary(
     toolStateModelVersion: TOOL_REGISTRY_VERSION,
     toolStates,
     toolStateModel: Object.fromEntries(toolStates.map((tool) => [tool.name, tool])),
+    toolCorrectnessMatrixVersion: TOOL_REGISTRY_VERSION,
+    toolCorrectnessMatrix,
+    toolCorrectnessMatrixByName: Object.fromEntries(toolCorrectnessMatrix.map((tool) => [tool.toolName, tool])),
     toolHistory: toolHistorySnapshot.toolHistory,
     recentToolEvents: toolHistorySnapshot.recentToolEvents,
     registryToMcpListMismatch,
@@ -457,7 +681,7 @@ export function getToolRegistrySummary(
         listed: true,
         registered,
         callable: registered && !sdkUnsupported && (serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt)),
-        liveVerified: serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt),
+        liveVerified: Boolean(getToolHistoryEntry(tool).lastSuccessAt),
         hidden: false,
         blockedByTier: false,
         blockedByScope: getToolHistoryEntry(tool).scopeBlockCount > 0,
@@ -466,7 +690,11 @@ export function getToolRegistrySummary(
         lastFailureAt: getToolHistoryEntry(tool).lastFailureAt,
         exposed: publicTools.includes(tool),
         runtimeVerified: serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt) || Boolean(metadata.runtimeVerified),
-        runtimeVerifiedSource: serverLocalVerified ? 'server_local' : metadata.runtimeVerifiedSource,
+        runtimeVerifiedSource: Boolean(getToolHistoryEntry(tool).lastSuccessAt)
+          ? 'recent_plugin_call'
+          : serverLocalVerified
+            ? 'server_local'
+            : metadata.runtimeVerifiedSource,
         lastSuccessTimestamp: getToolHistoryEntry(tool).lastSuccessAt,
         lastFailureTimestamp: getToolHistoryEntry(tool).lastFailureAt,
         lastErrorCode: getToolHistoryEntry(tool).lastErrorCode,

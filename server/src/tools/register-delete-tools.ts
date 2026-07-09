@@ -11,7 +11,7 @@ export function registerDeleteTools({ registerTool, callPlugin }: ToolRegistrati
     {
       title: 'Delete Rem by ID safely',
       description:
-        'DANGER-tier destructive tool. Defaults to dryRun=true. Real delete requires dryRun=false, confirmTitle, user approval, and matching expectedParentId or expectedAncestorId guard.',
+        'DANGER-tier destructive tool. Defaults to dryRun=true. Real delete requires a prior dry-run, dryRun=false, idempotencyKey, confirmTitle, user approval, matching expectedParentId, matching expectedAncestorId, and requirePriorDryRun=true.',
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The exact Rem ID to inspect/delete.'),
         expectedParentId: REM_ID_SCHEMA.optional().describe('Guard: must match actual parent for real delete.'),
@@ -20,7 +20,7 @@ export function registerDeleteTools({ registerTool, callPlugin }: ToolRegistrati
         dryRun: z.boolean().default(true).describe('Default true. Set false only after reviewing the dry-run target.'),
         idempotencyKey: z.string().trim().min(1).max(128).optional().describe('Returns the same delete result on retry in this plugin session.'),
         requireCreatedInCurrentSession: z.boolean().default(false).describe('For disposable cleanup only: require the target Rem ID to have been created by this plugin session.'),
-        requirePriorDryRun: z.boolean().default(false).describe('For disposable cleanup only: require a prior dryRun with the same idempotencyKey and matching target.'),
+        requirePriorDryRun: z.boolean().default(false).describe('Required for real delete: require a prior dryRun with the same idempotencyKey and matching target.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('delete_rem_by_id'),

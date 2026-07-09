@@ -394,7 +394,7 @@ function hostedPrincipal(overrides: Partial<AuthenticatedPrincipal> = {}): Authe
     subject: 'pairing:area1',
     userId: 'area1-user',
     authMode: 'hosted_oauth',
-    scopeGrants: ['bridge:read', 'bridge:write'],
+    scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
     accessScope: 'current-rem-tree',
     trustedWriteMode: 'trusted-inside-scope',
     ...overrides,

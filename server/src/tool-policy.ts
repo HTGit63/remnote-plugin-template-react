@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-06-25.problem-tool-status-matrix';
+export const TOOL_SCHEMA_VERSION = '2026-07-09.tool-correctness-matrix';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
@@ -645,7 +645,7 @@ export const TOOL_METADATA = [
     recommendedForNormalUse: false,
     hiddenReason: 'delete_rem_by_id is exposed only when REMNOTE_BRIDGE_ENABLE_DELETE_TOOL=1 and active tool tier is danger.',
     agentWarning:
-      'DANGER: delete_rem_by_id is destructive. Default dryRun=true. Real delete requires dryRun=false, confirmTitle, and expectedParentId or expectedAncestorId after user approval.',
+      'DANGER: delete_rem_by_id is destructive. Default dryRun=true. Real delete requires a prior dry-run, dryRun=false, idempotencyKey, confirmTitle, expectedParentId, expectedAncestorId, requirePriorDryRun=true, and user approval.',
   }),
   meta('get_current_selection', 'read', 'low'),
   meta('get_rem_rich', 'read', 'low'),

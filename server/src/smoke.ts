@@ -457,6 +457,7 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
             expectedParentMatches: Boolean(request.args.expectedParentId),
             expectedAncestorMatches: request.args.expectedAncestorId ? true : undefined,
             confirmTitleMatches: request.args.confirmTitle ? true : undefined,
+            priorDryRunMatches: request.args.requirePriorDryRun ? true : undefined,
           },
           wouldDelete: {
             remId: request.args.remId,
@@ -1237,8 +1238,11 @@ async function runReliabilitySmoke() {
       await callMcpTool(unknownDeleteMcp, 'delete_rem_by_id', {
         remId: 'rem-delete-child-1',
         expectedParentId: fakeRem.remId,
+        expectedAncestorId: fakeRem.remId,
         confirmTitle: 'Disposable child',
         dryRun: false,
+        requirePriorDryRun: true,
+        idempotencyKey: 'unknown-delete-1',
       })
     );
     if (
@@ -1668,6 +1672,7 @@ try {
     await callMcpTool(mcp, 'replace_rem', {
       remId: fakeRem.remId,
       markdown: 'Replaced smoke Rem',
+      dryRun: true,
     })
   );
   if (!replace.includes('UNKNOWN_TOOL')) {
@@ -2059,7 +2064,10 @@ try {
     await callMcpTool(mcp, 'delete_rem_by_id', {
       remId: 'rem-delete-child-1',
       expectedParentId: fakeRem.remId,
+      expectedAncestorId: fakeRem.remId,
       confirmTitle: 'Disposable child',
+      requirePriorDryRun: true,
+      idempotencyKey: 'smoke-delete-1',
     })
   );
   if (!deleteDryRun.includes('"dryRun":true') || !deleteDryRun.includes('wouldDelete') || !deleteDryRun.includes('expectedParentMatches')) {
@@ -2070,8 +2078,10 @@ try {
     await callMcpTool(mcp, 'delete_rem_by_id', {
       remId: 'rem-delete-child-1',
       expectedParentId: fakeRem.remId,
+      expectedAncestorId: fakeRem.remId,
       confirmTitle: 'Disposable child',
       dryRun: false,
+      requirePriorDryRun: true,
       idempotencyKey: 'smoke-delete-1',
     })
   );

@@ -14,6 +14,7 @@ import {
   getToolMetadata,
   getToolPolicyEntry,
 } from '../server/src/tool-policy';
+import { generateToolReferenceMarkdown } from '../server/src/diagnostics/tool-reference-generator';
 
 const problemTools = [
   'update_rem_rich',
@@ -202,5 +203,60 @@ describe('tool status matrix policy', () => {
       status: 'PLATFORM_BLOCKED',
       retryable: true,
     });
+  });
+
+  test('tool correctness matrix covers every declared tool with required status columns', () => {
+    const summary = getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE);
+    const matrix = summary.toolCorrectnessMatrix;
+
+    expect(matrix).toHaveLength(summary.declaredToolCount);
+    expect(matrix.map((row) => row.toolName).sort()).toEqual([...summary.declaredToolNames].sort());
+    for (const row of matrix) {
+      expect(row.profileExposure).toBeTruthy();
+      expect(row.schemaStatus).toBeTruthy();
+      expect(row.localTestStatus).toBeTruthy();
+      expect(row.serverLocalStatus).toBeTruthy();
+      expect(row.liveStatus).toBeTruthy();
+      expect(row.idempotencyStatus).toBeTruthy();
+      expect(row.scopeStatus).toBeTruthy();
+      expect(row.errorQualityStatus).toBeTruthy();
+      expect(row.chatGptStatus).toBeTruthy();
+      expect(row.codexStatus).toBeTruthy();
+      expect(row.nextTest).toBeTruthy();
+      expect(Array.isArray(row.knownFailures)).toBe(true);
+    }
+  });
+
+  test('server-local verification is not reported as live RemNote proof', () => {
+    const summary = getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE);
+    const statusRow = summary.runtimeVerificationMatrix.find((row) => row.toolName === 'get_bridge_status');
+    const matrixRow = summary.toolCorrectnessMatrix.find((row) => row.toolName === 'get_bridge_status');
+    const hiddenServerLocalRow = summary.toolCorrectnessMatrix.find((row) => row.toolName === 'preview_markdown_note_tree');
+
+    expect(statusRow).toMatchObject({
+      serverLocalVerified: true,
+      liveVerified: false,
+      runtimeVerifiedSource: 'server_local',
+    });
+    expect(matrixRow).toMatchObject({
+      serverLocalStatus: 'server_local_verified',
+      liveStatus: 'live_not_run',
+    });
+    expect(hiddenServerLocalRow).toMatchObject({
+      profileExposure: 'profile_hidden',
+      serverLocalStatus: 'server_local_verified',
+      liveStatus: 'live_not_run',
+    });
+  });
+
+  test('generated tool reference includes current counts and correctness matrix', () => {
+    const summary = getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE);
+    const markdown = generateToolReferenceMarkdown();
+
+    expect(markdown).toContain(`Declared tools: ${summary.declaredToolCount}`);
+    expect(markdown).toContain(`Default public tools: ${summary.publicToolCount}`);
+    expect(markdown).toContain('## Tool Correctness Matrix');
+    expect(markdown).toContain('Live Status');
+    expect(markdown).toContain('live_not_run');
   });
 });

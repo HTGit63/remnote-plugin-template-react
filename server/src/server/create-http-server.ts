@@ -559,10 +559,10 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
 
     const policy = getToolPolicyEntry(request.params.name).policy;
     if (policy === 'dangerous') {
-      return ['bridge:read', 'bridge:write', 'bridge:delete'];
+      return ['bridge:read', 'bridge:write', 'bridge:trusted_write', 'bridge:delete'];
     }
     if (policy === 'preferred' || policy === 'fallback' || policy === 'cards') {
-      return ['bridge:read', 'bridge:write'];
+      return ['bridge:read', 'bridge:write', 'bridge:trusted_write'];
     }
     return ['bridge:read'];
   }

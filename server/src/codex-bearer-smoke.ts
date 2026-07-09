@@ -193,6 +193,21 @@ try {
     throw new Error(`Valid Codex bearer did not reach MCP/plugin routing layer: ${valid.response.status} ${valid.text}`);
   }
 
+  const untrustedWrite = await mcpToolCall(mcpUrl, 'create_or_replace_note_from_markdown', {
+    parentRemId: 'codex-parent',
+    markdownText: '# Codex write without trusted scope',
+    mode: 'create_child',
+    safetyOptions: { dryRun: false },
+  }, codexToken);
+  assertNoSecret('Codex untrusted write block', untrustedWrite.text);
+  if (
+    untrustedWrite.response.status !== 403 ||
+    !untrustedWrite.text.includes('TRUSTED_WRITE_REQUIRED') ||
+    untrustedWrite.text.includes('PLUGIN_NOT_CONNECTED')
+  ) {
+    throw new Error(`Codex write bypassed trusted-write scope: ${untrustedWrite.response.status} ${untrustedWrite.text}`);
+  }
+
   console.log('Codex bearer hosted smoke passed.');
 } finally {
   await app.stop();

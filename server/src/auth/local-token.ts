@@ -23,6 +23,9 @@ export function authorizeLocalMcpRequest(
         userId: '__local__',
         authMode: 'local_no_token',
         scopeGrants: LOCAL_BRIDGE_SCOPE_GRANTS,
+        accessScope: 'current-rem-tree',
+        trustedWriteMode: 'trusted-inside-scope',
+        toolTier: config.toolProfile,
       },
     };
   }
@@ -43,6 +46,9 @@ export function authorizeLocalMcpRequest(
       userId: '__local__',
       authMode: 'local_bridge_token',
       scopeGrants: LOCAL_BRIDGE_SCOPE_GRANTS,
+      accessScope: 'current-rem-tree',
+      trustedWriteMode: 'trusted-inside-scope',
+      toolTier: config.toolProfile,
     },
   };
 }
