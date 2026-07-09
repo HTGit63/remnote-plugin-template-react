@@ -11,6 +11,29 @@ import {
   normalizeStylePresetFields,
 } from '../shared/bridge/style-presets';
 import { CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA } from '../server/src/tools/schemas';
+import { createOrReplaceNoteFromMarkdown } from '../src/remnote/write/markdownImportExecutor';
+import { setTextSpanColor } from '../src/remnote/write/formattingWrites';
+import { MARKDOWN_IMPORT_RESULT_CACHE } from '../src/remnote/write/writeCaches';
+import { FakePlugin } from './helpers/fakeRemnote';
+
+async function plainTreeAsync(fake: FakePlugin, remId: string): Promise<string[]> {
+  const rem = fake.rems.get(remId);
+  if (!rem) {
+    return [];
+  }
+  const text = await fake.richText.toString(rem.text);
+  const children = (await Promise.all(rem.children.map((childId) => plainTreeAsync(fake, childId)))).flat();
+  return [text, ...children].filter(Boolean);
+}
+
+async function findRemIdByPlainText(fake: FakePlugin, text: string): Promise<string | undefined> {
+  for (const [remId, rem] of fake.rems.entries()) {
+    if ((await fake.richText.toString(rem.text)) === text) {
+      return remId;
+    }
+  }
+  return undefined;
+}
 
 describe('note style presets', () => {
   test('exposes named presets and keeps clean academic as the default preset contract', () => {
@@ -76,5 +99,50 @@ describe('note style presets', () => {
     expect(tree.children?.[0]?.style?.headingLevel).toBe('H3');
     expect(tree.children?.[1]?.text).toBe(NUCLEAR_PHYSICS_SPACER_TEXT);
     expect(tree.children?.[2]?.style?.headingLevel).toBe('H3');
+  });
+
+  test('style-after-write preserves created text and formula readback', async () => {
+    MARKDOWN_IMPORT_RESULT_CACHE.clear();
+    const fake = new FakePlugin();
+    const parent = fake.addRem('style-workflow-parent', 'Style workflow parent');
+    const note = await createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      parentRemId: parent._id,
+      markdownText: [
+        '# Style Workflow Root',
+        '',
+        '## Formula Section',
+        '',
+        'Alpha formula: $qE = qvB$.',
+      ].join('\n'),
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:style-after-write',
+      },
+    });
+    const before = await plainTreeAsync(fake, note.rootRemId as string);
+    const formulaRemId = await findRemIdByPlainText(fake, 'Alpha formula: qE = qvB.');
+
+    expect(formulaRemId).toBeDefined();
+
+    const styled = await setTextSpanColor(fake.asPlugin(), {
+      remId: formulaRemId as string,
+      text: 'Alpha',
+      color: 'blue',
+      verifyAfterWrite: true,
+    });
+    const after = await plainTreeAsync(fake, note.rootRemId as string);
+
+    expect(styled.status).toBe('span_color_set');
+    expect(styled.verification).toMatchObject({
+      plainTextUnchanged: true,
+      childOrderUnchanged: true,
+      noChildrenCreated: true,
+      onlyExpectedStyleChanged: true,
+    });
+    expect(after).toEqual(before);
+    expect(after).toContain('Alpha formula: qE = qvB.');
   });
 });

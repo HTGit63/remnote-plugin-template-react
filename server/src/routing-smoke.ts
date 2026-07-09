@@ -95,6 +95,10 @@ async function mcpToolCall(
   );
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function bridgeResponse(request: BridgeRequest): BridgeResponse {
   switch (request.tool) {
     case 'ping':
@@ -326,6 +330,18 @@ try {
     !seenTools.includes('get_focused_rem')
   ) {
     throw new Error(`Hosted get_focused_rem did not reach paired plugin: ${focused.status} ${focused.text}`);
+  }
+
+  ws.close();
+  ws = undefined;
+  await sleep(100);
+  const disconnected = await mcpToolCall(mcpUrl, 'get_focused_rem', {}, pairing.accessToken);
+  if (
+    disconnected.status !== 200 ||
+    !/PLUGIN_NOT_CONNECTED|NO_ACTIVE_DEVICE|NO_PAIRED_PLUGIN_SESSION/.test(disconnected.text) ||
+    disconnected.text.includes(fakeRem.frontText)
+  ) {
+    throw new Error(`Hosted disconnected sequence did not fail safely: ${disconnected.status} ${disconnected.text}`);
   }
 
   console.log('Hosted routing smoke passed.');

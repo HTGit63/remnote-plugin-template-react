@@ -29,8 +29,13 @@ import {
 import { BulkImportJobStore } from '../server/src/bulk-import/job-store';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../shared/bridge/protocol';
 import {
+  previewMarkdownNoteTree,
+  createOrReplaceNoteFromMarkdown,
+} from '../src/remnote/write/markdownImportExecutor';
+import {
   CREATE_REM_RESULT_CACHE,
   FLASHCARD_RESULT_CACHE,
+  MARKDOWN_IMPORT_RESULT_CACHE,
 } from '../src/remnote/write/writeCaches';
 import { createRemFromMarkdown } from '../src/remnote/write/basicWrites';
 import {
@@ -111,7 +116,18 @@ function registerHandlers(register: (context: ToolRegistrationContext) => void, 
 beforeEach(() => {
   CREATE_REM_RESULT_CACHE.clear();
   FLASHCARD_RESULT_CACHE.clear();
+  MARKDOWN_IMPORT_RESULT_CACHE.clear();
 });
+
+async function plainTreeAsync(fake: FakePlugin, remId: string): Promise<string[]> {
+  const rem = fake.rems.get(remId);
+  if (!rem) {
+    return [];
+  }
+  const text = await fake.richText.toString(rem.text);
+  const children = (await Promise.all(rem.children.map((childId) => plainTreeAsync(fake, childId)))).flat();
+  return [text, ...children].filter(Boolean);
+}
 
 describe('AGENTS staged repair simulated live gate', () => {
   test('task 1: Stage 0/1 runtime metadata and mass_note_writer profile are exact', () => {
@@ -161,6 +177,7 @@ describe('AGENTS staged repair simulated live gate', () => {
       operationId: 'op-stage-2',
       idempotencyKey: 'idem-stage-2',
       idempotencyResult: 'already_applied',
+      retryClassification: 'already_applied',
       targetRemId: 'root-1',
       parentRemId: 'parent-1',
     });
@@ -169,6 +186,72 @@ describe('AGENTS staged repair simulated live gate', () => {
       status: 'PLATFORM_BLOCKED',
       errorCode: 'RETRYABLE_UNKNOWN_WRITE_STATUS',
       retryable: true,
+      retryClassification: 'retryable_unknown',
+    });
+  });
+
+  test('stage 5: retry classification distinguishes replay, unknown, partial, and failed', async () => {
+    const replay = await bridgeToolResult(
+      async () => success('retry-replay', {
+        toolName: 'create_or_replace_note_from_markdown',
+        status: 'already_applied',
+        idempotencyKey: 'idem-replay',
+        rootRemId: 'root-replay',
+        createdRemIds: ['root-replay'],
+        verification: { passed: true, method: 'readback' },
+      }),
+      'ok'
+    );
+    const unknown = failureToToolResult({
+      id: 'retry-unknown',
+      ok: false,
+      error: {
+        code: 'RETRYABLE_UNKNOWN_WRITE_STATUS',
+        message: 'The write may have reached RemNote before disconnect.',
+        retryable: true,
+      },
+      lifecycle: [],
+    }, 'create_or_replace_note_from_markdown');
+    const partial = await bridgeToolResult(
+      async () => success('retry-partial', {
+        toolName: 'create_or_replace_note_from_markdown',
+        status: 'partial_failure',
+        idempotencyKey: 'idem-partial',
+        partialExecution: {
+          createdRemIds: ['partial-1'],
+          rollbackStatus: 'not_attempted',
+        },
+        verification: { passed: false, method: 'readback' },
+      }),
+      'partial'
+    );
+    const failed = await bridgeToolResult(
+      async () => success('retry-failed', {
+        toolName: 'apply_style_plan',
+        status: 'failed',
+        operations: [],
+      }),
+      'failed'
+    );
+
+    expect(replay.structuredContent).toMatchObject({
+      status: 'PASS',
+      retryClassification: 'already_applied',
+      createdRemIds: [],
+    });
+    expect(unknown.structuredContent).toMatchObject({
+      status: 'PLATFORM_BLOCKED',
+      retryClassification: 'retryable_unknown',
+      retryable: true,
+    });
+    expect(partial.structuredContent).toMatchObject({
+      status: 'PARTIAL',
+      retryClassification: 'partial',
+      createdRemIds: ['partial-1'],
+    });
+    expect(failed.structuredContent).toMatchObject({
+      status: 'FAIL',
+      retryClassification: 'failed',
     });
   });
 
@@ -319,7 +402,71 @@ describe('AGENTS staged repair simulated live gate', () => {
     expect(timeout.structuredContent?.status).toBe('PLATFORM_BLOCKED');
     expect(timeout.structuredContent?.retryable).toBe(true);
     expect(timeout.structuredContent?.errorCode).toBe('RETRYABLE_UNKNOWN_WRITE_STATUS');
+    expect(timeout.structuredContent?.retryClassification).toBe('retryable_unknown');
+    expect((timeout.structuredContent?.verification as any).attempted).toBe(false);
     expect(timeout.isError).toBe(true);
+  });
+
+  test('stage 5: read-preview-write-readback retry creates one markdown tree', async () => {
+    const fake = new FakePlugin();
+    const parent = fake.addRem('workflow-parent', 'Workflow parent');
+    const markdownText = [
+      '# Workflow Root',
+      '',
+      '## Section One',
+      '',
+      'Keep CN_01_03_anchor exact.',
+      '',
+      '## Section Two',
+      '',
+      'Retry-safe line.',
+    ].join('\n');
+
+    const preRead = await plainTreeAsync(fake, parent._id);
+    const preview = previewMarkdownNoteTree({
+      markdownText,
+      limits: { maxDepth: 6, maxNodes: 50 },
+      verifyAfterWrite: true,
+    });
+    const first = await createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      parentRemId: parent._id,
+      markdownText,
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:stage5:workflow',
+      },
+    });
+    const readback = await plainTreeAsync(fake, first.rootRemId as string);
+    const retry = await createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      parentRemId: parent._id,
+      markdownText,
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:stage5:workflow',
+      },
+    });
+
+    expect(preRead).toEqual(['Workflow parent']);
+    expect(preview.verification.passed).toBe(true);
+    expect(first.status).toBe('created');
+    expect(first.verification?.passed).toBe(true);
+    expect(retry.status).toBe('already_applied');
+    expect(retry.rootRemId).toBe(first.rootRemId);
+    expect(parent.children).toEqual([first.rootRemId]);
+    expect(fake.createRemCount).toBe(first.createdRemIds.length);
+    expect(readback.map((line) => line.trim()).filter(Boolean)).toEqual([
+      'Workflow Root',
+      'Section One',
+      'Keep CN_01_03_anchor exact.',
+      'Section Two',
+      'Retry-safe line.',
+    ]);
   });
 
   test('task 9: Stage 9 Chapter One and formula fidelity pass against simulated readback', () => {

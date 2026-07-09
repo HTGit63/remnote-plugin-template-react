@@ -36,6 +36,12 @@ export type StandardToolStatus =
   | 'BLOCKED_BY_PROFILE'
   | 'PLATFORM_BLOCKED';
 
+export type RetryClassification =
+  | 'already_applied'
+  | 'retryable_unknown'
+  | 'partial'
+  | 'failed';
+
 export type CallPluginFunction = <TTool extends BridgeToolName>(
   tool: TTool,
   args: BridgeToolArgs[TTool],
@@ -426,6 +432,16 @@ function standardResponse(input: {
     : typeof result?.retryable === 'boolean'
       ? result.retryable
       : undefined;
+  const retryClassification: RetryClassification | undefined =
+    idempotencyReplay
+      ? 'already_applied'
+      : errorCode === 'RETRYABLE_UNKNOWN_WRITE_STATUS' || errorCode === 'RETRYABLE_UNKNOWN_DELETE_STATUS'
+        ? 'retryable_unknown'
+        : input.status === 'PARTIAL' || partialExecution || rawStatus?.includes('partial')
+          ? 'partial'
+          : input.status === 'FAIL'
+            ? 'failed'
+            : undefined;
   return {
     status: input.status,
     toolName: input.toolName ?? firstString(result?.toolName) ?? 'unknown',
@@ -448,6 +464,7 @@ function standardResponse(input: {
     errorCode,
     errorMessage,
     retryable,
+    retryClassification,
     phaseDurations,
     warnings: stringArray(result?.warnings),
     blockedByProfile: input.blockedByProfile,

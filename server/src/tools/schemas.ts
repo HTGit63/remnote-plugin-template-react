@@ -165,6 +165,7 @@ export const BRIDGE_TOOL_OUTPUT_SCHEMA = z.object({
   errorCode: z.string().optional(),
   errorMessage: z.string().optional(),
   retryable: z.boolean().optional(),
+  retryClassification: z.enum(['already_applied', 'retryable_unknown', 'partial', 'failed']).optional(),
   standard: z.any().optional(),
 });
 export const REMNOTE_GUIDE_SECTION_SCHEMA = z

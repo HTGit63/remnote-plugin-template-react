@@ -50,6 +50,10 @@ async function mcpToolCall(
   );
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function bridgeResponse(request: BridgeRequest, label: string, remId: string): BridgeResponse {
   const fakeRem: SerializedRem = {
     remId,
@@ -249,6 +253,20 @@ try {
     seenToolsB.includes('get_focused_rem')
   ) {
     throw new Error(`Codex multiple-active routing was not refused safely: ${multipleConnections.response.status} ${multipleConnections.text}`);
+  }
+
+  for (const socket of sockets.splice(0)) {
+    socket.close();
+  }
+  await sleep(100);
+  const disconnected = await mcpToolCall(mcpUrl, 'get_focused_rem', {}, codexToken);
+  if (
+    disconnected.response.status !== 200 ||
+    !/PLUGIN_NOT_CONNECTED|NO_ACTIVE_DEVICE/.test(disconnected.text) ||
+    disconnected.text.includes('Codex fallback Rem A') ||
+    disconnected.text.includes('Codex fallback Rem B')
+  ) {
+    throw new Error(`Codex disconnected sequence did not fail safely: ${disconnected.response.status} ${disconnected.text}`);
   }
 
   console.log('Codex routing smoke passed.');

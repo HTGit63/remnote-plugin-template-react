@@ -65,6 +65,35 @@ const fakeRem: SerializedRem = {
     },
   ],
 };
+const workflowRootRem: SerializedRem = {
+  remId: 'area3-workflow-root',
+  frontText: 'Area 3 workflow root',
+  backText: '',
+  plainText: 'Area 3 workflow root',
+  breadcrumbs: ['Area 3 Root', 'Area 3 workflow root'],
+  hasChildren: true,
+  children: [
+    {
+      remId: 'area3-workflow-child-1',
+      frontText: 'Section One',
+      backText: '',
+      plainText: 'Section One',
+      breadcrumbs: ['Area 3 Root', 'Area 3 workflow root', 'Section One'],
+      hasChildren: true,
+      children: [
+        {
+          remId: 'area3-workflow-child-2',
+          frontText: 'Area 3 workflow anchor.',
+          backText: '',
+          plainText: 'Area 3 workflow anchor.',
+          breadcrumbs: ['Area 3 Root', 'Area 3 workflow root', 'Section One', 'Area 3 workflow anchor.'],
+          hasChildren: false,
+        },
+      ],
+    },
+  ],
+};
+const workflowWriteAttempts = new Map<string, number>();
 
 type JsonResponse = {
   status: number;
@@ -656,16 +685,29 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     case 'get_rem_tree':
-    case 'get_document_or_folder_tree':
+    case 'get_document_or_folder_tree': {
+      const rootRemId = request.tool === 'get_rem_tree' ? request.args.remId : request.args.rootRemId;
+      if (rootRemId === workflowRootRem.remId) {
+        return {
+          id: request.id,
+          ok: true,
+          result: {
+            rootRemId,
+            tree: workflowRootRem,
+            truncated: false,
+          },
+        };
+      }
       return {
         id: request.id,
         ok: true,
         result: {
-          rootRemId: request.tool === 'get_rem_tree' ? request.args.remId : request.args.rootRemId,
+          rootRemId,
           tree: fakeRem,
           truncated: false,
         },
       };
+    }
     case 'get_rem_breadcrumbs':
       return {
         id: request.id,
@@ -717,6 +759,65 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
         },
       };
     }
+    case 'create_or_replace_note_from_markdown': {
+      const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
+      const workflowKey = safetyOptions?.idempotencyKey === 'area3-workflow-compat-markdown'
+        ? safetyOptions.idempotencyKey
+        : undefined;
+      if (typeof workflowKey === 'string') {
+        const attempts = workflowWriteAttempts.get(workflowKey) ?? 0;
+        workflowWriteAttempts.set(workflowKey, attempts + 1);
+        const replay = attempts > 0;
+        return {
+          id: request.id,
+          ok: true,
+          result: {
+            ok: true,
+            tool: request.tool,
+            toolName: 'create_or_replace_note_from_markdown',
+            status: replay ? 'already_applied' : 'created',
+            idempotencyKey: workflowKey,
+            idempotencyResult: replay ? 'already_applied' : 'new',
+            parentRemId: request.args.parentRemId,
+            rootRemId: workflowRootRem.remId,
+            createdRemIds: replay ? [] : [workflowRootRem.remId, 'area3-workflow-child-1', 'area3-workflow-child-2'],
+            updatedRemIds: [],
+            nodeCount: 3,
+            maxDepth: 3,
+            sourceHash: 'area3-workflow-source',
+            outputHash: 'area3-workflow-output',
+            mode: request.args.mode,
+            duplicatePolicy: request.args.duplicatePolicy,
+            verification: {
+              attempted: true,
+              passed: true,
+              method: 'area3_mock_readback',
+              checkedRemIds: [workflowRootRem.remId, 'area3-workflow-child-1', 'area3-workflow-child-2'],
+            },
+            phaseDurationsMs: {
+              planning: 1,
+              singleWriteExecution: replay ? 0 : 1,
+              verification: 1,
+              total: replay ? 1 : 3,
+            },
+          },
+        };
+      }
+      return {
+        id: request.id,
+        ok: true,
+        result: {
+          ok: true,
+          tool: request.tool,
+          dryRun: 'dryRun' in request.args ? Boolean(request.args.dryRun) : undefined,
+          idempotencyKey: 'idempotencyKey' in request.args ? request.args.idempotencyKey : undefined,
+          createdRemId: request.tool.startsWith('create_') ? `created-${request.tool}` : undefined,
+          createdRemIds: [`created-${request.tool}-root`, `created-${request.tool}-child`],
+          updatedRemIds: undefined,
+          status: 'area3_certified',
+        },
+      };
+    }
     case 'create_rem':
     case 'create_document':
     case 'append_to_rem':
@@ -738,7 +839,6 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'apply_remnote_command':
     case 'apply_structured_note_batch':
     case 'create_polished_note_tree':
-    case 'create_or_replace_note_from_markdown':
     case 'preview_markdown_note_tree':
     case 'create_note_from_markdown_tree':
     case 'append_markdown_as_rem_tree':
@@ -835,6 +935,15 @@ function assertToolResult(tool: string, result: JsonResponse) {
   assert(!result.json?.error, `${tool} returned JSON-RPC error: ${result.text}`);
   assert(!result.json?.result?.isError, `${tool} returned MCP tool error: ${result.text}`);
   assert(result.json?.result, `${tool} returned no JSON-RPC result: ${result.text}`);
+}
+
+function structuredToolResult(result: JsonResponse): Record<string, unknown> {
+  const structured = result.json?.result?.structuredContent;
+  assert(
+    typeof structured === 'object' && structured !== null,
+    `MCP tool result did not include structuredContent: ${result.text}`
+  );
+  return structured as Record<string, unknown>;
 }
 
 async function assertToolsList(baseUrl: string, expectedTools: readonly string[]) {
@@ -935,6 +1044,22 @@ function assertSchemaQuality(profile: ToolProfile = 'danger') {
   assertMatrixShape(summary.runtimeVerificationMatrix as Array<Record<string, unknown>>, publicTools);
 }
 
+function requestIdempotencyKey(args: Record<string, unknown>): string | undefined {
+  if (typeof args.idempotencyKey === 'string') {
+    return args.idempotencyKey;
+  }
+  const safetyOptions = args.safetyOptions;
+  return typeof safetyOptions === 'object' &&
+    safetyOptions !== null &&
+    typeof (safetyOptions as Record<string, unknown>).idempotencyKey === 'string'
+    ? (safetyOptions as Record<string, unknown>).idempotencyKey as string
+    : undefined;
+}
+
+function isWorkflowCompatibilityRequest(request: SeenBridgeRequest): boolean {
+  return requestIdempotencyKey(request.args)?.startsWith('area3-workflow-compat') === true;
+}
+
 function assertIdempotencyAndDryRun(publicTools: readonly string[], seen: readonly SeenBridgeRequest[]) {
   const deleteRequest = seen.find((request) => request.tool === 'delete_rem_by_id');
   if (publicTools.includes('delete_rem_by_id')) {
@@ -949,13 +1074,20 @@ function assertIdempotencyAndDryRun(publicTools: readonly string[], seen: readon
         ? 'get_plugin_status'
         : request.tool;
     const metadata = getToolMetadata(publicName);
-    if (metadata.supportsDryRun && 'dryRun' in request.args && metadata.requiresWrite) {
+    if (
+      metadata.supportsDryRun &&
+      'dryRun' in request.args &&
+      metadata.requiresWrite &&
+      !isWorkflowCompatibilityRequest(request)
+    ) {
       assert(request.args.dryRun !== false, `${publicName} certification must not execute a real dry-run-capable write.`);
     }
     if (request.tool === 'create_or_replace_note_from_markdown') {
       const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
-      assert(safetyOptions?.dryRun === true, 'create_or_replace_note_from_markdown certification must use safetyOptions.dryRun=true.');
-      assert(typeof safetyOptions.idempotencyKey === 'string', 'create_or_replace_note_from_markdown certification must pass nested idempotencyKey.');
+      if (!isWorkflowCompatibilityRequest(request)) {
+        assert(safetyOptions?.dryRun === true, 'create_or_replace_note_from_markdown certification must use safetyOptions.dryRun=true.');
+      }
+      assert(typeof safetyOptions?.idempotencyKey === 'string', 'create_or_replace_note_from_markdown certification must pass nested idempotencyKey.');
     }
     if (request.tool === 'create_note_from_markdown_tree' || request.tool === 'append_markdown_as_rem_tree') {
       const safetyOptions = request.args.safetyOptions as Record<string, unknown> | undefined;
@@ -966,6 +1098,76 @@ function assertIdempotencyAndDryRun(publicTools: readonly string[], seen: readon
       assert(request.args.dryRun === true, `${publicName} delete certification must use dryRun=true.`);
     }
   }
+}
+
+async function assertWorkflowCompatibility(baseUrl: string, publicTools: readonly string[]) {
+  const required = [
+    'get_focused_rem',
+    'preview_markdown_note_tree',
+    'create_or_replace_note_from_markdown',
+    'get_document_or_folder_tree',
+  ];
+  if (!required.every((tool) => publicTools.includes(tool))) {
+    return;
+  }
+
+  const markdownText = [
+    '# Area 3 workflow root',
+    '',
+    '## Section One',
+    '',
+    'Area 3 workflow anchor.',
+  ].join('\n');
+  const writeArgs = {
+    parentRemId: parentId,
+    markdownText,
+    mode: 'create_child',
+    duplicatePolicy: 'create_new',
+    safetyOptions: {
+      dryRun: false,
+      verifyAfterWrite: true,
+      rollbackOnFailure: true,
+      idempotencyKey: 'area3-workflow-compat-markdown',
+    },
+    limits: {
+      maxDepth: 6,
+      maxNodes: 50,
+    },
+  };
+
+  const readBefore = await mcpToolCall(baseUrl, 'get_focused_rem', {});
+  assertToolResult('stage5:get_focused_rem', readBefore);
+  const preview = await mcpToolCall(baseUrl, 'preview_markdown_note_tree', {
+    markdownText,
+    limits: { maxDepth: 6, maxNodes: 50 },
+    verifyAfterWrite: true,
+  });
+  assertToolResult('stage5:preview_markdown_note_tree', preview);
+  const previewStructured = structuredToolResult(preview);
+  assert(previewStructured.status === 'PASS', 'Stage 5 preview did not return PASS.');
+  assert((previewStructured.verification as Record<string, unknown> | undefined)?.passed === true, 'Stage 5 preview did not verify source fidelity.');
+
+  const first = await mcpToolCall(baseUrl, 'create_or_replace_note_from_markdown', writeArgs);
+  assertToolResult('stage5:create_or_replace_note_from_markdown:first', first);
+  const firstStructured = structuredToolResult(first);
+  assert(firstStructured.status === 'PASS', 'Stage 5 first write did not return PASS.');
+  assert((firstStructured.verification as Record<string, unknown> | undefined)?.passed === true, 'Stage 5 first write lacked readback verification.');
+  assert(firstStructured.targetRemId === 'area3-workflow-root', 'Stage 5 first write missed workflow root target.');
+
+  const readback = await mcpToolCall(baseUrl, 'get_document_or_folder_tree', {
+    rootRemId: 'area3-workflow-root',
+    depth: 2,
+    maxChildren: 10,
+  });
+  assertToolResult('stage5:get_document_or_folder_tree', readback);
+  assert(readback.text.includes('Area 3 workflow root'), 'Stage 5 readback missed workflow root text.');
+
+  const retry = await mcpToolCall(baseUrl, 'create_or_replace_note_from_markdown', writeArgs);
+  assertToolResult('stage5:create_or_replace_note_from_markdown:retry', retry);
+  const retryStructured = structuredToolResult(retry);
+  assert(retryStructured.idempotencyResult === 'already_applied', 'Stage 5 retry did not report already_applied.');
+  assert((retryStructured.createdRemIds as unknown[] | undefined)?.length === 0, 'Stage 5 retry reported newly created Rems.');
+  assert((retryStructured.counts as Record<string, unknown> | undefined)?.created === 0, 'Stage 5 retry created count was not zero.');
 }
 
 async function certifyProfile(profile: ToolProfile) {
@@ -1006,6 +1208,8 @@ async function certifyProfile(profile: ToolProfile) {
       durations.push(Date.now() - startedAt);
       assertToolResult(tool, result);
     }
+
+    await assertWorkflowCompatibility(baseUrl, tools);
 
     const diagnostics = await getDiagnostics(baseUrl);
     const matrix = diagnostics?.runtimeVerificationMatrix as Array<Record<string, unknown>>;
