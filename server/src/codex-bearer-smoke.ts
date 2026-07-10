@@ -1,9 +1,19 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startCompanionApp } from './app.js';
 
 let nextId = 1;
 
 const publicBaseUrl = 'https://remnote-plugin-template-react.onrender.com';
 const codexToken = 'codex-smoke-token-with-enough-entropy';
+const allowedSourceRoot = mkdtempSync(join(tmpdir(), 'remnote-codex-file-'));
+const deniedSourceRoot = mkdtempSync(join(tmpdir(), 'remnote-codex-denied-'));
+const allowedSourceFile = join(allowedSourceRoot, 'codex-source.md');
+const deniedSourceFile = join(deniedSourceRoot, 'denied-source.md');
+const sourceMarkdown = '# Codex file handoff\n\n## Section\n\nAuthenticated local source.';
+writeFileSync(allowedSourceFile, sourceMarkdown, 'utf8');
+writeFileSync(deniedSourceFile, sourceMarkdown, 'utf8');
 
 async function postJson(url: string, body: unknown, headers: Record<string, string> = {}) {
   const response = await fetch(url, {
@@ -74,6 +84,8 @@ const app = await startCompanionApp({
   bridgePort: 0,
   mcpPort: 0,
   rateLimitMaxRequests: 1000,
+  sourceFileAllowRoots: [allowedSourceRoot],
+  maxSourceFileBytes: 4096,
 });
 
 const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
@@ -191,6 +203,40 @@ try {
     valid.text.includes('Missing bearer token')
   ) {
     throw new Error(`Valid Codex bearer did not reach MCP/plugin routing layer: ${valid.response.status} ${valid.text}`);
+  }
+
+  const fileWithoutBearer = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
+    sourceFilePath: allowedSourceFile,
+    targetRootId: 'codex-file-root',
+  });
+  if (fileWithoutBearer.response.status !== 401 || !fileWithoutBearer.text.includes('Missing bearer token')) {
+    throw new Error(`Codex file handoff accepted missing bearer: ${fileWithoutBearer.response.status} ${fileWithoutBearer.text}`);
+  }
+
+  const allowedFile = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
+    sourceFilePath: allowedSourceFile,
+    targetRootId: 'codex-file-root',
+  }, codexToken);
+  assertNoSecret('Codex allowed file handoff', allowedFile.text);
+  if (
+    allowedFile.response.status !== 200 ||
+    !allowedFile.text.includes('File-backed note import plan created.') ||
+    !allowedFile.text.includes('"status":"PASS"')
+  ) {
+    throw new Error(`Codex allowed file handoff failed: ${allowedFile.response.status} ${allowedFile.text}`);
+  }
+
+  const deniedFile = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
+    sourceFilePath: deniedSourceFile,
+    targetRootId: 'codex-file-root',
+  }, codexToken);
+  assertNoSecret('Codex denied file handoff', deniedFile.text);
+  if (
+    deniedFile.response.status !== 200 ||
+    !deniedFile.text.includes('SOURCE_FILE_OUTSIDE_ALLOWED_ROOTS') ||
+    deniedFile.text.includes('PLUGIN_NOT_CONNECTED')
+  ) {
+    throw new Error(`Codex unsafe file path crossed root boundary: ${deniedFile.response.status} ${deniedFile.text}`);
   }
 
   const untrustedWrite = await mcpToolCall(mcpUrl, 'create_or_replace_note_from_markdown', {

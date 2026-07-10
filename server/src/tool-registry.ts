@@ -12,7 +12,7 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-07-09.tool-correctness-matrix';
+export const TOOL_REGISTRY_VERSION = '2026-07-10.file-import-safety';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';

@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-07-09.tool-correctness-matrix';
+export const TOOL_SCHEMA_VERSION = '2026-07-10.file-import-safety';
 
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
@@ -680,13 +680,14 @@ export const TOOL_METADATA = [
   }),
   meta('plan_note_import_from_file', 'markdown_note', 'low', {
     requiresWrite: false,
+    operationTier: 'Read + Create',
     scopeRequirement: 'approved-root',
     supportsDryRun: true,
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     agentWarning:
-      'Reads only server-side source files under allowed roots. Configure REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS for additional import locations.',
+      'Local paths require authenticated local/Codex bearer access and canonical allowed-root checks. ChatGPT uses the top-level sourceFile file param on hosted OAuth. Symlinks, root escapes, private-network URLs, and oversized sources are rejected.',
   }),
   meta('start_note_import_job', 'markdown_note', 'low', {
     requiresWrite: false,
@@ -700,13 +701,14 @@ export const TOOL_METADATA = [
   }),
   meta('start_note_import_from_file', 'markdown_note', 'low', {
     requiresWrite: false,
+    operationTier: 'Read + Create',
     scopeRequirement: 'approved-root',
     supportsDryRun: true,
     liveVerificationRequired: false,
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     agentWarning:
-      'Creates a resumable job from a server-side source file; check storageDurability before assuming restart durability.',
+      'Accepts authenticated local/Codex paths or hosted-OAuth ChatGPT sourceFile params. Check storageDurability before assuming restart durability.',
   }),
   meta('run_note_import_job_step', 'markdown_note', 'medium', {
     supportsDryRun: true,

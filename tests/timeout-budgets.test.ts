@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'vitest';
+import { mkdtempSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { DEFAULT_TIMEOUT_BUDGETS, loadConfig } from '../server/src/config';
 import { estimateWriteTimeoutMs } from '../server/src/tools/tool-context';
 
@@ -45,5 +48,25 @@ describe('bridge timeout budgets', () => {
     expect(readTimeout).toBeGreaterThanOrEqual(DEFAULT_TIMEOUT_BUDGETS.readTimeoutMs);
     expect(smallWriteTimeout).toBeGreaterThanOrEqual(DEFAULT_TIMEOUT_BUDGETS.mutationTimeoutMs);
     expect(bulkTimeout).toBeGreaterThanOrEqual(DEFAULT_TIMEOUT_BUDGETS.bulkStepTimeoutMs);
+  });
+
+  test('loads explicit source roots and caps source files at the bridge message limit', () => {
+    const allowedRoot = mkdtempSync(join(tmpdir(), 'remnote-source-root-'));
+    const config = loadConfig({
+      REMNOTE_BRIDGE_TOKEN: 'token',
+      REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS: allowedRoot,
+      REMNOTE_MCP_SOURCE_FILE_MAX_BYTES: '4096',
+      REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES: '1024',
+    });
+
+    expect(config.sourceFileAllowRoots).toContain(allowedRoot);
+    expect(config.maxSourceFileBytes).toBe(1024);
+  });
+
+  test('rejects relative source-root env overrides', () => {
+    expect(() => loadConfig({
+      REMNOTE_BRIDGE_TOKEN: 'token',
+      REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS: '../unsafe-relative-root',
+    })).toThrow('REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS must contain absolute paths');
   });
 });

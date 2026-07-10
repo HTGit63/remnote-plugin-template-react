@@ -1,7 +1,3 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { basename, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import {
   bulkImportDurabilityWarning,
@@ -26,6 +22,11 @@ import {
   type ToolRegistrationContext,
 } from './tool-context.js';
 import { bulkImportJobStore } from '../bulk-import/job-store.js';
+import {
+  BulkImportSourceFileError,
+  loadBulkImportSourceFile,
+  type BulkImportLoadedSourceFile,
+} from '../bulk-import/source-file-loader.js';
 
 const READ_ONLY_BULK_TOOL_ANNOTATIONS = {
   readOnlyHint: true,
@@ -36,6 +37,12 @@ const READ_ONLY_BULK_TOOL_ANNOTATIONS = {
 const WRITE_BULK_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
   openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
+const FILE_BULK_TOOL_ANNOTATIONS = {
+  readOnlyHint: false,
+  openWorldHint: true,
   destructiveHint: false,
 } as const;
 
@@ -69,7 +76,21 @@ const SOURCE_FILE_REFERENCE_SCHEMA = z.union([
     url: z.string().trim().min(1).max(4096).optional(),
     href: z.string().trim().min(1).max(4096).optional(),
     name: z.string().trim().max(256).optional(),
-  }).passthrough(),
+    download_url: z.string().trim().min(1).max(8192).optional(),
+    file_id: z.string().trim().min(1).max(512).optional(),
+    mime_type: z.string().trim().max(256).optional(),
+    file_name: z.string().trim().max(512).optional(),
+  }).passthrough().refine((value) => Boolean(
+    value.path ||
+    value.filePath ||
+    value.sourceFilePath ||
+    value.uri ||
+    value.url ||
+    value.href ||
+    (value.download_url && value.file_id)
+  ), {
+    message: 'File object requires a local path alias or ChatGPT download_url plus file_id.',
+  }),
 ]);
 
 const PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA = PLAN_IMPORT_INPUT_SCHEMA.omit({ sourceText: true, sourceName: true }).extend({
@@ -89,7 +110,11 @@ const PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA = PLAN_IMPORT_INPUT_SCHEMA.omit({ sourc
   message: 'Provide sourceFilePath, filePath, path, sourceFileUri, or sourceFile.',
 });
 
-const MAX_BULK_IMPORT_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
+const DEFAULT_SOURCE_FILE_POLICY = {
+  allowedRoots: ['/mnt/data'],
+  maxBytes: 2 * 1024 * 1024,
+  remoteTimeoutMs: 15_000,
+} as const;
 
 function toolResult(
   text: string,
@@ -251,109 +276,27 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 }
 
-function configuredSourceRoots(): string[] {
-  const cwd = process.cwd();
-  const repoRoot = cwd.endsWith('/server') ? resolve(cwd, '..') : cwd;
-  const envRoots = (process.env.REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS ?? '')
-    .split(',')
-    .map((root) => root.trim())
-    .filter(Boolean);
-  return Array.from(new Set([
-    ...envRoots,
-    cwd,
-    repoRoot,
-    tmpdir(),
-    '/mnt/data',
-    resolve(homedir(), 'Downloads', 'Remnote'),
-  ].map((root) => resolve(root))));
+function sourceFileIdentity(file: BulkImportLoadedSourceFile): string {
+  return file.sourceReference.kind === 'local_file'
+    ? file.sourceReference.path
+    : `chatgpt-file:${file.sourceReference.fileId}`;
 }
 
-function isPathUnderRoot(pathname: string, root: string): boolean {
-  const normalizedPath = resolve(pathname);
-  const normalizedRoot = resolve(root);
-  return normalizedPath === normalizedRoot || normalizedPath.startsWith(`${normalizedRoot}/`);
-}
-
-function readBulkImportSourceFile(sourceFilePath: string): {
-  sourceText: string;
-  resolvedPath: string;
-  sourceName: string;
-  byteLength: number;
-} {
-  const resolvedPath = resolveConnectorSourcePath(sourceFilePath);
-  const allowedRoots = configuredSourceRoots();
-  if (!allowedRoots.some((root) => isPathUnderRoot(resolvedPath, root))) {
-    throw new Error(
-      `sourceFilePath is outside allowed roots. Configure REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS or place the file under ${allowedRoots.join(', ')}.`
-    );
-  }
-  if (!existsSync(resolvedPath)) {
-    throw new Error(`sourceFilePath does not exist: ${resolvedPath}`);
-  }
-  const stats = statSync(resolvedPath);
-  if (!stats.isFile()) {
-    throw new Error(`sourceFilePath must be a regular file: ${resolvedPath}`);
-  }
-  if (stats.size > MAX_BULK_IMPORT_SOURCE_FILE_BYTES) {
-    throw new Error(`sourceFilePath exceeds ${MAX_BULK_IMPORT_SOURCE_FILE_BYTES} bytes.`);
-  }
+function sourceFileStructuredOutput(
+  file: BulkImportLoadedSourceFile,
+  plan: ReturnType<typeof planNoteImport>
+) {
   return {
-    sourceText: readFileSync(resolvedPath, 'utf8'),
-    resolvedPath,
-    sourceName: basename(resolvedPath),
-    byteLength: stats.size,
+    ...file.sourceReference,
+    byteLength: file.byteLength,
+    sourceHash: stableBulkImportHash(file.sourceText),
+    extractedChapterHash: plan.sourceMetadata.extractedSourceHash,
+    plannedSourceHash: plan.sourceMetadata.plannedSourceHash,
   };
 }
 
-function sourceFilePathFromArgs(args: {
-  sourceFilePath?: unknown;
-  filePath?: unknown;
-  path?: unknown;
-  sourceFileUri?: unknown;
-  sourceFile?: unknown;
-}): string {
-  for (const candidate of [args.sourceFilePath, args.filePath, args.path, args.sourceFileUri, args.sourceFile]) {
-    if (typeof candidate === 'string' && candidate.trim()) {
-      return candidate.trim();
-    }
-    if (typeof candidate === 'object' && candidate !== null) {
-      for (const key of ['path', 'filePath', 'sourceFilePath', 'uri', 'url', 'href']) {
-        const value = (candidate as Record<string, unknown>)[key];
-        if (typeof value === 'string' && value.trim()) {
-          return value.trim();
-        }
-      }
-    }
-  }
-  throw new Error('sourceFilePath is required.');
-}
-
-function resolveConnectorSourcePath(sourceFilePath: string): string {
-  const trimmed = sourceFilePath.trim();
-  if (!trimmed) {
-    throw new Error('sourceFilePath is required.');
-  }
-
-  if (trimmed.startsWith('file://')) {
-    return resolve(fileURLToPath(trimmed));
-  }
-
-  const sandboxMatch = trimmed.match(/^sandbox:(?:\/\/)?(.+)$/);
-  if (sandboxMatch) {
-    const pathPart = decodeURIComponent(sandboxMatch[1]);
-    return resolve(pathPart.startsWith('/') ? pathPart : `/${pathPart}`);
-  }
-
-  const mountedFileMatch = trimmed.match(/^(?:connector|chatgpt|openai-file|mnt-data):(?:\/\/)?(.+)$/);
-  if (mountedFileMatch) {
-    const pathPart = decodeURIComponent(mountedFileMatch[1]);
-    if (pathPart.startsWith('/')) {
-      return resolve(pathPart);
-    }
-    return resolve('/mnt/data', pathPart.replace(/^mnt\/data\//, ''));
-  }
-
-  return resolve(decodeURIComponent(trimmed.replace(/^\/?mnt\/data\//, '/mnt/data/')));
+function sourceFileErrorCode(error: unknown): string {
+  return error instanceof BulkImportSourceFileError ? error.code : 'INVALID_ARGS';
 }
 
 function planStructuredOutput(plan: ReturnType<typeof planNoteImport>, toolName: string) {
@@ -421,6 +364,10 @@ export function registerBulkImportTools({
   callPlugin,
   timeoutBudgets,
   storage,
+  principal,
+  requestSignal,
+  sourceFilePolicy = DEFAULT_SOURCE_FILE_POLICY,
+  sourceFileLoader = loadBulkImportSourceFile,
 }: ToolRegistrationContext): void {
   const storageDurability = storage?.bulkImportStorageDurability() ?? 'memory_only';
 
@@ -529,32 +476,32 @@ export function registerBulkImportTools({
     'plan_note_import_from_file',
     {
       title: 'Plan note import from file',
-      description: 'Read a local source file on the server, extract a bounded chapter span, and plan a resumable import without writing.',
+      description: 'Read an authenticated local/Codex path or authorized ChatGPT file param, then plan a bounded resumable import without writing.',
       inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: FILE_BULK_TOOL_ANNOTATIONS,
+      _meta: {
+        'openai/fileParams': ['sourceFile'],
+      },
     },
     async (args) => {
       try {
-        const sourceFilePath = sourceFilePathFromArgs(args);
-        const file = readBulkImportSourceFile(sourceFilePath);
+        const file = await sourceFileLoader(args, {
+          principal,
+          policy: sourceFilePolicy,
+          signal: requestSignal,
+        });
         const plan = planNoteImport({
           ...args,
           sourceKind: 'file',
-          sourceFilePath: file.resolvedPath,
+          sourceFilePath: sourceFileIdentity(file),
           sourceName: args.sourceName ?? file.sourceName,
           sourceText: file.sourceText,
         });
         await savePlan(plan);
         return toolResult('File-backed note import plan created.', {
           ...planStructuredOutput(plan, 'plan_note_import_from_file'),
-          sourceFile: {
-            path: file.resolvedPath,
-            byteLength: file.byteLength,
-            sourceHash: stableBulkImportHash(file.sourceText),
-            extractedChapterHash: plan.sourceMetadata.extractedSourceHash,
-            plannedSourceHash: plan.sourceMetadata.plannedSourceHash,
-          },
+          sourceFile: sourceFileStructuredOutput(file, plan),
         });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
@@ -562,7 +509,7 @@ export function registerBulkImportTools({
           ok: false,
           status: 'FAIL',
           toolName: 'plan_note_import_from_file',
-          errorCode: 'INVALID_ARGS',
+          errorCode: sourceFileErrorCode(error),
           errorMessage: message,
         }, true);
       }
@@ -618,21 +565,27 @@ export function registerBulkImportTools({
     'start_note_import_from_file',
     {
       title: 'Start note import from file',
-      description: 'Read a local source file, create a safe import plan, and start a resumable job without writing chunks yet.',
+      description: 'Read an authenticated local/Codex path or authorized ChatGPT file param, create a safe plan, and start a resumable job without writing chunks yet.',
       inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA.extend({
         jobId: z.string().trim().min(1).max(256).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: FILE_BULK_TOOL_ANNOTATIONS,
+      _meta: {
+        'openai/fileParams': ['sourceFile'],
+      },
     },
     async (args) => {
       try {
-        const sourceFilePath = sourceFilePathFromArgs(args);
-        const file = readBulkImportSourceFile(sourceFilePath);
+        const file = await sourceFileLoader(args, {
+          principal,
+          policy: sourceFilePolicy,
+          signal: requestSignal,
+        });
         const plan = planNoteImport({
           ...args,
           sourceKind: 'file',
-          sourceFilePath: file.resolvedPath,
+          sourceFilePath: sourceFileIdentity(file),
           sourceName: args.sourceName ?? file.sourceName,
           sourceText: file.sourceText,
         });
@@ -645,13 +598,7 @@ export function registerBulkImportTools({
           ...durabilityFields(job),
           warning: bulkImportDurabilityWarning(job.storageDurability),
           progress: summarizeBulkImportProgress(job),
-          sourceFile: {
-            path: file.resolvedPath,
-            byteLength: file.byteLength,
-            sourceHash: stableBulkImportHash(file.sourceText),
-            extractedChapterHash: plan.sourceMetadata.extractedSourceHash,
-            plannedSourceHash: plan.sourceMetadata.plannedSourceHash,
-          },
+          sourceFile: sourceFileStructuredOutput(file, plan),
           nextAction: 'call run_note_import_job_step',
         });
       } catch (error: unknown) {
@@ -660,7 +607,7 @@ export function registerBulkImportTools({
           ok: false,
           status: 'FAIL',
           toolName: 'start_note_import_from_file',
-          errorCode: 'INVALID_ARGS',
+          errorCode: sourceFileErrorCode(error),
           errorMessage: message,
         }, true);
       }

@@ -1,6 +1,6 @@
 # Developer Diagnostics Reference
 
-Generated from registry. Registry 2026-07-09.tool-correctness-matrix. Schema 2026-07-09.tool-correctness-matrix.
+Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-10.file-import-safety.
 
 ## Runtime Fields
 

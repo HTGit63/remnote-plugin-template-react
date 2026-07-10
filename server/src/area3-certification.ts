@@ -1264,6 +1264,7 @@ async function certifyProfile(profile: ToolProfile) {
     requestTimeoutMs: 8000,
     auditLog: false,
     enableDeleteTool: true,
+    sourceFileAllowRoots: [repoRoot],
   });
   const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
   const seen: SeenBridgeRequest[] = [];

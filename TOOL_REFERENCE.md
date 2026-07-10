@@ -1,6 +1,6 @@
 # Tool Reference
 
-Generated from registry. Server 0.0.1. Registry 2026-07-09.tool-correctness-matrix. Schema 2026-07-09.tool-correctness-matrix.
+Generated from registry. Server 0.0.1. Registry 2026-07-10.file-import-safety. Schema 2026-07-10.file-import-safety.
 
 Declared tools: 75. All public tools: 72. Default public tools: 19. Runtime-unverified default tools: 9. Hidden/gated/unsupported tools: 3.
 
@@ -35,9 +35,9 @@ Declared tools: 75. All public tools: 72. Default public tools: 19. Runtime-unve
 | create_polished_note_tree | design_template | Read + Create | approved-root | note_writer | medium | plugin.rem.createTreeWithMarkdown | true | false | true | true | 5000 |  |
 | create_or_replace_note_from_markdown | markdown_note | Read + Create + Modify | approved-root | mass_note_writer | medium | plugin.rem.createTreeWithMarkdown | true | true | true | true | 5000 |  |
 | plan_note_import | markdown_note | Read Only | none | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 |  |
-| plan_note_import_from_file | markdown_note | Read Only | approved-root | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 | Reads only server-side source files under allowed roots. Configure REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS for additional import locations. |
+| plan_note_import_from_file | markdown_note | Read + Create | approved-root | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 | Local paths require authenticated local/Codex bearer access and canonical allowed-root checks. ChatGPT uses the top-level sourceFile file param on hosted OAuth. Symlinks, root escapes, private-network URLs, and oversized sources are rejected. |
 | start_note_import_job | markdown_note | Read Only | none | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 | Returns storageDurability. memory_only jobs are lost on server restart; persistent jobs require configured storage. |
-| start_note_import_from_file | markdown_note | Read Only | approved-root | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 | Creates a resumable job from a server-side source file; check storageDurability before assuming restart durability. |
+| start_note_import_from_file | markdown_note | Read + Create | approved-root | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | true | 5000 | Accepts authenticated local/Codex paths or hosted-OAuth ChatGPT sourceFile params. Check storageDurability before assuming restart durability. |
 | run_note_import_job_step | markdown_note | Read + Create + Modify | approved-root | mass_note_writer | medium | server_local_bulk_import_manifest + create_or_replace_note_from_markdown | true | true | true | true | 10000 | Runs only resumable chunks. Cancelled jobs return JOB_CANCELLED and never delete existing Rems. |
 | get_note_import_job_status | markdown_note | Read Only | none | mass_note_writer | low | server_local_bulk_import_manifest | true | true | true | false | 5000 | Check storageDurability and durabilityWarning before assuming resume will survive a server restart. |
 | resume_note_import_job | markdown_note | Read + Create + Modify | approved-root | mass_note_writer | medium | server_local_bulk_import_manifest + create_or_replace_note_from_markdown | true | true | true | true | 10000 | Resumes only pending, failed-safe, partial, or unverified chunks; verified chunks are not rewritten. |

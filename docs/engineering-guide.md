@@ -85,6 +85,28 @@ Important env/ops refs:
 - Canceling a bulk import job stops future chunk execution. It never deletes already written Rems.
 - Resume only runs pending, partial, failed-safe, or written-not-verified chunks; verified chunks stay skipped.
 
+## File-Backed Imports
+
+- `plan_note_import_from_file` and `start_note_import_from_file` accept `sourceFilePath`, `filePath`, `path`, `sourceFileUri`, or `sourceFile`.
+- Local paths require an authenticated local bridge token or Codex bearer. `local_no_token`, connector-compatible no-auth, and hosted OAuth local-path reads are denied.
+- Configure local roots with comma-separated absolute paths in `REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS`. Defaults are `/mnt/data` and `~/Downloads/Remnote`; nonexistent roots remain unavailable.
+- Local file checks use canonical paths. Relative traversal, encoded traversal, `file://` escape, connector URI escape, and symlink escape are denied.
+- `REMNOTE_MCP_SOURCE_FILE_MAX_BYTES` defaults to 2 MiB and is capped by `REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES`. Oversized files fail before parsing; HTTP tool bodies remain capped separately by `REMNOTE_BRIDGE_MAX_BODY_BYTES` (128 KiB by default).
+- ChatGPT uses the top-level `sourceFile` file parameter declared through `_meta["openai/fileParams"]`. The official object fields are `download_url`, `file_id`, optional `mime_type`, and optional `file_name`.
+- ChatGPT file references require hosted OAuth. Downloads require HTTPS on port 443, pin a public DNS address for the request, reject private/link-local/reserved addresses, follow at most three validated redirects, and enforce the same source-size cap.
+- Signed ChatGPT download URLs are temporary input only and are never returned in tool output or stored in the bulk plan.
+- Local automated tests prove descriptor shape, aliases, auth-lane separation, path/root/symlink denial, SSRF address denial, and size errors. Real ChatGPT Developer Mode file upload remains a separate live proof.
+
+Codex local file example:
+
+```bash
+export REMNOTE_CODEX_TOKEN='<separate Codex bearer secret>'
+export REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS='/absolute/path/to/imports'
+export REMNOTE_MCP_SOURCE_FILE_MAX_BYTES='2097152'
+```
+
+Call `plan_note_import_from_file` with a path under that root and the authenticated MCP endpoint. The bearer authenticates Codex to the server; it does not widen RemNote scope or bypass plugin approval for later chunk writes.
+
 ## Development Workflow
 
 1. Read reports + code before edits.

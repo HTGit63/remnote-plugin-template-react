@@ -1,9 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { basename, join, relative } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { registerBulkImportTools } from '../server/src/tools/register-bulk-import-tools';
+import type { AuthenticatedPrincipal } from '../server/src/auth/types';
+import type { BulkImportSourceFileLoader } from '../server/src/bulk-import/source-file-loader';
 import type { McpToolResult, ToolRegistrationContext } from '../server/src/tools/tool-context';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../shared/bridge/protocol';
 
@@ -48,13 +50,29 @@ function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
+function principal(authMode: AuthenticatedPrincipal['authMode']): AuthenticatedPrincipal {
+  return {
+    subject: `test:${authMode}`,
+    authMode,
+    scopeGrants: ['bridge:read'],
+    accessScope: 'focused-rem-only',
+    trustedWriteMode: 'ask-every-write',
+    toolTier: 'mass_note_writer',
+  };
+}
+
 function makeHarness(options: {
   writeResponses?: BridgeResponse[];
   readbackFails?: boolean;
   readbackFailures?: number;
   polluteWriteReadback?: boolean;
+  principal?: AuthenticatedPrincipal | null;
+  sourceFileAllowRoots?: string[];
+  sourceFileMaxBytes?: number;
+  sourceFileLoader?: BulkImportSourceFileLoader;
 } = {}) {
   const handlers: Record<string, Handler> = {};
+  const toolConfigs: Record<string, Record<string, any>> = {};
   const childMap = new Map<string, Array<{ remId: string; title: string; frontText: string; plainText: string; children: any[] }>>();
   const createCalls: Array<{ parentId: string | null; markdown: string; idempotencyKey?: string }> = [];
   const writeCalls: Array<{ parentRemId: string; idempotencyKey?: string; markdownText: string }> = [];
@@ -173,7 +191,8 @@ function makeHarness(options: {
   };
 
   registerBulkImportTools({
-    registerTool: ((name: string, _config: unknown, handler: Handler) => {
+    registerTool: ((name: string, config: Record<string, any>, handler: Handler) => {
+      toolConfigs[name] = config;
       handlers[name] = handler;
       return undefined;
     }) as ToolRegistrationContext['registerTool'],
@@ -181,6 +200,13 @@ function makeHarness(options: {
     currentRegistry: (() => ({})) as ToolRegistrationContext['currentRegistry'],
     exposeDeleteTool: false,
     hub: {} as ToolRegistrationContext['hub'],
+    principal: options.principal === undefined ? principal('local_bridge_token') : options.principal ?? undefined,
+    sourceFilePolicy: {
+      allowedRoots: options.sourceFileAllowRoots ?? [tmpdir()],
+      maxBytes: options.sourceFileMaxBytes ?? 2 * 1024 * 1024,
+      remoteTimeoutMs: 5000,
+    },
+    sourceFileLoader: options.sourceFileLoader,
   });
 
   async function createJob(jobId: string) {
@@ -193,7 +219,7 @@ function makeHarness(options: {
     return { plan, start, jobId };
   }
 
-  return { handlers, createJob, createCalls, writeCalls, childMap };
+  return { handlers, toolConfigs, createJob, createCalls, writeCalls, childMap };
 }
 
 describe('bulk import MCP tools', () => {
@@ -284,6 +310,170 @@ describe('bulk import MCP tools', () => {
     expect(plan.status).toBe('PASS');
     expect(plan.sourceFile.path).toBe(sourceFilePath);
     expect(plan.sourceMetadata.sourceKind).toBe('file');
+  });
+
+  test.each([
+    ['filePath', (sourceFilePath: string) => ({ filePath: sourceFilePath })],
+    ['path', (sourceFilePath: string) => ({ path: sourceFilePath })],
+    ['sourceFileUri', (sourceFilePath: string) => ({ sourceFileUri: pathToFileURL(sourceFilePath).href })],
+    ['sourceFile.filePath', (sourceFilePath: string) => ({ sourceFile: { filePath: sourceFilePath } })],
+    ['sourceFile.uri', (sourceFilePath: string) => ({ sourceFile: { uri: pathToFileURL(sourceFilePath).href } })],
+  ])('accepts safe %s alias', async (_label, sourceArgs) => {
+    const allowedRoot = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-alias-'));
+    const sourceFilePath = join(allowedRoot, 'chapter.md');
+    writeFileSync(sourceFilePath, exportedChapter, 'utf8');
+    const h = makeHarness({ sourceFileAllowRoots: [allowedRoot] });
+
+    const plan = text(await h.handlers.plan_note_import_from_file({
+      ...sourceArgs(sourceFilePath),
+      targetRootId: 'Plugin Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+
+    expect(plan.status).toBe('PASS');
+    expect(plan.sourceFile.path).toBe(sourceFilePath);
+  });
+
+  test('rejects relative, file URI, connector URI, and symlink root escapes', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-boundary-'));
+    const allowedRoot = join(parent, 'allowed');
+    const outsideRoot = join(parent, 'outside');
+    mkdirSync(allowedRoot);
+    mkdirSync(outsideRoot);
+    const outsideFile = join(outsideRoot, 'secret.md');
+    writeFileSync(outsideFile, exportedChapter, 'utf8');
+    const symlinkPath = join(allowedRoot, 'linked-secret.md');
+    symlinkSync(outsideFile, symlinkPath);
+    const h = makeHarness({ sourceFileAllowRoots: [allowedRoot] });
+
+    const references = [
+      relative(process.cwd(), outsideFile),
+      pathToFileURL(outsideFile).href,
+      `file://${pathToFileURL(outsideFile).pathname.replace('/outside/', '/allowed/%2e%2e/outside/')}`,
+      'connector:../etc/passwd',
+      symlinkPath,
+    ];
+
+    for (const sourceFilePath of references) {
+      const result = text(await h.handlers.plan_note_import_from_file({
+        sourceFilePath,
+        targetRootId: 'Plugin Test',
+      }));
+      expect(result.status).toBe('FAIL');
+      expect(result.errorCode).toBe('SOURCE_FILE_OUTSIDE_ALLOWED_ROOTS');
+    }
+  });
+
+  test('rejects oversized files before planning any source content', async () => {
+    const allowedRoot = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-size-'));
+    const sourceFilePath = join(allowedRoot, 'too-large.md');
+    writeFileSync(sourceFilePath, '# Too large\n' + 'x'.repeat(128), 'utf8');
+    const h = makeHarness({ sourceFileAllowRoots: [allowedRoot], sourceFileMaxBytes: 64 });
+
+    const result = text(await h.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+
+    expect(result.status).toBe('FAIL');
+    expect(result.errorCode).toBe('SOURCE_FILE_TOO_LARGE');
+    expect(result.errorMessage).toContain('64 bytes');
+    expect(result).not.toHaveProperty('planId');
+  });
+
+  test('declares and accepts official ChatGPT top-level file params without leaking signed URL', async () => {
+    const fileRef = {
+      download_url: 'https://files.example.invalid/chapter.md?signature=secret',
+      file_id: 'file_stage8',
+      mime_type: 'text/markdown',
+      file_name: 'chapter.md',
+    };
+    const h = makeHarness({
+      principal: principal('hosted_oauth'),
+      sourceFileLoader: async (args) => {
+        expect(args.sourceFile).toEqual(fileRef);
+        return {
+          sourceText: exportedChapter,
+          sourceName: fileRef.file_name,
+          byteLength: Buffer.byteLength(exportedChapter),
+          sourceReference: {
+            kind: 'chatgpt_file',
+            fileId: fileRef.file_id,
+            fileName: fileRef.file_name,
+          },
+        };
+      },
+    });
+
+    expect(h.toolConfigs.plan_note_import_from_file._meta['openai/fileParams']).toEqual(['sourceFile']);
+    expect(h.toolConfigs.start_note_import_from_file._meta['openai/fileParams']).toEqual(['sourceFile']);
+    expect(h.toolConfigs.plan_note_import_from_file.annotations).toMatchObject({
+      readOnlyHint: false,
+      openWorldHint: true,
+      destructiveHint: false,
+    });
+
+    const plan = text(await h.handlers.plan_note_import_from_file({
+      sourceFile: fileRef,
+      targetRootId: 'Plugin Test',
+      startMarker: '# Chapter One:',
+      stopBeforeMarker: '# Chapter Two:',
+    }));
+
+    expect(plan.status).toBe('PASS');
+    expect(plan.sourceFile).toMatchObject({
+      kind: 'chatgpt_file',
+      fileId: 'file_stage8',
+      fileName: 'chapter.md',
+    });
+    expect(JSON.stringify(plan)).not.toContain('signature=secret');
+  });
+
+  test('keeps local paths and ChatGPT file references in their authenticated lanes', async () => {
+    const allowedRoot = mkdtempSync(join(tmpdir(), 'remnote-bulk-import-auth-'));
+    const sourceFilePath = join(allowedRoot, 'chapter.md');
+    writeFileSync(sourceFilePath, exportedChapter, 'utf8');
+
+    const unauthenticated = makeHarness({ principal: null, sourceFileAllowRoots: [allowedRoot] });
+    const unauthResult = text(await unauthenticated.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+    expect(unauthResult.errorCode).toBe('SOURCE_FILE_AUTH_REQUIRED');
+
+    const hosted = makeHarness({ principal: principal('hosted_oauth'), sourceFileAllowRoots: [allowedRoot] });
+    const hostedLocalResult = text(await hosted.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+    expect(hostedLocalResult.errorCode).toBe('SOURCE_FILE_LOCAL_AUTH_REQUIRED');
+
+    const codex = makeHarness({ principal: principal('codex_bearer'), sourceFileAllowRoots: [allowedRoot] });
+    const codexLocalResult = text(await codex.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+    expect(codexLocalResult.status).toBe('PASS');
+
+    const codexWithoutReadScope = makeHarness({
+      principal: { ...principal('codex_bearer'), scopeGrants: [] },
+      sourceFileAllowRoots: [allowedRoot],
+    });
+    const noReadScopeResult = text(await codexWithoutReadScope.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+    expect(noReadScopeResult.errorCode).toBe('SOURCE_FILE_READ_SCOPE_REQUIRED');
+
+    const codexChatGptResult = text(await codex.handlers.plan_note_import_from_file({
+      sourceFile: {
+        download_url: 'https://files.example.invalid/chapter.md',
+        file_id: 'file_stage8',
+      },
+      targetRootId: 'Plugin Test',
+    }));
+    expect(codexChatGptResult.errorCode).toBe('SOURCE_FILE_CHATGPT_AUTH_REQUIRED');
   });
 
   test('dry-run resume previews next chunk without mutating job state', async () => {

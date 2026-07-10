@@ -14,6 +14,10 @@ import { DEFAULT_TIMEOUT_BUDGETS, type BridgeRuntimeInfo, type BridgeTimeoutBudg
 import type { StorageProvider } from '../storage/types.js';
 import type { getToolRegistrySummary } from '../tool-registry.js';
 import type { ToolProfile } from '../tool-policy.js';
+import type {
+  BulkImportSourceFileLoader,
+  BulkImportSourceFilePolicy,
+} from '../bulk-import/source-file-loader.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
 import { getToolPerformanceBudgetMs } from '../performance/tool-budgets.js';
 
@@ -65,6 +69,8 @@ export interface ToolRegistrationContext {
   toolProfile?: ToolProfile;
   principal?: AuthenticatedPrincipal;
   storage?: StorageProvider;
+  sourceFilePolicy?: BulkImportSourceFilePolicy;
+  sourceFileLoader?: BulkImportSourceFileLoader;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

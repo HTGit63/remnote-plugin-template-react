@@ -1260,6 +1260,11 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       timeoutBudgets: config.timeoutBudgets,
       principal: auth.principal,
       storage,
+      sourceFilePolicy: {
+        allowedRoots: config.sourceFileAllowRoots,
+        maxBytes: config.maxSourceFileBytes,
+        remoteTimeoutMs: config.sourceFileRemoteTimeoutMs,
+      },
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

@@ -4,7 +4,7 @@
   "app_info": {
     "display_name": "RemNote ChatGPT Bridge",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and update a running private RemNote workspace through a local, personal hosted, or OAuth-protected public-hosted companion server. The default public profile is mass_note_writer: it reports bridge status, reads focused or selected Rems, inspects children, breadcrumbs, bounded trees and search results, and writes bulk Markdown through create_or_replace_note_from_markdown. Broader note, design, card, formatting, repair, diagnostic, and delete tools require explicit higher profiles; destructive cleanup remains gated by dry-run and guard checks. Public-hosted OAuth, pairing, revocation, and per-user routing exist at repo/local smoke level; submission still requires hosted deployment, live RemNote sandbox proof, ChatGPT Developer Mode proof, privacy policy, support URL, and screenshots.",
+    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and update a running private RemNote workspace through a local, personal hosted, or OAuth-protected public-hosted companion server. The default public profile is mass_note_writer: it reports bridge status, reads focused or selected Rems, inspects children, breadcrumbs, bounded trees and search results, and writes bulk Markdown through create_or_replace_note_from_markdown. File-backed bulk import tools declare the official top-level ChatGPT sourceFile parameter and accept temporary authorized file references only on hosted OAuth; local paths remain limited to authenticated local/Codex callers and configured roots. Broader note, design, card, formatting, repair, diagnostic, and delete tools require explicit higher profiles; destructive cleanup remains gated by dry-run and guard checks. File handling has local automated proof but still needs ChatGPT Developer Mode proof. Submission also requires hosted deployment, live RemNote sandbox proof, privacy policy, support URL, and screenshots.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -198,6 +198,30 @@
         "read_only_justification": "Only reads a bounded tree for a requested or focused RemNote document-like root.",
         "open_world_justification": "Reads local RemNote structure and does not write to external systems.",
         "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
+      }
+    },
+    "plan_note_import_from_file": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reads one bounded source file and persists a resumable import plan in server job storage; it does not write to RemNote.",
+        "open_world_justification": "May fetch one temporary ChatGPT-authorized HTTPS file reference; local-path mode stays inside configured server roots.",
+        "destructive_justification": "Creates plan state only and does not overwrite or delete source files or RemNote content."
+      }
+    },
+    "start_note_import_from_file": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reads one bounded source file and creates resumable plan/job state; no RemNote chunk is written until a later write tool runs.",
+        "open_world_justification": "May fetch one temporary ChatGPT-authorized HTTPS file reference; local-path mode stays inside configured server roots.",
+        "destructive_justification": "Creates plan/job state only and does not overwrite or delete source files or RemNote content."
       }
     },
     "create_rem": {

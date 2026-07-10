@@ -109,6 +109,17 @@ function registerHandlers(register: (context: ToolRegistrationContext) => void, 
     currentRegistry: (() => getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE)) as ToolRegistrationContext['currentRegistry'],
     exposeDeleteTool: false,
     hub: {} as ToolRegistrationContext['hub'],
+    principal: {
+      subject: 'agents-sim-local',
+      authMode: 'local_bridge_token',
+      scopeGrants: ['bridge:read'],
+      accessScope: 'current-rem-tree',
+    },
+    sourceFilePolicy: {
+      allowedRoots: [tmpdir()],
+      maxBytes: 2 * 1024 * 1024,
+      remoteTimeoutMs: 5000,
+    },
   });
   return handlers;
 }
