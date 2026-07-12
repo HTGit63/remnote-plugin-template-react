@@ -576,13 +576,19 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         idempotencyKey: optionalIdempotencyKey(args),
       } as BridgeToolArgs[TTool];
     case 'verify_card_set':
+    {
+      const raw = isPlainObject(args) ? args : {};
       return {
         rootRemId: requiredRemId(args, 'rootRemId'),
+        expectedCards: Array.isArray(raw.expectedCards)
+          ? raw.expectedCards as BridgeToolArgs['verify_card_set']['expectedCards']
+          : undefined,
         maxCards: optionalBoundedNumber(args, 'maxCards'),
         maxNodes: optionalBoundedNumber(args, 'maxNodes'),
         maxDepth: optionalBoundedNumber(args, 'maxDepth'),
         timeoutMs: optionalBoundedNumber(args, 'timeoutMs'),
       } as BridgeToolArgs[TTool];
+    }
     case 'repair_card_set':
     {
       const raw = isPlainObject(args) ? args : {};

@@ -14,6 +14,7 @@ import {
 } from '../shared/bridge/markdown-importer';
 import { BulkImportJobStore } from '../server/src/bulk-import/job-store';
 import { MemoryStorageProvider } from '../server/src/storage/memory-store';
+import { previewMarkdownNoteTree } from '../src/remnote/write/markdownImportExecutor';
 
 const chapter = [
   '# Chapter 1 Nuclear Physics',
@@ -174,6 +175,27 @@ describe('bulk import planner', () => {
     expect(bulletB?.children ?? []).toEqual([]);
   });
 
+  test('keeps loose nested bullets under their source parent across blank lines', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Loose List Import',
+      '',
+      '## Section A',
+      '',
+      '- Parent bullet',
+      '',
+      '  - Nested bullet',
+      '- Sibling bullet',
+    ].join('\n'));
+    const section = plan.tree.children?.find((child) => child.text === 'Section A');
+    const parent = section?.children?.find((child) => child.text === 'Parent bullet');
+
+    expect(section?.children?.map((child) => child.text)).toEqual([
+      'Parent bullet',
+      'Sibling bullet',
+    ]);
+    expect(parent?.children?.map((child) => child.text)).toEqual(['Nested bullet']);
+  });
+
   test('plans generic H2 sections for small synthetic bulk import without wrapper duplication', () => {
     const source = [
       '# Mini Bulk Import Test — Test 07',
@@ -234,6 +256,30 @@ describe('bulk import planner', () => {
     expect(failed.missingTextPreview).toContain('Expected physics text');
   });
 
+  test('source fidelity rejects reordered semantic snippets', () => {
+    const report = verifyMarkdownSourceFidelity(
+      ['Alpha source sentence.', 'Beta source sentence.'],
+      'Beta source sentence. Alpha source sentence.',
+      { preserveSourceOrder: true }
+    );
+
+    expect(report.passed).toBe(false);
+    expect(report.structureMismatches).toEqual([
+      expect.stringMatching(/source order mismatch/i),
+    ]);
+  });
+
+  test('source fidelity accepts formatting-only and formula-delimiter differences', () => {
+    const report = verifyMarkdownSourceFidelity(
+      ['Important formula E=mc^2.'],
+      '**Important** formula \\(E=mc^2\\).',
+      { allowWhitespaceNormalization: true }
+    );
+
+    expect(report.passed).toBe(true);
+    expect(report.missingTextSnippets).toEqual([]);
+  });
+
   test('preserves underscore anchors and rejects visible style metadata pollution', () => {
     const plan = parseMarkdownImportPlan([
       '# Chapter One',
@@ -254,6 +300,57 @@ describe('bulk import planner', () => {
     const polluted = verifyMarkdownSourceFidelity(plan.sourceSnippets, `${output}\nSize\nH1`, {}, plan.stats);
     expect(polluted.passed).toBe(false);
     expect(polluted.pollutionRems).toEqual(['Size', 'H1']);
+  });
+
+  test('counts only rich formula spans and ignores dollar text inside fenced code', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Formula Count',
+      '',
+      'Inline formula: $E=mc^2$.',
+      '',
+      '```text',
+      '$not_a_formula$',
+      '```',
+      '',
+      '$$',
+      'F = ma',
+      '$$',
+    ].join('\n'));
+
+    expect(plan.stats.inlineMathCount).toBe(1);
+    expect(plan.stats.mathBlockCount).toBe(1);
+    expect(plan.stats.codeBlockCount).toBe(1);
+  });
+
+  test('preserves empty table columns and fenced code text without silent native-format claims', () => {
+    const markdownText = [
+      '# Table And Code',
+      '',
+      '| A | | C |',
+      '| --- | --- | --- |',
+      '| 1 | | 3 |',
+      '',
+      '```ts',
+      'const formula = "$not_math$";',
+      '```',
+    ].join('\n');
+    const plan = parseMarkdownImportPlan(markdownText);
+    const table = plan.tree.children?.find((child) => child.clientNodeId === 'table-1');
+    const header = table?.children?.find((child) => child.clientNodeId === 'table-1-header');
+    const row = table?.children?.find((child) => child.clientNodeId === 'table-1-row-1');
+    const code = plan.tree.children?.find((child) => child.clientNodeId === 'code-1');
+    const preview = previewMarkdownNoteTree({ markdownText });
+
+    expect(header?.children).toHaveLength(3);
+    expect(header?.children?.[1]?.text).toBe(' ');
+    expect(row?.children).toHaveLength(3);
+    expect(row?.children?.[1]?.text).toBe(' ');
+    expect(plan.stats.tableCellCount).toBe(6);
+    expect(code?.text).toBe('```ts\nconst formula = "$not_math$";\n```');
+    expect(preview.massNoteManifest?.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/tables.*Rem hierarchy.*not native/i),
+      expect.stringMatching(/code blocks.*literal text.*not native/i),
+    ]));
   });
 
   test('consumes first-line title so one-line chunk does not duplicate itself', () => {

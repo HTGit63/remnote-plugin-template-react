@@ -1,16 +1,16 @@
-# Graph Report - /mnt/01DBAB8A7D80C830/Users/hunde/Documents/WebDEV/web.dev.projects/Remnote/remnote-plugin-template-react  (2026-07-09)
+# Graph Report - remnote-plugin-template-react  (2026-07-12)
 
 ## Corpus Check
-- 183 files · ~175,895 words
+- 205 files · ~217,553 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 2559 nodes · 8059 edges · 132 communities (119 shown, 13 thin omitted)
-- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 87 edges (avg confidence: 0.72)
+- 2840 nodes · 8315 edges · 163 communities (134 shown, 29 thin omitted)
+- Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 54 edges (avg confidence: 0.63)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b4b3553b`
+- Built from commit: `41328563`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -21,7 +21,7 @@
 - formattingWrites.ts
 - schemas.ts
 - markdown-importer.ts
-- agents-staged-repair-simulation.test.ts
+- basicWrites.ts
 - notePlan.ts
 - StorageProvider
 - scripts
@@ -33,13 +33,13 @@
 - designTemplates.ts
 - session-router.ts
 - bridge-status.tsx
-- read.ts
+- serialize.ts
 - richTextFormatting.ts
 - area1-smoke.ts
 - tool-registry.ts
 - startCompanionApp
 - chatgpt-pairing-routes.ts
-- bridge-hub.ts
+- bridge-hub-retry.ts
 - tool-context.ts
 - routing-smoke.ts
 - tool-policy.ts
@@ -51,52 +51,52 @@
 - handlers.ts
 - area3-certification.ts
 - codex-pairing-routes.ts
-- BridgeResponse
+- bridge-hub.ts
 - mcp-server.ts
 - register-bulk-import-tools.ts
 - bulk-import.ts
 - style-presets.ts
-- destructiveHint
+- StyledRemTreeNode
 - config.ts
-- destructive_justification
+- source-file-loader.ts
 - FakeRem
-- Final Audit Gates
+- Render Deployment Config
 - types.ts
-- hashToken
+- PostgresStorageProvider
 - pairing.ts
 - performance-benchmark.ts
 - client.ts
 - devDependencies
 - manifest.json
 - MemoryStorageProvider
-- PostgresStorageProvider
-- BulkImportJobStore
+- CodexPairingSession
+- BulkImportJob
 - tool-permissions.ts
-- protocol.ts
-- bulk-import.test.ts
-- audit-payload-safety.ts
+- isDryRunRequest
+- verifyBulkImportFinalReadback
+- unified-stage-gateway.test.ts
 - live-tool-regression.ts
 - compilerOptions
 - register-diagnostic-tools.ts
 - tool-reference-generator.ts
 - PermissionScope
-- enforceScope
+- scope.ts
 - register-design-tools.ts
 - BrowserBridgeClient
-- applyStylePlan
-- RequestLedger
-- planNoteImport
+- countRichTextMathSpans
+- RemNote MCP Repair And Testing
+- bulk-import-storage-smoke.ts
 - Session
 - compilerOptions
-- openWorldHint
-- open_world_justification
-- pairing-routes.ts
-- tools
+- 19. Stage Plan
+- 19.3 Authoritative Stage Goal Matrix
+- RemNote MCP Agent Operating Guide
+- RemNote MCP Engineering Guide
 - boundary-smoke.ts
-- chatgpt-app-submission.json
-- unified-stage-gateway.test.ts
 - status.ts
-- approval.ts
+- RemNote ChatGPT Bridge Hosted-Auth Refinement — Progress Log
+- BridgeWidgetPieces.tsx
+- getPublicMcpToolNames
 - package.json
 - markdown-pipeline-benchmark.ts
 - tool-health-history.ts
@@ -107,295 +107,298 @@
 - buildMassNoteManifest
 - index.tsx
 - package.json
-- classifyToolResult
+- CompanionServerConfig
 - IdempotencyRecord
-- PairingChallenge
+- hashToken
 - design-template-sync.ts
 - webpack.config.js
 - AuthenticatedPrincipal
 - markdownInlineToRichText
 - dependencies
 - devDependencies
-- HostedAuthProvider
-- SessionStore
+- types.ts
+- log.md
 - parseLatexSpansFromText
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
-- annotations
+- codex-bearer-smoke.ts
+- New RemNote MCP Reports
+- Old RemNote MCP Reports
+- RemnoteMCP Live Tool Regression
+- 2026-07-10 RemNote Stage 9 and 10
+- permissions.ts
+- 11. Workflow Compatibility Contract
+- 5. Repository Map
+- 9. Auth And Connection Model
+- Stage 8 File Import Audit
+- writeTypes.ts
+- 13. Markdown, Formula, Card, And Style Fidelity
+- 6. Current Evidence Snapshot
+- Developer Diagnostics Reference
+- Bulk Resume Durability Implementation Plan
+- Q: Stage 9 Markdown, formula, and rich-text fidelity dependency map
+- Q: Stage 10 card parser, idempotency, verifier, and live proof dependency map
+- normalizeMarkdownImportArgs
+- 12. Mass Note And Bulk Import Contract
+- 15. Security Contract
+- 2026-06-04 Goal 3 tool truth, exposure, and diagnostics
+- 2026-06-04 Goal 5 Markdown-to-Rem hierarchy pipeline
 - package.json
 - package.json
+- 2026-06-04 Goal 6 and Goal 7 correctness/performance pass
+- Session 5: User Login for Render Dashboard (Phase 4)
+- RemnoteMCP Mass Note Readiness Audit
+- RemnoteMCP Mass Note Readiness Audit
+- RemnoteMCP Live Tool Smoke Report
+- 10. Tool Correctness Contract
+- Tool Tier Summary
+- Session 6: RemNote Plugin Pairing (Phase 5)
+- Session 7: Multi-User Bridge Session Router (Phase 6)
+- Session 10: Hosted Resilience, Routing, and Idempotency (Phase 9)
+- Session 12: Dashboard and Plugin UX Finalization (Phase 11)
+- Session 13: Phase 7-12 Recheck, Docs, and Release Gate (Phase 12)
+- Session 8: ChatGPT OAuth and MCP Authorization (Phase 7)
+- Session 9: Trusted Write Mode and Plugin Authority (Phase 8)
+- Cross-Cutting Principles
+- Tool Reference
+- Plugin UI Connection Status
+- Bulk Import Source Fidelity
+- Final Audit Gates
+- Markdown Formula And Card Fidelity
+- Mass Note Workflows
+- Partial Live Proof Only
+- Performance And Soak Testing
+- Scope And Write Permissions
+- Tool Registry And Profiles
+- Existing Agent Contract
+- Engineering Guide
+- Repair And Testing Guide
+- Project Log
+- New MCP Test Report
+- Old MCP Test Report
 
 ## God Nodes (most connected - your core abstractions)
-1. `structuredBatch.ts` - 144 edges
-2. `protocol-messages.ts` - 138 edges
-3. `remnoteSdkHelpers.ts` - 136 edges
-4. `formattingWrites.ts` - 129 edges
-5. `treeWrites.ts` - 123 edges
-6. `basicWrites.ts` - 121 edges
-7. `markdownImportExecutor.ts` - 121 edges
-8. `handlers.ts` - 115 edges
-9. `cardWrites.ts` - 106 edges
-10. `protocol-write-args.ts` - 101 edges
-11. `writeCaches.ts` - 101 edges
-12. `markdown-importer.ts` - 88 edges
-13. `deleteWrites.ts` - 86 edges
-14. `designedNoteTools.ts` - 86 edges
-15. `verification.ts` - 83 edges
-16. `writeValidation.ts` - 81 edges
-17. `schemas.ts` - 80 edges
-18. `handleBridgeRequest()` - 79 edges
-19. `create-http-server.ts` - 77 edges
-20. `protocol-write-results.ts` - 74 edges
+1. `handleBridgeRequest()` - 79 edges
+2. `BridgeToolArgs` - 73 edges
+3. `StorageProvider` - 69 edges
+4. `runSdkOperation()` - 62 edges
+5. `PostgresStorageProvider` - 59 edges
+6. `BridgeHub` - 58 edges
+7. `MemoryStorageProvider` - 54 edges
+8. `scripts` - 52 edges
+9. `findRequiredRem()` - 51 edges
+10. `BridgeToolResults` - 49 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `startCompanionApp()` --indirect_call--> `.reject()`  [INFERRED 0.80]
-  server/src/app.ts → server/src/bridge/request-ledger.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkAdvanced()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkCore()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkDiagnostics()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkDirectWriteTrustedModeRegression()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkFullAndMetadata()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkHostedDiagnostics()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkIdempotency()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkMarkdownImporter()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkMassNoteWriter()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkNuclearPhysicsStylePreset()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
-- `area1-smoke.ts` --indirect_call--> `checkPerformance()`  [INFERRED]
-  server/src/area1-smoke.ts → server/src/area1-smoke.ts  _Document-level semantic edge added during AGENTS evidence mapping._
+- `Plugin Logo Asset` --references--> `Plugin UI Connection Status`  [INFERRED]
+  public/logo.svg → Agents.md
+- `parseMarkdownImportPlan()` --indirect_call--> `cell()`  [INFERRED]
+  shared/bridge/markdown-importer.ts → server/src/diagnostics/tool-reference-generator.ts
+- `tableToRemNode()` --indirect_call--> `cell()`  [INFERRED]
+  shared/bridge/markdown-importer.ts → server/src/diagnostics/tool-reference-generator.ts
+- `BenchmarkCase` --references--> `parseMarkdownImportPlan()`  [EXTRACTED]
+  server/src/markdown-pipeline-benchmark.ts → shared/bridge/markdown-importer.ts
+- `registeredMassNoteTools()` --calls--> `createMcpServer()`  [EXTRACTED]
+  tests/chatgpt-app-contract.test.ts → server/src/mcp-server.ts
 
 ## Import Cycles
-- 2-file cycle: `src/bridge/handlers.ts -> src/bridge/handlers/scope.ts -> src/bridge/handlers.ts`
-- 2-file cycle: `src/bridge/handlers.ts -> src/bridge/handlers/approval.ts -> src/bridge/handlers.ts`
+- None detected.
 
-## Hyperedges (group relationships)
-- **Remaining RemNote MCP Completion Work** — concept_partial_live_proof_only, concept_tool_registry_profiles, concept_bulk_import_source_fidelity, concept_markdown_formula_cards, concept_chatgpt_codex_auth, concept_pairing_session_routing, concept_scope_write_permissions, concept_ui_connection_status, concept_final_audit_gates, concept_security_threat_model, concept_mass_note_workflows, concept_performance_soak [INFERRED 0.85]
-
-## Communities (132 total, 13 thin omitted)
+## Communities (163 total, 29 thin omitted)
 
 ### Community 0 - "protocol-messages.ts"
-Cohesion: 0.05
-Nodes (96): WritePerformanceReport, BridgeServerMessage, BridgeToolArgs, BridgeToolResults, DebugGetRawRichTextArgs, DebugGetRawRichTextResult, DetectedContentType, GetChildrenArgs (+88 more)
+Cohesion: 0.07
+Nodes (65): BridgeServerMessage, BridgeToolArgs, BridgeToolResults, DebugGetRawRichTextArgs, DebugGetRawRichTextResult, DetectedContentType, GetChildrenArgs, GetChildrenResult (+57 more)
 
 ### Community 1 - "remnoteSdkHelpers.ts"
-Cohesion: 0.14
-Nodes (82): BridgeErrorCode, AppendToRemArgs, ApplyRemnoteCommandArgs, ApplyStructuredNoteBatchArgs, ApplyStylePlanArgs, ClearRemFormattingArgs, CreateClozeCardArgs, CreateDocumentArgs (+74 more)
+Cohesion: 0.10
+Nodes (105): WritePerformanceReport, AppendToRemArgs, ApplyRemnoteCommandArgs, ApplyRemnoteCommandTargetMode, ApplyStructuredNoteBatchArgs, ApplyStylePlanArgs, ClearRemFormattingArgs, CreateClozeCardArgs (+97 more)
 
 ### Community 2 - "structuredBatch.ts"
-Cohesion: 0.06
-Nodes (72): bottleneckForPhase(), buildWritePerformanceReport(), DEFAULT_WRITE_PERFORMANCE_BUDGET_MS, WritePerformanceBottleneckLayer, WritePerformanceBudgetMs, WritePerformancePhaseDurationsMs, WriteEngineExecution, WriteOperationPlan (+64 more)
+Cohesion: 0.10
+Nodes (52): buildWritePerformanceReport(), executeWriteOperation(), finalizeWriteOperationPlan(), writeEngineExecutionFromPlan(), buildWriteOperationPlan(), snapshotDirectChildIds(), verifyCreatedRems(), verifyStagedReplacement() (+44 more)
 
 ### Community 3 - "formattingWrites.ts"
 Cohesion: 0.09
-Nodes (58): resolveRangeFromPlainText(), collectDesignRecords(), moveRem(), getDeleteTarget(), directChildHeadingOperations(), snapshotDirectChildIds(), verifyCreatedRems(), verifyStagedReplacement() (+50 more)
+Nodes (56): BridgeErrorCode, resolveRangeFromPlainText(), RichTextFormattingError, collectDesignRecords(), createFlashcardRem(), directChildHeadingOperations(), rollbackCreatedRems(), appendMathToRem() (+48 more)
 
 ### Community 4 - "schemas.ts"
 Cohesion: 0.10
-Nodes (51): registerFormattingTools(), registerHighLevelWriteTools(), COLOR_SCHEMA, CONNECTOR_SAFE_EXPECTED_STYLE_SCHEMA, CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA, DELETE_CONFIRM_SCHEMA, DRY_RUN_SCHEMA, EXPECTED_STYLE_MAP_ENTRY_SCHEMA (+43 more)
+Nodes (47): registerFormattingTools(), registerHighLevelWriteTools(), CARD_REPAIR_CARD_SCHEMA, COLOR_SCHEMA, CONNECTOR_SAFE_EXPECTED_STYLE_SCHEMA, CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA, DELETE_CONFIRM_SCHEMA, DRY_RUN_SCHEMA (+39 more)
 
 ### Community 5 - "markdown-importer.ts"
-Cohesion: 0.07
-Nodes (51): addInlineSourceSnippets(), addNodeSourceSnippets(), addSnippet(), analyzeTree(), assertPlanLimits(), blockquoteMatch(), bulletMatch(), clampLimit() (+43 more)
+Cohesion: 0.08
+Nodes (47): addInlineSourceSnippets(), addNodeSourceSnippets(), addSnippet(), analyzeTree(), assertPlanLimits(), blockquoteMatch(), bulletMatch(), cleanMarkdownTextSegment() (+39 more)
 
-### Community 6 - "agents-staged-repair-simulation.test.ts"
-Cohesion: 0.07
-Nodes (45): appendMarkdownToRem(), createDocumentFromMarkdown(), createRemFromMarkdown(), createRemFromMarkdownSafely(), findSameTitleChild(), normalizeMarkdownTextForComparison(), normalizePlainTextForComparison(), reorderChildren() (+37 more)
+### Community 6 - "basicWrites.ts"
+Cohesion: 0.10
+Nodes (51): appendMarkdownToRem(), createDocumentFromMarkdown(), createRemFromMarkdown(), createRemFromMarkdownSafely(), findSameTitleChild(), moveRem(), normalizeMarkdownTextForComparison(), normalizePlainTextForComparison() (+43 more)
 
 ### Community 7 - "notePlan.ts"
 Cohesion: 0.06
 Nodes (29): collectOutline(), countFlashcardMarkers(), countMathNodes(), countNodes(), countTableNodes(), createNotePlanSummary(), maxDepth(), nodeText() (+21 more)
 
 ### Community 8 - "StorageProvider"
-Cohesion: 0.07
-Nodes (25): ChatGptPairingRouteDeps, CodexPairingRouteDeps, DashboardRouterDeps, CHATGPT_REDIRECT_HOSTS, createLocalDashboardSessionForTests(), DEFAULT_CHATGPT_SCOPES, displayNameFromAuthorize(), ensureDefaultClient() (+17 more)
+Cohesion: 0.08
+Nodes (26): buildOauthChallenge(), CHATGPT_REDIRECT_HOSTS, createLocalDashboardSessionForTests(), DEFAULT_CHATGPT_SCOPES, displayNameFromAuthorize(), ensureDefaultClient(), getExpectedMcpResource(), getOrCreateLocalDevUser() (+18 more)
 
 ### Community 9 - "scripts"
 Cohesion: 0.04
-Nodes (51): scripts, bridge:live-test, bridge:live-tool-regression, bridge:live-tool-smoke, build, check-types, dev, mcp:live-test (+43 more)
+Nodes (52): scripts, bridge:live-test, bridge:live-tool-regression, bridge:live-tool-smoke, build, check-types, dev, mcp:live-test (+44 more)
 
 ### Community 10 - "create-http-server.ts"
-Cohesion: 0.08
-Nodes (37): authorizeLocalMcpRequest(), LOCAL_BRIDGE_SCOPE_GRANTS, buildOauthChallenge(), getExpectedMcpResource(), getRequestBaseUrl(), Bucket, buckets, rateLimitRequest() (+29 more)
+Cohesion: 0.11
+Nodes (29): authorizeLocalMcpRequest(), LOCAL_BRIDGE_SCOPE_GRANTS, cleanExpiredPairings(), handlePairingRoute(), PairingRouterDeps, PendingPairing, pendingPairings, PluginPairingSession (+21 more)
 
 ### Community 11 - "validation.ts"
-Cohesion: 0.17
-Nodes (44): normalizeArgs(), getStringField(), getTreeDepth(), isPlainObject(), normalizeStyleOperations(), optionalAppendPosition(), optionalBoolean(), optionalBoundedNumber() (+36 more)
+Cohesion: 0.15
+Nodes (46): isBridgeToolName(), normalizeArgs(), parseBridgeRequest(), getStringField(), getTreeDepth(), isPlainObject(), normalizeStyleOperations(), optionalAppendPosition() (+38 more)
 
 ### Community 12 - "smoke.ts"
-Cohesion: 0.08
-Nodes (35): cleanupCurrentSessionRoot(), failedTools, findRegressionRoot(), getStructuredResult(), isToolErrorResponse(), LiveTestMode, mcp, mode (+27 more)
+Cohesion: 0.05
+Nodes (39): readFormBody(), LedgerEntry, RequestLedger, cleanupCurrentSessionRoot(), failedTools, findRegressionRoot(), getStructuredResult(), isToolErrorResponse() (+31 more)
 
 ### Community 13 - "mass-note-audit-report.ts"
-Cohesion: 0.06
-Nodes (38): AuditRow, AuditRowInput, bulkImportSource, bulkJobStoreSource, bulkToolSource, cardSource, EvidenceMode, forbiddenDefaultTools (+30 more)
+Cohesion: 0.05
+Nodes (44): area3Source, AuditRow, AuditRowInput, bulkImportSource, bulkJobStoreSource, bulkStorageSmokeSource, bulkToolSource, cardSource (+36 more)
 
 ### Community 14 - "scripts"
 Cohesion: 0.05
-Nodes (41): scripts, build, dev, generate-tool-reference, live-test, live-tool-regression, live-tool-smoke, mass-note-audit (+33 more)
+Nodes (42): scripts, build, dev, generate-tool-reference, live-test, live-tool-regression, live-tool-smoke, mass-note-audit (+34 more)
 
 ### Community 15 - "designTemplates.ts"
-Cohesion: 0.12
-Nodes (35): NoteDesignTemplate, NoteDesignTemplateSummary, ExportNoteDesignTemplateResult, ImportNoteDesignTemplateResult, ListNoteDesignTemplatesResult, SaveNoteDesignTemplateResult, analyzeNoteDesign(), assertSafeRules() (+27 more)
+Cohesion: 0.10
+Nodes (41): AnalyzeNoteDesignArgs, ExportNoteDesignTemplateArgs, ImportNoteDesignTemplateArgs, ListNoteDesignTemplatesArgs, NoteDesignTemplateSummary, PreviewNoteDesignPlanArgs, SaveNoteDesignTemplateArgs, analyzeNoteDesign() (+33 more)
 
 ### Community 16 - "session-router.ts"
 Cohesion: 0.07
 Nodes (13): validatePluginSessionToken(), PluginConnection, PluginConnectionInfo, HostedPluginHello, LegacyPluginHello, PluginHelloMessage, PluginRegisterMessage, PluginRegistrationMessage (+5 more)
 
 ### Community 17 - "bridge-status.tsx"
-Cohesion: 0.11
-Nodes (29): clearHostedPairingSession(), loadHostedPairingSession(), getBridgeNextAction(), getBridgeStatusLabel(), getPermissionModeLabel(), getPermissionScopeLabel(), normalizePermissionMode(), normalizePermissionScope() (+21 more)
+Cohesion: 0.10
+Nodes (33): clearHostedPairingSession(), loadHostedPairingSession(), getBridgeNextAction(), getBridgeStatusLabel(), getPermissionModeLabel(), getPermissionScopeLabel(), normalizePermissionMode(), normalizePermissionScope() (+25 more)
 
-### Community 18 - "read.ts"
-Cohesion: 0.12
-Nodes (32): clampLimit(), detectRichTypes(), FocusedRemStatus, getFocusedRemStatus(), getRemAncestorIds(), getRemStructureType(), getRemTitle(), normalizeRichArray() (+24 more)
+### Community 18 - "serialize.ts"
+Cohesion: 0.17
+Nodes (16): detectRichTypes(), getRemStructureType(), getRemTitle(), normalizeRichSpans(), readRemRich(), remTypeName(), richTextColorName(), summarizeRem() (+8 more)
 
 ### Community 19 - "richTextFormatting.ts"
-Cohesion: 0.11
-Nodes (32): applyClozeToRange(), applyFormatsToRichTextRange(), applyTextColorToAllText(), applyTextColorToRange(), applyTextHighlightToRange(), baseFormatsFromElement(), BuilderTextFormat, cloneRichText() (+24 more)
+Cohesion: 0.12
+Nodes (31): applyClozeToRange(), applyFormatsToRichTextRange(), applyTextColorToAllText(), applyTextColorToRange(), applyTextHighlightToRange(), baseFormatsFromElement(), BuilderTextFormat, cloneRichText() (+23 more)
 
 ### Community 20 - "area1-smoke.ts"
 Cohesion: 0.13
-Nodes (32): assert(), assertNoRemovedTools(), checkAdvanced(), checkCore(), checkDiagnostics(), checkDirectWriteTrustedModeRegression(), checkHostedDiagnostics(), checkIdempotency() (+24 more)
+Nodes (33): assert(), assertNoRemovedTools(), checkAdvanced(), checkCore(), checkDiagnostics(), checkDirectWriteTrustedModeRegression(), checkHostedDiagnostics(), checkIdempotency() (+25 more)
 
 ### Community 21 - "tool-registry.ts"
-Cohesion: 0.12
-Nodes (31): checkFullAndMetadata(), checkPerformance(), getProfileHiddenTools(), getToolMetadata(), getToolPolicyEntry(), groupToolsByPolicy(), requiredOperationTierForTool(), TOOL_METADATA_BY_NAME (+23 more)
+Cohesion: 0.15
+Nodes (27): getProfileHiddenTools(), getToolMetadata(), getToolPolicyEntry(), groupToolsByPolicy(), allPublicToolCache, buildKnownFailures(), buildToolCorrectnessMatrixEntry(), buildToolStateEntry() (+19 more)
 
 ### Community 22 - "startCompanionApp"
-Cohesion: 0.11
-Nodes (22): RunningCompanionApp, startCompanionApp(), enabledHostedConfig, legacyHostedConfig, mcpRequest(), mcpToolCall(), postJson(), HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE (+14 more)
+Cohesion: 0.09
+Nodes (21): RunningCompanionApp, startCompanionApp(), enabledHostedConfig, legacyHostedConfig, legacyModeAliases, HOSTED_MODE_NOT_IMPLEMENTED_MESSAGE, validateConfig(), runtimeInfo (+13 more)
 
 ### Community 23 - "chatgpt-pairing-routes.ts"
-Cohesion: 0.11
-Nodes (23): approveRateLimited(), buildRedirectUrl(), clientIp(), escapeHtml(), expireIfNeeded(), failedApproveAttempts, handleChatGptPairingRoute(), normalizeAccessScope() (+15 more)
+Cohesion: 0.13
+Nodes (22): approveRateLimited(), buildRedirectUrl(), clientIp(), escapeHtml(), expireIfNeeded(), failedApproveAttempts, handleChatGptPairingRoute(), normalizeAccessScope() (+14 more)
 
-### Community 24 - "bridge-hub.ts"
-Cohesion: 0.17
-Nodes (26): getIdempotencyKey(), hasAnyLifecyclePhase(), hasIdempotencyKey(), isDeleteTool(), isDryRunBridgeRequest(), isHighLevelIdempotentWrite(), isRealDeleteAttempt(), isTransientFailure() (+18 more)
+### Community 24 - "bridge-hub-retry.ts"
+Cohesion: 0.16
+Nodes (21): getIdempotencyKey(), hasAnyLifecyclePhase(), hasIdempotencyKey(), isDeleteTool(), isDryRunBridgeRequest(), isHighLevelIdempotentWrite(), isRealDeleteAttempt(), isTransientFailure() (+13 more)
 
 ### Community 25 - "tool-context.ts"
-Cohesion: 0.13
-Nodes (30): DEFAULT_TIMEOUT_BUDGETS, publicMcpToolNameForBridgeTool(), getToolPerformanceBudgetMs(), asRecord(), CallPluginFunction, clampTimeout(), defaultTimeoutForTool(), estimateChars() (+22 more)
+Cohesion: 0.11
+Nodes (32): getToolPerformanceBudgetMs(), GET_DOCUMENT_OR_FOLDER_TREE_INPUT_SCHEMA, asRecord(), CallPluginFunction, clampTimeout(), defaultTimeoutForTool(), estimateChars(), estimateNodes() (+24 more)
 
 ### Community 26 - "routing-smoke.ts"
-Cohesion: 0.09
-Nodes (24): bridgeResponse(), connectMockPlugin(), fakeRem, bridgeResponse(), connectHostedMockPlugin(), createApprovedPluginRegistration(), mcpToolCall(), postJson() (+16 more)
+Cohesion: 0.15
+Nodes (16): bridgeResponse(), connectHostedMockPlugin(), createApprovedPluginRegistration(), mcpToolCall(), postJson(), sleep(), sockets, bridgeResponse() (+8 more)
 
 ### Community 27 - "tool-policy.ts"
-Cohesion: 0.11
-Nodes (30): BASIC_SET, BASIC_TIER_TOOLS, DANGER_SET, DANGER_TIER_TOOLS, defaultPerformanceBudgetMs(), defaultScopeRequirement(), defaultSdkCapability(), DEVELOPER_SET (+22 more)
+Cohesion: 0.09
+Nodes (33): BASIC_SET, BASIC_TIER_TOOLS, DANGER_SET, DANGER_TIER_TOOLS, defaultPerformanceBudgetMs(), defaultScopeRequirement(), defaultSdkCapability(), DEVELOPER_SET (+25 more)
 
 ### Community 28 - "dashboard-routes.ts"
-Cohesion: 0.16
+Cohesion: 0.14
 Nodes (25): cleanExpiredStates(), exchangeOAuthCode(), handleDashboardRoute(), OAuthTokenResult, pendingOAuthStates, redirect(), safeReturnTo(), writeHtml() (+17 more)
 
 ### Community 29 - "BridgeHub"
-Cohesion: 0.17
-Nodes (4): createLifecycleEvent(), PendingRequest, BridgeHub, BridgeClientMessage
+Cohesion: 0.14
+Nodes (8): createLifecycleEvent(), PendingRequest, BridgeHub, publicMcpToolNameForBridgeTool(), recordToolHistoryEvent(), BridgeClientMessage, BridgeResponse, createBridgeFailure()
 
 ### Community 30 - "designedNoteTools.ts"
-Cohesion: 0.15
-Nodes (27): cardTypeFromBackText(), cardWorkflowResult(), clampCardDepth(), clampCardLimit(), clampCardNodeLimit(), clampCardVerifierTimeout(), collectCardSourceRecords(), contentToMarkdown() (+19 more)
+Cohesion: 0.08
+Nodes (38): CardWorkflowCardPlan, previewNoteDesignPlan(), createBasicFlashcard(), createListAnswerCard(), createMultipleChoiceCard(), buildExpectedStyleMap(), cardTypeFromBackText(), cardWorkflowResult() (+30 more)
 
 ### Community 31 - "health-check.ts"
-Cohesion: 0.16
+Cohesion: 0.15
 Nodes (25): createdRemIdFromResponse(), DESTRUCTIVE_TOOLS, DIRECT_SERVER_TOOLS, directPass(), durationFrom(), EXISTING_REM_MUTATION_TOOLS, healthCheckArgsFor(), modeIncludesExistingMutations() (+17 more)
 
 ### Community 32 - "live-tool-smoke.ts"
 Cohesion: 0.08
-Nodes (22): callTool(), cases, __dirname, JsonRecord, markdownReport(), matrix, mcpUrl, postRpc() (+14 more)
+Nodes (33): callTool(), cases, classifyToolResult(), collectIds(), __dirname, getStructured(), getToolError(), isRecord() (+25 more)
 
 ### Community 33 - "handlers.ts"
-Cohesion: 0.14
-Nodes (26): createBridgeSuccess(), isBridgeToolName(), shouldForceApproval(), withApprovalTimeout(), attachLifecycle(), effectiveDocumentOrFolderTreeArgs(), effectiveSearchArgs(), effectiveStructuredBatchArgs() (+18 more)
+Cohesion: 0.08
+Nodes (46): createBridgeSuccess(), approvalSummary(), buildApprovalRequest(), getRequestPreviewMarkdown(), getRequestTargetRemId(), shouldForceApproval(), withApprovalTimeout(), attachLifecycle() (+38 more)
 
 ### Community 34 - "area3-certification.ts"
-Cohesion: 0.16
-Nodes (25): assert(), assertIdempotencyAndDryRun(), assertMatrixShape(), assertSchemaQuality(), assertToolResult(), assertToolsList(), bridgeResponse(), bulkImportSampleFilePath (+17 more)
+Cohesion: 0.13
+Nodes (33): assert(), assertBulkResumeDurability(), assertIdempotencyAndDryRun(), assertMatrixShape(), assertSchemaQuality(), assertToolResult(), assertToolsList(), assertWorkflowCompatibility() (+25 more)
 
 ### Community 35 - "codex-pairing-routes.ts"
 Cohesion: 0.17
-Nodes (20): approvedPluginSession(), browserUrlForCode(), escapeHtml(), expireCodexPairingIfNeeded(), handleCodexPairingRoute(), pageShell(), pairingFromBodyOrUrl(), pluginSessionSecret() (+12 more)
+Nodes (19): approvedPluginSession(), browserUrlForCode(), escapeHtml(), expireCodexPairingIfNeeded(), handleCodexPairingRoute(), pageShell(), pairingFromBodyOrUrl(), pluginSessionSecret() (+11 more)
 
-### Community 36 - "BridgeResponse"
+### Community 36 - "bridge-hub.ts"
 Cohesion: 0.16
-Nodes (15): extractCreatedRemIds(), extractPartialExecution(), getExecutionEvidence(), getUpdatedDeletedEvidence(), BridgeHubDiagnostics, BridgeHubRequestOutcome, BridgeHubRequestSnapshot, BridgeHubStatus (+7 more)
+Nodes (24): extractCreatedRemIds(), extractPartialExecution(), getExecutionEvidence(), getUpdatedDeletedEvidence(), targetRootFromArgs(), BridgeHubDiagnostics, BridgeHubRequestOutcome, BridgeHubRequestSnapshot (+16 more)
 
 ### Community 37 - "mcp-server.ts"
-Cohesion: 0.24
-Nodes (22): BridgeRuntimeInfo, BridgeTimeoutBudgets, createMcpServer(), CreateMcpServerOptions, requiredOAuthScopesForTool(), ToolProfile, registerCardTools(), registerDeleteTools() (+14 more)
+Cohesion: 0.22
+Nodes (24): BulkImportSourceFilePolicy, BridgeRuntimeInfo, BridgeTimeoutBudgets, createMcpServer(), CreateMcpServerOptions, exposeOpenAiToolSecuritySchemes(), requiredOAuthScopesForTool(), ToolProfile (+16 more)
 
 ### Community 38 - "register-bulk-import-tools.ts"
-Cohesion: 0.12
-Nodes (21): BULK_IMPORT_OPTIONS_SCHEMA, childTitle(), chunkSummary(), configuredSourceRoots(), findChildByTitle(), isPathUnderRoot(), PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA, PLAN_IMPORT_INPUT_SCHEMA (+13 more)
+Cohesion: 0.10
+Nodes (25): BULK_IMPORT_OPTIONS_SCHEMA, bulkStepVerificationSummary(), childTitle(), chunkStepOutput(), chunkSummary(), DEFAULT_SOURCE_FILE_POLICY, FILE_BULK_TOOL_ANNOTATIONS, findChildByTitle() (+17 more)
 
 ### Community 39 - "bulk-import.ts"
-Cohesion: 0.15
-Nodes (25): BulkImportFinalVerificationReport, BulkImportPlannerOptions, BulkImportSection, BulkImportSourceMetadata, BulkImportSourceNormalization, BulkImportVerificationResult, BulkImportVerificationStatus, clampInt() (+17 more)
+Cohesion: 0.09
+Nodes (44): BulkImportJobStoreOptions, ChunkPatch, bulkChapterIdempotencyKey(), bulkChunkId(), bulkChunkIdempotencyKey(), BulkImportChunk, bulkImportChunkHasVerifiedEvidence(), BulkImportChunkStatus (+36 more)
 
 ### Community 40 - "style-presets.ts"
-Cohesion: 0.15
+Cohesion: 0.13
 Nodes (23): NoteStylePreset, applyNuclearPhysicsStylePresetToTree(), applyStylePresetToMarkdownArgs(), applyStylePresetToTree(), CLEAN_ACADEMIC_STYLE_PRESET, COLORFUL_STUDY_STYLE_PRESET, DEFAULT_NOTE_STYLE_PRESET, EXAM_READY_STYLE_PRESET (+15 more)
 
-### Community 41 - "destructiveHint"
+### Community 41 - "StyledRemTreeNode"
 Cohesion: 0.11
-Nodes (24): destructiveHint, readOnlyHint, annotations, annotations, annotations, annotations, justifications, annotations (+16 more)
+Nodes (22): bottleneckForPhase(), DEFAULT_WRITE_PERFORMANCE_BUDGET_MS, WritePerformanceBottleneckLayer, WritePerformanceBudgetMs, WritePerformancePhaseDurationsMs, StyledRemTreeNode, WriteEngineExecution, WriteOperationPlan (+14 more)
 
 ### Community 42 - "config.ts"
-Cohesion: 0.16
-Nodes (21): boolFromEnv(), boundedNumberFromEnv(), BridgeDeploymentMode, defaultHostedAllowedOrigins(), deploymentModeFromEnv(), endpointHost(), getAuthModesSupported(), getExpectedPairingBehavior() (+13 more)
+Cohesion: 0.17
+Nodes (22): boolFromEnv(), boundedNumberFromEnv(), BridgeDeploymentMode, DEFAULT_TIMEOUT_BUDGETS, defaultHostedAllowedOrigins(), deploymentModeFromEnv(), endpointHost(), getAuthModesSupported() (+14 more)
 
-### Community 43 - "destructive_justification"
-Cohesion: 0.12
-Nodes (23): justifications, justifications, justifications, annotations, justifications, destructive_justification, read_only_justification, annotations (+15 more)
+### Community 43 - "source-file-loader.ts"
+Cohesion: 0.15
+Nodes (25): blockedNetworks, BulkImportLoadedSourceFile, BulkImportSourceFileArgs, BulkImportSourceFileError, canonicalAllowedRoots(), ChatGptFileReference, createBulkImportSourceFileLoader(), decodePath() (+17 more)
 
-### Community 45 - "Final Audit Gates"
-Cohesion: 0.19
-Nodes (21): Bulk Import Source Fidelity, ChatGPT And Codex Auth Lanes, Final Audit Gates, Markdown Formula And Card Fidelity, Mass Note Workflows, Pairing Session Routing, Partial Live Proof Only, Performance And Soak Testing (+13 more)
+### Community 45 - "Render Deployment Config"
+Cohesion: 0.50
+Nodes (4): ChatGPT And Codex Auth Lanes, Pairing Session Routing, Security Threat Model, Render Deployment Config
 
 ### Community 46 - "types.ts"
-Cohesion: 0.15
-Nodes (6): ChatGptPairingStatus, ChatGptToolTier, McpAuthorizationCode, McpClient, StoredAuditEvent, normalizeToolProfile()
+Cohesion: 0.12
+Nodes (7): DashboardSessionContext, ChatGptPairingStatus, ChatGptToolTier, ChatGptTrustedWriteMode, McpClient, StoredAuditEvent, User
 
 ### Community 48 - "pairing.ts"
 Cohesion: 0.22
 Nodes (20): BridgeToolProfile, accessScopeForPermissionScope(), approveChatGptPairing(), ChatGptPairingPreview, companionHttpBaseUrl(), denyChatGptPairing(), disconnectChatGptPairing(), fetchHostedPluginDiagnostics() (+12 more)
 
 ### Community 49 - "performance-benchmark.ts"
-Cohesion: 0.13
-Nodes (12): checkSourceFidelity(), BenchmarkCase, cases, chunkCountFor(), medium, results, runCase(), markdownPreviewToolResult() (+4 more)
+Cohesion: 0.12
+Nodes (14): checkMarkdownImporter(), checkSourceFidelity(), BenchmarkCase, cases, chunkCountFor(), medium, results, runCase() (+6 more)
 
 ### Community 50 - "client.ts"
-Cohesion: 0.19
-Nodes (16): BridgeCancelRequest, BridgePluginHello, BridgePluginRegister, BridgeServerHello, BridgePluginRuntimeInfo, RemnoteInitialSyncStatus, RemnoteSdkCapabilityDetail, RemnoteSdkCapabilityName (+8 more)
+Cohesion: 0.10
+Nodes (25): bridgeResponse(), connectMockPlugin(), fakeRem, bridgeResponse(), connectHostedMockPlugin(), createApprovedPluginRegistration(), postJson(), sockets (+17 more)
 
 ### Community 51 - "devDependencies"
 Cohesion: 0.11
@@ -405,29 +408,25 @@ Nodes (19): devDependencies, autoprefixer, bestzip, copy-webpack-plugin, css-loa
 Cohesion: 0.11
 Nodes (18): author, changelogUrl, description, enableOnMobile, id, manifestVersion, name, projectUrl (+10 more)
 
-### Community 53 - "MemoryStorageProvider"
-Cohesion: 0.16
-Nodes (3): DashboardSessionContext, MemoryStorageProvider, User
-
-### Community 55 - "BulkImportJobStore"
-Cohesion: 0.29
+### Community 55 - "BulkImportJob"
+Cohesion: 0.21
 Nodes (3): BulkImportJobStore, BulkImportCheckpoint, BulkImportJob
 
 ### Community 56 - "tool-permissions.ts"
 Cohesion: 0.18
-Nodes (16): buildMatrix(), BRIDGE_TOOL_NAME_SET, bridgeToolNameForPublicMcpTool(), ChatGptAccessScope, DirectWriteLayer, DirectWritePolicy, getDirectWritePolicySnapshot(), permissionModeForPrincipal() (+8 more)
+Nodes (15): buildMatrix(), BRIDGE_TOOL_NAME_SET, bridgeToolNameForPublicMcpTool(), ChatGptAccessScope, DirectWriteLayer, DirectWritePolicy, getDirectWritePolicySnapshot(), permissionModeForPrincipal() (+7 more)
 
-### Community 57 - "protocol.ts"
-Cohesion: 0.19
-Nodes (12): assertDryRunDetector(), isDryRunRequest(), record(), safetyOptions(), ApprovalRiskLevel, BridgeLifecycleEvent, DangerousBridgeToolName, ReadOnlyBridgeToolName (+4 more)
+### Community 57 - "isDryRunRequest"
+Cohesion: 0.70
+Nodes (4): assertDryRunDetector(), isDryRunRequest(), record(), safetyOptions()
 
-### Community 58 - "bulk-import.test.ts"
-Cohesion: 0.19
-Nodes (16): countOccurrences(), duplicateValues(), expectedBulkImportReadbackText(), flattenBulkImportReadbackText(), normalizedUnits(), normalizeForSourceFidelity(), PlanNoteImportInput, previewAround() (+8 more)
+### Community 58 - "verifyBulkImportFinalReadback"
+Cohesion: 0.21
+Nodes (16): countOccurrences(), descendantHasText(), directChildHasText(), directExpectedUnits(), duplicateValues(), expectedBulkImportReadbackText(), findReadbackNodeByText(), flattenBulkImportReadbackText() (+8 more)
 
-### Community 59 - "audit-payload-safety.ts"
-Cohesion: 0.23
-Nodes (15): asNonEmptyString(), AuditPayloadClassification, AuditWriteOperation, classifyDisposableAuditPayload(), classifyTitleBody(), compactBodyIsStageSummary(), EXACT_SAFE_TITLES, flattenTreeTitles() (+7 more)
+### Community 59 - "unified-stage-gateway.test.ts"
+Cohesion: 0.15
+Nodes (16): asNonEmptyString(), AuditPayloadClassification, AuditWriteOperation, classifyDisposableAuditPayload(), classifyTitleBody(), compactBodyIsStageSummary(), EXACT_SAFE_TITLES, flattenTreeTitles() (+8 more)
 
 ### Community 60 - "live-tool-regression.ts"
 Cohesion: 0.13
@@ -438,76 +437,76 @@ Cohesion: 0.13
 Nodes (15): compilerOptions, allowJs, esModuleInterop, isolatedModules, jsx, module, moduleResolution, noEmit (+7 more)
 
 ### Community 62 - "register-diagnostic-tools.ts"
-Cohesion: 0.23
-Nodes (12): buildPublicUserDiagnosticSummary(), REDACT_KEY_PATTERNS, redactDiagnosticValue(), shouldRedactKey(), getRemnoteCapabilityGuide(), GUIDE_BLOCKS, REMNOTE_CAPABILITY_GUIDE_SOURCES, RemnoteCapabilityGuideBlock (+4 more)
+Cohesion: 0.19
+Nodes (14): buildPublicUserDiagnosticSummary(), REDACT_KEY_PATTERNS, redactDiagnosticValue(), shouldRedactKey(), getRemnoteCapabilityGuide(), GUIDE_BLOCKS, REMNOTE_CAPABILITY_GUIDE_SOURCES, RemnoteCapabilityGuideBlock (+6 more)
 
 ### Community 63 - "tool-reference-generator.ts"
-Cohesion: 0.24
-Nodes (11): cell(), generateDeveloperDiagnosticsReferenceMarkdown(), generateToolReferenceMarkdown(), generateToolTierSummaryMarkdown(), table(), writeGeneratedToolDocs(), listToolPerformanceBudgets(), ToolPerformanceBudget (+3 more)
+Cohesion: 0.21
+Nodes (12): cell(), generateDeveloperDiagnosticsReferenceMarkdown(), generateToolReferenceMarkdown(), generateToolTierSummaryMarkdown(), table(), writeGeneratedToolDocs(), listToolPerformanceBudgets(), ToolPerformanceBudget (+4 more)
 
 ### Community 64 - "PermissionScope"
-Cohesion: 0.25
-Nodes (14): TrustedWriteDecision, ApprovalResolution, PermissionMode, PermissionScope, PendingApprovalRequest, BridgePluginStatus, BrowserBridgeClientOptions, BridgeHandlerContext (+6 more)
+Cohesion: 0.38
+Nodes (10): ToolPermissionBlockDetails, TrustedWriteDecision, ApprovalResolution, ApprovalRiskLevel, PermissionMode, PermissionScope, PendingApprovalRequest, BridgePluginStatus (+2 more)
 
-### Community 65 - "enforceScope"
-Cohesion: 0.22
+### Community 65 - "scope.ts"
+Cohesion: 0.32
 Nodes (15): assertTargetsInsideRoots(), enforceScope(), getCommandStaticScopeTargetIds(), getFocusedRemId(), getImplicitScopedRootRemId(), getSelectedRemIds(), getSingleSelectedRemId(), getStaticScopeTargetIds() (+7 more)
 
 ### Community 66 - "register-design-tools.ts"
-Cohesion: 0.25
-Nodes (13): CARD_LIMIT_SCHEMA, registerDesignedNoteTools(), registerDesignTemplateTools(), TEMPLATE_DESCRIPTION_SCHEMA, TEMPLATE_ID_SCHEMA, TEMPLATE_JSON_SCHEMA, TEMPLATE_NAME_SCHEMA, CARD_REPAIR_CARD_SCHEMA (+5 more)
+Cohesion: 0.21
+Nodes (16): CARD_LIMIT_SCHEMA, CARD_TYPE_SCHEMA, EXPECTED_CARD_SCHEMA, registerDesignedNoteTools(), registerDesignTemplateTools(), TEMPLATE_DESCRIPTION_SCHEMA, TEMPLATE_ID_SCHEMA, TEMPLATE_JSON_SCHEMA (+8 more)
 
-### Community 68 - "applyStylePlan"
-Cohesion: 0.18
-Nodes (14): getNoteDesignTemplate(), buildExpectedStyleMap(), repairNoteDesign(), resolveTemplate(), updateNoteWithDesign(), verifyNoteAgainstDesign(), applyStylePlan(), rememberStylePlanResult() (+6 more)
+### Community 68 - "countRichTextMathSpans"
+Cohesion: 0.27
+Nodes (6): collectMathStatsForRemIds(), countRichTextMathSpans(), isSpacerPlainText(), richTextLooksLikeMath(), richTextMathSpans(), verifyNuclearPhysicsPreset()
 
-### Community 69 - "RequestLedger"
-Cohesion: 0.19
-Nodes (3): readFormBody(), LedgerEntry, RequestLedger
+### Community 69 - "RemNote MCP Repair And Testing"
+Cohesion: 0.08
+Nodes (25): Cleanup Policy, Evidence Labels, Failure Taxonomy, P0 Repairs, P1 Repairs, P2 Repairs, P3 Repairs, P4 Repairs (+17 more)
 
-### Community 70 - "planNoteImport"
-Cohesion: 0.24
-Nodes (9): ChunkPatch, bulkChapterIdempotencyKey(), bulkChunkId(), bulkChunkIdempotencyKey(), BulkImportJobStatus, BulkImportPlan, bulkImportRootIdempotencyKey(), planNoteImport() (+1 more)
+### Community 70 - "bulk-import-storage-smoke.ts"
+Cohesion: 0.13
+Nodes (7): assert(), buildPlan(), main(), proveMemoryStorage(), provePostgresStorage(), SmokeResult, BulkImportPlan
 
 ### Community 72 - "compilerOptions"
 Cohesion: 0.15
 Nodes (12): compilerOptions, esModuleInterop, module, moduleResolution, outDir, resolveJsonModule, rootDir, skipLibCheck (+4 more)
 
-### Community 73 - "openWorldHint"
-Cohesion: 0.17
-Nodes (12): openWorldHint, annotations, justifications, annotations, annotations, justifications, annotations, justifications (+4 more)
+### Community 73 - "19. Stage Plan"
+Cohesion: 0.09
+Nodes (22): 19.1 Skill Paths And Duplicate Resolution, 19.2 Stage Execution Rules, 19. Stage Plan, Stage 0: Evidence Refresh And Graph Map, Stage 10: Card Tools, Stage 11: Style, Design, And UI-Facing Note Quality, Stage 12: ChatGPT End-To-End Workflow, Stage 13: Codex End-To-End Workflow (+14 more)
 
-### Community 74 - "open_world_justification"
-Cohesion: 0.17
-Nodes (12): justifications, annotations, justifications, annotations, justifications, open_world_justification, annotations, justifications (+4 more)
+### Community 74 - "19.3 Authoritative Stage Goal Matrix"
+Cohesion: 0.10
+Nodes (20): 19.3 Authoritative Stage Goal Matrix, Stage 0: Evidence Refresh And Graph Map, Stage 10: Card Tools, Stage 11: Style, Design, And UI-Facing Note Quality, Stage 12: ChatGPT End-To-End Workflow, Stage 13: Codex End-To-End Workflow, Stage 14: Plugin UI Polish, Stage 15: Security Audit (+12 more)
 
-### Community 75 - "pairing-routes.ts"
-Cohesion: 0.23
-Nodes (9): generateSessionToken(), cleanExpiredPairings(), handlePairingRoute(), PendingPairing, pendingPairings, PluginPairingSession, pluginSessions, revokePluginSession() (+1 more)
+### Community 75 - "RemNote MCP Agent Operating Guide"
+Cohesion: 0.11
+Nodes (17): 14. UI And Design Contract, 16. Performance And Reliability Contract, 17. Code Quality Contract, 18. Documentation Contract, 1. How To Use This File, 20. Live Testing Protocol, 21. Error Quality Requirements, 22. Deployment Requirements (+9 more)
 
-### Community 76 - "tools"
-Cohesion: 0.18
-Nodes (11): annotations, justifications, annotations, justifications, annotations, justifications, tools, apply_remnote_command (+3 more)
+### Community 76 - "RemNote MCP Engineering Guide"
+Cohesion: 0.12
+Nodes (15): Architecture, Codex Bearer Setup, Current Live Evidence — 2026-07-02, Development Workflow, File-Backed Imports, Import Rules, Keep Root Clean, Live Testing Protocol (+7 more)
 
 ### Community 77 - "boundary-smoke.ts"
-Cohesion: 0.36
-Nodes (9): distViolations(), importSpecifiers(), localEsmImportViolations(), read(), rel(), remnotePluginSdkSpec, repoRoot, sourceImportViolations() (+1 more)
+Cohesion: 0.22
+Nodes (14): distViolations(), importSpecifiers(), localEsmImportViolations(), mcpBody(), read(), rel(), remnotePluginSdkSpec, repoRoot (+6 more)
 
-### Community 78 - "chatgpt-app-submission.json"
-Cohesion: 0.20
-Nodes (9): app_info, category, description, display_name, subtitle, negative_test_cases, $schema, schema_version (+1 more)
+### Community 78 - "status.ts"
+Cohesion: 0.21
+Nodes (12): BridgeToolPolicy, BridgeConnectionState, getBridgeCloseState(), INITIAL_BRIDGE_STATUS, booleanFact(), BridgeActivity, BridgeActivityKind, BridgeUiConnectionInput (+4 more)
 
-### Community 79 - "unified-stage-gateway.test.ts"
-Cohesion: 0.20
-Nodes (4): GET_DOCUMENT_OR_FOLDER_TREE_INPUT_SCHEMA, McpToolResult, Handler, registerBasicHandlers()
+### Community 79 - "RemNote ChatGPT Bridge Hosted-Auth Refinement — Progress Log"
+Cohesion: 0.15
+Nodes (13): 2026-07-02 Markdown Compression Cleanup, RemNote ChatGPT Bridge Hosted-Auth Refinement — Progress Log, Session 11: Security Hardening (Phase 10), Session 1: Baseline Recording & Preparation (Phase 0), Session 2: Mode Boundaries and Configuration Refinement (Phase 1), Session 3: Render Dashboard Foundation (Phase 2), Session 4: Persistent Storage Layer (Phase 3), Validation (+5 more)
 
-### Community 80 - "status.ts"
-Cohesion: 0.24
-Nodes (7): BridgeToolPolicy, BridgeConnectionState, BridgeStatusSnapshot, INITIAL_BRIDGE_STATUS, BridgeTaskBanner(), BridgeWidgetHeader(), ToolProfileSummary()
+### Community 80 - "BridgeWidgetPieces.tsx"
+Cohesion: 0.40
+Nodes (3): BridgeTaskBanner(), BridgeWidgetHeader(), ToolProfileSummary()
 
-### Community 81 - "approval.ts"
-Cohesion: 0.33
-Nodes (8): approvalSummary(), buildApprovalRequest(), getRequestPreviewMarkdown(), getRequestTargetRemId(), buildDeletePreview(), getInsertIndex(), getRemApprovalContext(), getRemChildCount()
+### Community 81 - "getPublicMcpToolNames"
+Cohesion: 0.17
+Nodes (11): checkFullAndMetadata(), checkPerformance(), checkTierSwitching(), ToolMetadata, getPublicMcpToolNames(), getRegistryMismatch(), isPublicMcpToolName(), STATIC_SDK_UNSUPPORTED_TOOLS (+3 more)
 
 ### Community 82 - "package.json"
 Cohesion: 0.22
@@ -526,8 +525,8 @@ Cohesion: 0.44
 Nodes (9): MarkdownImportParseOptions, MarkdownImportPlan, NormalizedMarkdownImportArgs, MarkdownImportFidelityOptions, MarkdownImportHeadingMapping, MarkdownImportLimits, MarkdownImportRemnoteLayout, MarkdownImportSafetyOptions (+1 more)
 
 ### Community 86 - "bulk-import-tools.test.ts"
-Cohesion: 0.28
-Nodes (6): chapter, exportedChapter, failure(), Handler, makeHarness(), success()
+Cohesion: 0.24
+Nodes (8): BulkImportSourceFileLoader, chapter, exportedChapter, failure(), Handler, makeHarness(), principal(), success()
 
 ### Community 87 - "codex-pairing-smoke.ts"
 Cohesion: 0.36
@@ -545,9 +544,13 @@ Nodes (5): BridgeCommandIntent, BridgeCommandIntentKind, createBridgeCommandInte
 Cohesion: 0.29
 Nodes (6): engines, node, name, private, type, version
 
-### Community 92 - "classifyToolResult"
-Cohesion: 0.57
-Nodes (7): classifyToolResult(), collectIds(), getStructured(), getToolError(), isRecord(), lifecycleReachedPlugin(), textField()
+### Community 92 - "CompanionServerConfig"
+Cohesion: 0.22
+Nodes (9): ChatGptPairingRouteDeps, CodexPairingRouteDeps, DashboardRouterDeps, OAuthRouteDeps, CompanionServerConfig, AuthenticatedDashboardData, DashboardViewData, formatUptime() (+1 more)
+
+### Community 94 - "hashToken"
+Cohesion: 0.21
+Nodes (3): hashToken(), McpAuthorizationCode, PairingChallenge
 
 ### Community 95 - "design-template-sync.ts"
 Cohesion: 0.33
@@ -569,99 +572,177 @@ Nodes (5): dependencies, @modelcontextprotocol/sdk, pg, ws, zod
 Cohesion: 0.40
 Nodes (5): devDependencies, tsx, @types/node, @types/ws, typescript
 
+### Community 101 - "types.ts"
+Cohesion: 0.09
+Nodes (13): AuthMode, HostedAuthNotConfiguredError, HostedAuthProvider, HostedSessionToken, OAuthAccount, ScopeGrant, ConsoleAuditLogger, withoutUndefined() (+5 more)
+
+### Community 102 - "log.md"
+Cohesion: 0.20
+Nodes (9): 2026-06-02 stabilization cleanup, 2026-06-04 Goal 2 modern SDK tool refactor, 2026-06-04 Goal 4 transactional write engine and safe replacement, Status, Status, Validation, Validation, What Changed (+1 more)
+
 ### Community 103 - "parseLatexSpansFromText"
 Cohesion: 0.83
 Nodes (4): findClosingDollar(), findUnescapedDelimiter(), isEscaped(), parseLatexSpansFromText()
 
-### Community 104 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, apply_style_plan
+### Community 104 - "codex-bearer-smoke.ts"
+Cohesion: 0.28
+Nodes (7): allowedSourceFile, allowedSourceRoot, deniedSourceFile, deniedSourceRoot, mcpRequest(), mcpToolCall(), postJson()
 
-### Community 105 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, clear_rem_formatting
+### Community 105 - "New RemNote MCP Reports"
+Cohesion: 0.25
+Nodes (7): Current Codex Live Retest Addendum — 2026-07-02, Final Readiness, Improvements Since Old Run, New RemNote MCP Reports, Summary, Test Matrix, Worse Or Still Bad
 
-### Community 106 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_descriptor_card
+### Community 106 - "Old RemNote MCP Reports"
+Cohesion: 0.25
+Nodes (7): Main Bugs, Old RemNote MCP Reports, Repair Need, Summary, Test Matrix, Tools That Looked Usable, Tools With Failed Or Weak Proof
 
-### Community 107 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_folder
+### Community 107 - "RemnoteMCP Live Tool Regression"
+Cohesion: 0.29
+Nodes (6): Acceptance Gate, RemnoteMCP Live Tool Regression, RemnoteMCP Live Tool Smoke Report, Static Execution Matrix, Tool Results, Underlying Smoke Report
 
-### Community 108 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_list_answer_card
+### Community 108 - "2026-07-10 RemNote Stage 9 and 10"
+Cohesion: 0.29
+Nodes (6): 2026-07-10 RemNote Stage 9 and 10, 2026-07-11 RemNote Stage 14 UI validation, Observation 1: Check repository documentation policy before saving plans, Observation 2: Keep meta-skill state outside product worktrees, Observation 3: Host-injected widgets need host-aware visual proof, Skill Observation Log
 
-### Community 109 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_polished_note_tree
+### Community 109 - "permissions.ts"
+Cohesion: 0.48
+Nodes (6): CREATE_TOOLS, DANGEROUS_TOOLS, getPermissionDecision(), PermissionDecision, READ_TOOLS, SAFE_WRITE_TOOLS
 
-### Community 110 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_rem_tree
+### Community 110 - "11. Workflow Compatibility Contract"
+Cohesion: 0.33
+Nodes (6): 11.1 Read Before Write, 11.2 Retry After Failure, 11.3 Style After Write, 11.4 Cards After Note Creation, 11.5 ChatGPT And Codex Against Same Plugin, 11. Workflow Compatibility Contract
 
-### Community 111 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, create_styled_rem_tree
+### Community 111 - "5. Repository Map"
+Cohesion: 0.33
+Nodes (6): 5.1 Plugin Runtime, 5.2 RemNote Read/Write Engine, 5.3 Shared Bridge Protocol, 5.4 Companion MCP Server, 5.5 Tests And Smoke Suites, 5. Repository Map
 
-### Community 112 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, debug_get_raw_rich_text
+### Community 112 - "9. Auth And Connection Model"
+Cohesion: 0.33
+Nodes (6): 9.1 Local Mode, 9.2 Hosted Mode, 9.3 ChatGPT Lane, 9.4 Codex Lane, 9.5 Plugin Connection Persistence, 9. Auth And Connection Model
 
-### Community 113 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_bridge_status
+### Community 113 - "Stage 8 File Import Audit"
+Cohesion: 0.33
+Nodes (5): Implemented Boundaries, Official ChatGPT Contract, Proof Boundary, Size Alignment, Stage 8 File Import Audit
 
-### Community 114 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_children
+### Community 114 - "writeTypes.ts"
+Cohesion: 0.33
+Nodes (5): COLOR_FORMAT_NAMES, COLOR_FORMATS, ParentLookupCode, TreeValidationState, ValidatedTreeNode
 
-### Community 115 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_current_selection
+### Community 115 - "13. Markdown, Formula, Card, And Style Fidelity"
+Cohesion: 0.40
+Nodes (5): 13.1 Markdown, 13.2 Formulas, 13.3 Cards, 13.4 Style And Design, 13. Markdown, Formula, Card, And Style Fidelity
 
-### Community 116 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_document_or_folder_tree
+### Community 116 - "6. Current Evidence Snapshot"
+Cohesion: 0.40
+Nodes (5): 6.1 Files Reviewed For This Guide, 6.2 What Improved Since The Older Report, 6.3 What Remains Broken Or Unproven, 6.4 Current Tool Registry Facts, 6. Current Evidence Snapshot
 
-### Community 117 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_focused_rem
+### Community 117 - "Developer Diagnostics Reference"
+Cohesion: 0.40
+Nodes (4): Developer Diagnostics Reference, Performance Budgets, Runtime Fields, Tool Correctness Matrix
 
-### Community 118 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_rem_rich
+### Community 118 - "Bulk Resume Durability Implementation Plan"
+Cohesion: 0.40
+Nodes (4): Bulk Resume Durability Implementation Plan, Task 1: State Machine Guards, Task 2: Durability Surface And Storage, Task 3: Resume, Cancel, Audit
 
-### Community 119 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, get_rem_tree
+### Community 119 - "Q: Stage 9 Markdown, formula, and rich-text fidelity dependency map"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: Stage 9 Markdown, formula, and rich-text fidelity dependency map, Source Nodes
 
-### Community 120 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, move_rem
+### Community 120 - "Q: Stage 10 card parser, idempotency, verifier, and live proof dependency map"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: Stage 10 card parser, idempotency, verifier, and live proof dependency map, Source Nodes
 
-### Community 121 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, set_rem_type
+### Community 121 - "normalizeMarkdownImportArgs"
+Cohesion: 0.40
+Nodes (5): clampLimit(), normalizeMarkdownImportArgs(), normalizeMarkdownImportDuplicatePolicy(), normalizeMarkdownImportMode(), normalizeOptions()
 
-### Community 122 - "annotations"
-Cohesion: 0.67
-Nodes (3): annotations, justifications, set_text_span_highlight
+### Community 122 - "12. Mass Note And Bulk Import Contract"
+Cohesion: 0.50
+Nodes (4): 12.1 Source Fidelity, 12.2 Resume And Idempotency, 12.3 File-Backed Import, 12. Mass Note And Bulk Import Contract
 
-### Community 123 - "annotations"
-Cohesion: 0.67
-Nodes (3): update_rem, annotations, justifications
+### Community 123 - "15. Security Contract"
+Cohesion: 0.50
+Nodes (4): 15.1 Security-Sensitive Files, 15.2 Threat Model Areas, 15.3 Security Acceptance Rules, 15. Security Contract
 
-### Community 124 - "annotations"
-Cohesion: 0.67
-Nodes (3): update_rem_rich, annotations, justifications
+### Community 124 - "2026-06-04 Goal 3 tool truth, exposure, and diagnostics"
+Cohesion: 0.50
+Nodes (4): 2026-06-04 Goal 3 tool truth, exposure, and diagnostics, Status, Validation, What Changed
 
-### Community 125 - "annotations"
+### Community 125 - "2026-06-04 Goal 5 Markdown-to-Rem hierarchy pipeline"
+Cohesion: 0.50
+Nodes (4): 2026-06-04 Goal 5 Markdown-to-Rem hierarchy pipeline, Status, Validation, What Changed
+
+### Community 132 - "2026-06-04 Goal 6 and Goal 7 correctness/performance pass"
+Cohesion: 0.50
+Nodes (4): 2026-06-04 Goal 6 and Goal 7 correctness/performance pass, Status, Validation, What Changed
+
+### Community 133 - "Session 5: User Login for Render Dashboard (Phase 4)"
+Cohesion: 0.50
+Nodes (4): Files Created, Files Modified, Session 5: User Login for Render Dashboard (Phase 4), What Was Done
+
+### Community 134 - "RemnoteMCP Mass Note Readiness Audit"
+Cohesion: 0.50
+Nodes (3): Local Gate Results, Readiness Rows, RemnoteMCP Mass Note Readiness Audit
+
+### Community 135 - "RemnoteMCP Mass Note Readiness Audit"
+Cohesion: 0.50
+Nodes (3): Local Gate Results, Readiness Rows, RemnoteMCP Mass Note Readiness Audit
+
+### Community 136 - "RemnoteMCP Live Tool Smoke Report"
+Cohesion: 0.50
+Nodes (3): RemnoteMCP Live Tool Smoke Report, Static Execution Matrix, Tool Results
+
+### Community 137 - "10. Tool Correctness Contract"
 Cohesion: 0.67
-Nodes (3): verify_note_design, annotations, justifications
+Nodes (3): 10.1 Tool Profile Intent, 10.2 Preferred Tool Workflows, 10. Tool Correctness Contract
+
+### Community 139 - "Session 6: RemNote Plugin Pairing (Phase 5)"
+Cohesion: 0.67
+Nodes (3): Files Created, Session 6: RemNote Plugin Pairing (Phase 5), What Was Done
+
+### Community 140 - "Session 7: Multi-User Bridge Session Router (Phase 6)"
+Cohesion: 0.67
+Nodes (3): Files Created, Session 7: Multi-User Bridge Session Router (Phase 6), What Was Done
+
+### Community 141 - "Session 10: Hosted Resilience, Routing, and Idempotency (Phase 9)"
+Cohesion: 0.67
+Nodes (3): Session 10: Hosted Resilience, Routing, and Idempotency (Phase 9), Validation, What Was Done
+
+### Community 142 - "Session 12: Dashboard and Plugin UX Finalization (Phase 11)"
+Cohesion: 0.67
+Nodes (3): Session 12: Dashboard and Plugin UX Finalization (Phase 11), Validation, What Was Done
+
+### Community 143 - "Session 13: Phase 7-12 Recheck, Docs, and Release Gate (Phase 12)"
+Cohesion: 0.67
+Nodes (3): Session 13: Phase 7-12 Recheck, Docs, and Release Gate (Phase 12), Validation, What Was Done
+
+### Community 144 - "Session 8: ChatGPT OAuth and MCP Authorization (Phase 7)"
+Cohesion: 0.67
+Nodes (3): Session 8: ChatGPT OAuth and MCP Authorization (Phase 7), Validation, What Was Done
+
+### Community 145 - "Session 9: Trusted Write Mode and Plugin Authority (Phase 8)"
+Cohesion: 0.67
+Nodes (3): Session 9: Trusted Write Mode and Plugin Authority (Phase 8), Validation, What Was Done
 
 ## Knowledge Gaps
-- **484 isolated node(s):** `$schema`, `schema_version`, `display_name`, `subtitle`, `description` (+479 more)
+- **743 isolated node(s):** `private`, `name`, `version`, `license`, `test` (+738 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **13 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **29 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+
+## Suggested Questions
+_Questions this graph is uniquely positioned to answer:_
+
+- **Why does `StorageProvider` connect `StorageProvider` to `AuthenticatedPrincipal`, `codex-pairing-routes.ts`, `bridge-hub.ts`, `mcp-server.ts`, `bulk-import-storage-smoke.ts`, `create-http-server.ts`, `dashboard-routes.ts`, `types.ts`, `PostgresStorageProvider`, `session-router.ts`, `MemoryStorageProvider`, `BulkImportJob`, `chatgpt-pairing-routes.ts`, `tool-context.ts`, `CompanionServerConfig`, `BridgeHub`?**
+  _High betweenness centrality (0.052) - this node is a cross-community bridge._
+- **Why does `BridgeResponse` connect `BridgeHub` to `protocol-messages.ts`, `smoke.ts`, `bridge-status.tsx`, `startCompanionApp`, `bridge-hub-retry.ts`, `tool-context.ts`, `routing-smoke.ts`, `designedNoteTools.ts`, `health-check.ts`, `handlers.ts`, `area3-certification.ts`, `bridge-hub.ts`, `register-bulk-import-tools.ts`, `client.ts`, `unified-stage-gateway.test.ts`, `PermissionScope`, `scope.ts`, `BrowserBridgeClient`, `bulk-import-tools.test.ts`, `codex-pairing-smoke.ts`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+- **Why does `scripts` connect `scripts` to `package.json`?**
+  _High betweenness centrality (0.023) - this node is a cross-community bridge._
+- **What connects `private`, `name`, `version` to the rest of the system?**
+  _743 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **Should `protocol-messages.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.07155399473222125 - nodes in this community are weakly interconnected._
+- **Should `remnoteSdkHelpers.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.09575546863682458 - nodes in this community are weakly interconnected._
+- **Should `structuredBatch.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.09696969696969697 - nodes in this community are weakly interconnected._

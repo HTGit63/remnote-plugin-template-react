@@ -1467,9 +1467,14 @@ try {
     throw new Error('get_bridge_status publicTools did not match MCP tools/list.');
   }
 
-  const unknownTool = JSON.stringify(await callMcpTool(mcp, 'not_a_real_bridge_tool', {}));
-  if (!unknownTool.includes('UNKNOWN_TOOL')) {
-    throw new Error('Unknown MCP tool did not return structured UNKNOWN_TOOL.');
+  let unknownToolError = '';
+  try {
+    await callMcpTool(mcp, 'not_a_real_bridge_tool', {});
+  } catch (error) {
+    unknownToolError = error instanceof Error ? error.message : String(error);
+  }
+  if (!unknownToolError.includes('PERMISSION_POLICY_MISSING')) {
+    throw new Error('Unknown MCP tool did not fail closed with PERMISSION_POLICY_MISSING.');
   }
 
   const capabilityGuide = JSON.stringify(

@@ -499,6 +499,12 @@ export function createBulkImportSourceFileLoader(
           'Local paths are accepted only for authenticated local bridge or Codex bearer calls.'
         );
       }
+      if (principal.authMode === 'codex_bearer' && principal.codexPairingStatus !== 'linked') {
+        sourceError(
+          'SOURCE_FILE_CODEX_PAIRING_REQUIRED',
+          'Local file-backed imports require an explicit active Codex-to-RemNote pairing.'
+        );
+      }
       return readLocalSourceFile(reference.value, options.policy);
     }
 

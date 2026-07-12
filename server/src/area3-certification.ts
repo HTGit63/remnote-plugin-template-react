@@ -1276,11 +1276,20 @@ async function certifyProfile(profile: ToolProfile) {
     const tools = getPublicMcpToolNames(app.config.enableDeleteTool, profile);
     await assertToolsList(baseUrl, tools);
 
+    let latestBulkPlanId: string | undefined;
     for (const tool of tools) {
       const startedAt = Date.now();
-      const result = await mcpToolCall(baseUrl, tool, mcpArgsFor(tool));
+      const args = mcpArgsFor(tool);
+      if (tool === 'start_note_import_job' && latestBulkPlanId) {
+        args.planId = latestBulkPlanId;
+      }
+      const result = await mcpToolCall(baseUrl, tool, args);
       durations.push(Date.now() - startedAt);
       assertToolResult(tool, result);
+      if (tool === 'plan_note_import' || tool === 'plan_note_import_from_file') {
+        const planId = structuredToolResult(result).planId;
+        latestBulkPlanId = typeof planId === 'string' ? planId : latestBulkPlanId;
+      }
     }
 
     await assertWorkflowCompatibility(baseUrl, tools);

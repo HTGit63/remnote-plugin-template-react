@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'vitest';
-import { previewNoteDesignPlan } from '../src/remnote/templates/designTemplates';
+import {
+  defaultNoteDesignRules,
+  importNoteDesignTemplate,
+  previewNoteDesignPlan,
+} from '../src/remnote/templates/designTemplates';
+import {
+  repairNoteDesign,
+  updateNoteWithDesign,
+} from '../src/remnote/write/designedNoteTools';
 import { FakePlugin } from './helpers/fakeRemnote';
 
 describe('design template preview defaults', () => {
@@ -28,5 +36,95 @@ describe('design template preview defaults', () => {
     expect(result.rules.stylePreset).toBe('formula_heavy');
     expect(result.rules.formulaPlacement.displayFormulasAsSeparateRems).toBe(true);
     expect(result.rules.bulletNesting.maxDepth).toBeGreaterThanOrEqual(5);
+  });
+
+  test('preview stays no-write even when parent and target IDs are supplied', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('design-preview-target', 'Original target text');
+    const before = JSON.stringify({ text: target.text, children: target.children });
+
+    const result = await previewNoteDesignPlan(fake.asPlugin(), {
+      parentId: 'design-preview-parent',
+      targetRemId: target._id,
+      title: 'Safe preview',
+      content: '## Planned only',
+      mode: 'repair',
+    });
+
+    expect(result).toMatchObject({ status: 'previewed', dryRun: true });
+    expect(fake.createRemCount).toBe(0);
+    expect(JSON.stringify({ text: target.text, children: target.children })).toBe(before);
+  });
+
+  test('template import rejects malformed JSON and unsafe operation rules', async () => {
+    const fake = new FakePlugin();
+    const unsafeTemplate = {
+      schemaVersion: 1,
+      templateId: 'unsafe-template',
+      name: 'Unsafe template',
+      rules: {
+        ...defaultNoteDesignRules(),
+        injectedOperation: 'delete_rem_by_id',
+      },
+    };
+
+    await expect(importNoteDesignTemplate(fake.asPlugin(), {
+      templateJson: '{not-json',
+    })).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+    await expect(importNoteDesignTemplate(fake.asPlugin(), {
+      templateJson: JSON.stringify(unsafeTemplate),
+      overwrite: true,
+    })).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+  });
+
+  test('template import rejects structurally incomplete rules before preview', async () => {
+    const fake = new FakePlugin();
+    const malformedTemplate = {
+      schemaVersion: 1,
+      templateId: 'malformed-template',
+      name: 'Malformed template',
+      rules: {},
+    };
+
+    await expect(importNoteDesignTemplate(fake.asPlugin(), {
+      templateJson: JSON.stringify(malformedTemplate),
+      overwrite: true,
+    })).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+  });
+
+  test('design update and repair reject style operations outside target tree', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('design-scope-target', 'Target text');
+    const child = fake.addRem('design-scope-child', 'Child text');
+    const outside = fake.addRem('design-scope-outside', 'Outside text');
+    await child.setParent(target);
+
+    await expect(updateNoteWithDesign(fake.asPlugin(), {
+      targetRemId: target._id,
+      mode: 'repair_structure',
+      styleOperations: [{ remId: outside._id, type: 'bold_span', text: 'Outside' }],
+      dryRun: false,
+      approved: true,
+      idempotencyKey: 'idem:outside-design-update',
+    })).rejects.toMatchObject({ code: 'OUT_OF_SCOPE' });
+    await expect(repairNoteDesign(fake.asPlugin(), {
+      rootRemId: target._id,
+      operations: [{ remId: outside._id, type: 'bold_span', text: 'Outside' }],
+      dryRun: true,
+      idempotencyKey: 'idem:outside-design-repair',
+    })).rejects.toMatchObject({ code: 'OUT_OF_SCOPE' });
+
+    expect(await fake.richText.toString(outside.text)).toBe('Outside text');
+
+    const allowed = await updateNoteWithDesign(fake.asPlugin(), {
+      targetRemId: target._id,
+      mode: 'repair_structure',
+      styleOperations: [{ remId: child._id, type: 'bold_span', text: 'Child' }],
+      dryRun: false,
+      approved: true,
+      idempotencyKey: 'idem:inside-design-update',
+    });
+    expect(allowed.status).toBe('repaired');
+    expect(child.text).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'Child', b: true })]));
   });
 });

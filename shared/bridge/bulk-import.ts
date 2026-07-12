@@ -38,6 +38,7 @@ export interface BulkImportPlannerOptions {
 }
 
 export interface PlanNoteImportInput {
+  ownerId?: string;
   sourceName?: string;
   sourceKind?: 'inline_text' | 'file';
   sourceFilePath?: string;
@@ -117,6 +118,7 @@ export interface BulkImportSection {
 export interface BulkImportPlan {
   ok: true;
   planId: string;
+  ownerId?: string;
   sourceName?: string;
   sourceHash: string;
   sourceMetadata: BulkImportSourceMetadata;
@@ -168,6 +170,7 @@ export interface BulkImportVerificationResult {
 export interface BulkImportJob {
   jobId: string;
   planId: string;
+  ownerId?: string;
   sourceName?: string;
   sourceHash: string;
   sourceMetadata: BulkImportSourceMetadata;
@@ -669,7 +672,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
       })();
   const chapterTitle = input.chapterTitle?.trim() || selected.chapterTitle;
   const sourceHash = stableBulkImportHash(selected.text);
-  const planId = `plan:${stableBulkImportHash(`${input.sourceName ?? ''}:${input.targetRootId}:${input.rootTitle ?? ''}:${chapterTitle}:${sourceHash}`)}`;
+  const planId = `plan:${stableBulkImportHash(`${input.ownerId ?? ''}:${input.sourceName ?? ''}:${input.targetRootId}:${input.rootTitle ?? ''}:${chapterTitle}:${sourceHash}`)}`;
   const sections = splitSections(selected.text).map((section) => {
     const writableSectionText = section.bodyText.trim() ? section.bodyText : section.text;
     const chunkTexts = splitSectionIntoChunks(writableSectionText, options);
@@ -719,6 +722,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
   return {
     ok: true,
     planId,
+    ownerId: input.ownerId,
     sourceName: input.sourceName,
     sourceHash,
     sourceMetadata: selected.metadata,

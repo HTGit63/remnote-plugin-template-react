@@ -75,7 +75,6 @@ export function requestReachedPluginTransport(response: BridgeResponse): boolean
   return hasAnyLifecyclePhase(response.lifecycle, [
     'forwarded_to_plugin',
     'plugin_received',
-    'received',
     'plugin_validated',
     'validated',
     'approval_required',

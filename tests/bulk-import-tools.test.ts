@@ -410,7 +410,7 @@ describe('bulk import MCP tools', () => {
     expect(h.toolConfigs.start_note_import_from_file._meta['openai/fileParams']).toEqual(['sourceFile']);
     expect(h.toolConfigs.plan_note_import_from_file.annotations).toMatchObject({
       readOnlyHint: false,
-      openWorldHint: true,
+      openWorldHint: false,
       destructiveHint: false,
     });
 
@@ -449,7 +449,17 @@ describe('bulk import MCP tools', () => {
     }));
     expect(hostedLocalResult.errorCode).toBe('SOURCE_FILE_LOCAL_AUTH_REQUIRED');
 
-    const codex = makeHarness({ principal: principal('codex_bearer'), sourceFileAllowRoots: [allowedRoot] });
+    const unlinkedCodex = makeHarness({ principal: principal('codex_bearer'), sourceFileAllowRoots: [allowedRoot] });
+    const unlinkedCodexLocalResult = text(await unlinkedCodex.handlers.plan_note_import_from_file({
+      sourceFilePath,
+      targetRootId: 'Plugin Test',
+    }));
+    expect(unlinkedCodexLocalResult.errorCode).toBe('SOURCE_FILE_CODEX_PAIRING_REQUIRED');
+
+    const codex = makeHarness({
+      principal: { ...principal('codex_bearer'), codexPairingStatus: 'linked', codexLinkId: 'pairing:file-owner' },
+      sourceFileAllowRoots: [allowedRoot],
+    });
     const codexLocalResult = text(await codex.handlers.plan_note_import_from_file({
       sourceFilePath,
       targetRootId: 'Plugin Test',
@@ -520,6 +530,28 @@ describe('bulk import MCP tools', () => {
     expect(status.storageDurability).toBe('memory_only');
     expect(status.durabilityWarning).toContain('not durable across server restart');
     expect(status.job.storageDurability).toBe('memory_only');
+    expect(JSON.stringify(status.job)).not.toMatch(/sourceText|expectedSourceText|ownerId|Alpha source text|Beta source text/);
+  });
+
+  test('binds plans and jobs to authenticated principal', async () => {
+    const owner = makeHarness({
+      principal: { ...principal('hosted_oauth'), subject: 'owner:a', userId: 'user:a' },
+    });
+    const other = makeHarness({
+      principal: { ...principal('hosted_oauth'), subject: 'owner:b', userId: 'user:b' },
+    });
+    const { plan, jobId } = await owner.createJob('bulk-job:ownership-boundary');
+
+    const foreignStatus = text(await other.handlers.get_note_import_job_status({ jobId }));
+    const foreignStart = text(await other.handlers.start_note_import_job({
+      planId: plan.planId,
+      jobId: 'bulk-job:foreign-start',
+    }));
+
+    expect(foreignStatus.status).toBe('FAIL');
+    expect(foreignStatus.errorMessage).toContain('Unknown import job');
+    expect(foreignStart.status).toBe('FAIL');
+    expect(foreignStart.errorMessage).toContain('Unknown import plan');
   });
 
   test('does not mark chunk verified when write lacks explicit verification', async () => {
@@ -731,7 +763,7 @@ describe('bulk import MCP tools', () => {
     const chunk = status.job.chunks[0];
     const verify = text(await h.handlers.verify_note_import_job({
       jobId,
-      actualTextByChunkId: { [chunk.chunkId]: chunk.sourceText },
+      actualTextByChunkId: { [chunk.chunkId]: 'Alpha source text.' },
     }));
 
     expect(verify.status).toBe('PARTIAL');

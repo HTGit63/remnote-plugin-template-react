@@ -367,67 +367,58 @@ export const DESIGN_TEMPLATE_RULES_SCHEMA = z
         sectionHeadingLevel: HEADING_LEVEL_SCHEMA.optional(),
         headingCounts: SIMPLE_COUNT_MAP_SCHEMA.optional(),
         directChildHeadingCounts: SIMPLE_COUNT_MAP_SCHEMA.optional(),
-      })
-      .optional(),
+      }),
     colorPattern: z
       .object({
         textColors: SIMPLE_COUNT_MAP_SCHEMA.optional(),
         highlightColors: SIMPLE_COUNT_MAP_SCHEMA.optional(),
         wholeRemHighlights: SIMPLE_COUNT_MAP_SCHEMA.optional(),
-      })
-      .optional(),
+      }),
     spacingPattern: z
       .object({
-        spacerCount: z.number().int().min(0).max(10000).optional(),
-        spacerTexts: z.array(z.string().max(100)).max(50).optional(),
-        blankRemCount: z.number().int().min(0).max(10000).optional(),
-        siblingSpacerLikely: z.boolean().optional(),
-      })
-      .optional(),
+        spacerCount: z.number().int().min(0).max(10000),
+        spacerTexts: z.array(z.string().max(100)).max(50),
+        blankRemCount: z.number().int().min(0).max(10000),
+        siblingSpacerLikely: z.boolean(),
+      }),
     mathPattern: z
       .object({
-        inlineMathCount: z.number().int().min(0).max(10000).optional(),
-        blockMathCount: z.number().int().min(0).max(10000).optional(),
-        visibleDelimiterCount: z.number().int().min(0).max(10000).optional(),
-        malformedMathLikely: z.boolean().optional(),
-      })
-      .optional(),
+        inlineMathCount: z.number().int().min(0).max(10000),
+        blockMathCount: z.number().int().min(0).max(10000),
+        visibleDelimiterCount: z.number().int().min(0).max(10000),
+        malformedMathLikely: z.boolean(),
+      }),
     bulletNesting: z
       .object({
-        maxDepth: z.number().int().min(0).max(100).optional(),
-        maxChildrenPerRem: z.number().int().min(0).max(10000).optional(),
-        averageChildrenPerNonLeaf: z.number().min(0).max(10000).optional(),
-      })
-      .optional(),
+        maxDepth: z.number().int().min(0).max(100),
+        maxChildrenPerRem: z.number().int().min(0).max(10000),
+        averageChildrenPerNonLeaf: z.number().min(0).max(10000),
+      }),
     formulaPlacement: z
       .object({
-        displayFormulasAsSeparateRems: z.boolean().optional(),
-        inlineFormulasInsideText: z.boolean().optional(),
-        rawDisplayDelimitersVisible: z.boolean().optional(),
-      })
-      .optional(),
+        displayFormulasAsSeparateRems: z.boolean(),
+        inlineFormulasInsideText: z.boolean(),
+        rawDisplayDelimitersVisible: z.boolean(),
+      }),
     tableStyle: z
       .object({
-        tableLikeRemCount: z.number().int().min(0).max(10000).optional(),
-        markdownTableCount: z.number().int().min(0).max(10000).optional(),
-        tableHeadings: z.array(z.string().max(500)).max(100).optional(),
-      })
-      .optional(),
+        tableLikeRemCount: z.number().int().min(0).max(10000),
+        markdownTableCount: z.number().int().min(0).max(10000),
+        tableHeadings: z.array(z.string().max(500)).max(100),
+      }),
     cardStyle: z
       .object({
-        cardLikeRemCount: z.number().int().min(0).max(10000).optional(),
-        clozeLikeRemCount: z.number().int().min(0).max(10000).optional(),
-        doubleColonMarkerCount: z.number().int().min(0).max(10000).optional(),
-      })
-      .optional(),
+        cardLikeRemCount: z.number().int().min(0).max(10000),
+        clozeLikeRemCount: z.number().int().min(0).max(10000),
+        doubleColonMarkerCount: z.number().int().min(0).max(10000),
+      }),
     workedExampleStyle: z
       .object({
-        workedExampleCount: z.number().int().min(0).max(10000).optional(),
-        labels: z.array(z.string().max(200)).max(100).optional(),
-      })
-      .optional(),
+        workedExampleCount: z.number().int().min(0).max(10000),
+        labels: z.array(z.string().max(200)).max(100),
+      }),
     expectedStyleMap: CONNECTOR_SAFE_EXPECTED_STYLE_MAP_SCHEMA.optional(),
-    stylePreset: z.string().trim().min(1).max(120).optional(),
+    stylePreset: NOTE_STYLE_PRESET_SCHEMA.optional(),
   })
   .describe('Reusable note design rules. Destructive operation rules are rejected by the plugin before storage/import.');
 

@@ -6,6 +6,7 @@ import {
   type ApprovalResolution,
   type BridgeToolProfile,
   type BridgeToolName,
+  type BridgeResponse,
   type NoteDesignTemplateSummary,
   type PendingApprovalRequest,
   type PermissionMode,
@@ -54,6 +55,10 @@ import {
   type BridgeCommandIntent,
 } from './bridge-panel/command-intents';
 import {
+  deriveBridgeActivity,
+  deriveBridgeUiConnectionState,
+} from './bridge-panel/ui-state';
+import {
   getPermissionDecision,
   getPermissionModeLabel,
   getPermissionScopeLabel,
@@ -84,6 +89,11 @@ const statusToneClass: Record<string, string> = {
 
 const LOCAL_PAIRING_DISABLED_MESSAGE =
   'Server is in local-token mode. ChatGPT pairing is disabled. Use hosted mode for ChatGPT connector access.';
+const STANDARD_PERMISSION_MODE_OPTIONS = permissionModeOptions.filter(
+  (option) =>
+    option.value !== 'full_control_delete_approval' && option.value !== 'danger_zone'
+);
+const STANDARD_TOOL_TIER_OPTIONS = toolTierOptions.filter((option) => option.value !== 'danger');
 
 function formatToolName(tool: BridgeToolName): string {
   return tool.replace(/_/g, ' ');
@@ -161,10 +171,6 @@ function isHostedBridgeUrl(serverUrl: string): boolean {
     !serverUrl.includes('localhost') &&
     !serverUrl.includes('127.0.0.1')
   );
-}
-
-function isWaitingForChatGptPairing(lastEvent: string): boolean {
-  return /waiting for chatgpt pairing/i.test(lastEvent);
 }
 
 function getFriendlyPairingError(error: unknown): string {
@@ -373,6 +379,14 @@ export function BridgeStatusWidget() {
   const approvedRootRemIdRef = useRef<string | null>(null);
   const clientRef = useRef<BrowserBridgeClient | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [activeOperation, setActiveOperation] = useState<string | null>(null);
+  const [lastOperationError, setLastOperationError] = useState<string | null>(null);
+  const [lastPluginResult, setLastPluginResult] = useState<{
+    tool: BridgeToolName;
+    ok: boolean;
+    message: string;
+  } | null>(null);
+  const [dangerConfirmText, setDangerConfirmText] = useState('');
 
   useEffect(() => {
     let alive = true;
@@ -479,9 +493,10 @@ export function BridgeStatusWidget() {
     ? getPermissionDecision(permissionMode, pendingRequest.tool)
     : undefined;
   const toolAvailability = summarizeToolAvailability(bridgeStatus.publicTools, permissionMode);
-  const hiddenToolCount = bridgeStatus.hiddenTools?.length ?? 1;
+  const hiddenToolCount = bridgeStatus.hiddenTools?.length ?? 0;
   const profileHiddenToolCount = bridgeStatus.profileHiddenTools?.length ?? 0;
   const lastRequests = lastRequestsFrom(lastServerDiagnostics);
+  const latestFetchedRequest = lastRequests[0];
   const lastSuccessfulRequest = lastRequests.find((request) => request.ok === true);
   const lastFailedRequest = lastRequests.find((request) => request.ok === false);
   const reportedDeploymentMode =
@@ -493,27 +508,51 @@ export function BridgeStatusWidget() {
     reportedDeploymentMode === 'local' ||
     reportedHostedPairingEnabled === false;
   const effectiveHostedSession = chatGptPairingDisabled ? null : hostedSession;
-  const storedSessionStale =
+  const requiresConnectorRefresh =
     Boolean(effectiveHostedSession?.requiresConnectorRefresh) ||
     Boolean(bridgeStatus.requiresConnectorRefresh) ||
     Boolean(toolTierState?.requiresConnectorRefresh);
-  const sessionStale = storedSessionStale;
+  const sessionStale =
+    requiresConnectorRefresh ||
+    Boolean(toolTierState?.sessionStale) ||
+    lastHealthCheck?.sessionStale === true;
+  const uiConnectionState = deriveBridgeUiConnectionState({
+    transportState: bridgeStatus.state,
+    hosted: isHostedBridgeUrl(serverUrl),
+    hasHostedSession: Boolean(effectiveHostedSession?.sessionSecret),
+    requiresConnectorRefresh,
+    toolTierSessionStale: Boolean(toolTierState?.sessionStale),
+    health: lastHealthCheck,
+  });
+  const uiBridgeStatus = {
+    ...bridgeStatus,
+    state: uiConnectionState,
+  };
   const activeServerToolTier =
     toolTierState?.activeToolTier ??
     bridgeStatus.activeToolTier ??
     bridgeStatus.toolTier ??
-    bridgeStatus.toolProfile ??
-    selectedToolTier;
+    bridgeStatus.toolProfile;
   const visibleTierSummary =
     toolTierState?.toolTierSummary ??
     bridgeStatus.toolTierSummary;
   const verificationMatrix = runtimeVerificationMatrixFrom(lastServerDiagnostics, bridgeStatus);
-  const runtimeVerifiedCount = verificationMatrix.filter((tool) => tool.runtimeVerified === true || tool.serverLocalVerified === true).length;
+  const runtimeVerifiedCount = verificationMatrix.filter((tool) => tool.runtimeVerified === true).length;
+  const serverLocalVerifiedCount = verificationMatrix.filter((tool) => tool.serverLocalVerified === true).length;
   const runtimeUnverifiedCount =
     (toolTierState?.registry?.runtimeUnverifiedToolCount as number | undefined) ??
     bridgeStatus.runtimeUnverifiedTools?.length ??
     verificationMatrix.filter((tool) => tool.runtimeVerified !== true && tool.serverLocalVerified !== true).length;
   const publicUserSummary = publicUserSummaryFrom(lastServerDiagnostics);
+  const latestResultOk =
+    lastPluginResult?.ok ??
+    (typeof latestFetchedRequest?.ok === 'boolean' ? latestFetchedRequest.ok : null);
+  const latestResultCopy = lastPluginResult?.message ??
+    (publicUserSummary
+      ? String(publicUserSummary.message ?? 'Summary ready.')
+      : latestFetchedRequest
+        ? `${String(latestFetchedRequest.tool ?? 'request')} ${latestResultOk ? 'completed' : 'failed'}.`
+        : 'No tool result recorded yet.');
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -653,6 +692,23 @@ export function BridgeStatusWidget() {
     setLastApprovalEvent(`Cancelled ${currentRequest.tool} request ${requestId}: ${message}`);
   }, []);
 
+  const handleRequestStarted = useCallback((request: { tool: BridgeToolName }) => {
+    setLastOperationError(null);
+    setActiveOperation(`Running ${formatToolName(request.tool)}`);
+  }, []);
+
+  const handleRequestCompleted = useCallback(
+    (request: { tool: BridgeToolName }, response: BridgeResponse) => {
+      const message = response.ok
+        ? `${formatToolName(request.tool)} completed.`
+        : response.error.message;
+      setActiveOperation(null);
+      setLastPluginResult({ tool: request.tool, ok: response.ok, message });
+      setLastOperationError(response.ok ? null : message);
+    },
+    []
+  );
+
   useEffect(() => {
     if (!bridgeEnabled) {
       setBridgeStatus({
@@ -698,6 +754,8 @@ export function BridgeStatusWidget() {
       requestApproval,
       cancelApproval,
       onStatus: setBridgeStatus,
+      onRequestStarted: handleRequestStarted,
+      onRequestCompleted: handleRequestCompleted,
     });
 
     clientRef.current = client;
@@ -719,6 +777,8 @@ export function BridgeStatusWidget() {
     effectiveHostedSession?.sessionSecret,
     requestApproval,
     cancelApproval,
+    handleRequestStarted,
+    handleRequestCompleted,
     bridgeEnabled,
     chatGptPairingDisabled,
   ]);
@@ -752,22 +812,31 @@ export function BridgeStatusWidget() {
     if (!effectiveHostedSession?.sessionSecret || chatGptPairingDisabled) {
       return;
     }
-    const state = await updatePluginToolTier(serverUrl, effectiveHostedSession, {
-      toolTier: nextTier,
-      permissionScope: nextScope,
-      permissionMode: nextMode,
-    });
-    setToolTierState(state);
-    const nextSession: HostedPairingSession = {
-      ...effectiveHostedSession,
-      toolTier: state.toolTier,
-      accessScope: state.accessScope,
-      trustedWriteMode: state.trustedWriteMode,
-      requiresConnectorRefresh: state.requiresConnectorRefresh,
-    };
-    setHostedSession(nextSession);
-    await saveHostedPairingSession(plugin, nextSession);
-    setPairingEvent('Access updated live. No reconnect needed.');
+    setLastOperationError(null);
+    setActiveOperation('Syncing hosted access');
+    try {
+      const state = await updatePluginToolTier(serverUrl, effectiveHostedSession, {
+        toolTier: nextTier,
+        permissionScope: nextScope,
+        permissionMode: nextMode,
+      });
+      setToolTierState(state);
+      const nextSession: HostedPairingSession = {
+        ...effectiveHostedSession,
+        toolTier: state.toolTier,
+        accessScope: state.accessScope,
+        trustedWriteMode: state.trustedWriteMode,
+        requiresConnectorRefresh: state.requiresConnectorRefresh,
+      };
+      setHostedSession(nextSession);
+      await saveHostedPairingSession(plugin, nextSession);
+      setPairingEvent('Access updated live. No reconnect needed.');
+    } catch (error: unknown) {
+      setLastOperationError(error instanceof Error ? error.message : String(error));
+      throw error;
+    } finally {
+      setActiveOperation(null);
+    }
   };
 
   const handleScopeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
@@ -783,8 +852,7 @@ export function BridgeStatusWidget() {
     }
   };
 
-  const handleModeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const nextMode = event.target.value as PermissionMode;
+  const applyPermissionMode = async (nextMode: PermissionMode) => {
     setRuntimePermissionMode(nextMode);
     await plugin.storage.setLocal('bridge-permission-mode', nextMode);
     try {
@@ -796,8 +864,12 @@ export function BridgeStatusWidget() {
     }
   };
 
-  const handleToolTierChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const nextTier = normalizeBridgeToolTier(event.target.value);
+  const handleModeChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    await applyPermissionMode(event.target.value as PermissionMode);
+  };
+
+  const applyToolTier = async (nextTierValue: BridgeToolProfile) => {
+    const nextTier = normalizeBridgeToolTier(nextTierValue);
     setSelectedToolTier(nextTier);
     await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, nextTier);
     await plugin.storage.setLocal('bridge-tool-access-tier', nextTier);
@@ -812,6 +884,10 @@ export function BridgeStatusWidget() {
       setPairingEvent(error instanceof Error ? error.message : String(error));
       await plugin.app.toast('Tool tier saved locally. Server sync failed.');
     }
+  };
+
+  const handleToolTierChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    await applyToolTier(normalizeBridgeToolTier(event.target.value));
   };
 
   const handleUseFocusedAsApprovedRoot = async () => {
@@ -840,19 +916,30 @@ export function BridgeStatusWidget() {
       return;
     }
 
-    const label = focusedRemStatus.label.replace(/^Focused Rem:\s*/i, '').trim() || 'Focused Note';
-    const result = await saveNoteDesignTemplate(plugin, {
-      rootRemId: focusedRemStatus.remId,
-      sourceRemId: focusedRemStatus.remId,
-      name: `${label} Design`,
-      description: 'Saved from focused Rem in RemnoteMCP.',
-      overwrite: true,
-    });
-    setSelectedTemplateId(result.template.templateId);
-    await plugin.storage.setLocal('bridge-selected-template-id', result.template.templateId);
-    setTemplateStatus(`Saved ${result.template.name}.`);
-    await loadTemplates();
-    await plugin.app.toast('Focused note design template saved.');
+    setLastOperationError(null);
+    setActiveOperation('Saving focused note template');
+    try {
+      const label = focusedRemStatus.label.replace(/^Focused Rem:\s*/i, '').trim() || 'Focused Note';
+      const result = await saveNoteDesignTemplate(plugin, {
+        rootRemId: focusedRemStatus.remId,
+        sourceRemId: focusedRemStatus.remId,
+        name: `${label} Design`,
+        description: 'Saved from focused Rem in RemnoteMCP.',
+        overwrite: true,
+      });
+      setSelectedTemplateId(result.template.templateId);
+      await plugin.storage.setLocal('bridge-selected-template-id', result.template.templateId);
+      setTemplateStatus(`Saved ${result.template.name}.`);
+      await loadTemplates();
+      await plugin.app.toast('Focused note design template saved.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTemplateStatus(message);
+      setLastOperationError(message);
+      await plugin.app.toast('Could not save focused note template.');
+    } finally {
+      setActiveOperation(null);
+    }
   };
 
   const handleCopyMcpUrl = async () => {
@@ -869,12 +956,17 @@ export function BridgeStatusWidget() {
   const handleUseRecommendedNoteMode = async () => {
     const nextScope: PermissionScope = 'focused_rem_and_descendants';
     const nextMode: PermissionMode = 'read_create_modify';
+    const nextTier: BridgeToolProfile = 'note_writer';
     setRuntimePermissionScope(nextScope);
     setRuntimePermissionMode(nextMode);
+    setSelectedToolTier(nextTier);
+    setDangerConfirmText('');
     await plugin.storage.setLocal('bridge-permission-scope', nextScope);
     await plugin.storage.setLocal('bridge-permission-mode', nextMode);
+    await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, nextTier);
+    await plugin.storage.setLocal('bridge-tool-access-tier', nextTier);
     try {
-      await pushHostedToolConfig(selectedToolTier, nextScope, nextMode);
+      await pushHostedToolConfig(nextTier, nextScope, nextMode);
       await plugin.app.toast('Recommended note mode enabled.');
     } catch (error: unknown) {
       setPairingEvent(error instanceof Error ? error.message : String(error));
@@ -899,6 +991,8 @@ export function BridgeStatusWidget() {
       return;
     }
 
+    setLastOperationError(null);
+    setActiveOperation('Approving ChatGPT pairing');
     try {
       const session = await approveChatGptPairing(plugin, serverUrl, {
         pairingCode: chatGptPairingCode,
@@ -932,8 +1026,12 @@ export function BridgeStatusWidget() {
       setChatGptPairingPreview(null);
       await plugin.app.toast('ChatGPT connection approved.');
     } catch (error: unknown) {
-      setPairingEvent(getFriendlyPairingError(error));
+      const message = getFriendlyPairingError(error);
+      setPairingEvent(message);
+      setLastOperationError(message);
       await plugin.app.toast('ChatGPT pairing failed.');
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -944,6 +1042,8 @@ export function BridgeStatusWidget() {
       return;
     }
 
+    setLastOperationError(null);
+    setActiveOperation('Checking ChatGPT pairing code');
     try {
       const preview = await lookupChatGptPairing(serverUrl, chatGptPairingCode);
       setChatGptPairingPreview(preview);
@@ -951,8 +1051,12 @@ export function BridgeStatusWidget() {
       await plugin.app.toast('Pairing request found.');
     } catch (error: unknown) {
       setChatGptPairingPreview(null);
-      setPairingEvent(getFriendlyPairingError(error));
+      const message = getFriendlyPairingError(error);
+      setPairingEvent(message);
+      setLastOperationError(message);
       await plugin.app.toast('Pairing code not found.');
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -963,6 +1067,8 @@ export function BridgeStatusWidget() {
       return;
     }
 
+    setLastOperationError(null);
+    setActiveOperation('Denying ChatGPT pairing');
     try {
       await denyChatGptPairing(serverUrl, chatGptPairingCode);
       setPairingEvent('Connection denied.');
@@ -970,12 +1076,18 @@ export function BridgeStatusWidget() {
       setChatGptPairingPreview(null);
       await plugin.app.toast('ChatGPT connection denied.');
     } catch (error: unknown) {
-      setPairingEvent(getFriendlyPairingError(error));
+      const message = getFriendlyPairingError(error);
+      setPairingEvent(message);
+      setLastOperationError(message);
       await plugin.app.toast('Could not deny pairing.');
+    } finally {
+      setActiveOperation(null);
     }
   };
 
   const handleHealthCheck = async (level: 'quick' | 'standard' | 'full' = 'quick') => {
+    setLastOperationError(null);
+    setActiveOperation(`Running ${level} health check`);
     try {
       const healthResponse = await fetch(companionHttpUrl(serverUrl, '/health'), {
         headers: { accept: 'application/json' },
@@ -1000,13 +1112,24 @@ export function BridgeStatusWidget() {
           setLastServerDiagnostics(await diagnosticsResponse.json());
         }
       }
+      if (!healthResponse.ok || health?.ok === false) {
+        const message =
+          typeof health?.error === 'string'
+            ? health.error
+            : `${level} health check returned an error.`;
+        setLastOperationError(message);
+      }
       await plugin.app.toast(healthResponse.ok ? `${level} health checked.` : `${level} health failed.`);
     } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
       setLastHealthCheck({
         ok: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
       });
+      setLastOperationError(message);
       await plugin.app.toast('Bridge health check failed.');
+    } finally {
+      setActiveOperation(null);
     }
   };
 
@@ -1180,38 +1303,59 @@ export function BridgeStatusWidget() {
     !pendingDecision?.allowed ||
     Boolean(pendingRequest?.confirmTextRequired && deleteConfirmText !== pendingRequest.confirmTextRequired);
 
-  const ready = bridgeStatus.state === 'connected' && !pendingRequest && !sessionStale;
-  const needsAction = Boolean(pendingRequest);
-  const waitingForPairing =
-    bridgeStatus.state === 'not_paired' || isWaitingForChatGptPairing(bridgeStatus.lastEvent);
-  const taskVariant = needsAction || sessionStale ? 'warning' : ready ? 'ready' : waitingForPairing ? 'warning' : 'offline';
-  const bridgeNextAction = waitingForPairing
-    ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
-    : sessionStale
-      ? 'Refresh pairing only if server URL or token changed.'
-    : getBridgeNextAction(bridgeStatus);
-  const statusLabel = sessionStale ? 'Refresh Needed' : waitingForPairing ? 'Waiting for ChatGPT pairing' : getBridgeStatusLabel(bridgeStatus.state);
-  const taskTitle = needsAction
-    ? 'Action Needed'
-    : sessionStale
-      ? 'Reconnect Required'
-      : ready
-        ? 'Ready'
-        : waitingForPairing
-          ? 'Waiting for ChatGPT pairing'
-          : 'Bridge Offline';
-  const taskCopy = needsAction
-    ? 'Review this write before RemNote changes.'
-    : sessionStale
-      ? 'Refresh required only for server URL/token changes.'
-    : ready
-      ? 'ChatGPT can use the connected RemNote tools.'
-      : waitingForPairing
-        ? 'Approve the ChatGPT pairing code below before opening the hosted bridge connection.'
-        : isHostedBridgeUrl(serverUrl)
-          ? 'Check Render URL, hosted pairing, and RemNote plugin WebSocket connection.'
-          : 'Start the local companion server or check the local bridge token.';
-  const chatGptPairingConnected = Boolean(effectiveHostedSession && !chatGptPairingDisabled);
+  const waitingForPairing = uiConnectionState === 'not_paired' || uiConnectionState === 'pairing';
+  const bridgeNextAction = getBridgeNextAction(uiBridgeStatus);
+  const statusLabel = getBridgeStatusLabel(uiConnectionState);
+  const initialSyncReady =
+    bridgeStatus.initialSyncComplete === true && bridgeStatus.initialSyncTimedOut !== true;
+  const approvedRootReady =
+    permissionScope !== 'approved_document_or_folder' || Boolean(approvedRootRemId);
+  const elevatedAccess =
+    permissionMode === 'full_control_delete_approval' ||
+    permissionMode === 'danger_zone' ||
+    selectedToolTier === 'danger';
+  const ready =
+    uiConnectionState === 'connected' &&
+    !pendingRequest &&
+    !sessionStale &&
+    initialSyncReady &&
+    approvedRootReady;
+  let activity = deriveBridgeActivity({
+    connectionState: uiConnectionState,
+    hasPendingApproval: Boolean(pendingRequest),
+    activeOperation,
+    lastOperationError,
+    nextAction: bridgeNextAction,
+  });
+  if (activity.kind === 'connected' && !ready) {
+    activity = {
+      kind: 'blocked',
+      title: 'Setup Blocked',
+      copy: !initialSyncReady
+        ? bridgeStatus.initialSyncWarning ?? 'RemNote initial sync is not complete.'
+        : 'Choose an approved root Rem before using this scope.',
+    };
+  } else if (activity.kind === 'connected' && elevatedAccess) {
+    activity = {
+      kind: 'warning',
+      title: 'Danger Access Enabled',
+      copy: 'Connection is live, but elevated write or destructive tool access is enabled.',
+    };
+  }
+  const taskVariant =
+    activity.kind === 'connected'
+      ? 'ready'
+      : activity.kind === 'progress'
+        ? 'progress'
+        : activity.kind === 'failed'
+          ? 'failed'
+          : activity.kind === 'warning'
+            ? 'warning'
+          : activity.kind === 'pending'
+            ? 'warning'
+            : 'offline';
+  const chatGptPairingConnected =
+    Boolean(effectiveHostedSession && !chatGptPairingDisabled) && uiConnectionState === 'connected';
 
   const pendingSection = (
     <section
@@ -1307,8 +1451,8 @@ export function BridgeStatusWidget() {
   return (
     <div className="bridge-shell plugin-root">
       <BridgeWidgetHeader
-        status={bridgeStatus}
-        statusClassName={sessionStale ? statusToneClass.stale_connection : statusToneClass[bridgeStatus.state] ?? statusToneClass.disconnected}
+        status={uiBridgeStatus}
+        statusClassName={statusToneClass[uiConnectionState] ?? statusToneClass.disconnected}
         statusLabel={statusLabel}
         nextAction={bridgeNextAction}
       />
@@ -1318,9 +1462,10 @@ export function BridgeStatusWidget() {
 
         <BridgeTaskBanner
           variant={taskVariant}
-          title={taskTitle}
-          copy={taskCopy}
+          title={activity.title}
+          copy={activity.copy}
           onChangeAccess={() => setAccessOpen((open) => !open)}
+          actionLabel={accessOpen ? 'Hide Access' : 'Change Access'}
         />
 
         <section className="bridge-panel bridge-setup-panel">
@@ -1329,8 +1474,8 @@ export function BridgeStatusWidget() {
               <h3>Setup</h3>
               <p>Connect, choose scope, pick a template, then approve writes when needed.</p>
             </div>
-            <span className={ready ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
-              {ready ? 'Ready' : 'Needs check'}
+            <span className={elevatedAccess ? 'bridge-pill bridge-pill-danger' : ready ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
+              {elevatedAccess ? 'Elevated' : ready ? 'Ready' : 'Needs check'}
             </span>
           </div>
           <div className="bridge-step-list">
@@ -1374,19 +1519,23 @@ export function BridgeStatusWidget() {
         </section>
 
         {!chatGptPairingDisabled && !chatGptPairingConnected && (
-          <section className="bridge-panel bridge-panel--notice">
+          <section className="bridge-panel bridge-panel--notice" aria-busy={Boolean(activeOperation)}>
             <div className="bridge-section-head">
               <div className="bridge-heading-copy">
-                <h3>ChatGPT Pairing</h3>
-                <p>Enter the hosted pairing code from ChatGPT. RemNote approval is required before access.</p>
+                <h3>{effectiveHostedSession ? 'Paired Session Offline' : 'ChatGPT Pairing'}</h3>
+                <p>
+                  {effectiveHostedSession
+                    ? 'The saved pairing exists, but the plugin connection is not currently confirmed.'
+                    : 'Enter the hosted pairing code from ChatGPT. RemNote approval is required before access.'}
+                </p>
               </div>
               <span className="bridge-pill bridge-pill-warning">Not connected</span>
             </div>
-            <div className="bridge-access-editor">
+            {!effectiveHostedSession && <div className="bridge-access-editor">
               <label className="bridge-field">
                 Pairing code
                 <input
-                  className="bridge-confirm-input"
+                  className="bridge-text-input"
                   value={chatGptPairingCode}
                   onChange={(event) => {
                     setChatGptPairingCode(event.target.value);
@@ -1399,31 +1548,59 @@ export function BridgeStatusWidget() {
               <label className="bridge-field">
                 Local label
                 <input
-                  className="bridge-confirm-input"
+                  className="bridge-text-input"
                   value={localConnectionLabel}
                   onChange={(event) => setLocalConnectionLabel(event.target.value)}
                   placeholder="My ChatGPT"
                   autoComplete="off"
                 />
               </label>
-            </div>
+            </div>}
+            {effectiveHostedSession && (
+              <dl className="bridge-detail-list">
+                <DetailRow label="Connection" value={effectiveHostedSession.connectedLabel ?? 'Saved ChatGPT pairing'} />
+                <DetailRow label="Session Expires" value={new Date(effectiveHostedSession.expiresAt).toLocaleString()} />
+              </dl>
+            )}
             {chatGptPairingPreview && (
               <dl className="bridge-detail-list bridge-detail-list--spaced">
                 <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
                 <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
+                <DetailRow
+                  label="Requested Scopes"
+                  value={chatGptPairingPreview.requestedScopes.join(', ') || 'No extra scopes requested'}
+                />
+                <DetailRow label="RemNote Access" value={chatGptPairingPreview.accessScope.replace(/-/g, ' ')} />
+                <DetailRow label="Write Approval" value={chatGptPairingPreview.trustedWriteMode.replace(/-/g, ' ')} />
+                <DetailRow label="Tool Tier" value={chatGptPairingPreview.toolTier ?? 'note_writer'} />
               </dl>
             )}
-            <div className="bridge-actions">
-              <button type="button" className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
+            <div
+              className={lastOperationError ? 'bridge-event bridge-event--danger' : 'bridge-event'}
+              role={lastOperationError ? 'alert' : 'status'}
+            >
+              {pairingEvent}
+            </div>
+            {!effectiveHostedSession ? <div className="bridge-actions">
+              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
                 Check Code
               </button>
-              <button type="button" className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
+              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
                 Approve
               </button>
-              <button type="button" className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
+              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
                 Deny
               </button>
-            </div>
+            </div> : (
+              <div className="bridge-actions">
+                <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={() => void handleHealthCheck('quick')}>
+                  Check Connection
+                </button>
+                <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={() => void handleClearPairing()}>
+                  Clear Pairing
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -1433,52 +1610,76 @@ export function BridgeStatusWidget() {
               <h3>Writing Access</h3>
               <p>Default keeps ChatGPT inside focused Rem and descendants.</p>
             </div>
-            <span className="bridge-pill bridge-pill-accent">{getPermissionModeLabel(permissionMode)}</span>
+            <span
+              className={
+                permissionMode === 'danger_zone' || permissionMode === 'full_control_delete_approval'
+                  ? 'bridge-pill bridge-pill-danger'
+                  : 'bridge-pill bridge-pill-accent'
+              }
+            >
+              {getPermissionModeLabel(permissionMode)}
+            </span>
           </div>
-          <div className="bridge-access-editor bridge-access-editor--always">
-            <label className="bridge-field">
-              Access scope
-              <select value={permissionScope} onChange={handleScopeChange}>
-                {permissionScopeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {getPermissionScopeLabel(option.value)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="bridge-field">
-              Write mode
-              <select value={permissionMode} onChange={handleModeChange}>
-                {permissionModeOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <p className="bridge-field-help">
-            {permissionScopeOptions.find((option) => option.value === permissionScope)?.description}
-          </p>
-          <dl className="bridge-detail-list">
-            <DetailRow
-              label="Focused Rem"
-              value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
-            />
-            <DetailRow
-              label="Approved Root"
-              value={approvedRootRemId ?? (permissionScope === 'approved_document_or_folder' ? 'Missing approved root Rem ID' : 'Only needed for Approved Root scope')}
-              mono={Boolean(approvedRootRemId)}
-            />
-          </dl>
-          <div className="bridge-actions">
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>
-              Use Focused as Root
-            </button>
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleCopyMcpUrl}>
-              Copy MCP URL
-            </button>
-          </div>
+          {accessOpen ? (
+            <>
+              <div className="bridge-access-editor bridge-access-editor--always">
+                <label className="bridge-field">
+                  Access scope
+                  <select value={permissionScope} onChange={handleScopeChange}>
+                    {permissionScopeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {getPermissionScopeLabel(option.value)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="bridge-field">
+                  Standard write mode
+                  <select value={permissionMode} onChange={handleModeChange}>
+                    {!STANDARD_PERMISSION_MODE_OPTIONS.some((option) => option.value === permissionMode) && (
+                      <option value={permissionMode} disabled>
+                        {getPermissionModeLabel(permissionMode)} — manage in Danger Zone
+                      </option>
+                    )}
+                    {STANDARD_PERMISSION_MODE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <p className="bridge-field-help">
+                {permissionScopeOptions.find((option) => option.value === permissionScope)?.description}
+              </p>
+              <dl className="bridge-detail-list">
+                <DetailRow
+                  label="Focused Rem"
+                  value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
+                />
+                <DetailRow
+                  label="Approved Root"
+                  value={approvedRootRemId ?? (permissionScope === 'approved_document_or_folder' ? 'Missing approved root Rem ID' : 'Only needed for Approved Root scope')}
+                  mono={Boolean(approvedRootRemId)}
+                />
+              </dl>
+              <div className="bridge-actions">
+                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>
+                  Use Focused as Root
+                </button>
+                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleCopyMcpUrl}>
+                  Copy MCP URL
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="bridge-access-summary">
+              <p>{getPermissionScopeLabel(permissionScope)}. Standard controls are collapsed.</p>
+              <button type="button" className="bridge-button bridge-button-secondary bridge-button-full" onClick={() => setAccessOpen(true)}>
+                Show Access Controls
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="bridge-panel bridge-template-panel">
@@ -1517,13 +1718,25 @@ export function BridgeStatusWidget() {
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
               <h3>Last Result</h3>
-              <p>{publicUserSummary ? String(publicUserSummary.message ?? 'Summary ready.') : bridgeStatus.lastEvent}</p>
+              <p>{latestResultCopy}</p>
             </div>
-            <span className={lastFailedRequest ? 'bridge-pill bridge-pill-danger' : 'bridge-pill bridge-pill-muted'}>
-              {lastFailedRequest ? 'Failure seen' : 'No failure'}
+            <span
+              className={
+                latestResultOk === null
+                  ? 'bridge-pill bridge-pill-muted'
+                  : latestResultOk
+                    ? 'bridge-pill bridge-pill-success'
+                    : 'bridge-pill bridge-pill-danger'
+              }
+            >
+              {latestResultOk === null ? 'No result yet' : latestResultOk ? 'Latest passed' : 'Latest failed'}
             </span>
           </div>
           <dl className="bridge-detail-list">
+            <DetailRow
+              label="Current Plugin Result"
+              value={lastPluginResult ? `${formatToolName(lastPluginResult.tool)}: ${lastPluginResult.message}` : 'No current-session result yet'}
+            />
             <DetailRow
               label="Last Health"
               value={lastHealthCheck ? (lastHealthCheck.ok === false ? 'Failed' : 'Checked') : 'Not checked yet'}
@@ -1555,14 +1768,19 @@ export function BridgeStatusWidget() {
                     <h3>Tool Health and Tier</h3>
                     <p>Developer controls for visible tools, registry truth, and live verification.</p>
                   </div>
-                  <span className={sessionStale ? 'bridge-pill bridge-pill-warning' : 'bridge-pill bridge-pill-success'}>
-                    {sessionStale ? 'Refresh needed' : 'Live'}
+                  <span className={statusToneClass[uiConnectionState] ?? statusToneClass.disconnected}>
+                    {statusLabel}
                   </span>
                 </div>
                 <label className="bridge-field">
                   Active tool tier
                   <select value={selectedToolTier} onChange={handleToolTierChange}>
-                    {toolTierOptions.map((option) => (
+                    {selectedToolTier === 'danger' && (
+                      <option value="danger" disabled>
+                        Danger — manage in Danger Zone
+                      </option>
+                    )}
+                    {STANDARD_TOOL_TIER_OPTIONS.map((option) => (
                       <option key={option.value} value={option.value}>
                         {option.label}
                       </option>
@@ -1577,7 +1795,7 @@ export function BridgeStatusWidget() {
                   hiddenByProfileCount={profileHiddenToolCount}
                 />
                 <div className="bridge-mode-grid bridge-tool-tier-grid">
-                  {toolTierOptions.map((option) => {
+                  {STANDARD_TOOL_TIER_OPTIONS.map((option) => {
                     const selected = selectedToolTier === option.value;
                     const activeOnServer = activeServerToolTier === option.value;
                     const count =
@@ -1602,6 +1820,85 @@ export function BridgeStatusWidget() {
                   })}
                 </div>
               </section>
+              <section className="bridge-advanced-block bridge-auth-boundary">
+                <div className="bridge-section-head">
+                  <div className="bridge-heading-copy">
+                    <h3>Authentication Boundary</h3>
+                    <p>Connection identity is separate from RemNote write authority.</p>
+                  </div>
+                  <span className="bridge-pill bridge-pill-accent">
+                    {reportedDeploymentMode === 'hosted' || effectiveHostedSession?.sessionSecret
+                      ? 'Hosted OAuth'
+                      : bridgeToken
+                        ? 'Local bearer'
+                        : 'No token'}
+                  </span>
+                </div>
+                <dl className="bridge-detail-list">
+                  <DetailRow label="Server URL" value={bridgeStatus.serverUrl} mono />
+                  <DetailRow
+                    label="Credential Location"
+                    value="Sensitive values stay in RemNote native settings and copied diagnostics are redacted."
+                  />
+                </dl>
+              </section>
+              <section className="bridge-advanced-block bridge-danger-zone">
+                <div className="bridge-section-head">
+                  <div className="bridge-heading-copy">
+                    <h3>Danger Zone</h3>
+                    <p>Destructive access is isolated from normal note-writing controls.</p>
+                  </div>
+                  <span className="bridge-pill bridge-pill-danger">Destructive</span>
+                </div>
+                <div className="bridge-danger-summary">
+                  <span>Write mode: {getPermissionModeLabel(permissionMode)}</span>
+                  <span>Tool tier: {selectedToolTier}</span>
+                </div>
+                <label className="bridge-confirm-label">
+                  Type ENABLE DANGER to unlock escalation
+                  <input
+                    className="bridge-confirm-input"
+                    value={dangerConfirmText}
+                    onChange={(event) => setDangerConfirmText(event.target.value)}
+                    placeholder="ENABLE DANGER"
+                    autoComplete="off"
+                  />
+                </label>
+                <div className="bridge-actions">
+                  <button
+                    type="button"
+                    disabled={dangerConfirmText !== 'ENABLE DANGER' || Boolean(activeOperation)}
+                    className="bridge-button bridge-button-danger"
+                    onClick={() => void applyPermissionMode('full_control_delete_approval')}
+                  >
+                    Enable Delete Approval
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dangerConfirmText !== 'ENABLE DANGER' || Boolean(activeOperation)}
+                    className="bridge-button bridge-button-danger"
+                    onClick={() => void applyPermissionMode('danger_zone')}
+                  >
+                    Enable Danger Mode
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dangerConfirmText !== 'ENABLE DANGER' || Boolean(activeOperation)}
+                    className="bridge-button bridge-button-danger"
+                    onClick={() => void applyToolTier('danger')}
+                  >
+                    Enable Danger Tools
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(activeOperation)}
+                    className="bridge-button bridge-button-secondary"
+                    onClick={() => void handleUseRecommendedNoteMode()}
+                  >
+                    Restore Recommended
+                  </button>
+                </div>
+              </section>
               <section className="bridge-metrics" aria-label="Bridge summary">
                 <StatusMetric
                   label="Exposed"
@@ -1610,13 +1907,18 @@ export function BridgeStatusWidget() {
                 />
                 <StatusMetric
                   label="Tier"
-                  value={activeServerToolTier}
-                  tone={profileHiddenToolCount ? 'warning' : 'success'}
+                  value={activeServerToolTier ?? 'Not reported'}
+                  tone={activeServerToolTier ? (profileHiddenToolCount ? 'warning' : 'success') : 'warning'}
                 />
                 <StatusMetric
-                  label="Verified"
+                  label="Runtime Verified"
                   value={`${runtimeVerifiedCount} tools`}
                   tone={runtimeVerifiedCount ? 'success' : 'warning'}
+                />
+                <StatusMetric
+                  label="Server Local"
+                  value={`${serverLocalVerifiedCount} tools`}
+                  tone={serverLocalVerifiedCount ? 'neutral' : 'warning'}
                 />
                 <StatusMetric
                   label="Registry"
@@ -1650,19 +1952,8 @@ export function BridgeStatusWidget() {
                 />
               </section>
               <dl className="bridge-detail-list">
-                <DetailRow label="Server URL" value={bridgeStatus.serverUrl} mono />
                 <DetailRow label="Deployment Mode" value={reportedDeploymentMode ?? (isHostedBridgeUrl(serverUrl) ? 'hosted' : 'local')} />
-                <DetailRow
-                  label="Auth Mode"
-                  value={
-                    reportedDeploymentMode === 'hosted' || effectiveHostedSession?.sessionSecret
-                      ? 'hosted_oauth_required'
-                      : bridgeToken
-                        ? 'local_bearer_required'
-                        : 'no_auth_allowed'
-                  }
-                />
-                <DetailRow label="Active Tier" value={activeServerToolTier} />
+                <DetailRow label="Active Server Tier" value={activeServerToolTier ?? 'Not reported'} />
                 {bridgeStatus.serverStartedAt && (
                   <DetailRow label="Server Started" value={new Date(bridgeStatus.serverStartedAt).toLocaleTimeString()} />
                 )}
@@ -1681,7 +1972,7 @@ export function BridgeStatusWidget() {
                 />
                 <DetailRow
                   label="Tool Verification Matrix"
-                  value={`${verificationMatrix.length} rows; ${runtimeVerifiedCount} verified`}
+                  value={`${verificationMatrix.length} rows; ${runtimeVerifiedCount} live-runtime verified; ${serverLocalVerifiedCount} server-local verified`}
                 />
                 <DetailRow
                   label="User Summary"

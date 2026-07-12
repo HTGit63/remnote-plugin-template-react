@@ -1,6 +1,6 @@
 {
   "suite": "live-tool-regression",
-  "generatedAt": "2026-07-09T19:41:46.116Z",
+  "generatedAt": "2026-07-12T09:31:21.572Z",
   "ok": false,
   "smokeExitCode": 1,
   "acceptanceGate": {
@@ -12,14 +12,23 @@
     "bulkImportFailureCount": 0,
     "tinyBulkBlocked": true,
     "tinyBulkStatuses": [],
-    "blockReason": "Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin.",
+    "formulaFailureCount": 0,
+    "formulaBlocked": true,
+    "formulaStatuses": [],
+    "cardFailureCount": 0,
+    "cardBlocked": true,
+    "cardStatuses": [],
+    "styleFailureCount": 0,
+    "styleBlocked": true,
+    "styleStatuses": [],
+    "blockReason": "Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin. Stage 9 formula matrix requires a disposable parent, connected plugin, created formula note, and three passing get_rem_rich cases (inline, block, nested bullet). Stage 10 card matrix requires a disposable parent, connected plugin, passing basic/cloze/multiple-choice writes, and a passing expected-card readback verification. Stage 11 style matrix requires a disposable parent, connected plugin, a passing apply_style_plan write, and passing verify_note_design readback.",
     "passedSystemReadCount": 0,
     "passedSimpleWriteCount": 0,
     "dangerousRealDeleteRan": false
   },
   "smokeReport": {
     "ok": false,
-    "generatedAt": "2026-07-09T19:41:46.090Z",
+    "generatedAt": "2026-07-12T09:31:21.547Z",
     "mcpUrl": "http://127.0.0.1:47392/mcp?tool_tier=developer",
     "disposableParentId": "missing",
     "allowFocusedRoot": false,
@@ -34,7 +43,7 @@
       {
         "tool": "mcp_initialize",
         "category": "system/read",
-        "durationMs": 30,
+        "durationMs": 31,
         "status": "failed",
         "httpStatus": 599,
         "errorCode": "MCP_ENDPOINT_UNREACHABLE",
@@ -52,6 +61,6 @@
     ],
     "matrix": []
   },
-  "stdoutTail": "\n> remnote-chatgpt-bridge-server@0.0.1 live-tool-smoke\n> tsx src/live-tool-smoke.ts\n\n{\n  \"ok\": false,\n  \"generatedAt\": \"2026-07-09T19:41:46.090Z\",\n  \"mcpUrl\": \"http://127.0.0.1:47392/mcp?tool_tier=developer\",\n  \"disposableParentId\": \"missing\",\n  \"allowFocusedRoot\": false,\n  \"totals\": {\n    \"passed\": 0,\n    \"failed\": 1,\n    \"skipped\": 0,\n    \"listedTools\": 0,\n    \"matrixUnknown\": 0\n  },\n  \"results\": [\n    {\n      \"tool\": \"mcp_initialize\",\n      \"category\": \"system/read\",\n      \"durationMs\": 30,\n      \"status\": \"failed\",\n      \"httpStatus\": 599,\n      \"errorCode\": \"MCP_ENDPOINT_UNREACHABLE\",\n      \"layer\": \"mcp_transport\",\n      \"recommendedFix\": \"Start the MCP server and reconnect the RemNote plugin, then rerun live regression.\",\n      \"reachedPlugin\": false,\n      \"remnoteChanged\": false,\n      \"createdRemIds\": [],\n      \"updatedRemIds\": [],\n      \"deletedRemIds\": [],\n      \"verificationStatus\": \"not_applicable\",\n      \"message\": \"fetch failed\",\n      \"resultSummary\": {}\n    }\n  ],\n  \"matrix\": []\n}\n",
+  "stdoutTail": "\n> remnote-chatgpt-bridge-server@0.0.1 live-tool-smoke\n> tsx src/live-tool-smoke.ts\n\n{\n  \"ok\": false,\n  \"generatedAt\": \"2026-07-12T09:31:21.547Z\",\n  \"mcpUrl\": \"http://127.0.0.1:47392/mcp?tool_tier=developer\",\n  \"disposableParentId\": \"missing\",\n  \"allowFocusedRoot\": false,\n  \"totals\": {\n    \"passed\": 0,\n    \"failed\": 1,\n    \"skipped\": 0,\n    \"listedTools\": 0,\n    \"matrixUnknown\": 0\n  },\n  \"results\": [\n    {\n      \"tool\": \"mcp_initialize\",\n      \"category\": \"system/read\",\n      \"durationMs\": 31,\n      \"status\": \"failed\",\n      \"httpStatus\": 599,\n      \"errorCode\": \"MCP_ENDPOINT_UNREACHABLE\",\n      \"layer\": \"mcp_transport\",\n      \"recommendedFix\": \"Start the MCP server and reconnect the RemNote plugin, then rerun live regression.\",\n      \"reachedPlugin\": false,\n      \"remnoteChanged\": false,\n      \"createdRemIds\": [],\n      \"updatedRemIds\": [],\n      \"deletedRemIds\": [],\n      \"verificationStatus\": \"not_applicable\",\n      \"message\": \"fetch failed\",\n      \"resultSummary\": {}\n    }\n  ],\n  \"matrix\": []\n}\n",
   "stderrTail": ""
 }

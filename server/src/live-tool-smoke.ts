@@ -18,6 +18,7 @@ interface ToolSmokeCase {
   mutation: 'none' | 'dry_run' | 'write';
   args: (state: SmokeState) => Record<string, unknown> | null;
   skipReason?: (state: SmokeState) => string | null;
+  expectedDetectedContentType?: 'inline_math' | 'math_block';
 }
 
 interface ToolSmokeResult {
@@ -59,6 +60,9 @@ interface SmokeState {
   createdCardRootId?: string;
   bulkPlanId?: string;
   bulkJobId?: string;
+  formulaInlineRemId?: string;
+  formulaBlockRemId?: string;
+  formulaNestedRemId?: string;
 }
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -196,9 +200,17 @@ function classifyToolResult(toolCase: ToolSmokeCase, rpc: RpcResult): ToolSmokeR
       ? structured.verification
       : {};
   const verificationStatus = textField(result.verificationStatus) ?? textField(verification.status);
+  const detectedContentTypes = Array.isArray(result.detectedContentTypes)
+    ? result.detectedContentTypes.filter((value): value is string => typeof value === 'string')
+    : [];
+  const richTypeMissing = toolCase.expectedDetectedContentType !== undefined &&
+    !detectedContentTypes.includes(toolCase.expectedDetectedContentType);
+  const resultReportedFailure = result.ok === false;
   const semanticFailure =
     ['FAIL', 'PARTIAL', 'BLOCKED'].includes(toolStatus ?? '') ||
-    verificationStatus === 'source_fidelity_failed';
+    verificationStatus === 'source_fidelity_failed' ||
+    richTypeMissing ||
+    resultReportedFailure;
   const ok = rpc.status >= 200 && rpc.status < 300 && structured.ok === true && !error && !semanticFailure;
   const createdRemIds = collectIds(result, new Set(['createdRemId', 'rootCreatedRemId', 'createdRemIds']));
   const updatedRemIds = collectIds(result, new Set(['updatedRemId', 'updatedRemIds', 'targetRemId']));
@@ -210,7 +222,8 @@ function classifyToolResult(toolCase: ToolSmokeCase, rpc: RpcResult): ToolSmokeR
   const recommendedFix =
     textField(error?.recommendedFix) ||
     (isRecord(error?.details) ? textField(error.details.recommendedFix) ?? textField(error.details.recommendation) : undefined);
-  const errorCode = textField(error?.code);
+  const errorCode = textField(error?.code) ??
+    (richTypeMissing || resultReportedFailure ? 'LIVE_ASSERTION_FAILED' : undefined);
 
   return {
     tool: toolCase.tool,
@@ -227,7 +240,13 @@ function classifyToolResult(toolCase: ToolSmokeCase, rpc: RpcResult): ToolSmokeR
     updatedRemIds,
     deletedRemIds,
     verificationStatus: verificationStatus ?? (toolCase.tool.startsWith('verify_') ? (ok ? 'passed' : 'failed') : 'not_applicable'),
-    message: ok ? undefined : textField(error?.message) ?? rpc.text.slice(0, 500),
+    message: ok
+      ? undefined
+      : textField(error?.message) ?? (richTypeMissing
+        ? `Expected detected content type ${toolCase.expectedDetectedContentType}; received ${detectedContentTypes.join(', ') || 'none'}.`
+        : resultReportedFailure
+          ? 'Tool result reported ok=false; inspect structured verifier evidence.'
+          : rpc.text.slice(0, 500)),
     resultSummary: resultSummary(result),
   };
 }
@@ -261,14 +280,15 @@ function idempotency(label: string): string {
 }
 
 const tinyMarkdown = [
-  '# Live Tool Smoke Tiny Note',
+  '# Stage 9 Formula Fidelity Matrix',
   '',
-  '## Section',
-  '- Bullet one',
-  '- Inline math $E=mc^2$',
+  '## Formula Cases',
+  'STAGE9_INLINE_FORMULA: $E=mc^2$',
+  '- Parent bullet',
+  '  - STAGE9_NESTED_FORMULA: $qE=qvB$',
   '',
   '$$',
-  'F = ma',
+  'F_{stage9} = ma',
   '$$',
 ].join('\n');
 
@@ -285,6 +305,12 @@ const tinyBulkMarkdown = [
   'Formula: $E=mc^2$',
 ].join('\n');
 
+const stage10RunMarker = new Date().toISOString().slice(0, 10);
+const stage10BasicFront = `STAGE10_BASIC_FRONT_${stage10RunMarker}`;
+const stage10BasicBack = `STAGE10_BASIC_BACK_${stage10RunMarker}`;
+const stage10ClozeText = `STAGE10_CLOZE_${stage10RunMarker} contains TARGET.`;
+const stage10AdvancedFront = `STAGE10_MULTIPLE_CHOICE_${stage10RunMarker}`;
+
 function resultSummary(result: JsonRecord): JsonRecord {
   const summary: JsonRecord = {};
   for (const key of [
@@ -297,6 +323,18 @@ function resultSummary(result: JsonRecord): JsonRecord {
     'lastStep',
     'progress',
     'finalReport',
+    'remId',
+    'plainText',
+    'children',
+    'detectedContentTypes',
+    'richText',
+    'ok',
+    'cards',
+    'missingCards',
+    'duplicateCards',
+    'malformedCards',
+    'repairPlan',
+    'issues',
   ]) {
     if (result[key] !== undefined) {
       summary[key] = result[key];
@@ -367,6 +405,37 @@ const cases: ToolSmokeCase[] = [
     mutation: 'write',
     skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
     args: (state) => rootId(state) ? ({ parentRemId: rootId(state), markdownText: tinyMarkdown, duplicatePolicy: 'create_new', verifyAfterWrite: true, idempotencyKey: idempotency('markdown-create') }) : null,
+  },
+  {
+    tool: 'get_rem_tree',
+    category: 'formula_fidelity',
+    mutation: 'none',
+    skipReason: (state) => (state.createdMarkdownRootId ? null : 'Stage 9 formula note was not created.'),
+    args: (state) => state.createdMarkdownRootId ? ({ remId: state.createdMarkdownRootId, depth: 3 }) : null,
+  },
+  {
+    tool: 'get_rem_rich',
+    category: 'formula_fidelity',
+    mutation: 'none',
+    expectedDetectedContentType: 'inline_math',
+    skipReason: (state) => (state.formulaInlineRemId ? null : 'Stage 9 inline formula Rem ID was not resolved.'),
+    args: (state) => state.formulaInlineRemId ? ({ remId: state.formulaInlineRemId }) : null,
+  },
+  {
+    tool: 'get_rem_rich',
+    category: 'formula_fidelity',
+    mutation: 'none',
+    expectedDetectedContentType: 'math_block',
+    skipReason: (state) => (state.formulaBlockRemId ? null : 'Stage 9 block formula Rem ID was not resolved.'),
+    args: (state) => state.formulaBlockRemId ? ({ remId: state.formulaBlockRemId }) : null,
+  },
+  {
+    tool: 'get_rem_rich',
+    category: 'formula_fidelity',
+    mutation: 'none',
+    expectedDetectedContentType: 'inline_math',
+    skipReason: (state) => (state.formulaNestedRemId ? null : 'Stage 9 nested-bullet formula Rem ID was not resolved.'),
+    args: (state) => state.formulaNestedRemId ? ({ remId: state.formulaNestedRemId }) : null,
   },
   {
     tool: 'append_markdown_as_rem_tree',
@@ -449,32 +518,85 @@ const cases: ToolSmokeCase[] = [
   },
   { tool: 'preview_note_design_plan', category: 'complex_note', mutation: 'none', args: () => ({ title: 'Preview smoke', content: '## Section\n- Child', mode: 'create' }) },
   {
-    tool: 'create_basic_flashcard',
-    category: 'flashcard',
+    tool: 'create_rem',
+    category: 'card_fidelity',
     mutation: 'write',
     skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
-    args: (state) => rootId(state) ? ({ parentId: rootId(state), front: 'Smoke front', back: 'Smoke back', idempotencyKey: idempotency('basic-card') }) : null,
+    args: (state) => rootId(state) ? ({
+      parentId: rootId(state),
+      markdown: `Stage 10 Card Fidelity Matrix ${stage10RunMarker}`,
+      idempotencyKey: idempotency('stage10-card-root'),
+    }) : null,
+  },
+  {
+    tool: 'create_basic_flashcard',
+    category: 'card_fidelity',
+    mutation: 'write',
+    skipReason: (state) => (state.createdCardRootId ? null : 'Stage 10 card matrix root was not created.'),
+    args: (state) => state.createdCardRootId ? ({
+      parentId: state.createdCardRootId,
+      front: stage10BasicFront,
+      back: stage10BasicBack,
+      direction: 'both',
+      idempotencyKey: idempotency('basic-card'),
+    }) : null,
   },
   {
     tool: 'create_cloze_card',
-    category: 'flashcard',
+    category: 'card_fidelity',
     mutation: 'write',
-    skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
-    args: (state) => rootId(state) ? ({ parentId: rootId(state), text: 'The capital of France is Paris.', clozeText: 'Paris', idempotencyKey: idempotency('cloze-card') }) : null,
+    skipReason: (state) => (state.createdCardRootId ? null : 'Stage 10 card matrix root was not created.'),
+    args: (state) => state.createdCardRootId ? ({
+      parentId: state.createdCardRootId,
+      text: stage10ClozeText,
+      clozeText: 'TARGET',
+      direction: 'both',
+      idempotencyKey: idempotency('cloze-card'),
+    }) : null,
+  },
+  {
+    tool: 'create_multiple_choice_card',
+    category: 'card_fidelity',
+    mutation: 'write',
+    skipReason: (state) => (state.createdCardRootId ? null : 'Stage 10 card matrix root was not created.'),
+    args: (state) => state.createdCardRootId ? ({
+      parentId: state.createdCardRootId,
+      question: stage10AdvancedFront,
+      choices: ['alpha', 'beta', 'gamma'],
+      correctChoice: 'alpha',
+      direction: 'forward',
+      idempotencyKey: idempotency('multiple-choice-card'),
+    }) : null,
+  },
+  {
+    tool: 'verify_card_set',
+    category: 'card_fidelity',
+    mutation: 'none',
+    skipReason: (state) => (state.createdCardRootId ? null : 'Stage 10 card matrix root was not created.'),
+    args: (state) => state.createdCardRootId ? ({
+      rootRemId: state.createdCardRootId,
+      expectedCards: [
+        { front: stage10BasicFront, back: stage10BasicBack, cardType: 'basic' },
+        { front: stage10ClozeText, cardType: 'cloze' },
+        { front: stage10AdvancedFront, cardType: 'multiple_choice' },
+      ],
+      maxCards: 10,
+      maxNodes: 50,
+      maxDepth: 2,
+    }) : null,
   },
   {
     tool: 'create_flashcards_from_markdown',
     category: 'flashcard',
     mutation: 'write',
     skipReason: (state) => (rootId(state) ? null : 'Missing disposable parent Rem ID.'),
-    args: (state) => rootId(state) ? ({ parentId: rootId(state), markdownText: '- Q: Smoke question\n  A: Smoke answer', marker: 'qa', maxCards: 3, idempotencyKey: idempotency('markdown-cards') }) : null,
-  },
-  {
-    tool: 'verify_card_set',
-    category: 'flashcard',
-    mutation: 'none',
-    skipReason: (state) => (targetId(state) ? null : 'Missing created/target Rem ID.'),
-    args: (state) => targetId(state) ? ({ rootRemId: targetId(state), maxCards: 10 }) : null,
+    args: (state) => rootId(state) ? ({
+      parentId: rootId(state),
+      markdownText: 'Smoke question::Smoke answer\nSmoke cloze {{target}}.',
+      marker: 'both',
+      maxCards: 3,
+      idempotencyKey: idempotency('markdown-cards'),
+    }) : null,
   },
   {
     tool: 'set_rem_heading_level',
@@ -506,10 +628,27 @@ const cases: ToolSmokeCase[] = [
   },
   {
     tool: 'apply_style_plan',
-    category: 'style',
+    category: 'style_fidelity',
     mutation: 'write',
     skipReason: (state) => (targetId(state) ? null : 'Missing target Rem ID.'),
-    args: (state) => targetId(state) ? ({ operations: [{ remId: targetId(state), kind: 'text_color', color: 'blue' }], verifyAfterWrite: true, idempotencyKey: idempotency('style-plan') }) : null,
+    args: (state) => targetId(state) ? ({
+      operations: [{ remId: targetId(state), type: 'text_color_span', text: 'Live', color: 'blue' }],
+      verifyAfterWrite: true,
+      idempotencyKey: idempotency('style-plan'),
+    }) : null,
+  },
+  {
+    tool: 'verify_note_design',
+    category: 'style_fidelity',
+    mutation: 'none',
+    skipReason: (state) => (targetId(state) ? null : 'Missing target Rem ID.'),
+    args: (state) => targetId(state) ? ({
+      rootRemId: targetId(state),
+      expectations: [{
+        remId: targetId(state),
+        textColorSpans: [{ text: 'Live', color: 'blue' }],
+      }],
+    }) : null,
   },
   {
     tool: 'repair_note_design',
@@ -551,11 +690,27 @@ function updateStateFromResult(state: SmokeState, result: ToolSmokeResult) {
     state.bulkJobId = result.resultSummary.jobId;
   }
   if (firstCreated) {
-    if (result.tool === 'create_rem') state.createdRemId = firstCreated;
-    if (result.tool === 'create_note_from_markdown_tree') state.createdMarkdownRootId = firstCreated;
-    if (result.tool === 'create_basic_flashcard' || result.tool === 'create_flashcards_from_markdown') {
+    if (result.tool === 'create_rem' && result.category === 'card_fidelity') {
       state.createdCardRootId = firstCreated;
+    } else if (result.tool === 'create_rem') {
+      state.createdRemId = firstCreated;
     }
+    if (result.tool === 'create_note_from_markdown_tree') state.createdMarkdownRootId = firstCreated;
+  }
+  if (result.tool === 'get_rem_tree' && result.resultSummary) {
+    const findRemId = (value: unknown, marker: string): string | undefined => {
+      if (!isRecord(value)) return undefined;
+      if (textField(value.plainText)?.includes(marker)) return textField(value.remId);
+      if (!Array.isArray(value.children)) return undefined;
+      for (const child of value.children) {
+        const found = findRemId(child, marker);
+        if (found) return found;
+      }
+      return undefined;
+    };
+    state.formulaInlineRemId = findRemId(result.resultSummary, 'STAGE9_INLINE_FORMULA');
+    state.formulaBlockRemId = findRemId(result.resultSummary, 'F_{stage9}');
+    state.formulaNestedRemId = findRemId(result.resultSummary, 'STAGE9_NESTED_FORMULA');
   }
 }
 
@@ -627,7 +782,7 @@ function markdownReport(results: ToolSmokeResult[], matrix: ToolMatrixEntry[]): 
     ].join(' | ')).map((row) => `| ${row} |`),
     '',
   ];
-  return `${lines.join('\n')}\n`;
+  return `${lines.join('\n').trimEnd()}\n`;
 }
 
 function writeSmokeReport(report: JsonRecord) {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type {
   BridgePluginRegister,
@@ -82,8 +83,8 @@ async function createApprovedPluginRegistration(
 ): Promise<BridgePluginRegister> {
   const create = await postJson(`${baseUrl}/pairing/create`, {
     oauthState: `compat-routing-${suffix}`,
-    codeChallenge: `compat-verifier-${suffix}`,
-    codeChallengeMethod: 'plain',
+    codeChallenge: createHash('sha256').update(`compat-verifier-${suffix}`).digest('base64url'),
+    codeChallengeMethod: 'S256',
     clientId: `compat-client-${suffix}`,
     clientName: 'Connector Compatibility Smoke',
     redirectUri,

@@ -194,6 +194,7 @@ src/widgets/components/BridgeWidgetPieces.tsx
 src/widgets/bridge-panel/command-intents.ts
 src/widgets/bridge-panel/options.ts
 src/style.css
+src/index.css
 src/bridge/handlers.ts
 src/bridge/handlers/approval.ts
 src/bridge/handlers/scope.ts
@@ -361,6 +362,7 @@ src/remnote/write/markdownImportExecutor.ts
 src/widgets/index.tsx
 src/widgets/bridge-status.tsx
 src/style.css
+src/index.css
 graphify-out/GRAPH_REPORT.md
 ```
 
@@ -1204,6 +1206,7 @@ src/widgets/components/BridgeWidgetPieces.tsx
 src/widgets/bridge-panel/command-intents.ts
 src/widgets/bridge-panel/options.ts
 src/style.css
+src/index.css
 public/logo.svg
 ```
 
@@ -1888,7 +1891,7 @@ Goal 2.7: update UI auth state if backend semantics change.
 Objective: keep plugin UI labels aligned with server state.
 Target files: `src/widgets/bridge-status.tsx`, `src/widgets/index.tsx`, `src/bridge/status.ts`.
 Likely change: adjust labels, pairing state, stale state, and reconnect copy.
-Dependent files to re-check: `src/style.css`, `src/widgets/components/BridgeWidgetPieces.tsx`.
+Dependent files to re-check: `src/index.css`, `src/widgets/components/BridgeWidgetPieces.tsx`.
 Required skills: figma-create-design-system-rules, remnote-mcp-workflow-auditor.
 Evidence: `npm run build`, manual UI inspection if possible.
 Done rule: UI does not claim paired/connected unless backend state proves it.
@@ -2738,7 +2741,7 @@ Goal 14.2: fix layout overlap/spacing.
 
 ```text
 Objective: prevent boxes, tokens, URLs, and status panels from overlapping.
-Target files: `src/style.css`, `src/widgets/components/BridgeWidgetPieces.tsx`.
+Target files: `src/index.css`, `src/widgets/components/BridgeWidgetPieces.tsx`.
 Likely change: grid/flex constraints, wrapping, max-width, overflow, spacing.
 Dependent files to re-check: `src/widgets/bridge-status.tsx`.
 Required skills: figma-create-design-system-rules, caveman.
@@ -2752,7 +2755,7 @@ Goal 14.3: improve error/progress display.
 Objective: user sees what is pending, blocked, failed, or connected.
 Target files: `src/widgets/bridge-status.tsx`, `src/widgets/index.tsx`.
 Likely change: status grouping, error copy, progress rows, advanced details collapse.
-Dependent files to re-check: `src/style.css`.
+Dependent files to re-check: `src/index.css`.
 Required skills: remnote-mcp-workflow-auditor, figma-create-design-system-rules.
 Evidence: UI build and state screenshots if possible.
 Done rule: no confusing "connected" when paired/plugin state disagrees.
@@ -2762,7 +2765,7 @@ Goal 14.4: separate danger and auth controls.
 
 ```text
 Objective: dangerous tier/delete and tokens are visually separated.
-Target files: `src/widgets/index.tsx`, `src/style.css`.
+Target files: `src/widgets/index.tsx`, `src/index.css`.
 Likely change: warning styling, section order, labels.
 Dependent files to re-check: `server/src/tool-policy.ts` for names.
 Required skills: security-threat-model, figma-create-design-system-rules.
@@ -3814,6 +3817,7 @@ src/widgets/bridge-status.tsx
 src/widgets/components/BridgeWidgetPieces.tsx
 src/widgets/bridge-panel/
 src/style.css
+src/index.css
 ```
 
 Use:
@@ -4061,6 +4065,17 @@ No P0/P1 issue remains.
 Live evidence is recent and exact.
 Docs match current behavior.
 Final verdict is strict.
+```
+
+Current audit result, 2026-07-12:
+
+```text
+All 99 Stage 1-18 goals were executed and audited.
+Local final gate: 27/27 commands PASS.
+Current live gate: BLOCKED because the MCP endpoint/plugin/disposable root are unavailable.
+Mandated six-worker deep scan: BLOCKED because this runtime exposes three usable worker slots.
+Exact verdict: PARTIAL_LIVE_PROOF_ONLY.
+Canonical evidence: docs/remnote-mcp-repair-and-testing.md, Stage 18 Final Release Audit.
 ```
 
 ## 20. Live Testing Protocol

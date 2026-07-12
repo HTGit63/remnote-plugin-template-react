@@ -40,7 +40,7 @@ export function hasValidBearerToken(req: IncomingMessage, token: string): boolea
   return safeTokenEquals(req.headers['x-remnote-bridge-token'], token);
 }
 
-function safeTokenEquals(actual: string | string[] | undefined, expected: string): boolean {
+export function safeTokenEquals(actual: string | string[] | undefined, expected: string): boolean {
   if (typeof actual !== 'string') {
     return false;
   }
@@ -48,6 +48,14 @@ function safeTokenEquals(actual: string | string[] | undefined, expected: string
   const actualBuffer = Buffer.from(actual);
   const expectedBuffer = Buffer.from(expected);
   return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+export function hasValidHeaderSecret(
+  req: IncomingMessage,
+  headerName: string,
+  expected: string
+): boolean {
+  return Boolean(expected) && safeTokenEquals(req.headers[headerName], expected);
 }
 
 export function writeJson(res: ServerResponse, statusCode: number, body: unknown) {
@@ -97,12 +105,17 @@ export function readJsonBody(req: IncomingMessage, maxBodyBytes: number): Promis
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let rejected = false;
 
     req.on('data', (chunk: Buffer) => {
+      if (rejected) {
+        return;
+      }
       total += chunk.length;
       if (total > maxBodyBytes) {
+        rejected = true;
+        chunks.length = 0;
         reject(new Error('Request body too large.'));
-        req.destroy();
         return;
       }
 
@@ -110,6 +123,9 @@ export function readJsonBody(req: IncomingMessage, maxBodyBytes: number): Promis
     });
 
     req.on('end', () => {
+      if (rejected) {
+        return;
+      }
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) {
         resolve(undefined);

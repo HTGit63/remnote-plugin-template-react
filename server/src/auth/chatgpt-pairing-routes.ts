@@ -5,7 +5,7 @@ import {
   isHostedPairingEnabled,
   type CompanionServerConfig,
 } from '../config.js';
-import { readJsonBody, writeJson, writeText } from '../http.js';
+import { hasValidHeaderSecret, readJsonBody, writeJson, writeText } from '../http.js';
 import { hashToken } from '../storage/crypto-utils.js';
 import type {
   ChatGptAccessScope,
@@ -325,6 +325,10 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
 
   if (url.pathname === '/pairing/create' && req.method === 'POST') {
     const body = (await readJsonBody(req, config.maxBodyBytes)) as Record<string, unknown> | undefined;
+    if (body?.codeChallengeMethod && body.codeChallengeMethod !== 'S256') {
+      writeJson(res, 400, { error: 'Only S256 PKCE is supported.' });
+      return true;
+    }
     const now = new Date();
     const pairingId = randomUUID();
     const pairingCode = generatePairingCode();
@@ -334,7 +338,7 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       pairingCodeHash: hashToken(pairingCode),
       oauthState: typeof body?.oauthState === 'string' ? body.oauthState : randomSecret(12),
       codeChallenge: typeof body?.codeChallenge === 'string' ? body.codeChallenge : undefined,
-      codeChallengeMethod: body?.codeChallengeMethod === 'plain' ? 'plain' : 'S256',
+      codeChallengeMethod: 'S256',
       clientId: typeof body?.clientId === 'string' ? body.clientId : 'manual-pairing',
       clientName: typeof body?.clientName === 'string' ? body.clientName : 'ChatGPT session',
       chatgptDisplayName: typeof body?.chatgptDisplayName === 'string' ? body.chatgptDisplayName : undefined,
@@ -484,17 +488,17 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
     const body = (await readJsonBody(req, config.maxBodyBytes)) as Record<string, unknown> | undefined;
     const pairingId = String(body?.pairingId ?? '').trim();
     const sessionSecret = String(body?.sessionSecret ?? '').trim();
-    const session = pairingId
-      ? await storage.getChatGptPairingSessionById(pairingId)
-      : sessionSecret
-        ? await storage.getChatGptPairingSessionByPluginSessionSecret(sessionSecret)
-        : null;
-    if (!session) {
-      writeJson(res, 404, { error: 'Pairing session not found.' });
+    if (!sessionSecret) {
+      writeJson(res, 401, { error: 'Plugin session secret is required.' });
       return true;
     }
-    if (sessionSecret && session.pluginSessionSecretHash !== hashToken(sessionSecret)) {
+    const session = await storage.getChatGptPairingSessionByPluginSessionSecret(sessionSecret);
+    if (!session) {
       writeJson(res, 403, { error: 'Invalid plugin session secret.' });
+      return true;
+    }
+    if (pairingId && pairingId !== session.pairingId) {
+      writeJson(res, 403, { error: 'Pairing identity does not match plugin session secret.' });
       return true;
     }
     await storage.updateChatGptPairingSession(session.pairingId, {
@@ -510,10 +514,9 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
   }
 
   if (url.pathname === '/debug/status' && req.method === 'GET') {
-    const providedSecret = req.headers['x-admin-debug-secret'] || url.searchParams.get('admin_debug_secret') || '';
     const secretOk =
-      config.nodeEnv === 'development' ||
-      (config.adminDebugSecret && typeof providedSecret === 'string' && providedSecret === config.adminDebugSecret);
+      (config.deploymentMode === 'local' && config.nodeEnv === 'development') ||
+      hasValidHeaderSecret(req, 'x-admin-debug-secret', config.adminDebugSecret);
     if (!secretOk) {
       writeText(res, 404, 'Not Found');
       return true;

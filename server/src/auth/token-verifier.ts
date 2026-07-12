@@ -59,7 +59,7 @@ export async function authorizeHostedMcpRequest(
       };
     }
 
-    if (pairingSession.status !== 'approved' && pairingSession.status !== 'connected') {
+    if (!['approved', 'connected', 'disconnected'].includes(pairingSession.status)) {
       return {
         ok: false,
         statusCode: 401,

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type {
   BridgePluginRegister,
@@ -107,8 +108,8 @@ async function createApprovedPluginRegistration(
 ): Promise<{ register: BridgePluginRegister; sessionSecret: string }> {
   const create = await postJson(`${baseUrl}/pairing/create`, {
     oauthState: `codex-pairing-${suffix}`,
-    codeChallenge: `codex-pairing-verifier-${suffix}`,
-    codeChallengeMethod: 'plain',
+    codeChallenge: createHash('sha256').update(`codex-pairing-verifier-${suffix}`).digest('base64url'),
+    codeChallengeMethod: 'S256',
     clientId: `codex-pairing-client-${suffix}`,
     clientName: 'Codex Pairing Smoke',
     redirectUri,

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -585,5 +585,18 @@ describe('AGENTS staged repair simulated live gate', () => {
     expect(tools).not.toContain('verify_card_set');
     expect(simulated15).toHaveLength(15);
     expect(simulated15.every((status) => status.startsWith('simulated_pass') || status === 'simulated_ready_for_real_live_rerun')).toBe(true);
+  });
+
+  test('Stage 11 live style proof uses valid operation schema and an explicit gate', () => {
+    const smokeSource = readFileSync(new URL('../server/src/live-tool-smoke.ts', import.meta.url), 'utf8');
+    const regressionSource = readFileSync(new URL('../server/src/live-tool-regression.ts', import.meta.url), 'utf8');
+    const styleCase = /tool: 'apply_style_plan'[\s\S]{0,900}?\n  \},/.exec(smokeSource)?.[0] ?? '';
+
+    expect(styleCase).toContain("category: 'style_fidelity'");
+    expect(styleCase).toContain("type: 'text_color_span'");
+    expect(styleCase).not.toContain('kind:');
+    expect(styleCase).toContain('verifyAfterWrite: true');
+    expect(regressionSource).toContain('styleBlocked');
+    expect(regressionSource).toContain('Stage 11 style matrix');
   });
 });

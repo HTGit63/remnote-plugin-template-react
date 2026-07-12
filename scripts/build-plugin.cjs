@@ -40,13 +40,20 @@ function cleanupTemporaryReadme() {
 }
 
 async function main() {
-  runNodeScript('node_modules/typescript/bin/tsc');
+  const validateOnly = process.argv.includes('--validate-only');
+  if (!validateOnly) {
+    runNodeScript('node_modules/typescript/bin/tsc');
+  }
 
   try {
     ensureTemporaryReadmeForSdkValidation();
     runNodeScript('node_modules/@remnote/plugin-sdk/scripts/index.js', ['validate']);
   } finally {
     cleanupTemporaryReadme();
+  }
+
+  if (validateOnly) {
+    return;
   }
 
   rmSync(path.join(rootDir, 'dist'), { force: true, recursive: true });

@@ -18,7 +18,7 @@
     "test:pairing": "tsx src/pairing-smoke.ts",
     "test:routing": "tsx src/routing-smoke.ts",
     "test:connector-compat-routing": "tsx src/connector-compat-routing-smoke.ts",
-    "test:security": "tsx src/auth-smoke.ts",
+    "test:security": "tsx src/auth-smoke.ts && tsx src/security-auth-regression-smoke.ts",
     "test:boundaries": "tsx src/boundary-smoke.ts",
     "test:tools-core": "tsx src/area1-smoke.ts core && tsx src/area3-certification.ts core",
     "test:tools-advanced": "tsx src/area1-smoke.ts advanced && tsx src/area3-certification.ts advanced",

@@ -186,12 +186,20 @@ try {
   }
 
   const missing = await mcpToolCall(mcpUrl, 'get_bridge_status', {});
-  if (missing.response.status !== 401 || !missing.text.includes('Missing bearer token')) {
+  if (
+    missing.response.status !== 200 ||
+    !missing.text.includes('Missing bearer token') ||
+    !missing.text.includes('mcp/www_authenticate')
+  ) {
     throw new Error(`Missing Codex bearer should be rejected: ${missing.response.status} ${missing.text}`);
   }
 
   const invalid = await mcpToolCall(mcpUrl, 'get_bridge_status', {}, 'wrong-codex-token');
-  if (invalid.response.status !== 401 || !invalid.text.includes('Invalid bearer token')) {
+  if (
+    invalid.response.status !== 200 ||
+    !invalid.text.includes('Invalid bearer token') ||
+    !invalid.text.includes('mcp/www_authenticate')
+  ) {
     throw new Error(`Invalid Codex bearer should be rejected: ${invalid.response.status} ${invalid.text}`);
   }
 
@@ -209,21 +217,38 @@ try {
     sourceFilePath: allowedSourceFile,
     targetRootId: 'codex-file-root',
   });
-  if (fileWithoutBearer.response.status !== 401 || !fileWithoutBearer.text.includes('Missing bearer token')) {
+  if (
+    fileWithoutBearer.response.status !== 200 ||
+    !fileWithoutBearer.text.includes('Missing bearer token') ||
+    !fileWithoutBearer.text.includes('mcp/www_authenticate')
+  ) {
     throw new Error(`Codex file handoff accepted missing bearer: ${fileWithoutBearer.response.status} ${fileWithoutBearer.text}`);
   }
 
-  const allowedFile = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
+  const hiddenDanger = await mcpToolCall(mcpUrl, 'delete_rem_by_id', {
+    remId: 'codex-must-not-delete',
+    dryRun: false,
+  }, codexToken);
+  assertNoSecret('Codex hidden danger tool block', hiddenDanger.text);
+  if (
+    hiddenDanger.response.status !== 403 ||
+    !/TRUSTED_WRITE_REQUIRED|INSUFFICIENT_SCOPE|TOOL_HIDDEN_BY_PROFILE/.test(hiddenDanger.text) ||
+    hiddenDanger.text.includes('deletedRemId')
+  ) {
+    throw new Error(`Codex normal profile exposed danger tool: ${hiddenDanger.response.status} ${hiddenDanger.text}`);
+  }
+
+  const unlinkedFile = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
     sourceFilePath: allowedSourceFile,
     targetRootId: 'codex-file-root',
   }, codexToken);
-  assertNoSecret('Codex allowed file handoff', allowedFile.text);
+  assertNoSecret('Codex unlinked file handoff', unlinkedFile.text);
   if (
-    allowedFile.response.status !== 200 ||
-    !allowedFile.text.includes('File-backed note import plan created.') ||
-    !allowedFile.text.includes('"status":"PASS"')
+    unlinkedFile.response.status !== 200 ||
+    !unlinkedFile.text.includes('SOURCE_FILE_CODEX_PAIRING_REQUIRED') ||
+    unlinkedFile.text.includes('File-backed note import plan created.')
   ) {
-    throw new Error(`Codex allowed file handoff failed: ${allowedFile.response.status} ${allowedFile.text}`);
+    throw new Error(`Unlinked Codex file handoff was not denied: ${unlinkedFile.response.status} ${unlinkedFile.text}`);
   }
 
   const deniedFile = await mcpToolCall(mcpUrl, 'plan_note_import_from_file', {
@@ -233,7 +258,7 @@ try {
   assertNoSecret('Codex denied file handoff', deniedFile.text);
   if (
     deniedFile.response.status !== 200 ||
-    !deniedFile.text.includes('SOURCE_FILE_OUTSIDE_ALLOWED_ROOTS') ||
+    !deniedFile.text.includes('SOURCE_FILE_CODEX_PAIRING_REQUIRED') ||
     deniedFile.text.includes('PLUGIN_NOT_CONNECTED')
   ) {
     throw new Error(`Codex unsafe file path crossed root boundary: ${deniedFile.response.status} ${deniedFile.text}`);

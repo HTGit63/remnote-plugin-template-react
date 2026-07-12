@@ -46,8 +46,43 @@ function acceptanceGate(report: JsonRecord) {
   const bulkImportSkipped = bulkImportResults.filter((result) => result.status === 'skipped');
   const bulkImportFailed = failed.filter((result) => result.category === 'bulk_import');
   const tinyBulkBlocked = bulkImportResults.length === 0 || bulkImportSkipped.length > 0;
+  const formulaResults = results.filter((result) => result.category === 'formula_fidelity');
+  const formulaRichResults = formulaResults.filter((result) => result.tool === 'get_rem_rich');
+  const formulaFailed = failed.filter((result) => result.category === 'formula_fidelity');
+  const formulaBlocked = formulaRichResults.filter((result) => result.status === 'passed').length < 3;
+  const cardResults = results.filter((result) => result.category === 'card_fidelity');
+  const cardFailed = failed.filter((result) => result.category === 'card_fidelity');
+  const requiredCardTools = [
+    'create_basic_flashcard',
+    'create_cloze_card',
+    'create_multiple_choice_card',
+    'verify_card_set',
+  ];
+  const cardBlocked = requiredCardTools.some((tool) =>
+    !cardResults.some((result) => result.tool === tool && result.status === 'passed')
+  );
+  const styleResults = results.filter((result) => result.category === 'style_fidelity');
+  const styleFailed = failed.filter((result) => result.category === 'style_fidelity');
+  const requiredStyleTools = ['apply_style_plan', 'verify_note_design'];
+  const styleBlocked = requiredStyleTools.some((tool) =>
+    !styleResults.some((result) => result.tool === tool && result.status === 'passed')
+  );
+  const blockReasons = [
+    ...(tinyBulkBlocked
+      ? ['Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin.']
+      : []),
+    ...(formulaBlocked
+      ? ['Stage 9 formula matrix requires a disposable parent, connected plugin, created formula note, and three passing get_rem_rich cases (inline, block, nested bullet).']
+      : []),
+    ...(cardBlocked
+      ? ['Stage 10 card matrix requires a disposable parent, connected plugin, passing basic/cloze/multiple-choice writes, and a passing expected-card readback verification.']
+      : []),
+    ...(styleBlocked
+      ? ['Stage 11 style matrix requires a disposable parent, connected plugin, a passing apply_style_plan write, and passing verify_note_design readback.']
+      : []),
+  ];
   return {
-    ok: !reportMissing && failed.length === 0 && !tinyBulkBlocked,
+    ok: !reportMissing && failed.length === 0 && !tinyBulkBlocked && !formulaBlocked && !cardBlocked && !styleBlocked,
     reportMissing,
     failedToolCount: failed.length,
     gatewayFailureCount: gatewayFailures.length,
@@ -60,9 +95,31 @@ function acceptanceGate(report: JsonRecord) {
       verificationStatus: result.verificationStatus,
       message: result.message,
     })),
-    blockReason: tinyBulkBlocked
-      ? 'Stage 6 tiny bulk live retest requires REMNOTE_LIVE_TOOL_PARENT_ID or REMNOTE_LIVE_TEST_PARENT_ID and a connected plugin.'
-      : undefined,
+    formulaFailureCount: formulaFailed.length,
+    formulaBlocked,
+    formulaStatuses: formulaResults.map((result) => ({
+      tool: result.tool,
+      status: result.status,
+      verificationStatus: result.verificationStatus,
+      message: result.message,
+    })),
+    cardFailureCount: cardFailed.length,
+    cardBlocked,
+    cardStatuses: cardResults.map((result) => ({
+      tool: result.tool,
+      status: result.status,
+      verificationStatus: result.verificationStatus,
+      message: result.message,
+    })),
+    styleFailureCount: styleFailed.length,
+    styleBlocked,
+    styleStatuses: styleResults.map((result) => ({
+      tool: result.tool,
+      status: result.status,
+      verificationStatus: result.verificationStatus,
+      message: result.message,
+    })),
+    blockReason: blockReasons.length ? blockReasons.join(' ') : undefined,
     passedSystemReadCount: passedByCategory.get('system/read') ?? 0,
     passedSimpleWriteCount: passedByCategory.get('simple_write') ?? 0,
     dangerousRealDeleteRan: results.some((result) =>
@@ -107,7 +164,7 @@ writeFileSync(regressionJsonPath, `${JSON.stringify(regressionReport, null, 2)}\
 const smokeMarkdown = existsSync(smokeMarkdownPath) ? readFileSync(smokeMarkdownPath, 'utf8') : '';
 writeFileSync(
   regressionMarkdownPath,
-  [
+  `${[
     '# RemnoteMCP Live Tool Regression',
     '',
     `Generated: ${regressionReport.generatedAt}`,
@@ -121,6 +178,12 @@ writeFileSync(
     `- Structured/markdown failures: ${gate.structuredFailureCount}`,
     `- Bulk import failures: ${gate.bulkImportFailureCount}`,
     `- Tiny bulk blocked: ${gate.tinyBulkBlocked ? 'yes' : 'no'}`,
+    `- Formula failures: ${gate.formulaFailureCount}`,
+    `- Formula matrix blocked: ${gate.formulaBlocked ? 'yes' : 'no'}`,
+    `- Card failures: ${gate.cardFailureCount}`,
+    `- Card matrix blocked: ${gate.cardBlocked ? 'yes' : 'no'}`,
+    `- Style failures: ${gate.styleFailureCount}`,
+    `- Style matrix blocked: ${gate.styleBlocked ? 'yes' : 'no'}`,
     gate.blockReason ? `- Block reason: ${gate.blockReason}` : '',
     `- System/read passed: ${gate.passedSystemReadCount}`,
     `- Simple write passed: ${gate.passedSimpleWriteCount}`,
@@ -129,7 +192,7 @@ writeFileSync(
     '## Underlying Smoke Report',
     '',
     smokeMarkdown || 'No smoke markdown report produced.',
-  ].join('\n')
+  ].join('\n').trimEnd()}\n`
 );
 
 console.log(JSON.stringify(regressionReport, null, 2));

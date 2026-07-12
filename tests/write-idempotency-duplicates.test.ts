@@ -119,6 +119,45 @@ describe('write idempotency and duplicate protection', () => {
     expect(visibleText).toEqual(expect.arrayContaining(['Tiny Markdown Write Test', 'Section A', 'Section B']));
     expect(visibleText).not.toEqual(expect.arrayContaining(['Size', 'H1', 'H2', 'H3', 'normal']));
   });
+
+  test('markdown readback rejects formulas flattened into plain text', async () => {
+    const fake = new FakePlugin();
+    fake.flattenMathToPlainText = true;
+    const parent = fake.addRem('formula-parent', 'Formula parent');
+
+    await expect(createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      parentRemId: parent._id,
+      markdownText: [
+        '# Formula Fidelity',
+        '',
+        '## Formula Section',
+        '',
+        'Inline formula: $E=mc^2$.',
+        '',
+        '$$',
+        'F = ma',
+        '$$',
+      ].join('\n'),
+      mode: 'create_child',
+      duplicatePolicy: 'create_new',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:flattened-formula-readback',
+      },
+    })).rejects.toMatchObject({
+      code: 'PARTIAL_FAILURE',
+      details: expect.objectContaining({
+        originalDetails: expect.objectContaining({
+          verification: expect.objectContaining({
+            structureMismatches: expect.arrayContaining([
+              expect.stringMatching(/math span count mismatch/i),
+            ]),
+          }),
+        }),
+      }),
+    });
+  });
 });
 
 describe('card lifecycle simulation', () => {

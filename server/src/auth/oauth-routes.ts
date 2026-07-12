@@ -50,9 +50,25 @@ export function getExpectedMcpResource(req: IncomingMessage, config: CompanionSe
   return (config.mcpResource || getRequestBaseUrl(req, config)).replace(/\/+$/, '');
 }
 
-export function buildOauthChallenge(req: IncomingMessage, config: CompanionServerConfig, scope: string): string {
+function oauthChallengeValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+export function buildOauthChallenge(
+  req: IncomingMessage,
+  config: CompanionServerConfig,
+  scope: string,
+  error?: 'invalid_token' | 'insufficient_scope',
+  errorDescription?: string
+): string {
   const baseUrl = getRequestBaseUrl(req, config);
-  return `Bearer resource_metadata="${baseUrl}/.well-known/oauth-protected-resource", scope="${scope}"`;
+  const parameters = [
+    `resource_metadata="${oauthChallengeValue(`${baseUrl}/.well-known/oauth-protected-resource`)}"`,
+    `scope="${oauthChallengeValue(scope)}"`,
+    ...(error ? [`error="${error}"`] : []),
+    ...(errorDescription ? [`error_description="${oauthChallengeValue(errorDescription)}"`] : []),
+  ];
+  return `Bearer ${parameters.join(', ')}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,8 +95,8 @@ function parseScopes(scope: string | null | undefined): ScopeGrant[] {
 }
 
 function verifyPkce(verifier: string, challenge: string, method: 'S256' | 'plain' = 'S256'): boolean {
-  if (method === 'plain') {
-    return verifier === challenge;
+  if (method !== 'S256') {
+    return false;
   }
   const calculated = createHash('sha256').update(verifier).digest('base64url');
   return calculated === challenge;
@@ -144,16 +160,25 @@ async function readFormBody(req: IncomingMessage, maxBodyBytes: number): Promise
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let total = 0;
+    let rejected = false;
     req.on('data', (chunk: Buffer) => {
+      if (rejected) {
+        return;
+      }
       total += chunk.length;
       if (total > maxBodyBytes) {
+        rejected = true;
+        chunks.length = 0;
         reject(new Error('Request body too large.'));
-        req.destroy();
         return;
       }
       chunks.push(chunk);
     });
-    req.on('end', () => resolve(new URLSearchParams(Buffer.concat(chunks).toString('utf8'))));
+    req.on('end', () => {
+      if (!rejected) {
+        resolve(new URLSearchParams(Buffer.concat(chunks).toString('utf8')));
+      }
+    });
     req.on('error', reject);
   });
 }
@@ -223,7 +248,7 @@ export async function handleOAuthRoute(
       registration_endpoint: `${baseUrl}/oauth/register`,
       response_types_supported: ['code'],
       grant_types_supported: ['authorization_code', 'refresh_token'],
-      code_challenge_methods_supported: ['S256', 'plain'],
+      code_challenge_methods_supported: ['S256'],
       token_endpoint_auth_methods_supported: ['none'],
       scopes_supported: SUPPORTED_SCOPES,
     });
@@ -276,7 +301,7 @@ export async function handleOAuthRoute(
       responseType !== 'code' ||
       !redirectUri ||
       !codeChallenge ||
-      (codeChallengeMethod !== 'S256' && codeChallengeMethod !== 'plain') ||
+      codeChallengeMethod !== 'S256' ||
       !state
     ) {
       writeJson(res, 400, { error: 'invalid_request' });
@@ -369,7 +394,12 @@ export async function handleOAuthRoute(
     }
 
     let user = (await validateDashboardSession(req, storage))?.user ?? null;
-    if (!user && config.allowNoToken && url.searchParams.get('login_hint') === 'local-dev') {
+    if (
+      !user &&
+      config.deploymentMode === 'local' &&
+      config.allowNoToken &&
+      url.searchParams.get('login_hint') === 'local-dev'
+    ) {
       user = await getOrCreateLocalDevUser(storage);
     }
     if (!user) {

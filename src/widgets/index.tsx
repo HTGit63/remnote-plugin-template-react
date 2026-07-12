@@ -49,22 +49,22 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   await plugin.settings.registerStringSetting({
     id: 'bridge-token',
-    title: 'Local Bridge Token',
-    description: 'Local developer mode only. Hosted Render/ChatGPT pairing does not use this token.',
+    title: 'SENSITIVE LOCAL AUTH — Bridge Token',
+    description: 'Local developer mode only. Never paste this token into ChatGPT or diagnostics. Hosted OAuth pairing does not use it.',
     defaultValue: '',
   });
 
   await plugin.settings.registerDropdownSetting({
     id: 'bridge-permission-mode',
-    title: 'Bridge Operation Tier',
-    description: 'Controls whether incoming bridge requests can read, create, modify, or use delete approval.',
+    title: 'Bridge Writing Access',
+    description: 'Normal modes are listed first. Elevated/delete modes are explicitly marked and should be changed in the widget Danger Zone.',
     defaultValue: 'read_create_modify',
     options: [
       { key: 'read_only', label: 'Read Only', value: 'read_only' },
       { key: 'read_create', label: 'Read + Create', value: 'read_create' },
       { key: 'read_create_modify', label: 'Read + Create + Modify', value: 'read_create_modify' },
-      { key: 'full_control_delete_approval', label: 'Full Control With Delete Approval', value: 'full_control_delete_approval' },
-      { key: 'danger_zone', label: 'Danger Zone', value: 'danger_zone' },
+      { key: 'full_control_delete_approval', label: 'ELEVATED — Full Control With Delete Approval', value: 'full_control_delete_approval' },
+      { key: 'danger_zone', label: 'DANGER — Destructive Mode', value: 'danger_zone' },
     ],
   });
 
@@ -94,14 +94,14 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.settings.registerDropdownSetting({
     id: 'bridge-tool-access-tier',
     title: 'Bridge Tool Access Tier',
-    description: 'Controls which ChatGPT tools are visible without changing the server URL or token.',
+    description: 'Controls visible ChatGPT tools. Danger is destructive and is isolated behind confirmation in the widget.',
     defaultValue: 'note_writer',
     options: [
       { key: 'basic', label: 'Basic', value: 'basic' },
       { key: 'note_writer', label: 'Note Writer', value: 'note_writer' },
       { key: 'power_user', label: 'Power User', value: 'power_user' },
       { key: 'developer', label: 'Developer', value: 'developer' },
-      { key: 'danger', label: 'Danger', value: 'danger' },
+      { key: 'danger', label: 'DANGER — Destructive Tools', value: 'danger' },
     ],
   });
 

@@ -42,11 +42,13 @@ export function BridgeTaskBanner({
   title,
   copy,
   onChangeAccess,
+  actionLabel = 'Change Access',
 }: {
-  variant: 'ready' | 'warning' | 'offline';
+  variant: 'ready' | 'warning' | 'offline' | 'progress' | 'failed';
   title: string;
   copy: string;
   onChangeAccess: () => void;
+  actionLabel?: string;
 }) {
   return (
     <section className={['bridge-task-banner', `bridge-task-banner--${variant}`].join(' ')}>
@@ -55,7 +57,7 @@ export function BridgeTaskBanner({
         <p>{copy}</p>
       </div>
       <button type="button" onClick={onChangeAccess} className="bridge-button bridge-button-secondary">
-        Change Access
+        {actionLabel}
       </button>
     </section>
   );
@@ -97,7 +99,7 @@ export function ToolProfileSummary({
   const total = allPublicToolCount ?? publicToolCount;
   return (
     <div className="bridge-profile-summary" aria-label="Tool profile summary">
-      <span>{toolProfile ?? 'note_writer'} profile</span>
+      <span>{toolProfile ? `${toolProfile} profile` : 'Server tier unknown'}</span>
       <span>{publicToolCount ?? 0}{total ? `/${total}` : ''} exposed</span>
       <span>{preferredToolCount} preferred</span>
       <span>{hiddenByProfileCount} profile-hidden</span>

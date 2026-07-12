@@ -21,6 +21,12 @@ const TEMPLATE_JSON_SCHEMA = z.string().trim().min(1).max(120000);
 const TEMPLATE_NAME_SCHEMA = z.string().trim().min(1).max(120);
 const TEMPLATE_DESCRIPTION_SCHEMA = z.string().trim().min(1).max(1000);
 const CARD_LIMIT_SCHEMA = z.number().int().min(1).max(100);
+const CARD_TYPE_SCHEMA = z.enum(['basic', 'concept', 'descriptor', 'cloze', 'multiple_choice', 'list_answer']);
+const EXPECTED_CARD_SCHEMA = z.object({
+  front: z.string().trim().min(1).max(5000).describe('Expected card front or cloze plain text.'),
+  back: z.string().trim().min(1).max(5000).optional().describe('Expected back text when the card type uses a back.'),
+  cardType: CARD_TYPE_SCHEMA.optional().describe('Expected card type. Omit when type is not part of the assertion.'),
+}).strict();
 
 export function registerDesignTemplateTools({ registerTool, callPlugin }: ToolRegistrationContext): void {
   registerTool(
@@ -280,9 +286,10 @@ export function registerHighLevelCardWorkflowTools({ registerTool, callPlugin }:
     'verify_card_set',
     {
       title: 'Verify card set',
-      description: 'Verify that a flashcard set has clean front/back or cloze content.',
+      description: 'Verify bounded card readback; report malformed, duplicate, and expected-missing cards with repair guidance.',
       inputSchema: z.object({
         rootRemId: REM_ID_SCHEMA,
+        expectedCards: z.array(EXPECTED_CARD_SCHEMA).max(100).optional().describe('Optional cards that must exist in the verified set.'),
         maxCards: CARD_LIMIT_SCHEMA.optional(),
         maxNodes: z.number().int().min(1).max(500).optional().describe('Maximum Rem nodes to inspect before returning a partial verification result.'),
         maxDepth: z.number().int().min(0).max(4).optional().describe('Maximum descendant depth to inspect. Default 1 for direct card children.'),

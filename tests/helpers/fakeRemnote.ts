@@ -27,7 +27,19 @@ export class FakeRem {
     if (this.plugin.failSetTextIncludes && plain.includes(this.plugin.failSetTextIncludes)) {
       throw new Error(`forced setText failure for ${plain}`);
     }
-    this.text = JSON.parse(JSON.stringify(text));
+    const storedText = this.plugin.flattenMathToPlainText
+      ? text.map((item) => {
+          if (typeof item !== 'object' || item === null || Array.isArray(item)) {
+            return item;
+          }
+          const record = item as Record<string, unknown>;
+          if (record.i !== 'x') {
+            return item;
+          }
+          return { i: 'm', text: String(record.text ?? '') } as RichTextItem;
+        }) as RichTextInterface
+      : text;
+    this.text = JSON.parse(JSON.stringify(storedText));
   }
 
   async setBackText(text: RichTextInterface) {
@@ -135,6 +147,7 @@ export class FakePlugin {
   createRemCount = 0;
   failSetTextIncludes?: string;
   failRemoveIds = new Set<string>();
+  flattenMathToPlainText = false;
   polluteFontSizeAsChildren = false;
   fontSizeCalls: Array<{ remId: string; level: 'H1' | 'H2' | 'H3' | undefined }> = [];
   private nextId = 1;
@@ -149,8 +162,30 @@ export class FakePlugin {
         .join(''),
     length: async (richText: RichTextInterface) => this.richText.toString(richText).then((text) => text.length),
     substring: async (richText: RichTextInterface, start: number, end?: number) => {
-      const plain = await this.richText.toString(richText);
-      return [{ i: 'm', text: plain.slice(start, end) } as RichTextItem];
+      const output: RichTextInterface = [];
+      let cursor = 0;
+      const stop = end ?? Number.MAX_SAFE_INTEGER;
+      for (const item of richText) {
+        const text = typeof item === 'string' ? item : String((item as Record<string, unknown>).text ?? '');
+        const itemStart = cursor;
+        const itemEnd = cursor + text.length;
+        cursor = itemEnd;
+        if (itemEnd <= start || itemStart >= stop) {
+          continue;
+        }
+        const sliceStart = Math.max(0, start - itemStart);
+        const sliceEnd = Math.min(text.length, stop - itemStart);
+        const sliced = text.slice(sliceStart, sliceEnd);
+        if (!sliced) {
+          continue;
+        }
+        output.push(
+          typeof item === 'string'
+            ? sliced
+            : ({ ...(item as Record<string, unknown>), text: sliced } as RichTextItem)
+        );
+      }
+      return output;
     },
     parseFromMarkdown: async (markdown: string) => [{ i: 'm', text: markdown } as RichTextItem],
     latex: (text: string, block = false) => ({ i: 'x', text, block } as RichTextItem),

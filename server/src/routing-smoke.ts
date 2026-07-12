@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type {
   BridgePluginRegister,
@@ -171,8 +172,8 @@ async function createHostedAccessToken(baseUrl: string): Promise<{
 }> {
   const create = await postJson(`${baseUrl}/pairing/create`, {
     oauthState: 'routing-smoke-state',
-    codeChallenge: codeVerifier,
-    codeChallengeMethod: 'plain',
+    codeChallenge: createHash('sha256').update(codeVerifier).digest('base64url'),
+    codeChallengeMethod: 'S256',
     clientId: 'routing-smoke-client',
     clientName: 'Routing Smoke ChatGPT',
     redirectUri,
@@ -272,13 +273,32 @@ try {
     throw new Error(`/health missed hosted runtime proof: ${health.status} ${healthText}`);
   }
 
+  const discovery = await mcpRequest(mcpUrl, 'tools/list', {});
+  const discoveredTools = (discovery.json as {
+    result?: { tools?: Array<{ name?: string; securitySchemes?: Array<{ type?: string; scopes?: string[] }> }> };
+  })?.result?.tools ?? [];
+  if (discovery.status !== 200 || discoveredTools.length !== 19) {
+    throw new Error(`Hosted tools/list missed default mass_note_writer surface: ${discovery.status} ${discovery.text}`);
+  }
+  for (const tool of discoveredTools) {
+    if (
+      tool.securitySchemes?.length !== 1 ||
+      tool.securitySchemes[0]?.type !== 'oauth2' ||
+      !tool.securitySchemes[0]?.scopes?.includes('bridge:read')
+    ) {
+      throw new Error(`Hosted tools/list missed top-level OAuth securitySchemes for ${tool.name}: ${discovery.text}`);
+    }
+  }
+
   const missingBearer = await mcpToolCall(mcpUrl, 'get_bridge_status', {});
   if (
-    missingBearer.status !== 401 ||
-    !missingBearer.text.includes('Missing bearer token') ||
+    missingBearer.status !== 200 ||
+    !missingBearer.text.includes('mcp/www_authenticate') ||
+    !missingBearer.text.includes('error=\\\"invalid_token\\\"') ||
+    !missingBearer.text.includes('error_description=\\\"Missing bearer token.') ||
     missingBearer.text.includes('Missing or invalid bridge token')
   ) {
-    throw new Error(`Hosted MCP without OAuth returned wrong auth error: ${missingBearer.status} ${missingBearer.text}`);
+    throw new Error(`Hosted MCP without OAuth missed ChatGPT tool auth challenge: ${missingBearer.status} ${missingBearer.text}`);
   }
 
   const pairing = await createHostedAccessToken(baseUrl);
@@ -335,13 +355,69 @@ try {
   ws.close();
   ws = undefined;
   await sleep(100);
+  const offlineHealth = await fetch(`${baseUrl}/health`);
+  const offlineHealthText = await offlineHealth.text();
+  if (
+    offlineHealth.status !== 200 ||
+    !offlineHealthText.includes('"connected":false') ||
+    !offlineHealthText.includes('"hostedPairingStatus":"disconnected"') ||
+    !offlineHealthText.includes('"sessionStale":true')
+  ) {
+    throw new Error(`Hosted disconnect did not report offline/stale pairing truth: ${offlineHealth.status} ${offlineHealthText}`);
+  }
   const disconnected = await mcpToolCall(mcpUrl, 'get_focused_rem', {}, pairing.accessToken);
   if (
     disconnected.status !== 200 ||
     !/PLUGIN_NOT_CONNECTED|NO_ACTIVE_DEVICE|NO_PAIRED_PLUGIN_SESSION/.test(disconnected.text) ||
-    disconnected.text.includes(fakeRem.frontText)
+    disconnected.text.includes(fakeRem.frontText) ||
+    disconnected.text.includes('mcp/www_authenticate')
   ) {
     throw new Error(`Hosted disconnected sequence did not fail safely: ${disconnected.status} ${disconnected.text}`);
+  }
+
+  const firstReconnect = await connectHostedMockPlugin(
+    `ws://127.0.0.1:${app.mcpPort}${app.config.bridgePath}`,
+    {
+      type: 'plugin_register',
+      pluginInstanceId: pairing.pluginInstanceId,
+      pluginConnectionId: `${pairing.pluginConnectionId}-reconnect-1`,
+      sessionSecret: pairing.sessionSecret,
+      workspaceLabel: 'Routing smoke workspace',
+      supportedTools: ['get_status', 'get_focused_rem'],
+      accessScope: 'focused-rem-only',
+      trustedWriteMode: 'trusted-inside-scope',
+    },
+    seenTools
+  );
+  ws = await connectHostedMockPlugin(
+    `ws://127.0.0.1:${app.mcpPort}${app.config.bridgePath}`,
+    {
+      type: 'plugin_register',
+      pluginInstanceId: pairing.pluginInstanceId,
+      pluginConnectionId: `${pairing.pluginConnectionId}-reconnect-2`,
+      sessionSecret: pairing.sessionSecret,
+      workspaceLabel: 'Routing smoke workspace',
+      supportedTools: ['get_status', 'get_focused_rem'],
+      accessScope: 'focused-rem-only',
+      trustedWriteMode: 'trusted-inside-scope',
+    },
+    seenTools
+  );
+  firstReconnect.close();
+  await sleep(100);
+
+  const reconnected = await mcpToolCall(mcpUrl, 'get_focused_rem', {}, pairing.accessToken);
+  const reconnectedHealth = await fetch(`${baseUrl}/health`);
+  const reconnectedHealthText = await reconnectedHealth.text();
+  if (
+    reconnected.status !== 200 ||
+    !reconnected.text.includes(fakeRem.frontText) ||
+    reconnectedHealth.status !== 200 ||
+    !reconnectedHealthText.includes('"connected":true') ||
+    !reconnectedHealthText.includes('"hostedPairingStatus":"connected"') ||
+    !reconnectedHealthText.includes('"sessionStale":false')
+  ) {
+    throw new Error(`Hosted reconnect did not recover or old close removed the new route: ${reconnected.status} ${reconnected.text} ${reconnectedHealthText}`);
   }
 
   console.log('Hosted routing smoke passed.');

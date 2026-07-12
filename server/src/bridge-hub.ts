@@ -46,6 +46,7 @@ import {
 import {
   isTransientFailure,
   mutationCouldHaveStarted,
+  requestReachedPlugin,
   isDryRunBridgeRequest,
   getIdempotencyKey,
   isHighLevelIdempotentWrite,
@@ -79,7 +80,11 @@ export class BridgeHub {
   private lastHealthCheck: BridgeHealthCheckResult | null = null;
   private pluginRuntimeInfo: BridgePluginRuntimeInfo | null = null;
   private readonly sessionRouter: SessionRouter;
-  private readonly socketUsers = new WeakMap<WebSocket, string>();
+  private readonly socketUsers = new WeakMap<WebSocket, {
+    userId: string;
+    pairingId: string;
+    connectionId: string;
+  }>();
 
   constructor(private readonly config: CompanionServerConfig, private readonly storage?: StorageProvider) {
     this.sessionRouter = new SessionRouter(config, storage);
@@ -608,6 +613,7 @@ export class BridgeHub {
     }
 
     const mutationStarted = mutationCouldHaveStarted(response);
+    const reachedPlugin = requestReachedPlugin(response);
     const dryRun = isDryRunBridgeRequest(tool, args);
     if (!response.ok && response.error.code === 'TIMEOUT') {
       if (dryRun) {
@@ -626,11 +632,16 @@ export class BridgeHub {
       return mutationStarted ? 'unknown_delete' : 'retryable';
     }
 
-    if (allowRetry && BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
+    if (allowRetry && reachedPlugin && BRIDGE_TOOL_ANNOTATIONS[tool].readOnlyHint) {
       return 'retry';
     }
 
-    if (allowRetry && !BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint && getIdempotencyKey(args)) {
+    if (
+      allowRetry &&
+      reachedPlugin &&
+      !BRIDGE_TOOL_ANNOTATIONS[tool].destructiveHint &&
+      getIdempotencyKey(args)
+    ) {
       return 'retry';
     }
 
@@ -922,12 +933,16 @@ export class BridgeHub {
         }
         registeredToolTier = routed.toolTier ?? this.config.toolProfile;
         requiresConnectorRefresh = Boolean(routed.requiresConnectorRefresh);
-        this.socketUsers.set(socket, routed.connection.userId);
+        this.socketUsers.set(socket, {
+          userId: routed.connection.userId,
+          pairingId: routed.connection.pluginSessionId,
+          connectionId: routed.connection.connectionId,
+        });
         this.pluginReady = this.sessionRouter.getStatus().activeConnections > 0;
         this.lastConnectedAt = new Date().toISOString();
         socket.on('message', (message) => this.handlePluginMessage(socket, message));
-        socket.on('close', () => this.handleHostedPluginClose(socket));
-        socket.on('error', () => this.handleHostedPluginClose(socket));
+        socket.on('close', () => { void this.handleHostedPluginClose(socket); });
+        socket.on('error', () => { void this.handleHostedPluginClose(socket); });
         this.startHeartbeat();
       } else {
         this.replacePluginSocket(socket);
@@ -994,14 +1009,40 @@ export class BridgeHub {
     }
   }
 
-  private handleHostedPluginClose(socket: WebSocket) {
-    const userId = this.socketUsers.get(socket);
-    if (!userId) {
+  private async handleHostedPluginClose(socket: WebSocket) {
+    const socketRoute = this.socketUsers.get(socket);
+    if (!socketRoute) {
       return;
     }
 
     this.socketUsers.delete(socket);
-    this.sessionRouter.removeConnection(userId);
+    const removedCurrentRoute = this.sessionRouter.removeConnection(
+      socketRoute.userId,
+      socketRoute.connectionId
+    );
+    if (removedCurrentRoute && this.storage) {
+      try {
+        const session = await this.storage.getChatGptPairingSessionById(socketRoute.pairingId);
+        if (
+          session &&
+          !session.revokedAt &&
+          session.status === 'connected' &&
+          session.pluginConnectionId === socketRoute.connectionId
+        ) {
+          const disconnectedAt = new Date().toISOString();
+          await this.storage.updateChatGptPairingSession(socketRoute.pairingId, {
+            status: 'disconnected',
+            disconnectedAt,
+            lastSeenAt: disconnectedAt,
+          });
+        }
+      } catch (error: unknown) {
+        console.error(
+          'Failed to persist hosted plugin disconnect state:',
+          error instanceof Error ? error.message : String(error)
+        );
+      }
+    }
     this.pluginReady = this.sessionRouter.getStatus().activeConnections > 0;
     this.lastDisconnectedAt = new Date().toISOString();
     if (!this.pluginReady) {

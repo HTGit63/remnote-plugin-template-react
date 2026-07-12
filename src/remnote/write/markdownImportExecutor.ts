@@ -91,6 +91,7 @@ import { applyStructuredNoteBatch, readCreatedRemIdsFromError } from './structur
 import { buildWriteOperationPlan } from '../write-engine/plan';
 import { finalizeWriteOperationPlan, writeEngineExecutionFromPlan } from '../write-engine/execute';
 import { createNotePlanSummary } from './notePlan';
+import { countRichTextMathSpans } from './verification';
 
 const MARKDOWN_SECTION_CHUNK_NODE_THRESHOLD = 120;
 const MARKDOWN_SECTION_CHUNK_CHAR_THRESHOLD = 60000;
@@ -184,12 +185,22 @@ function markdownContentWriteNode(node: StyledRemTreeNode): StyledRemTreeNode {
   };
 }
 
-async function collectPlainTextSubtree(plugin: RNPlugin, remId: string): Promise<string> {
+async function collectMarkdownReadbackSubtree(
+  plugin: RNPlugin,
+  remId: string
+): Promise<{
+  outputText: string;
+  mathStats: { inlineMathCount: number; mathBlockCount: number };
+}> {
   const root = await findRequiredRem(plugin, remId, 'Target', 'REM_NOT_FOUND');
   const parts: string[] = [];
+  const mathStats = { inlineMathCount: 0, mathBlockCount: 0 };
 
   async function visit(rem: Rem) {
     parts.push(await getRemPlainString(plugin, rem));
+    const remMath = countRichTextMathSpans(rem.text);
+    mathStats.inlineMathCount += remMath.inlineMathCount;
+    mathStats.mathBlockCount += remMath.mathBlockCount;
     const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
     for (const child of children) {
       await visit(child);
@@ -197,7 +208,27 @@ async function collectPlainTextSubtree(plugin: RNPlugin, remId: string): Promise
   }
 
   await visit(root);
-  return parts.filter((part) => part.trim()).join('\n');
+  return {
+    outputText: parts.filter((part) => part.trim()).join('\n'),
+    mathStats,
+  };
+}
+
+async function collectMathStatsForRemIds(
+  plugin: RNPlugin,
+  remIds: readonly string[]
+): Promise<{ inlineMathCount: number; mathBlockCount: number }> {
+  const mathStats = { inlineMathCount: 0, mathBlockCount: 0 };
+  for (const remId of Array.from(new Set(remIds))) {
+    const rem = await plugin.rem.findOne(remId);
+    if (!rem) {
+      continue;
+    }
+    const remMath = countRichTextMathSpans(rem.text);
+    mathStats.inlineMathCount += remMath.inlineMathCount;
+    mathStats.mathBlockCount += remMath.mathBlockCount;
+  }
+  return mathStats;
 }
 
 function chunkMaxDepth(nodes: readonly StyledRemTreeNode[]): number {
@@ -243,6 +274,12 @@ function buildMassNoteManifest(
   }
   if (plan.stats.maxDepth > 8) {
     warnings.push(`Plan depth ${plan.stats.maxDepth} is high for one write.`);
+  }
+  if (plan.stats.tableCount > 0) {
+    warnings.push('Markdown tables are preserved as Rem hierarchy, not native RemNote tables.');
+  }
+  if (plan.stats.codeBlockCount > 0) {
+    warnings.push('Markdown code blocks are preserved as literal text Rems, not native RemNote code blocks.');
   }
 
   const chunks = fallback.used
@@ -690,12 +727,16 @@ export async function createOrReplaceNoteFromMarkdown(
             );
       if (duplicate && normalized.duplicatePolicy === 'skip') {
         const verificationStartedAt = Date.now();
-        const verification = normalized.safetyOptions.verifyAfterWrite
+        const readback = normalized.safetyOptions.verifyAfterWrite
+          ? await collectMarkdownReadbackSubtree(plugin, duplicate._id)
+          : undefined;
+        const verification = readback
           ? verifyMarkdownSourceFidelity(
               plan.sourceSnippets,
-              await getRemPlainString(plugin, duplicate),
+              readback.outputText,
               normalized.fidelityOptions,
-              plan.stats
+              plan.stats,
+              readback.mathStats
             )
           : undefined;
         verificationDurationMs += Date.now() - verificationStartedAt;
@@ -816,19 +857,25 @@ export async function createOrReplaceNoteFromMarkdown(
     let verification: CreateOrReplaceNoteFromMarkdownResult['verification'];
     if (normalized.safetyOptions.verifyAfterWrite) {
       const verificationStartedAt = Date.now();
-      outputText = rootRemId
-        ? await collectPlainTextSubtree(plugin, rootRemId)
-        : await collectPlainTextForRemIds(plugin, [
+      const readback = rootRemId
+        ? await collectMarkdownReadbackSubtree(plugin, rootRemId)
+        : undefined;
+      outputText = readback?.outputText ?? await collectPlainTextForRemIds(plugin, [
             ...batchResult.createdRemIds,
             ...(batchResult.updatedRemIds ?? []),
           ]);
+      const mathStats = await collectMathStatsForRemIds(plugin, [
+        ...batchResult.createdRemIds,
+        ...(batchResult.updatedRemIds ?? []),
+      ]);
       verification = verifyMarkdownSourceFidelity(
         normalized.mode === 'replace_target_children'
           ? plan.sourceSnippets.slice(1)
           : plan.sourceSnippets,
         outputText,
         normalized.fidelityOptions,
-        plan.stats
+        plan.stats,
+        mathStats
       );
       verificationDurationMs += Date.now() - verificationStartedAt;
     }

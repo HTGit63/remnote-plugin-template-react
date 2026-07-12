@@ -454,6 +454,88 @@ function assertSafeRules(value: unknown, path = 'template'): void {
   }
 }
 
+function designRuleRecord(value: unknown, path: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new RemnoteWriteError('INVALID_ARGS', `Design template requires an object at ${path}.`, { path });
+  }
+  return value as Record<string, unknown>;
+}
+
+function requireFiniteRuleNumber(
+  record: Record<string, unknown>,
+  key: string,
+  path: string,
+  max = 10000
+): void {
+  const value = record[key];
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > max) {
+    throw new RemnoteWriteError('INVALID_ARGS', `Design template requires ${path}.${key} between 0 and ${max}.`, {
+      path: `${path}.${key}`,
+      value,
+    });
+  }
+}
+
+function requireRuleBoolean(record: Record<string, unknown>, key: string, path: string): void {
+  if (typeof record[key] !== 'boolean') {
+    throw new RemnoteWriteError('INVALID_ARGS', `Design template requires boolean ${path}.${key}.`, {
+      path: `${path}.${key}`,
+      value: record[key],
+    });
+  }
+}
+
+function requireRuleStringArray(record: Record<string, unknown>, key: string, path: string): void {
+  const value = record[key];
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+    throw new RemnoteWriteError('INVALID_ARGS', `Design template requires string array ${path}.${key}.`, {
+      path: `${path}.${key}`,
+    });
+  }
+}
+
+function assertCompleteDesignRules(value: unknown): asserts value is NoteDesignRules {
+  const rules = designRuleRecord(value, 'template.rules');
+  designRuleRecord(rules.headingPattern, 'template.rules.headingPattern');
+  designRuleRecord(rules.colorPattern, 'template.rules.colorPattern');
+
+  const spacing = designRuleRecord(rules.spacingPattern, 'template.rules.spacingPattern');
+  requireFiniteRuleNumber(spacing, 'spacerCount', 'template.rules.spacingPattern');
+  requireRuleStringArray(spacing, 'spacerTexts', 'template.rules.spacingPattern');
+  requireFiniteRuleNumber(spacing, 'blankRemCount', 'template.rules.spacingPattern');
+  requireRuleBoolean(spacing, 'siblingSpacerLikely', 'template.rules.spacingPattern');
+
+  const math = designRuleRecord(rules.mathPattern, 'template.rules.mathPattern');
+  requireFiniteRuleNumber(math, 'inlineMathCount', 'template.rules.mathPattern');
+  requireFiniteRuleNumber(math, 'blockMathCount', 'template.rules.mathPattern');
+  requireFiniteRuleNumber(math, 'visibleDelimiterCount', 'template.rules.mathPattern');
+  requireRuleBoolean(math, 'malformedMathLikely', 'template.rules.mathPattern');
+
+  const nesting = designRuleRecord(rules.bulletNesting, 'template.rules.bulletNesting');
+  requireFiniteRuleNumber(nesting, 'maxDepth', 'template.rules.bulletNesting', 100);
+  requireFiniteRuleNumber(nesting, 'maxChildrenPerRem', 'template.rules.bulletNesting');
+  requireFiniteRuleNumber(nesting, 'averageChildrenPerNonLeaf', 'template.rules.bulletNesting');
+
+  const formulas = designRuleRecord(rules.formulaPlacement, 'template.rules.formulaPlacement');
+  requireRuleBoolean(formulas, 'displayFormulasAsSeparateRems', 'template.rules.formulaPlacement');
+  requireRuleBoolean(formulas, 'inlineFormulasInsideText', 'template.rules.formulaPlacement');
+  requireRuleBoolean(formulas, 'rawDisplayDelimitersVisible', 'template.rules.formulaPlacement');
+
+  const tables = designRuleRecord(rules.tableStyle, 'template.rules.tableStyle');
+  requireFiniteRuleNumber(tables, 'tableLikeRemCount', 'template.rules.tableStyle');
+  requireFiniteRuleNumber(tables, 'markdownTableCount', 'template.rules.tableStyle');
+  requireRuleStringArray(tables, 'tableHeadings', 'template.rules.tableStyle');
+
+  const cards = designRuleRecord(rules.cardStyle, 'template.rules.cardStyle');
+  requireFiniteRuleNumber(cards, 'cardLikeRemCount', 'template.rules.cardStyle');
+  requireFiniteRuleNumber(cards, 'clozeLikeRemCount', 'template.rules.cardStyle');
+  requireFiniteRuleNumber(cards, 'doubleColonMarkerCount', 'template.rules.cardStyle');
+
+  const examples = designRuleRecord(rules.workedExampleStyle, 'template.rules.workedExampleStyle');
+  requireFiniteRuleNumber(examples, 'workedExampleCount', 'template.rules.workedExampleStyle');
+  requireRuleStringArray(examples, 'labels', 'template.rules.workedExampleStyle');
+}
+
 function validateTemplateShape(template: Partial<NoteDesignTemplate>): NoteDesignTemplate {
   if (template.schemaVersion !== TEMPLATE_SCHEMA_VERSION) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Design template schemaVersion must be 1.');
@@ -461,6 +543,7 @@ function validateTemplateShape(template: Partial<NoteDesignTemplate>): NoteDesig
   if (!template.templateId || !template.name || !template.rules) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Design template requires templateId, name, and rules.');
   }
+  assertCompleteDesignRules(template.rules);
   assertSafeRules(template.rules);
   return {
     schemaVersion: TEMPLATE_SCHEMA_VERSION,
@@ -601,6 +684,7 @@ async function resolveRulesForPreview(
   args: PreviewNoteDesignPlanArgs
 ): Promise<{ rules: NoteDesignRules; templateId?: string }> {
   if (args.rules) {
+    assertCompleteDesignRules(args.rules);
     assertSafeRules(args.rules);
     return { rules: args.rules };
   }

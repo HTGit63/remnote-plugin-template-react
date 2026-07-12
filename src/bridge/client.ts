@@ -15,7 +15,7 @@ import {
   createBridgeFailure,
   BRIDGE_TOOL_NAMES,
 } from '../../shared/bridge/protocol';
-import { type BridgeStatusSnapshot } from './status';
+import { getBridgeCloseState, type BridgeStatusSnapshot } from './status';
 import { handleBridgeRequest, parseBridgeRequest } from './handlers';
 import type { HostedPairingSession } from './pairing';
 import { getBridgePluginRuntimeInfo } from '../remnote/capabilities';
@@ -35,6 +35,8 @@ export interface BrowserBridgeClientOptions {
   requestApproval: (request: PendingApprovalRequest) => Promise<ApprovalResolution>;
   cancelApproval: (requestId: string, message: string) => void;
   onStatus: (status: BridgeStatusSnapshot) => void;
+  onRequestStarted?: (request: BridgeRequest) => void;
+  onRequestCompleted?: (request: BridgeRequest, response: BridgeResponse) => void;
 }
 
 export class BrowserBridgeClient {
@@ -154,12 +156,16 @@ export class BrowserBridgeClient {
     });
   }
 
-  private scheduleReconnect(reason: string) {
+  private scheduleReconnect(
+    reason: string,
+    lastError?: string,
+    state: BridgeStatusSnapshot['state'] = 'reconnecting'
+  ) {
     if (this.stopped) {
       return;
     }
 
-    this.updateStatus('disconnected', reason);
+    this.updateStatus(state, reason, lastError);
     const delay = this.reconnectDelayMs;
     this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, MAX_RECONNECT_MS);
     this.reconnectTimer = setTimeout(() => this.openSocket(), delay);
@@ -177,7 +183,7 @@ export class BrowserBridgeClient {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.updateStatus('error', 'Failed to create WebSocket.', message);
-      this.scheduleReconnect('Retrying after WebSocket creation failure.');
+      this.scheduleReconnect('Retrying after WebSocket creation failure.', message, 'server_unreachable');
       return;
     }
 
@@ -187,7 +193,7 @@ export class BrowserBridgeClient {
       this.sendHello().catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         this.updateStatus('error', 'Failed to prepare RemNote plugin registration.', message);
-        this.scheduleReconnect('Retrying after RemNote plugin registration failure.');
+        this.scheduleReconnect('Retrying after RemNote plugin registration failure.', message);
       });
     });
 
@@ -201,9 +207,30 @@ export class BrowserBridgeClient {
       this.updateStatus('error', 'WebSocket error. Check server and token.');
     });
 
-    this.ws.addEventListener('close', () => {
+    this.ws.addEventListener('close', (event) => {
       this.ws = undefined;
-      this.scheduleReconnect('Disconnected from companion server.');
+      if (this.stopped) {
+        return;
+      }
+      const closeReason = event.reason?.trim() || 'Companion server connection closed.';
+      const closeState = getBridgeCloseState({
+        code: event.code,
+        reason: event.reason,
+        hosted: Boolean(this.options.hostedSession?.sessionSecret),
+      });
+      this.updateStatus(closeState, closeReason, closeReason);
+      if (
+        closeState !== 'token_expired' &&
+        closeState !== 'session_revoked' &&
+        closeState !== 'device_conflict' &&
+        closeState !== 'not_paired'
+      ) {
+        this.scheduleReconnect(
+          `Retrying after ${closeReason.toLowerCase()}`,
+          closeReason,
+          closeState
+        );
+      }
     });
   }
 
@@ -347,9 +374,12 @@ export class BrowserBridgeClient {
       return;
     }
 
+    const request = requestOrFailure as BridgeRequest;
+    this.options.onRequestStarted?.(request);
+
     let response: BridgeResponse;
     try {
-      response = await handleBridgeRequest(this.options.plugin, requestOrFailure as BridgeRequest, {
+      response = await handleBridgeRequest(this.options.plugin, request, {
         permissionMode: this.options.getPermissionMode(),
         permissionScope: this.options.getPermissionScope(),
         approvedRootRemId: this.options.getApprovedRootRemId(),
@@ -360,7 +390,7 @@ export class BrowserBridgeClient {
       const message = error instanceof Error ? error.message : String(error);
       console.error('Bridge request failed internally:', message);
       response = createBridgeFailure(
-        (requestOrFailure as BridgeRequest).id,
+        request.id,
         'INTERNAL_ERROR',
         'Bridge request failed internally.',
         { message }
@@ -368,15 +398,16 @@ export class BrowserBridgeClient {
     }
 
     const responseToSend = this.withResponseSentLifecycle(response as BridgeResponse);
-    if (this.cancelledRequestIds.delete((requestOrFailure as BridgeRequest).id)) {
+    if (this.cancelledRequestIds.delete(request.id)) {
       console.info('Bridge request completed after server cancel; sending terminal response for diagnostics.', {
-        requestId: (requestOrFailure as BridgeRequest).id,
+        requestId: request.id,
         ok: responseToSend.ok,
         errorCode: responseToSend.ok ? undefined : responseToSend.error.code,
       });
     }
 
     this.send(responseToSend);
+    this.options.onRequestCompleted?.(request, responseToSend);
   }
 
   private withResponseSentLifecycle(response: BridgeResponse): BridgeResponse {

@@ -180,10 +180,6 @@ export function estimateWriteTimeoutMs(input: WriteTimeoutEstimateInput): number
 
   const budgetMs = getToolPerformanceBudgetMs(publicMcpToolNameForBridgeTool(input.tool));
   const baseTimeoutMs = Math.max(budgetMs + 5000, 6000);
-  if (annotations.destructiveHint === true) {
-    return Math.max(baseTimeoutMs, budgets.writeApprovalTimeoutMs, budgets.mutationTimeoutMs);
-  }
-
   if (isBulkImportStep) {
     const adaptiveMs =
       budgets.mutationTimeoutMs +
@@ -191,6 +187,10 @@ export function estimateWriteTimeoutMs(input: WriteTimeoutEstimateInput): number
       Math.ceil(nodeCount / 10) * 1000 +
       (hasVerification ? 20000 : 0);
     return clampTimeout(adaptiveMs, budgets.bulkStepTimeoutMs, 300000);
+  }
+
+  if (annotations.destructiveHint === true) {
+    return Math.max(baseTimeoutMs, budgets.writeApprovalTimeoutMs, budgets.mutationTimeoutMs);
   }
 
   if (HIGH_LEVEL_WRITE_TOOLS.has(input.tool)) {

@@ -720,8 +720,15 @@ export interface CreateClozeCardsFromNoteArgs {
   idempotencyKey?: string;
 }
 
+export interface ExpectedCardPlan {
+  front: string;
+  back?: string;
+  cardType?: 'basic' | 'concept' | 'descriptor' | 'cloze' | 'multiple_choice' | 'list_answer';
+}
+
 export interface VerifyCardSetArgs {
   rootRemId: string;
+  expectedCards?: ExpectedCardPlan[];
   maxCards?: number;
   maxNodes?: number;
   maxDepth?: number;

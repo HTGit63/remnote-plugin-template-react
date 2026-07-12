@@ -331,8 +331,13 @@ function tableCells(line: string): string[] {
     .replace(/^\|/, '')
     .replace(/\|$/, '')
     .split('|')
-    .map((cell) => cell.trim())
-    .filter((cell) => cell.length > 0);
+    .map((cell) => cell.trim());
+}
+
+function tableCellNode(clientNodeId: string, cell: string): StyledRemTreeNode {
+  return cell
+    ? inlineMarkdownNode(clientNodeId, cell)
+    : { clientNodeId, type: 'rem', text: ' ' };
 }
 
 function tableToRemNode(lines: string[], tableIndex: number): StyledRemTreeNode {
@@ -345,7 +350,7 @@ function tableToRemNode(lines: string[], tableIndex: number): StyledRemTreeNode 
       type: 'rem',
       text: 'Header',
       children: header.map((cell, index) =>
-        inlineMarkdownNode(`table-${tableIndex}-header-cell-${index + 1}`, cell)
+        tableCellNode(`table-${tableIndex}-header-cell-${index + 1}`, cell)
       ),
     });
   }
@@ -355,7 +360,7 @@ function tableToRemNode(lines: string[], tableIndex: number): StyledRemTreeNode 
       type: 'rem',
       text: `Row ${rowIndex + 1}`,
       children: row.map((cell, cellIndex) =>
-        inlineMarkdownNode(`table-${tableIndex}-row-${rowIndex + 1}-cell-${cellIndex + 1}`, cell)
+        tableCellNode(`table-${tableIndex}-row-${rowIndex + 1}-cell-${cellIndex + 1}`, cell)
       ),
     });
   });
@@ -822,7 +827,10 @@ function analyzeTree(node: StyledRemTreeNode, depth = 1, stats?: MarkdownTreeSta
     node.richText?.filter((span: any) => span.type === 'inlineMath').length ?? 0;
   if (inlineMathSpanCount > 0) {
     next.inlineMathCount += inlineMathSpanCount;
-  } else if (/\$[^$\n]+?\$|\\\(.+?\\\)/.test(nodeText(node))) {
+  } else if (
+    !(node.clientNodeId ?? '').startsWith('code-') &&
+    /\$[^$\n]+?\$|\\\(.+?\\\)/.test(nodeText(node))
+  ) {
     next.inlineMathCount += 1;
   }
   if ((node.clientNodeId ?? '').startsWith('code-')) next.codeBlockCount += 1;
@@ -929,8 +937,15 @@ export function parseMarkdownImportPlan(
   let bulletCount = 0;
   let calloutCount = 0;
   let skippedRootHeading = false;
+  let activeBulletParent: StyledRemTreeNode | undefined;
+  let activeBulletStack: Array<{ indent: number; node: StyledRemTreeNode }> | undefined;
 
   const currentParent = () => stack[stack.length - 1].node;
+
+  function resetActiveBulletStack() {
+    activeBulletParent = undefined;
+    activeBulletStack = undefined;
+  }
 
   function flushParagraph() {
     if (!paragraph.length) return;
@@ -974,6 +989,7 @@ export function parseMarkdownImportPlan(
     }
 
     if (heading) {
+      resetActiveBulletStack();
       if (rootSelection.skipFirstHeading && !skippedRootHeading && heading.level === 1 && heading.title === rootSelection.title) {
         skippedRootHeading = true;
         continue;
@@ -1009,6 +1025,7 @@ export function parseMarkdownImportPlan(
     }
 
     if (/^```/.test(trimmed)) {
+      resetActiveBulletStack();
       flushParagraph();
       const block = [line];
       index += 1;
@@ -1028,6 +1045,7 @@ export function parseMarkdownImportPlan(
     }
 
     if (trimmed === '$$' || trimmed.startsWith('$$') || trimmed === '\\[' || trimmed.startsWith('\\[')) {
+      resetActiveBulletStack();
       flushParagraph();
       const close = trimmed.startsWith('\\[') ? '\\]' : '$$';
       const openLength = trimmed.startsWith('\\[') ? 2 : 2;
@@ -1065,6 +1083,7 @@ export function parseMarkdownImportPlan(
     }
 
     if (tableLike(lines, index)) {
+      resetActiveBulletStack();
       flushParagraph();
       const tableLines = [line];
       index += 1;
@@ -1089,6 +1108,7 @@ export function parseMarkdownImportPlan(
 
     const blockquote = blockquoteMatch(line);
     if (blockquote !== null) {
+      resetActiveBulletStack();
       flushParagraph();
       const quoteLines = [blockquote];
       while (index + 1 < lines.length) {
@@ -1131,7 +1151,11 @@ export function parseMarkdownImportPlan(
     if (bullet) {
       flushParagraph();
       const bulletParent = currentParent();
-      const bulletStack: Array<{ indent: number; node: StyledRemTreeNode }> = [{ indent: -1, node: bulletParent }];
+      if (!activeBulletStack || activeBulletParent !== bulletParent) {
+        activeBulletParent = bulletParent;
+        activeBulletStack = [{ indent: -1, node: bulletParent }];
+      }
+      const bulletStack = activeBulletStack;
       while (index < lines.length) {
         const current = bulletMatch(lines[index]);
         if (!current) {
@@ -1178,6 +1202,7 @@ export function parseMarkdownImportPlan(
       continue;
     }
 
+    resetActiveBulletStack();
     paragraph.push(line);
   }
 
@@ -1202,7 +1227,8 @@ export function verifyMarkdownSourceFidelity(
   sourceSnippets: readonly string[],
   outputText: string,
   options: MarkdownImportFidelityOptions = {},
-  expectedStats?: Partial<MarkdownTreeStats>
+  expectedStats?: Partial<MarkdownTreeStats>,
+  actualStats?: Partial<Pick<MarkdownTreeStats, 'mathBlockCount' | 'inlineMathCount'>>
 ): MarkdownSourceFidelityReport {
   const fidelity = {
     ...DEFAULT_FIDELITY_OPTIONS,
@@ -1226,22 +1252,45 @@ export function verifyMarkdownSourceFidelity(
   const structureMismatches: string[] = [];
   if (fidelity.preserveSourceOrder) {
     let cursor = 0;
+    let lastMatchedNeedle = '';
     for (const snippet of sourceSnippets) {
       const needle = fidelity.allowWhitespaceNormalization
         ? normalizeWhitespace(stripMarkdownInline(snippet))
         : stripMarkdownInline(snippet);
       if (!needle) continue;
+      if (lastMatchedNeedle.includes(needle)) {
+        continue;
+      }
       const index = comparableHaystack.indexOf(needle, cursor);
-      if (index < 0) continue;
-      if (index < cursor) {
-        structureMismatches.push(`Source order mismatch near "${needle.slice(0, 80)}".`);
-        break;
+      if (index < 0) {
+        if (comparableHaystack.includes(needle)) {
+          structureMismatches.push(`Source order mismatch near "${needle.slice(0, 80)}".`);
+          break;
+        }
+        continue;
       }
       cursor = index + needle.length;
+      lastMatchedNeedle = needle;
     }
   }
   if (pollutionRems.length) {
     structureMismatches.push(`Formatting pollution Rems detected: ${Array.from(new Set(pollutionRems)).join(', ')}.`);
+  }
+  if (
+    actualStats?.inlineMathCount !== undefined &&
+    actualStats.inlineMathCount !== (expectedStats?.inlineMathCount ?? 0)
+  ) {
+    structureMismatches.push(
+      `Inline math span count mismatch: expected ${expectedStats?.inlineMathCount ?? 0}, read back ${actualStats.inlineMathCount}.`
+    );
+  }
+  if (
+    actualStats?.mathBlockCount !== undefined &&
+    actualStats.mathBlockCount !== (expectedStats?.mathBlockCount ?? 0)
+  ) {
+    structureMismatches.push(
+      `Block math span count mismatch: expected ${expectedStats?.mathBlockCount ?? 0}, read back ${actualStats.mathBlockCount}.`
+    );
   }
   return {
     passed: missingTextSnippets.length === 0 && structureMismatches.length === 0 && pollutionRems.length === 0,

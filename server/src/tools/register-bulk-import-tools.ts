@@ -23,6 +23,12 @@ import {
 } from './tool-context.js';
 import { bulkImportJobStore } from '../bulk-import/job-store.js';
 import {
+  bulkImportOwnerId,
+  isOwnedBulkImportRecord,
+  publicBulkImportChunk,
+  publicBulkImportJob,
+} from '../bulk-import/access.js';
+import {
   BulkImportSourceFileError,
   loadBulkImportSourceFile,
   type BulkImportLoadedSourceFile,
@@ -40,9 +46,15 @@ const WRITE_BULK_TOOL_ANNOTATIONS = {
   destructiveHint: false,
 } as const;
 
+const STATEFUL_BULK_TOOL_ANNOTATIONS = {
+  readOnlyHint: false,
+  openWorldHint: false,
+  destructiveHint: false,
+} as const;
+
 const FILE_BULK_TOOL_ANNOTATIONS = {
   readOnlyHint: false,
-  openWorldHint: true,
+  openWorldHint: false,
   destructiveHint: false,
 } as const;
 
@@ -205,33 +217,7 @@ function publicJob(jobId: string) {
   if (!job) {
     throw new Error(`Unknown import job: ${jobId}`);
   }
-  return {
-    ...job,
-    progress: summarizeBulkImportProgress(job),
-  };
-}
-
-function chunkSummary(chunk: BulkImportChunk) {
-  return {
-    chunkId: chunk.chunkId,
-    sectionKey: chunk.sectionKey,
-    sectionTitle: chunk.sectionTitle,
-    chunkIndex: chunk.chunkIndex,
-    status: chunk.status,
-    verificationStatus: chunk.verificationStatus,
-    charCount: chunk.charCount,
-    estimatedRemCount: chunk.estimatedRemCount,
-    expectedSourceHash: chunk.expectedSourceHash,
-    createdRemIds: chunk.createdRemIds,
-    updatedRemIds: chunk.updatedRemIds,
-    importRootRemId: chunk.importRootRemId,
-    chapterRootRemId: chunk.chapterRootRemId,
-    sectionRootRemId: chunk.sectionRootRemId,
-    chunkParentRemId: chunk.chunkParentRemId,
-    durationMs: chunk.durationMs,
-    error: chunk.error,
-    idempotencyKey: chunk.idempotencyKey,
-  };
+  return publicBulkImportJob(job);
 }
 
 function chunkStepOutput(
@@ -240,7 +226,7 @@ function chunkStepOutput(
   verification?: Record<string, unknown>
 ) {
   return {
-    ...chunkSummary(chunk),
+    ...publicBulkImportChunk(chunk),
     status,
     ...(verification ? { verification } : {}),
   };
@@ -370,8 +356,9 @@ export function registerBulkImportTools({
   sourceFileLoader = loadBulkImportSourceFile,
 }: ToolRegistrationContext): void {
   const storageDurability = storage?.bulkImportStorageDurability() ?? 'memory_only';
+  const ownerId = bulkImportOwnerId(principal);
 
-  function durabilityFields(job: BulkImportJob) {
+  function durabilityFields(job: Pick<BulkImportJob, 'storageDurability'>) {
     return {
       storageDurability: job.storageDurability,
       durabilityWarning: bulkImportDurabilityWarning(job.storageDurability),
@@ -379,6 +366,9 @@ export function registerBulkImportTools({
   }
 
   async function savePlan(plan: ReturnType<typeof planNoteImport>) {
+    if (!isOwnedBulkImportRecord(plan, ownerId)) {
+      throw new Error('Import plan owner mismatch.');
+    }
     bulkImportJobStore.savePlan(plan);
     if (storage) {
       await storage.saveBulkImportPlan(plan);
@@ -386,26 +376,36 @@ export function registerBulkImportTools({
     return plan;
   }
 
-  async function hydratePlan(planId: string) {
-    if (bulkImportJobStore.getPlan(planId) || !storage) {
-      return;
+  async function hydratePlan(planId: string): Promise<ReturnType<typeof planNoteImport> | null> {
+    const existing = bulkImportJobStore.getPlan(planId);
+    if (existing) {
+      return isOwnedBulkImportRecord(existing, ownerId) ? existing : null;
+    }
+    if (!storage) {
+      return null;
     }
     const plan = await storage.getBulkImportPlan(planId);
-    if (plan) {
+    if (isOwnedBulkImportRecord(plan, ownerId)) {
       bulkImportJobStore.savePlan(plan);
+      return plan;
     }
+    return null;
   }
 
   async function hydrateJob(jobId: string): Promise<BulkImportJob | null> {
     const existing = bulkImportJobStore.getJob(jobId);
-    if (existing || !storage) {
-      return existing;
+    if (existing) {
+      return isOwnedBulkImportRecord(existing, ownerId) ? existing : null;
+    }
+    if (!storage) {
+      return null;
     }
     const stored = await storage.getBulkImportJob(jobId);
-    if (stored) {
+    if (isOwnedBulkImportRecord(stored, ownerId)) {
       bulkImportJobStore.saveJob(stored);
+      return stored;
     }
-    return stored;
+    return null;
   }
 
   async function persistJob(jobId: string): Promise<void> {
@@ -413,7 +413,7 @@ export function registerBulkImportTools({
       return;
     }
     const job = bulkImportJobStore.getJob(jobId);
-    if (job) {
+    if (isOwnedBulkImportRecord(job, ownerId)) {
       const stored = await storage.saveBulkImportJob({
         ...job,
         storageDurability,
@@ -423,8 +423,20 @@ export function registerBulkImportTools({
   }
 
   async function createJob(planId: string, jobId?: string): Promise<BulkImportJob> {
-    await hydratePlan(planId);
+    const plan = await hydratePlan(planId);
+    if (!plan) {
+      throw new Error(`Unknown import plan: ${planId}`);
+    }
+    if (jobId) {
+      const existingJob = bulkImportJobStore.getJob(jobId);
+      if (existingJob && !isOwnedBulkImportRecord(existingJob, ownerId)) {
+        throw new Error(`Unknown import job: ${jobId}`);
+      }
+    }
     const job = bulkImportJobStore.createJob(planId, jobId, storageDurability);
+    if (job.ownerId !== ownerId) {
+      throw new Error(`Unknown import job: ${job.jobId}`);
+    }
     await persistJob(job.jobId);
     return bulkImportJobStore.getJob(job.jobId) ?? job;
   }
@@ -449,14 +461,14 @@ export function registerBulkImportTools({
     'plan_note_import',
     {
       title: 'Plan note import',
-      description: 'Plan a large Markdown note import into safe resumable chunks without writing to RemNote.',
+      description: 'Use this when you need to plan a large Markdown note import into safe resumable chunks before writing to RemNote.',
       inputSchema: PLAN_IMPORT_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
     },
     async (args) => {
       try {
-        const plan = planNoteImport(args);
+        const plan = planNoteImport({ ...args, ownerId });
         await savePlan(plan);
         return toolResult('Note import plan created.', planStructuredOutput(plan, 'plan_note_import'));
       } catch (error: unknown) {
@@ -476,7 +488,7 @@ export function registerBulkImportTools({
     'plan_note_import_from_file',
     {
       title: 'Plan note import from file',
-      description: 'Read an authenticated local/Codex path or authorized ChatGPT file param, then plan a bounded resumable import without writing.',
+      description: 'Use this when you need to read an authorized source file and persist a bounded resumable import plan without writing to RemNote.',
       inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: FILE_BULK_TOOL_ANNOTATIONS,
@@ -493,6 +505,7 @@ export function registerBulkImportTools({
         });
         const plan = planNoteImport({
           ...args,
+          ownerId,
           sourceKind: 'file',
           sourceFilePath: sourceFileIdentity(file),
           sourceName: args.sourceName ?? file.sourceName,
@@ -520,13 +533,13 @@ export function registerBulkImportTools({
     'start_note_import_job',
     {
       title: 'Start note import job',
-      description: 'Create a resumable import job from a saved plan. This does not write the full chapter.',
+      description: 'Use this when you need to create a resumable import job from a saved plan without writing the chapter yet.',
       inputSchema: z.object({
         planId: z.string().trim().min(1).max(256),
         jobId: z.string().trim().min(1).max(256).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
     },
     async ({ planId, jobId }) => {
       try {
@@ -565,7 +578,7 @@ export function registerBulkImportTools({
     'start_note_import_from_file',
     {
       title: 'Start note import from file',
-      description: 'Read an authenticated local/Codex path or authorized ChatGPT file param, create a safe plan, and start a resumable job without writing chunks yet.',
+      description: 'Use this when you need to read an authorized source file, persist a safe plan, and start a resumable job without writing chunks yet.',
       inputSchema: PLAN_IMPORT_FROM_FILE_INPUT_SCHEMA.extend({
         jobId: z.string().trim().min(1).max(256).optional(),
       }),
@@ -584,6 +597,7 @@ export function registerBulkImportTools({
         });
         const plan = planNoteImport({
           ...args,
+          ownerId,
           sourceKind: 'file',
           sourceFilePath: sourceFileIdentity(file),
           sourceName: args.sourceName ?? file.sourceName,
@@ -618,14 +632,17 @@ export function registerBulkImportTools({
     'get_note_import_job_status',
     {
       title: 'Get note import job status',
-      description: 'Return resumable progress for a note import job without writing.',
+      description: 'Use this when you need to read resumable progress for a note import job without changing it.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId }) => {
       try {
-        await hydrateJob(jobId);
+        const ownedJob = await hydrateJob(jobId);
+        if (!ownedJob) {
+          throw new Error(`Unknown import job: ${jobId}`);
+        }
         const job = publicJob(jobId);
         return toolResult('Note import job status loaded.', {
           ok: true,
@@ -1059,7 +1076,7 @@ export function registerBulkImportTools({
     'run_note_import_job_step',
     {
       title: 'Run note import job step',
-      description: 'Write one bounded chunk from a resumable note import job. Repeat until status is completed.',
+      description: 'Use this when you need to write one bounded chunk from a resumable note import job; repeat only until the job reports completion.',
       inputSchema: z.object({
         jobId: z.string().trim().min(1).max(256),
         maxChunks: z.number().int().min(1).max(5).default(1),
@@ -1159,7 +1176,7 @@ export function registerBulkImportTools({
     'resume_note_import_job',
     {
       title: 'Resume note import job',
-      description: 'Resume a note import job from first pending, unverified, partial, or failed chunk without rewriting verified chunks.',
+      description: 'Use this when you need to resume a note import job from its first pending, unverified, partial, or failed chunk without rewriting verified chunks.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256), dryRun: z.boolean().default(false) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: WRITE_BULK_TOOL_ANNOTATIONS,
@@ -1190,7 +1207,7 @@ export function registerBulkImportTools({
             jobStatus: preview.job.status,
             ...durabilityFields(preview.job),
             progress: summarizeBulkImportProgress(preview.job),
-            lastStep: preview.chunk ? chunkSummary(preview.chunk) : undefined,
+            lastStep: preview.chunk ? publicBulkImportChunk(preview.chunk) : undefined,
             previewStep: preview.steps[0],
             nextAction: preview.nextAction,
           });
@@ -1251,14 +1268,14 @@ export function registerBulkImportTools({
     'verify_note_import_job',
     {
       title: 'Verify note import job',
-      description: 'Verify import source fidelity from supplied text or live RemNote readback when available.',
+      description: 'Use this when you need to verify import source fidelity and persist verification state from supplied text or live RemNote readback.',
       inputSchema: z.object({
         jobId: z.string().trim().min(1).max(256),
         actualTextByChunkId: z.record(z.string(), z.string()).optional(),
         readbackTree: z.unknown().optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, actualTextByChunkId, readbackTree }) => {
       try {
@@ -1394,14 +1411,17 @@ export function registerBulkImportTools({
     'cancel_note_import_job',
     {
       title: 'Cancel note import job',
-      description: 'Cancel future steps for a note import job. This never deletes created Rems.',
+      description: 'Use this when the user asks to cancel future steps for a note import job; this never deletes created Rems.',
       inputSchema: z.object({ jobId: z.string().trim().min(1).max(256) }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
+      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId }) => {
       try {
-        await hydrateJob(jobId);
+        const ownedJob = await hydrateJob(jobId);
+        if (!ownedJob) {
+          throw new Error(`Unknown import job: ${jobId}`);
+        }
         const job = bulkImportJobStore.cancelJob(jobId);
         await persistJob(jobId);
         return toolResult('Note import job cancelled.', {

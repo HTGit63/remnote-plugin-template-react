@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type {
   BridgePluginRegister,
@@ -100,13 +101,13 @@ async function createApprovedPluginRegistration(
 ): Promise<BridgePluginRegister> {
   const create = await postJson(`${baseUrl}/pairing/create`, {
     oauthState: `codex-routing-${suffix}`,
-    codeChallenge: `codex-routing-verifier-${suffix}`,
-    codeChallengeMethod: 'plain',
+    codeChallenge: createHash('sha256').update(`codex-routing-verifier-${suffix}`).digest('base64url'),
+    codeChallengeMethod: 'S256',
     clientId: `codex-routing-client-${suffix}`,
     clientName: 'Codex Routing Smoke',
     redirectUri,
     resource: publicBaseUrl,
-    requestedScopes: ['bridge:read', 'bridge:write'],
+    requestedScopes: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
   });
   if (create.response.status !== 201 || !create.json?.pairingCode) {
     throw new Error(`Pairing create failed: ${create.response.status} ${create.text}`);
@@ -234,6 +235,20 @@ try {
     !seenToolsA.includes('get_focused_rem')
   ) {
     throw new Error(`Codex single-active fallback did not reach plugin A: ${oneConnection.response.status} ${oneConnection.text}`);
+  }
+
+  const unlinkedWrite = await mcpToolCall(mcpUrl, 'create_or_replace_note_from_markdown', {
+    parentRemId: 'codex-fallback-a',
+    markdownText: '# Unlinked Codex must not inherit plugin authority',
+    mode: 'create_child',
+    safetyOptions: { dryRun: false, idempotencyKey: 'codex-unlinked-authority-check' },
+  }, codexToken);
+  if (
+    unlinkedWrite.response.status !== 403 ||
+    !unlinkedWrite.text.includes('TRUSTED_WRITE_REQUIRED') ||
+    seenToolsA.includes('create_or_replace_note_from_markdown')
+  ) {
+    throw new Error(`Unlinked Codex bearer inherited plugin write authority: ${unlinkedWrite.response.status} ${unlinkedWrite.text}`);
   }
 
   const seenToolsB: BridgeToolName[] = [];

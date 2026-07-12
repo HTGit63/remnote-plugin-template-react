@@ -182,6 +182,22 @@ function richTextMathSpans(richText: RichTextInterface | undefined): Array<{ lat
   return spans;
 }
 
+export function countRichTextMathSpans(
+  richText: RichTextInterface | undefined
+): { inlineMathCount: number; mathBlockCount: number } {
+  return richTextMathSpans(richText).reduce(
+    (counts, span) => {
+      if (span.block) {
+        counts.mathBlockCount += 1;
+      } else {
+        counts.inlineMathCount += 1;
+      }
+      return counts;
+    },
+    { inlineMathCount: 0, mathBlockCount: 0 }
+  );
+}
+
 function isSpacerPlainText(text: string): boolean {
   return text === NUCLEAR_PHYSICS_SPACER_TEXT || text.trim().length === 0;
 }

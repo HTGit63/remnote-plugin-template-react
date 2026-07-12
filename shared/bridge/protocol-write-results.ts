@@ -16,6 +16,7 @@ import type {
   StyledRemTreeNode,
   StyledRemTreeNodeType,
   StylingPlanOperation,
+  ExpectedCardPlan,
 } from './protocol-write-args.js';
 import type { BridgeErrorCode } from './protocol-core.js';
 import type { WritePerformanceBudgetMs, WritePerformanceReport } from './performance.js';
@@ -646,6 +647,18 @@ export interface CardWorkflowResult {
   issues?: string[];
   warnings?: string[];
   repairPlan?: string[];
+  missingCards?: ExpectedCardPlan[];
+  duplicateCards?: Array<{
+    front: string;
+    back?: string;
+    cardType: CardWorkflowCardPlan['cardType'];
+    sourceRemIds: string[];
+  }>;
+  malformedCards?: Array<{
+    remId: string;
+    front?: string;
+    reason: string;
+  }>;
   truncated?: boolean;
   inspectedNodeCount?: number;
   durationMs?: number;

@@ -12,7 +12,12 @@ import {
 } from '../shared/bridge/style-presets';
 import { CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA } from '../server/src/tools/schemas';
 import { createOrReplaceNoteFromMarkdown } from '../src/remnote/write/markdownImportExecutor';
-import { setTextSpanColor } from '../src/remnote/write/formattingWrites';
+import {
+  RICH_TEXT_FONT_COLOR_FIELD,
+  RICH_TEXT_HIGHLIGHT_FIELD,
+} from '../src/remnote/richTextFormatting';
+import { applyStylePlan, setTextSpanColor } from '../src/remnote/write/formattingWrites';
+import { countRichTextMathSpans } from '../src/remnote/write/verification';
 import { MARKDOWN_IMPORT_RESULT_CACHE } from '../src/remnote/write/writeCaches';
 import { FakePlugin } from './helpers/fakeRemnote';
 
@@ -126,6 +131,8 @@ describe('note style presets', () => {
     const formulaRemId = await findRemIdByPlainText(fake, 'Alpha formula: qE = qvB.');
 
     expect(formulaRemId).toBeDefined();
+    const formulaRem = fake.rems.get(formulaRemId as string);
+    const formulaSpansBefore = countRichTextMathSpans(formulaRem?.text);
 
     const styled = await setTextSpanColor(fake.asPlugin(), {
       remId: formulaRemId as string,
@@ -144,5 +151,42 @@ describe('note style presets', () => {
     });
     expect(after).toEqual(before);
     expect(after).toContain('Alpha formula: qE = qvB.');
+    expect(formulaSpansBefore).toEqual({ inlineMathCount: 1, mathBlockCount: 0 });
+    expect(countRichTextMathSpans(formulaRem?.text)).toEqual(formulaSpansBefore);
+  });
+
+  test('multi-style plan applies only intended spans without visible pollution', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('multi-style-target', 'Alpha beta gamma');
+
+    const result = await applyStylePlan(fake.asPlugin(), {
+      operations: [
+        { remId: target._id, type: 'text_color_span', text: 'Alpha', color: 'blue' },
+        { remId: target._id, type: 'text_highlight_span', text: 'beta', highlightColor: 'yellow' },
+        { remId: target._id, type: 'bold_span', text: 'gamma' },
+      ],
+      verifyAfterWrite: true,
+      idempotencyKey: 'idem:multi-style-plan',
+    });
+
+    const spans = target.text.filter((item): item is Record<string, unknown> =>
+      typeof item === 'object' && item !== null
+    );
+    const alpha = spans.find((item) => item.text === 'Alpha');
+    const beta = spans.find((item) => item.text === 'beta');
+    const gamma = spans.find((item) => item.text === 'gamma');
+
+    expect(result.status).toBe('applied');
+    expect(result.operations.map((operation) => operation.status)).toEqual(['applied', 'applied', 'applied']);
+    expect(result.operations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ result: expect.objectContaining({ verification: expect.objectContaining({ plainTextUnchanged: true }) }) }),
+    ]));
+    expect(alpha?.[RICH_TEXT_FONT_COLOR_FIELD]).toBe(6);
+    expect(alpha?.[RICH_TEXT_HIGHLIGHT_FIELD]).toBeUndefined();
+    expect(beta?.[RICH_TEXT_HIGHLIGHT_FIELD]).toBe(3);
+    expect(beta?.[RICH_TEXT_FONT_COLOR_FIELD]).toBeUndefined();
+    expect(gamma?.b).toBe(true);
+    expect(await fake.richText.toString(target.text)).toBe('Alpha beta gamma');
+    expect(target.children).toEqual([]);
   });
 });

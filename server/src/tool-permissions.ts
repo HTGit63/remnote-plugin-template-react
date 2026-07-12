@@ -11,6 +11,7 @@ export interface ToolPermission {
   toolName: string;
   category: ToolPermissionCategory;
   requiredAccessScope: ChatGptAccessScope;
+  requiresWrite?: boolean;
   requiresTrustedWrite?: boolean;
   alwaysRequirePluginApproval?: boolean;
   disabled?: boolean;
@@ -92,6 +93,15 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   apply_structured_note_batch: { toolName: 'apply_structured_note_batch', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   create_polished_note_tree: { toolName: 'create_polished_note_tree', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   create_or_replace_note_from_markdown: { toolName: 'create_or_replace_note_from_markdown', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  plan_note_import: { toolName: 'plan_note_import', category: 'read', requiredAccessScope: 'focused-rem-only' },
+  plan_note_import_from_file: { toolName: 'plan_note_import_from_file', category: 'read', requiredAccessScope: 'focused-rem-only' },
+  start_note_import_job: { toolName: 'start_note_import_job', category: 'write', requiredAccessScope: 'current-rem-tree', requiresWrite: true },
+  start_note_import_from_file: { toolName: 'start_note_import_from_file', category: 'write', requiredAccessScope: 'current-rem-tree', requiresWrite: true },
+  run_note_import_job_step: { toolName: 'run_note_import_job_step', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  get_note_import_job_status: { toolName: 'get_note_import_job_status', category: 'read', requiredAccessScope: 'focused-rem-only' },
+  resume_note_import_job: { toolName: 'resume_note_import_job', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  verify_note_import_job: { toolName: 'verify_note_import_job', category: 'read', requiredAccessScope: 'current-rem-tree' },
+  cancel_note_import_job: { toolName: 'cancel_note_import_job', category: 'write', requiredAccessScope: 'focused-rem-only', requiresWrite: true },
   preview_markdown_note_tree: { toolName: 'preview_markdown_note_tree', category: 'read', requiredAccessScope: 'focused-rem-only' },
   create_note_from_markdown_tree: { toolName: 'create_note_from_markdown_tree', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   append_markdown_as_rem_tree: { toolName: 'append_markdown_as_rem_tree', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
@@ -210,7 +220,26 @@ export function validateMcpToolPermission(
 
   const permission = TOOL_PERMISSIONS[request.params.name];
   if (!permission) {
-    return { ok: true };
+    const actualAccessScope = principal.accessScope ?? 'focused-rem-only';
+    return {
+      ok: false,
+      error: 'PERMISSION_POLICY_MISSING: Tool has no explicit server permission policy.',
+      auditReason: 'permission_policy_missing',
+      code: 'PERMISSION_POLICY_MISSING',
+      layer: 'server_policy',
+      details: {
+        layer: 'server_policy',
+        code: 'PERMISSION_POLICY_MISSING',
+        errorCode: 'PERMISSION_POLICY_MISSING',
+        rootCauseClass: 'server_permission_policy',
+        toolName: request.params.name,
+        requiredAccessScope: 'focused-rem-only',
+        actualAccessScope,
+        permissionMode: permissionModeForPrincipal(principal),
+        permissionScope: permissionScopeForPrincipal(principal),
+        recommendedFix: 'Add an explicit permission policy before exposing or calling this tool.',
+      },
+    };
   }
 
   const approvedScope = principal.accessScope ?? 'focused-rem-only';
@@ -298,6 +327,20 @@ export function validateMcpToolPermission(
   }
 
   const scopeGrants = new Set(principal.scopeGrants);
+
+  if (permission.requiresWrite && !dryRunRequest && !scopeGrants.has('bridge:write')) {
+    return {
+      ok: false,
+      error: 'SERVER_POLICY_BLOCKED: INSUFFICIENT_SCOPE: This operation requires bridge:write scope.',
+      auditReason: 'missing_write_scope',
+      code: 'INSUFFICIENT_SCOPE',
+      layer: 'server_policy',
+      details: baseDetails(
+        'INSUFFICIENT_SCOPE',
+        'Reconnect with bridge:write scope before creating or changing import job state.'
+      ),
+    };
+  }
 
   if (permission.requiresTrustedWrite && !dryRunRequest) {
     const auditPayload = classifyDisposableAuditPayload({

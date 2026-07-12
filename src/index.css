@@ -75,7 +75,7 @@
 .bridge-stack {
   display: grid;
   width: 100%;
-  max-width: 560px;
+  max-width: 680px;
   margin: 0 auto;
   gap: 10px;
 }
@@ -182,6 +182,16 @@
 
 .bridge-task-banner--offline {
   border-color: rgba(239, 68, 68, 0.44);
+  background: var(--bridge-red-soft);
+}
+
+.bridge-task-banner--progress {
+  border-color: rgba(34, 199, 216, 0.44);
+  background: var(--bridge-blue-soft);
+}
+
+.bridge-task-banner--failed {
+  border-color: rgba(239, 68, 68, 0.58);
   background: var(--bridge-red-soft);
 }
 
@@ -374,6 +384,35 @@
   background: var(--bridge-blue-soft);
 }
 
+.bridge-auth-boundary {
+  border-color: rgba(34, 199, 216, 0.36);
+  background: rgba(34, 199, 216, 0.08);
+}
+
+.bridge-danger-zone {
+  border-color: rgba(239, 68, 68, 0.58);
+  background: rgba(127, 29, 29, 0.18);
+}
+
+.bridge-danger-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.bridge-danger-summary span {
+  min-width: 0;
+  border: 1px solid rgba(239, 68, 68, 0.32);
+  border-radius: 8px;
+  background: rgba(69, 10, 10, 0.28);
+  padding: 8px 10px;
+  overflow-wrap: anywhere;
+  color: #fecaca;
+  font-size: 12px;
+  font-weight: 720;
+  line-height: 1.4;
+}
+
 .bridge-section-head {
   display: flex;
   min-width: 0;
@@ -439,6 +478,12 @@
   color: #c6f4fa;
 }
 
+.bridge-hero > .bridge-pill {
+  max-width: none;
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
+
 .bridge-detail-list,
 .bridge-pending {
   display: grid;
@@ -455,11 +500,46 @@
 .bridge-empty,
 .bridge-preview,
 .bridge-decision-note,
+.bridge-event,
+.bridge-access-summary,
 .bridge-confirm-label,
-.bridge-confirm-input {
+.bridge-confirm-input,
+.bridge-text-input {
   min-width: 0;
   border-radius: 8px;
   overflow-wrap: anywhere;
+}
+
+.bridge-event {
+  margin-top: 10px;
+  border: 1px solid rgba(34, 199, 216, 0.34);
+  background: var(--bridge-blue-soft);
+  padding: 9px 10px;
+  color: #c6f4fa;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.bridge-event--danger {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--bridge-red-soft);
+  color: #fecaca;
+}
+
+.bridge-access-summary {
+  display: grid;
+  gap: 10px;
+  border: 1px dashed rgba(148, 163, 184, 0.34);
+  background: rgba(34, 33, 54, 0.5);
+  padding: 10px;
+}
+
+.bridge-access-summary p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--bridge-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
 }
 
 .bridge-detail-row {
@@ -559,6 +639,23 @@
 
 .bridge-confirm-input:focus {
   outline: 2px solid rgba(248, 113, 113, 0.86);
+  outline-offset: 2px;
+}
+
+.bridge-text-input {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--bridge-border);
+  background: var(--bridge-panel);
+  padding: 9px 10px;
+  color: var(--bridge-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.bridge-text-input:focus-visible {
+  outline: 2px solid var(--bridge-violet);
   outline-offset: 2px;
 }
 
@@ -737,11 +834,18 @@
   .bridge-access-editor--always,
   .bridge-two-col,
   .bridge-three-col,
+  .bridge-danger-summary,
   .bridge-actions {
     grid-template-columns: 1fr;
   }
 
   .bridge-hero {
+    align-items: start;
+  }
+
+  .bridge-section-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
     align-items: start;
   }
 

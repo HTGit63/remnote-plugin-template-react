@@ -19,6 +19,7 @@ import {
   PREVIEW_MARKDOWN_NOTE_TREE_INPUT_SCHEMA,
   CREATE_NOTE_FROM_MARKDOWN_TREE_INPUT_SCHEMA,
   APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA,
+  DESIGN_TEMPLATE_RULES_SCHEMA,
   EXPECTED_STYLE_EXPECTATION_SCHEMA,
   REM_STYLE_SCHEMA,
   REORDER_CHILDREN_INPUT_SCHEMA,
@@ -486,6 +487,7 @@ function checkStructuredDepth() {
 
 function checkStyleSchema() {
   checkSchemas();
+  assert(!DESIGN_TEMPLATE_RULES_SCHEMA.safeParse({}).success, 'design rules schema must reject incomplete rule objects.');
   const plan = parseMarkdownImportPlan(markdownSample());
   const output = markdownImportOutputTextFromTree(plan.tree);
   assert(!/\n(Size|H1|H2|H3)\n/.test(`\n${output}\n`), 'style schema/importer must not produce style-control Rems.');

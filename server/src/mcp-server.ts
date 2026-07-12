@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { BridgeToolArgs, BridgeToolName } from '../../shared/bridge/protocol.js';
 import type { BridgeHub } from './bridge-hub.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
@@ -142,8 +143,49 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   registerCardTools(context);
 
   assertRegisteredToolsMatchRegistry(Boolean(options.exposeDeleteTool), registeredToolNames, toolProfile);
+  if (options.toolCallAuthMode === 'hosted_oauth_required') {
+    exposeOpenAiToolSecuritySchemes(server);
+  }
 
   return server;
+}
+
+/**
+ * MCP SDK 1.29 retains extension metadata under `_meta` but does not serialize
+ * OpenAI's current top-level `securitySchemes` extension. Mirror the already
+ * validated scheme into tools/list while keeping `_meta` for older clients.
+ */
+function exposeOpenAiToolSecuritySchemes(server: McpServer): void {
+  type RawHandler = (request: unknown, extra: unknown) => Promise<unknown>;
+  type ToolListResult = {
+    tools: Array<{
+      _meta?: Record<string, unknown>;
+      securitySchemes?: unknown;
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  };
+
+  const protocol = server.server as unknown as {
+    _requestHandlers: Map<string, RawHandler>;
+  };
+  const original = protocol._requestHandlers.get('tools/list');
+  if (!original) {
+    throw new Error('MCP SDK tools/list handler is unavailable for OpenAI auth metadata.');
+  }
+
+  server.server.setRequestHandler(ListToolsRequestSchema, async (request, extra) => {
+    const listed = await original(request, extra) as ToolListResult;
+    return {
+      ...listed,
+      tools: listed.tools.map((tool) => {
+        const securitySchemes = tool._meta?.securitySchemes;
+        return securitySchemes
+          ? { ...tool, securitySchemes }
+          : tool;
+      }),
+    } as never;
+  });
 }
 
 function requiredOAuthScopesForTool(name: string): string[] {

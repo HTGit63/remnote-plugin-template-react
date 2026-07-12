@@ -43,7 +43,25 @@ Important env/ops refs:
 
 - Render env: hosted deployment mode, hosted pairing enabled, secret bearer/token values.
 - Docs formerly split across `CODEX_MCP_SETUP.md`, `DEPLOY_RENDER.md`, `render-deployment.md`, `oauth-setup.md`, `pairing-flow.md`, `release-hardening.md`.
-- Keep local/hosted semantics separate. Do not “fix” expected 401/auth failures away.
+- Keep local/hosted semantics separate. Discovery remains unauthenticated; hosted unauthenticated `tools/call` returns an MCP `isError` OAuth challenge, while non-tool protected routes may use HTTP 401/403. Neither path reaches a tool handler.
+
+### Codex Bearer Setup
+
+`REMNOTE_CODEX_TOKEN` is a dedicated hosted Codex MCP credential. `REMNOTE_BRIDGE_TOKEN` is the separate local bridge/plugin credential. Never reuse either value for OAuth access/refresh tokens, pairing codes, `SESSION_SECRET`, or `ADMIN_DEBUG_SECRET`.
+
+Set the same high-entropy Codex bearer in hosted server secret storage and the local environment that launches Codex. Codex reads it through its supported `bearer_token_env_var`; do not place the value in `config.toml`:
+
+```toml
+[mcp_servers.remnote]
+url = "https://your-render-service.onrender.com/mcp"
+bearer_token_env_var = "REMNOTE_CODEX_TOKEN"
+```
+
+```bash
+export REMNOTE_CODEX_TOKEN='<same dedicated hosted secret>'
+```
+
+The bearer proves Codex client identity only. An explicit `/codex/pair/*` link supplies RemNote session scope and trusted-write authority. Without that link, reads may use the sole active plugin route, but direct writes remain blocked with `TRUSTED_WRITE_REQUIRED`; normal `mass_note_writer` exposure never includes danger tools. Current Codex MCP config reference: [streamable HTTP servers](https://learn.chatgpt.com/docs/extend/mcp#streamable-http-servers).
 
 ## Safety Rules
 

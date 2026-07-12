@@ -465,7 +465,7 @@ export function registerHighLevelWriteTools({ registerTool, callPlugin }: ToolRe
     {
       title: 'Create or replace note from Markdown',
       description:
-        'Preferred one-call bulk importer for long lecture notes, ESSLCE notes, math/physics/chemistry notes, and copied Markdown outlines. Preserves headings, paragraphs, bullets, math, code, and source order; never summarizes user source text.',
+        'Use this when the user asks to import a bounded Markdown note in one call. Preserves headings, paragraphs, bullets, math, code, and source order; never summarizes user source text, and replacement modes may overwrite existing note content.',
       inputSchema: CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('create_or_replace_note_from_markdown'),

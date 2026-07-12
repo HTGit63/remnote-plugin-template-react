@@ -8,7 +8,7 @@
     "test:agents-simulated-live": "vitest run tests/agents-staged-repair-simulation.test.ts",
     "test:watch": "vitest",
     "check-types": "node ./node_modules/typescript/bin/tsc",
-    "validate": "node ./node_modules/@remnote/plugin-sdk/scripts/index.js validate",
+    "validate": "node ./scripts/build-plugin.cjs --validate-only",
     "dev": "node ./scripts/dev-server.cjs",
     "build": "node ./scripts/build-plugin.cjs",
     "server:install": "npm install --prefix server",
@@ -77,7 +77,7 @@
     "postcss-loader": "^7.0.0",
     "tailwindcss": "^3.1.5",
     "typescript": "^4.7.4",
-    "vitest": "^3.2.4",
+    "vitest": "^3.2.6",
     "webpack": "^5.73.0",
     "webpack-cli": "^4.10.0"
   }

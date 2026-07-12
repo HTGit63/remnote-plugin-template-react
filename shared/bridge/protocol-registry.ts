@@ -262,7 +262,7 @@ export const BRIDGE_TOOL_ANNOTATIONS: Record<BridgeToolName, BridgeToolAnnotatio
   create_or_replace_note_from_markdown: {
     readOnlyHint: false,
     openWorldHint: false,
-    destructiveHint: false,
+    destructiveHint: true,
     idempotentHint: true,
   },
   preview_markdown_note_tree: {

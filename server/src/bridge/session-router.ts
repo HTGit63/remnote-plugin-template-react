@@ -151,7 +151,7 @@ export class SessionRouter {
       if (
         !pairingSession ||
         pairingSession.revokedAt ||
-        (pairingSession.status !== 'approved' && pairingSession.status !== 'connected')
+        !['approved', 'connected', 'disconnected'].includes(pairingSession.status)
       ) {
         return {
           ok: false,
@@ -167,9 +167,22 @@ export class SessionRouter {
         };
       }
 
+      const requestedTier = hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier;
+      if (
+        (hello.accessScope && hello.accessScope !== pairingSession.accessScope) ||
+        (hello.trustedWriteMode && hello.trustedWriteMode !== pairingSession.trustedWriteMode) ||
+        (hello.toolTier && requestedTier !== pairingSession.toolTier)
+      ) {
+        return {
+          ok: false,
+          error: 'NO_PAIRED_PLUGIN_SESSION',
+          message: 'Plugin registration authority does not match the approved pairing. Update settings through the authenticated plugin API, then reconnect.',
+        };
+      }
+
       const userId = pairingSession.oauthSubject || pairingSession.pairingId;
       const existing = this.connections.get(userId);
-      if (existing && existing.pluginSessionId !== pairingSession.pairingId && existing.isOpen) {
+      if (existing && existing.connectionId !== hello.pluginConnectionId && existing.isOpen) {
         existing.close(1012, 'DEVICE_CONFLICT: New paired session connected.');
         this.connections.delete(userId);
       }
@@ -182,20 +195,22 @@ export class SessionRouter {
         pairingSession.pairingId
       );
       this.connections.set(userId, conn);
+      const connectedAt = new Date().toISOString();
       await this.storage.updateChatGptPairingSession(pairingSession.pairingId, {
         status: 'connected',
-        connectedAt: pairingSession.connectedAt ?? new Date().toISOString(),
-        lastSeenAt: new Date().toISOString(),
+        connectedAt,
+        disconnectedAt: undefined,
+        lastSeenAt: connectedAt,
         pluginConnectionId: hello.pluginConnectionId,
         workspaceLabel: hello.workspaceLabel ?? pairingSession.workspaceLabel,
-        accessScope: hello.accessScope ?? pairingSession.accessScope,
-        trustedWriteMode: hello.trustedWriteMode ?? pairingSession.trustedWriteMode,
-        toolTier: hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier,
+        accessScope: pairingSession.accessScope,
+        trustedWriteMode: pairingSession.trustedWriteMode,
+        toolTier: pairingSession.toolTier,
         toolTierVersion: TOOL_REGISTRY_VERSION,
         toolSchemaVersionAtApproval: pairingSession.toolSchemaVersionAtApproval ?? TOOL_SCHEMA_VERSION,
         requiresConnectorRefresh: false,
       });
-      const toolTier = hello.toolTier ? normalizeToolProfile(hello.toolTier) : pairingSession.toolTier;
+      const toolTier = pairingSession.toolTier;
       const requiresConnectorRefresh = false;
       return { ok: true, connection: conn, toolTier, requiresConnectorRefresh };
     }
@@ -287,8 +302,13 @@ export class SessionRouter {
   /**
    * Remove a connection when a plugin disconnects.
    */
-  removeConnection(userId: string): void {
+  removeConnection(userId: string, expectedConnectionId?: string): boolean {
+    const current = this.connections.get(userId);
+    if (!current || (expectedConnectionId && current.connectionId !== expectedConnectionId)) {
+      return false;
+    }
     this.connections.delete(userId);
+    return true;
   }
 
   /**

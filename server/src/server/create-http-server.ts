@@ -1,4 +1,9 @@
-import { createServer, type Server as HttpServer, type ServerResponse } from 'node:http';
+import {
+  createServer,
+  type IncomingMessage,
+  type Server as HttpServer,
+  type ServerResponse,
+} from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from '../auth/local-token.js';
 import { codexClientHashForRequest, hasValidCodexBearerToken } from '../auth/codex-token.js';
@@ -21,6 +26,7 @@ import {
 } from '../config.js';
 import {
   applyCors,
+  hasValidHeaderSecret,
   readJsonBody,
   setSecurityHeaders,
   validateRequestHost,
@@ -34,7 +40,13 @@ import type { AuditLogger } from '../sessions/types.js';
 import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from '../storage/index.js';
 import { getAllPublicMcpToolNames, getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
 import { validateMcpToolPermission } from '../tool-permissions.js';
-import { getToolPolicyEntry, normalizeToolProfile, TOOL_SCHEMA_VERSION, type ToolProfile } from '../tool-policy.js';
+import {
+  clampToolProfile,
+  getToolPolicyEntry,
+  normalizeToolProfile,
+  TOOL_SCHEMA_VERSION,
+  type ToolProfile,
+} from '../tool-policy.js';
 import { runBridgeHealthCheck } from '../health-check.js';
 import type { BridgeHealthCheckMode } from '../health-check-types.js';
 import { renderDashboard } from '../dashboard/templates.js';
@@ -278,7 +290,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       toolSchemaVersion: TOOL_SCHEMA_VERSION,
       toolRegistryVersion: TOOL_REGISTRY_VERSION,
       requiresConnectorRefresh: false,
-      sessionStale: false,
+      sessionStale: session.status === 'disconnected',
       publicToolCount: summary.publicToolCount,
       allPublicToolCount: summary.allPublicToolCount,
       toolCountsByTier: toolCountsByTier(summary),
@@ -297,11 +309,16 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       };
     }
     const sessions = await storage.listChatGptPairingSessions(25);
-    const current = sessions.find((session) => ['connected', 'approved', 'pending'].includes(session.status));
+    const bridgeConnected = hub.getStatus().connected;
+    const current = bridgeConnected
+      ? sessions.find((session) => session.status === 'connected')
+      : sessions.find((session) => ['connected', 'disconnected', 'approved', 'pending'].includes(session.status));
+    const storedConnectedWithoutRoute = current?.status === 'connected' && !bridgeConnected;
+    const stale = current?.status === 'disconnected' || storedConnectedWithoutRoute;
     return {
-      status: current?.status ?? 'none',
-      connected: current?.status === 'connected',
-      stale: false,
+      status: storedConnectedWithoutRoute ? 'disconnected' : current?.status ?? 'none',
+      connected: Boolean(current?.status === 'connected' && bridgeConnected),
+      stale,
       toolTier: current?.toolTier,
       accessScope: current?.accessScope,
       trustedWriteMode: current?.trustedWriteMode,
@@ -334,7 +351,9 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     body: unknown,
     url: URL
   ): ToolProfile {
-    return requestedToolProfile(req, body, url) ?? principal.toolTier ?? config.toolProfile;
+    const approvedCeiling = principal.toolTier ?? config.toolProfile;
+    const requested = requestedToolProfile(req, body, url);
+    return requested ? clampToolProfile(requested, approvedCeiling) : approvedCeiling;
   }
 
   function isMcpDiscoveryRequest(body: unknown): boolean {
@@ -371,7 +390,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       subject: 'chatgpt-connector-compat',
       userId: '__connector_compat__',
       authMode: 'connector_compat_noauth',
-      scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
+      scopeGrants: ['bridge:read'],
       accessScope: 'current-rem-tree',
       trustedWriteMode: 'ask-every-write',
       toolTier: config.toolProfile,
@@ -410,18 +429,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     return { linkId: link.linkedPairingId, session, status: 'linked' };
   }
 
-  async function latestCodexPairingContext(): Promise<ChatGptPairingSession | null> {
-    if (config.deploymentMode !== 'hosted') {
-      return null;
-    }
-    const sessions = await storage.listChatGptPairingSessions(25);
-    return (
-      sessions.find((session) => session.status === 'connected' && !session.revokedAt) ??
-      sessions.find((session) => session.status === 'approved' && !session.revokedAt) ??
-      null
-    );
-  }
-
   async function authorizeCodexMcpRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]): Promise<AuthResult | null> {
     if (config.deploymentMode !== 'hosted' || !config.codexToken || !hasValidCodexBearerToken(req, config)) {
       return null;
@@ -432,7 +439,9 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return null;
     }
     const linked = await linkedCodexPairingContext(codexClientHash);
-    const session = linked.session ?? await latestCodexPairingContext();
+    // A global bearer proves the Codex client identity only. RemNote authority
+    // comes exclusively from an explicit Codex-to-plugin pairing link.
+    const session = linked.session;
     const codexSubject = `codex:${codexClientHash.slice(0, 16)}`;
     return {
       ok: true,
@@ -618,20 +627,19 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     });
   }
 
-  async function authorizeProtectedDiagnostics(req: Parameters<typeof authorizeLocalMcpRequest>[0], url: URL) {
+  async function authorizeProtectedDiagnostics(req: Parameters<typeof authorizeLocalMcpRequest>[0]) {
     if (config.deploymentMode !== 'hosted') {
       return authorizeLocalMcpRequest(req, config).ok;
     }
 
-    const providedSecret = req.headers['x-admin-debug-secret'] || url.searchParams.get('admin_debug_secret') || '';
-    if (config.adminDebugSecret && typeof providedSecret === 'string' && providedSecret === config.adminDebugSecret) {
+    if (hasValidHeaderSecret(req, 'x-admin-debug-secret', config.adminDebugSecret)) {
       return true;
     }
 
     return Boolean(await validateDashboardSession(req, storage));
   }
 
-  return createServer(async (req, res) => {
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     if (!validateRequestHost(req, config)) {
       auditLogger?.record({
         type: 'mcp_request_rejected',
@@ -850,7 +858,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     }
 
     if (url.pathname === '/diagnostics' && req.method === 'GET') {
-      const authorized = await authorizeProtectedDiagnostics(req, url);
+      const authorized = await authorizeProtectedDiagnostics(req);
       if (!authorized) {
         writeJson(res, config.deploymentMode === 'hosted' ? 403 : 401, {
           error:
@@ -1177,11 +1185,36 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         statusCode: auth.statusCode,
         reason: auth.auditReason,
       });
-      if (config.deploymentMode === 'hosted' && auth.statusCode === 401) {
-        res.setHeader(
-          'WWW-Authenticate',
-          buildOauthChallenge(req, config, requiredScopesForMcpRequest(body).join(' '))
-        );
+      const oauthChallenge =
+        config.deploymentMode === 'hosted' && (auth.statusCode === 401 || auth.statusCode === 403)
+          ? buildOauthChallenge(
+              req,
+              config,
+              requiredScopesForMcpRequest(body).join(' '),
+              auth.statusCode === 403 ? 'insufficient_scope' : 'invalid_token',
+              auth.error
+            )
+          : undefined;
+      if (oauthChallenge) {
+        res.setHeader('WWW-Authenticate', oauthChallenge);
+      }
+      if (oauthChallenge && isMcpToolCallRequest(body)) {
+        const requestId =
+          typeof body === 'object' && body !== null && !Array.isArray(body)
+            ? (body as { id?: string | number | null }).id ?? null
+            : null;
+        writeJson(res, 200, {
+          jsonrpc: '2.0',
+          id: requestId,
+          result: {
+            content: [{ type: 'text', text: `Authentication required: ${auth.error}` }],
+            _meta: {
+              'mcp/www_authenticate': [oauthChallenge],
+            },
+            isError: true,
+          },
+        });
+        return;
       }
       writeJson(res, auth.statusCode, {
         error: auth.error,
@@ -1301,5 +1334,27 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         }
       }
     }
+  };
+
+  return createServer((req, res) => {
+    void handleRequest(req, res).catch((error: unknown) => {
+      if (res.headersSent || res.writableEnded || res.destroyed) {
+        res.destroy();
+        return;
+      }
+
+      const message = error instanceof Error ? error.message : '';
+      if (/body too large/i.test(message)) {
+        writeJson(res, 413, { error: 'Request body too large.' });
+        return;
+      }
+      if (error instanceof SyntaxError) {
+        writeJson(res, 400, { error: 'Invalid JSON request body.' });
+        return;
+      }
+
+      console.error('HTTP request failed with an unhandled internal error.');
+      writeJson(res, 500, { error: 'Internal server error.' });
+    });
   });
 }

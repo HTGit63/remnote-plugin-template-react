@@ -75,6 +75,38 @@ export const INITIAL_BRIDGE_STATUS: BridgeStatusSnapshot = {
   lastEvent: 'Waiting for local companion server.',
 };
 
+export function getBridgeCloseState(input: {
+  code: number;
+  reason?: string;
+  hosted: boolean;
+}): BridgeConnectionState {
+  const reason = input.reason?.trim().toLowerCase() ?? '';
+
+  if (reason.includes('device_conflict') || reason.includes('new remnote plugin connection')) {
+    return 'device_conflict';
+  }
+  if (reason.includes('stale connection') || reason.includes('heartbeat missed')) {
+    return 'stale_connection';
+  }
+  if (reason.includes('revoked')) {
+    return 'session_revoked';
+  }
+  if (
+    reason.includes('invalid bridge token') ||
+    reason.includes('plugin_session_expired') ||
+    reason.includes('expired')
+  ) {
+    return 'token_expired';
+  }
+  if (reason.includes('no_paired_plugin_session')) {
+    return 'not_paired';
+  }
+  if (input.code === 1000) {
+    return 'disconnected';
+  }
+  return input.hosted ? 'paired_offline' : 'server_unreachable';
+}
+
 export function getBridgeStatusLabel(state: BridgeConnectionState): string {
   switch (state) {
     case 'connected':
@@ -92,7 +124,7 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
     case 'server_unreachable':
       return 'Server Unreachable';
     case 'token_expired':
-      return 'Token Expired';
+      return 'Token Invalid or Expired';
     case 'session_revoked':
       return 'Session Revoked';
     case 'device_conflict':
@@ -108,7 +140,7 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
 }
 
 export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
-  if (status.lastError) {
+  if (status.lastError && status.state === 'error') {
     return status.serverUrl.startsWith('wss://')
       ? 'Check Render URL, hosted pairing, and RemNote plugin connection, then reconnect.'
       : 'Check the local companion server URL and bridge token, then reconnect.';
@@ -130,7 +162,9 @@ export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
     case 'server_unreachable':
       return 'Server unreachable. Check hosted URL or local server.';
     case 'token_expired':
-      return 'Session expired. Pair this device again.';
+      return status.serverUrl.startsWith('wss://')
+        ? 'Session expired. Pair this device again.'
+        : 'Update the local bridge token, then reconnect.';
     case 'session_revoked':
       return 'Session revoked. Pair this device again.';
     case 'device_conflict':

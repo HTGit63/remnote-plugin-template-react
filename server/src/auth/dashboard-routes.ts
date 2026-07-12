@@ -96,6 +96,10 @@ export async function handleDashboardRoute(
 
   // ──── GET /auth/start ──────────────────────────────────────────────
   if (url.pathname === '/auth/start' && req.method === 'GET') {
+    if (config.deploymentMode === 'hosted' && url.searchParams.get('provider') === 'local') {
+      writeJson(res, 400, { error: 'Local dashboard authentication is unavailable in hosted mode.' });
+      return true;
+    }
     cleanExpiredStates();
     const state = randomBytes(24).toString('hex');
     pendingOAuthStates.set(state, {
@@ -103,7 +107,7 @@ export async function handleDashboardRoute(
       returnUrl: safeReturnTo(url.searchParams.get('returnTo')),
     });
 
-    const isLocal = config.deploymentMode === 'local' || url.searchParams.get('provider') === 'local';
+    const isLocal = config.deploymentMode === 'local';
 
     if (isLocal) {
       // Local emulator: skip real OAuth, redirect directly to callback with a fake code
@@ -136,6 +140,11 @@ export async function handleDashboardRoute(
     const state = url.searchParams.get('state');
     const provider = url.searchParams.get('provider');
 
+    if (config.deploymentMode === 'hosted' && provider === 'local') {
+      writeJson(res, 400, { error: 'Local dashboard authentication is unavailable in hosted mode.' });
+      return true;
+    }
+
     if (!state || !pendingOAuthStates.has(state)) {
       writeJson(res, 400, { error: 'Invalid or expired OAuth state parameter.' });
       return true;
@@ -156,7 +165,7 @@ export async function handleDashboardRoute(
 
     let userEmail: string;
 
-    if (provider === 'local' || config.deploymentMode === 'local') {
+    if (config.deploymentMode === 'local') {
       // Local emulator: generate a deterministic local user
       userEmail = 'local-dev@remnote-companion.local';
     } else {

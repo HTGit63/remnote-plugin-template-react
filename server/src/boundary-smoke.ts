@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { validateMcpToolPermission } from './tool-permissions.js';
+import { TOOL_PERMISSIONS, validateMcpToolPermission } from './tool-permissions.js';
+import { getAllPublicMcpToolNames } from './tool-registry.js';
+import { clampToolProfile } from './tool-policy.js';
 import type { AuthenticatedPrincipal } from './auth/types.js';
 
 const repoRoot = join(process.cwd(), '..');
@@ -69,6 +71,17 @@ function failStage3(message: string): void {
 
 function stage3PermissionBoundaryViolations(): string[] {
   const violations: string[] = [];
+  if (clampToolProfile('danger', 'mass_note_writer') !== 'mass_note_writer') {
+    violations.push('request-selected danger tier exceeded approved mass_note_writer ceiling');
+  }
+  if (clampToolProfile('basic', 'developer') !== 'basic') {
+    violations.push('safe request-selected lower tool tier was not preserved');
+  }
+  for (const toolName of getAllPublicMcpToolNames(true)) {
+    if (!TOOL_PERMISSIONS[toolName]) {
+      violations.push(`public tool ${toolName} has no explicit server permission policy`);
+    }
+  }
   for (const authMode of ['local_bridge_token', 'hosted_oauth', 'codex_bearer'] as const) {
     const blocked = validateMcpToolPermission(
       mcpBody('get_rem', { remId: 'outside-current-tree' }),
@@ -106,6 +119,48 @@ function stage3PermissionBoundaryViolations(): string[] {
   );
   if (underGuardedDelete.ok || underGuardedDelete.code !== 'INVALID_ARGS') {
     violations.push('real delete without prior dry-run, ancestor, and title guard set was not blocked');
+  }
+
+  for (const bulkTool of ['run_note_import_job_step', 'resume_note_import_job']) {
+    const untrustedBulkWrite = validateMcpToolPermission(
+      mcpBody(bulkTool, { jobId: 'other-session-job' }),
+      scopePrincipal('codex_bearer', {
+        scopeGrants: ['bridge:read', 'bridge:write'],
+        trustedWriteMode: 'ask-every-write',
+      })
+    );
+    if (untrustedBulkWrite.ok || untrustedBulkWrite.code !== 'TRUSTED_WRITE_REQUIRED') {
+      violations.push(`${bulkTool} did not require explicit trusted-write authority`);
+    }
+  }
+
+  const connectorCompatWrite = validateMcpToolPermission(
+    mcpBody('create_or_replace_note_from_markdown', {
+      parentRemId: 'compat-root',
+      markdownText: '# Must remain blocked',
+      mode: 'create_child',
+      safetyOptions: { dryRun: false },
+    }),
+    {
+      subject: 'connector-compat',
+      userId: '__connector_compat__',
+      authMode: 'connector_compat_noauth',
+      scopeGrants: ['bridge:read'],
+      accessScope: 'current-rem-tree',
+      trustedWriteMode: 'ask-every-write',
+      toolTier: 'developer',
+    }
+  );
+  if (connectorCompatWrite.ok || connectorCompatWrite.code !== 'INSUFFICIENT_SCOPE') {
+    violations.push('connector compatibility no-auth principal could write');
+  }
+
+  const missingPolicy = validateMcpToolPermission(
+    mcpBody('future_unclassified_write_tool', {}),
+    scopePrincipal('hosted_oauth')
+  );
+  if (missingPolicy.ok || missingPolicy.code !== 'PERMISSION_POLICY_MISSING') {
+    violations.push('unclassified tool call did not fail closed at server permission seam');
   }
 
   return violations;

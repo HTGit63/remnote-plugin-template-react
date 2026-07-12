@@ -378,12 +378,19 @@ export function validateConfig(config: CompanionServerConfig): void {
     if (!config.sessionSecret) {
       throw new Error('SESSION_SECRET or REMNOTE_BRIDGE_SESSION_SECRET is required in hosted pairing mode.');
     }
-    if (config.publicBaseUrl) {
-      try {
-        new URL(config.publicBaseUrl);
-      } catch {
-        throw new Error('REMNOTE_BRIDGE_PUBLIC_BASE_URL must be an absolute http(s) URL.');
+    if (!config.publicBaseUrl) {
+      throw new Error('REMNOTE_BRIDGE_PUBLIC_BASE_URL is required in hosted pairing mode.');
+    }
+    try {
+      const publicBaseUrl = new URL(config.publicBaseUrl);
+      if (publicBaseUrl.protocol !== 'https:') {
+        throw new Error('not_https');
       }
+    } catch {
+      throw new Error('REMNOTE_BRIDGE_PUBLIC_BASE_URL must be an absolute HTTPS URL.');
+    }
+    if (config.allowNoToken) {
+      throw new Error('REMNOTE_BRIDGE_ALLOW_NO_TOKEN is forbidden in hosted pairing mode.');
     }
     if (config.allowedOrigins.length === 0) {
       throw new Error('Hosted pairing mode requires at least one allowed browser origin.');

@@ -129,6 +129,42 @@ function buildExpectedStyleMap(rootRemId: string, rules?: NoteDesignRules) {
   };
 }
 
+async function assertDesignOperationsInsideRoot(
+  plugin: RNPlugin,
+  rootRemId: string,
+  operations: StylingPlanOperation[]
+): Promise<void> {
+  await findRequiredRem(plugin, rootRemId, 'Target');
+  for (const operation of operations) {
+    if (operation.remId === rootRemId) {
+      continue;
+    }
+    const seen = new Set<string>();
+    let current = await plugin.rem.findOne(operation.remId);
+    if (!current) {
+      throw new RemnoteWriteError('REM_NOT_FOUND', 'Style operation target Rem was not found.', {
+        rootRemId,
+        targetRemId: operation.remId,
+      });
+    }
+    let inside = false;
+    while (current && !seen.has(current._id)) {
+      seen.add(current._id);
+      if (current.parent === rootRemId) {
+        inside = true;
+        break;
+      }
+      current = current.parent ? await plugin.rem.findOne(current.parent) : undefined;
+    }
+    if (!inside) {
+      throw new RemnoteWriteError('OUT_OF_SCOPE', 'Design style operation target is outside the declared note tree.', {
+        rootRemId,
+        targetRemId: operation.remId,
+      });
+    }
+  }
+}
+
 async function resolveTemplate(plugin: RNPlugin, templateId?: string): Promise<NoteDesignTemplate | undefined> {
   if (!templateId) {
     return undefined;
@@ -315,6 +351,10 @@ export async function updateNoteWithDesign(
     template ? `Template: ${template.name}.` : 'Template: none.',
   ];
 
+  if (args.styleOperations?.length) {
+    await assertDesignOperationsInsideRoot(plugin, args.targetRemId, args.styleOperations);
+  }
+
   if (dryRun) {
     return {
       status: 'dry_run',
@@ -457,6 +497,7 @@ export async function repairNoteDesign(
   const operations = args.operations?.length
     ? args.operations
     : await directChildHeadingOperations(plugin, args.rootRemId, template?.rules);
+  await assertDesignOperationsInsideRoot(plugin, args.rootRemId, operations);
   const plan = operations.length
     ? operations.map((operation) => `${operation.type} ${operation.remId}`)
     : ['No safe automatic repair operations were inferred.'];
@@ -542,14 +583,54 @@ async function collectCardSourceRecords(
   return cards;
 }
 
-function extractBasicCardsFromMarkdown(markdownText: string, maxCards: number): CardWorkflowCardPlan[] {
+function extractCardsFromMarkdown(
+  markdownText: string,
+  maxCards: number,
+  marker: NonNullable<CreateFlashcardsFromMarkdownArgs['marker']>
+): CardWorkflowCardPlan[] {
   const cards: CardWorkflowCardPlan[] = [];
-  for (const line of markdownText.split(/\r?\n/)) {
+  for (const sourceLine of markdownText.split(/\r?\n/)) {
     if (cards.length >= maxCards) {
       break;
     }
-    const match = /^[-*\s]*(.+?)::\s*(.+)$/.exec(line.trim());
-    if (match) {
+    const line = sourceLine
+      .trim()
+      .replace(/^(?:[-*+]|\d+[.)])\s+/, '')
+      .trim();
+    if (!line) {
+      continue;
+    }
+
+    const clozeMatches = Array.from(line.matchAll(/\{\{(.+?)\}\}/g));
+    if (clozeMatches.length > 0) {
+      if (marker === 'cloze' || marker === 'both') {
+        const plainText = line.replace(/\{\{(.+?)\}\}/g, (_full, inner: string) =>
+          (inner.split('::')[0] ?? '').trim()
+        );
+        for (const match of clozeMatches) {
+          if (cards.length >= maxCards) {
+            break;
+          }
+          const clozeText = (match[1]?.split('::')[0] ?? '').trim();
+          if (!clozeText) {
+            continue;
+          }
+          cards.push({
+            front: plainText,
+            text: plainText,
+            clozeText,
+            cardType: 'cloze',
+          });
+        }
+      }
+      continue;
+    }
+
+    if (marker === 'double_colon' || marker === 'both') {
+      const match = /^(.+?)::\s*(.+)$/.exec(line);
+      if (!match) {
+        continue;
+      }
       cards.push({
         front: match[1].trim(),
         back: match[2].trim(),
@@ -561,18 +642,7 @@ function extractBasicCardsFromMarkdown(markdownText: string, maxCards: number): 
 }
 
 function extractClozeCardsFromText(text: string, maxCards: number): CardWorkflowCardPlan[] {
-  const cards: CardWorkflowCardPlan[] = [];
-  const pattern = /\{\{(.+?)\}\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(text)) && cards.length < maxCards) {
-    cards.push({
-      front: text.replace(/\{\{(.+?)\}\}/, '$1'),
-      text,
-      clozeText: match[1],
-      cardType: 'cloze',
-    });
-  }
-  return cards;
+  return extractCardsFromMarkdown(text, maxCards, 'cloze');
 }
 
 async function createCards(
@@ -621,6 +691,9 @@ function cardWorkflowResult(input: {
   issues?: string[];
   warnings?: string[];
   repairPlan?: string[];
+  missingCards?: CardWorkflowResult['missingCards'];
+  duplicateCards?: CardWorkflowResult['duplicateCards'];
+  malformedCards?: CardWorkflowResult['malformedCards'];
   truncated?: boolean;
   inspectedNodeCount?: number;
   durationMs?: number;
@@ -638,6 +711,9 @@ function cardWorkflowResult(input: {
     issues: input.issues,
     warnings: input.warnings,
     repairPlan: input.repairPlan,
+    missingCards: input.missingCards,
+    duplicateCards: input.duplicateCards,
+    malformedCards: input.malformedCards,
     truncated: input.truncated,
     inspectedNodeCount: input.inspectedNodeCount,
     durationMs: input.durationMs,
@@ -674,14 +750,7 @@ export async function createFlashcardsFromMarkdown(
 ): Promise<CreateFlashcardsFromMarkdownResult> {
   const maxCards = clampCardLimit(args.maxCards);
   const marker = args.marker ?? 'both';
-  const cards = [
-    ...(marker === 'double_colon' || marker === 'both'
-      ? extractBasicCardsFromMarkdown(args.markdownText, maxCards)
-      : []),
-    ...(marker === 'cloze' || marker === 'both'
-      ? extractClozeCardsFromText(args.markdownText, maxCards)
-      : []),
-  ].slice(0, maxCards);
+  const cards = extractCardsFromMarkdown(args.markdownText, maxCards, marker);
   const dryRun = Boolean(args.dryRun);
   if (dryRun) {
     return cardWorkflowResult({ status: 'dry_run', ok: true, dryRun, parentId: args.parentId, cards });
@@ -727,6 +796,8 @@ export async function verifyCardSet(
   const cards: CardWorkflowCardPlan[] = [];
   const issues: string[] = [];
   const warnings: string[] = [];
+  const malformedCards: NonNullable<CardWorkflowResult['malformedCards']> = [];
+  const expectedCards = args.expectedCards ?? [];
   const initialChildrenRead = await withVerifierTimeout(
     runSdkOperation('rem.getChildrenRem', () => root.getChildrenRem()).catch(() => []),
     timeoutMs
@@ -749,12 +820,17 @@ export async function verifyCardSet(
 
   if (initialChildrenRead.value.length === 0) {
     warnings.push('No cards found under target root.');
+    const repairPlan = expectedCards.map((card) =>
+      `Create missing ${card.cardType ?? 'matching'} card: ${card.front}`
+    );
     return cardWorkflowResult({
       status: 'verified',
-      ok: true,
+      ok: expectedCards.length === 0,
       rootRemId: args.rootRemId,
       parentId: args.rootRemId,
       cards,
+      missingCards: expectedCards.length ? [...expectedCards] : undefined,
+      repairPlan: repairPlan.length ? repairPlan : undefined,
       warnings,
       truncated: false,
       inspectedNodeCount: 0,
@@ -834,7 +910,13 @@ export async function verifyCardSet(
           cardType: 'cloze',
         });
       } else if (practiceEnabled) {
+        const reason = 'Practice enabled but no back text or cloze metadata.';
         issues.push(`Rem ${child._id} has practice enabled but no back text or cloze metadata.`);
+        malformedCards.push({
+          remId: child._id,
+          ...(text.frontText ? { front: text.frontText } : {}),
+          reason,
+        });
       }
     }
 
@@ -859,14 +941,60 @@ export async function verifyCardSet(
   if (cards.length === 0) {
     warnings.push('No cards found under target root.');
   }
+  const normalizeCardText = (value: string | undefined) => value?.replace(/\s+/g, ' ').trim().toLowerCase() ?? '';
+  const semanticGroups = new Map<string, CardWorkflowCardPlan[]>();
+  for (const card of cards) {
+    const key = [card.cardType, normalizeCardText(card.front), normalizeCardText(card.back)].join('|');
+    const group = semanticGroups.get(key) ?? [];
+    group.push(card);
+    semanticGroups.set(key, group);
+  }
+  const duplicateCards: NonNullable<CardWorkflowResult['duplicateCards']> = [];
+  for (const group of semanticGroups.values()) {
+    if (group.length < 2) {
+      continue;
+    }
+    const first = group[0];
+    const sourceRemIds = group
+      .map((card) => card.sourceRemId)
+      .filter((remId): remId is string => Boolean(remId));
+    duplicateCards.push({
+      front: first.front,
+      ...(first.back ? { back: first.back } : {}),
+      cardType: first.cardType,
+      sourceRemIds,
+    });
+    issues.push(`Duplicate ${first.cardType} card "${first.front}" found at Rem IDs ${sourceRemIds.join(', ')}.`);
+  }
+  const missingCards = expectedCards.filter((expected) =>
+    !cards.some((actual) =>
+      normalizeCardText(actual.front) === normalizeCardText(expected.front) &&
+      (expected.back === undefined || normalizeCardText(actual.back) === normalizeCardText(expected.back)) &&
+      (expected.cardType === undefined || actual.cardType === expected.cardType)
+    )
+  );
+  for (const missing of missingCards) {
+    issues.push(`Missing expected ${missing.cardType ?? 'matching'} card "${missing.front}".`);
+  }
+  const repairPlan = [
+    ...malformedCards.map((card) => `Repair malformed card Rem ${card.remId}: ${card.reason}`),
+    ...duplicateCards.map((card) =>
+      `Review duplicate ${card.cardType} card "${card.front}" at Rem IDs ${card.sourceRemIds.join(', ')}; remove only after dry-run approval.`
+    ),
+    ...missingCards.map((card) => `Create missing ${card.cardType ?? 'matching'} card: ${card.front}`),
+  ];
   return cardWorkflowResult({
     status: truncated ? 'partial' : 'verified',
-    ok: !truncated && issues.length === 0,
+    ok: !truncated && issues.length === 0 && duplicateCards.length === 0 && missingCards.length === 0,
     rootRemId: args.rootRemId,
     parentId: args.rootRemId,
     cards,
     issues,
     warnings,
+    malformedCards: malformedCards.length ? malformedCards : undefined,
+    duplicateCards: duplicateCards.length ? duplicateCards : undefined,
+    missingCards: missingCards.length ? missingCards : undefined,
+    repairPlan: repairPlan.length ? repairPlan : undefined,
     truncated,
     inspectedNodeCount,
     durationMs: Date.now() - startedAt,

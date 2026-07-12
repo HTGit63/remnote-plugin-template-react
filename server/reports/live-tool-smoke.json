@@ -1,6 +1,6 @@
 {
   "ok": false,
-  "generatedAt": "2026-07-09T19:41:46.090Z",
+  "generatedAt": "2026-07-12T09:31:21.547Z",
   "mcpUrl": "http://127.0.0.1:47392/mcp?tool_tier=developer",
   "disposableParentId": "missing",
   "allowFocusedRoot": false,
@@ -15,7 +15,7 @@
     {
       "tool": "mcp_initialize",
       "category": "system/read",
-      "durationMs": 30,
+      "durationMs": 31,
       "status": "failed",
       "httpStatus": 599,
       "errorCode": "MCP_ENDPOINT_UNREACHABLE",

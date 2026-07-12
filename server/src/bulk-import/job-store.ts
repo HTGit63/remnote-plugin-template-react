@@ -74,6 +74,7 @@ export class BulkImportJobStore {
     const job: BulkImportJob = {
       jobId,
       planId,
+      ownerId: plan.ownerId,
       sourceName: plan.sourceName,
       sourceHash: plan.sourceHash,
       sourceMetadata: plan.sourceMetadata,

@@ -75,6 +75,21 @@ export interface ToolMetadata {
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
 export const TOOL_SCHEMA_VERSION = '2026-07-10.file-import-safety';
 
+const TOOL_PROFILE_RANK: Record<ToolProfile, number> = {
+  basic: 0,
+  mass_note_writer: 1,
+  note_writer: 2,
+  power_user: 3,
+  developer: 4,
+  danger: 5,
+};
+
+export function clampToolProfile(requested: ToolProfile, approvedCeiling: ToolProfile): ToolProfile {
+  return TOOL_PROFILE_RANK[requested] <= TOOL_PROFILE_RANK[approvedCeiling]
+    ? requested
+    : approvedCeiling;
+}
+
 export const BASIC_TIER_TOOLS = [
   'get_bridge_status',
   'get_plugin_status',
