@@ -60,13 +60,14 @@ describe('ChatGPT app contract', () => {
       'start_note_import_from_file',
       'run_note_import_job_step',
       'resume_note_import_job',
-      'verify_note_import_job',
+      'reconcile_note_import_job_chunk',
       'cancel_note_import_job',
     ]) {
       expect(tools[name].annotations?.readOnlyHint, `${name} persists state`).toBe(false);
     }
 
     expect(tools.get_note_import_job_status.annotations?.readOnlyHint).toBe(true);
+    expect(tools.verify_note_import_job.annotations?.readOnlyHint).toBe(true);
     expect(tools.plan_note_import_from_file.annotations?.openWorldHint).toBe(false);
     expect(tools.start_note_import_from_file.annotations?.openWorldHint).toBe(false);
     expect(tools.create_or_replace_note_from_markdown.annotations?.destructiveHint).toBe(true);
@@ -91,7 +92,7 @@ describe('ChatGPT app contract', () => {
         _meta?: { securitySchemes?: Array<{ type?: string; scopes?: string[] }> };
       }>;
     };
-    expect(listed.tools).toHaveLength(19);
+    expect(listed.tools).toHaveLength(20);
     for (const descriptor of listed.tools) {
       expect(descriptor.securitySchemes, `${descriptor.name} top-level securitySchemes`).toEqual([
         expect.objectContaining({ type: 'oauth2', scopes: expect.arrayContaining(['bridge:read']) }),

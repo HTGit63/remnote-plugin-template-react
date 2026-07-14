@@ -37,7 +37,19 @@ async function proveMemoryStorage() {
   const plan = store.savePlan(buildPlan());
   await storage.saveBulkImportPlan(plan);
   const job = store.createJob(plan.planId, `bulk-job:storage-smoke:memory:${Date.now()}`);
-  await storage.saveBulkImportJob(job);
+  const firstSave = await storage.saveBulkImportJob(job, { expectedRevision: 0 });
+  const writerA = structuredClone(firstSave);
+  const writerB = structuredClone(firstSave);
+  writerA.lastError = 'memory-writer-a';
+  writerB.lastError = 'memory-writer-b';
+  const secondSave = await storage.saveBulkImportJob(writerA, { expectedRevision: firstSave.revision });
+  let staleWriterRejected = false;
+  try {
+    await storage.saveBulkImportJob(writerB, { expectedRevision: firstSave.revision });
+  } catch (error: unknown) {
+    staleWriterRejected = (error as { code?: string }).code === 'BULK_IMPORT_REVISION_CONFLICT';
+  }
+  assert(staleWriterRejected, 'Memory storage did not reject a stale bulk-import writer.');
   const storedJob = await storage.getBulkImportJob(job.jobId);
   assert(storedJob?.storageDurability === 'memory_only', 'Memory storage must label bulk jobs memory_only.');
   assert(storedJob.chunks.length === job.chunks.length, 'Memory storage did not round-trip chunks.');
@@ -51,6 +63,8 @@ async function proveMemoryStorage() {
     status: 'PASS',
     storageDurability: storedJob.storageDurability,
     chunks: storedJob.chunks.length,
+    revision: secondSave.revision,
+    staleWriterRejected,
     lostAfterNewProvider,
   };
 }
@@ -70,7 +84,19 @@ async function provePostgresStorage(databaseUrl: string | undefined) {
   const plan = firstStore.savePlan(buildPlan());
   await first.saveBulkImportPlan(plan);
   const job = firstStore.createJob(plan.planId, jobId);
-  await first.saveBulkImportJob(job);
+  const firstSave = await first.saveBulkImportJob(job, { expectedRevision: 0 });
+  const writerA = structuredClone(firstSave);
+  const writerB = structuredClone(firstSave);
+  writerA.lastError = 'postgres-writer-a';
+  writerB.lastError = 'postgres-writer-b';
+  const secondSave = await first.saveBulkImportJob(writerA, { expectedRevision: firstSave.revision });
+  let staleWriterRejected = false;
+  try {
+    await first.saveBulkImportJob(writerB, { expectedRevision: firstSave.revision });
+  } catch (error: unknown) {
+    staleWriterRejected = (error as { code?: string }).code === 'BULK_IMPORT_REVISION_CONFLICT';
+  }
+  assert(staleWriterRejected, 'Postgres storage did not reject a stale bulk-import writer.');
   await first.close();
 
   const second = new PostgresStorageProvider(databaseUrl);
@@ -83,11 +109,15 @@ async function provePostgresStorage(databaseUrl: string | undefined) {
   assert(storedJob?.jobId === jobId, 'Postgres storage did not persist bulk job.');
   assert(storedJob.storageDurability === 'persistent', 'Postgres storage must label bulk jobs persistent.');
   assert(storedJob.chunks.length === job.chunks.length, 'Postgres storage did not round-trip chunks.');
+  assert(storedJob.revision === secondSave.revision, 'Postgres storage did not preserve the latest revision.');
+  assert(storedJob.lastError === 'postgres-writer-a', 'Postgres stale writer overwrote the winning state.');
 
   return {
     status: 'PASS',
     storageDurability: storedJob.storageDurability,
     chunks: storedJob.chunks.length,
+    revision: storedJob.revision,
+    staleWriterRejected,
     reloadedAfterProviderRestart: true,
   };
 }

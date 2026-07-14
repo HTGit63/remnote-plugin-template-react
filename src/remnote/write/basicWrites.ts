@@ -67,11 +67,11 @@ import type {
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from './writeErrors';
 import { APPEND_RESULT_CACHE, CREATE_DOCUMENT_RESULT_CACHE, CREATE_REM_RESULT_CACHE, MOVE_RESULT_CACHE, REORDER_RESULT_CACHE, UPDATE_RESULT_CACHE, UPDATE_RICH_RESULT_CACHE, getWriteIdempotencyKey, rememberCachedResult, rememberCreatedRemIds } from './writeCaches';
-import { buildRichTextFromSpans, createRemWithRichText, createSingleRemWithMarkdownApi, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, getRemSiblingIndex, hasRemSdkApi, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
+import { buildRichTextFromSpans, createRemWithRichText, createSingleRemWithMarkdownApi, findRequiredRem, getFreshInsertIndex, getRemApprovalContext, getRemChildCount, getRemPlainString, getRemRichText, getRemSiblingIndex, hasRemSdkApi, parseMarkdownToRichText, assertNewParentIsNotDescendant } from './remnoteSdkHelpers';
 import { normalizeMarkdown } from './writeValidation';
 import { getDeleteTarget } from './deleteWrites';
 import { singleMarkdownFastPathEnabled } from './runtimeFlags';
-import { captureStyleMutationSnapshot, withStyleMutationProof } from './styleMutationInvariant';
+import { captureStyleMutationSnapshot, withRichReplacementProof } from './styleMutationInvariant';
 
 async function rollbackCreatedRem(plugin: RNPlugin, remId: string): Promise<{
   rollbackStatus: 'completed' | 'failed';
@@ -361,7 +361,7 @@ export async function updateRemMarkdown(
   const rem = await findRequiredRem(plugin, args.remId, 'Target');
   const beforePlainText = await getRemPlainString(plugin, rem);
   if (args.expectedPlainText !== undefined && beforePlainText !== args.expectedPlainText) {
-    throw new RemnoteWriteError('INVALID_ARGS', 'expectedPlainText did not match current Rem text.', {
+    throw new RemnoteWriteError('STALE_STATE_CONFLICT', 'expectedPlainText did not match current Rem text.', {
       remId: rem._id,
       expectedPlainText: args.expectedPlainText,
       actualPlainText: beforePlainText,
@@ -419,13 +419,15 @@ export async function updateRemRich(
   const beforePlainText = await getRemPlainString(plugin, rem);
   const before = await captureStyleMutationSnapshot(plugin, rem);
   const richText = await buildRichTextFromSpans(plugin, args.richText);
+  const expectedPlainText = await plugin.richText.toString(richText);
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
   const refreshed = await findRequiredRem(plugin, rem._id, 'Target');
   const afterPlainText = await getRemPlainString(plugin, refreshed);
   const after = await captureStyleMutationSnapshot(plugin, refreshed);
+  const richTextMatchesRequested = JSON.stringify(getRemRichText(refreshed)) === JSON.stringify(richText);
 
-  const result: FormatRemResult = withStyleMutationProof({
+  const result: FormatRemResult = withRichReplacementProof({
     remId: rem._id,
     status: 'updated_rich',
     idempotencyKey,
@@ -434,7 +436,7 @@ export async function updateRemRich(
       before: { plainText: beforePlainText },
       after: { plainText: afterPlainText },
     },
-  }, before, after);
+  }, before, after, expectedPlainText, richTextMatchesRequested);
   rememberCachedResult(UPDATE_RICH_RESULT_CACHE, idempotencyKey, result);
   return result;
 }

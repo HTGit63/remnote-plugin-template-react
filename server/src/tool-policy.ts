@@ -112,6 +112,7 @@ export const MASS_NOTE_WRITER_TIER_TOOLS = [
   'run_note_import_job_step',
   'get_note_import_job_status',
   'resume_note_import_job',
+  'reconcile_note_import_job_chunk',
   'verify_note_import_job',
   'cancel_note_import_job',
 ] as const;
@@ -249,7 +250,12 @@ export const TOOL_POLICY_ENTRIES = [
   {
     name: 'resume_note_import_job',
     policy: 'preferred',
-    preferredFor: ['continuing from pending or partial import chunks'],
+    preferredFor: ['continuing from never-attempted or explicitly reconciled-not-written import chunks'],
+  },
+  {
+    name: 'reconcile_note_import_job_chunk',
+    policy: 'preferred',
+    preferredFor: ['resolving unknown import write outcomes from exact live ID and source evidence'],
   },
   {
     name: 'verify_note_import_job',
@@ -479,6 +485,7 @@ function defaultSdkCapability(name: string, category: ToolCategory): string | nu
       'start_note_import_job',
       'start_note_import_from_file',
       'get_note_import_job_status',
+      'reconcile_note_import_job_chunk',
       'verify_note_import_job',
       'cancel_note_import_job',
     ].includes(name)
@@ -752,7 +759,16 @@ export const TOOL_METADATA = [
     runtimeVerifiedSource: 'server_local',
     liveVerificationRequired: true,
     agentWarning:
-      'Resumes only pending, failed-safe, partial, or unverified chunks; verified chunks are not rewritten.',
+      'Resumes only never-attempted or explicitly reconciled-not-written chunks. Unknown or unverified outcomes require reconciliation and are never blindly replayed.',
+  }),
+  meta('reconcile_note_import_job_chunk', 'repair', 'high', {
+    supportsIdempotency: true,
+    performanceBudgetMs: 10000,
+    runtimeVerified: true,
+    runtimeVerifiedSource: 'server_local',
+    liveVerificationRequired: true,
+    agentWarning:
+      'State-changing reconciliation requires the current job revision, exact parent identity, mutation IDs, matching source readback, and provenance.',
   }),
   meta('verify_note_import_job', 'markdown_note', 'low', {
     requiresWrite: false,

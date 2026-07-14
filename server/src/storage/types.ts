@@ -1,5 +1,22 @@
 import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
 
+export type BulkImportJobSaveOptions = {
+  expectedRevision?: number;
+};
+
+export class BulkImportRevisionConflictError extends Error {
+  readonly code = 'BULK_IMPORT_REVISION_CONFLICT';
+
+  constructor(
+    public readonly jobId: string,
+    public readonly expectedRevision: number,
+    public readonly actualRevision: number
+  ) {
+    super(`Bulk import job ${jobId} revision conflict: expected ${expectedRevision}, actual ${actualRevision}.`);
+    this.name = 'BulkImportRevisionConflictError';
+  }
+}
+
 export interface User {
   id: string;
   email: string;
@@ -250,7 +267,7 @@ export interface StorageProvider {
   bulkImportStorageDurability(): BulkImportJob['storageDurability'];
   saveBulkImportPlan(plan: BulkImportPlan): Promise<BulkImportPlan>;
   getBulkImportPlan(planId: string): Promise<BulkImportPlan | null>;
-  saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob>;
+  saveBulkImportJob(job: BulkImportJob, options?: BulkImportJobSaveOptions): Promise<BulkImportJob>;
   getBulkImportJob(jobId: string): Promise<BulkImportJob | null>;
 
   // Lifecycle

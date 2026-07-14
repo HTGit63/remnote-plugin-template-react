@@ -76,6 +76,8 @@ import {
   normalizeTextColorTarget,
   RICH_TEXT_FONT_COLOR_FIELD,
   RICH_TEXT_HIGHLIGHT_FIELD,
+  replaceRichTextRangeWithMathNode,
+  richTextContainsNonTextNodes,
   resolveRangeFromPlainText,
 } from '../richTextFormatting';
 import { RemnoteWriteError, mapFormattingError, runSdkOperation } from './writeErrors';
@@ -86,6 +88,7 @@ import { existingRemHeadingStyleEnabled, nativeRemHighlightEnabled } from './run
 import {
   captureStyleMutationSnapshot,
   verifyStyleOnlyMutation,
+  withRichReplacementProof,
   withStyleMutationProof,
 } from './styleMutationInvariant';
 
@@ -105,6 +108,25 @@ function assertExistingRemHeadingStyleEnabled(operation: string): void {
   );
 }
 
+async function headingReadback(rem: Rem, expectedHeadingLevel: RemHeadingLevel) {
+  const actualHeadingLevel = (await rem.getFontSize().catch(() => undefined)) ?? 'normal';
+  if (actualHeadingLevel !== expectedHeadingLevel) {
+    throw new RemnoteWriteError('PARTIAL_FAILURE', 'Heading mutation did not round-trip through direct SDK property readback.', {
+      remId: rem._id,
+      expectedHeadingLevel,
+      actualHeadingLevel,
+      failedStage: 'heading_property_readback',
+      rollbackStatus: 'not_attempted',
+    });
+  }
+  return {
+    expectedHeadingLevel,
+    actualHeadingLevel,
+    headingRoundTripPassed: true,
+    evidenceMethod: 'live_property_readback',
+  };
+}
+
 export async function setRemHeadingLevel(
   plugin: RNPlugin,
   args: SetRemHeadingLevelArgs
@@ -114,7 +136,14 @@ export async function setRemHeadingLevel(
   const before = await captureStyleMutationSnapshot(plugin, rem);
   await runSdkOperation('rem.setFontSize', () => rem.setFontSize(normalizeHeading(args.level)));
   const after = await captureStyleMutationSnapshot(plugin, rem);
-  return withStyleMutationProof({ remId: rem._id, status: 'heading_set', ok: true }, before, after);
+  const result: FormatRemResult = withStyleMutationProof({
+    remId: rem._id,
+    status: 'heading_set',
+    ok: true,
+    verification: {},
+  }, before, after) as FormatRemResult;
+  const readback = await headingReadback(rem, args.level);
+  return { ...result, verification: { ...(result.verification ?? {}), ...readback } };
 }
 
 export async function setRemTextColor(
@@ -225,6 +254,19 @@ export async function setRemHighlightColor(
     return withStyleMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, before, after);
   }
 
+  if (richTextContainsNonTextNodes(getRemRichText(rem))) {
+    throw new RemnoteWriteError(
+      'SDK_UNSUPPORTED',
+      'Whole-Rem highlight fallback cannot safely style math or other non-text rich nodes.',
+      {
+        remId: rem._id,
+        requestedColor: color,
+        fallback: 'Enable verified native whole-Rem highlight support or style adjacent text spans only.',
+        mutationStarted: false,
+      }
+    );
+  }
+
   const plain = await getRemPlainString(plugin, rem);
   if (!plain) {
     throw new RemnoteWriteError('SDK_UNSUPPORTED', 'NO_TEXT_TO_HIGHLIGHT: Rem has no text to highlight safely.', {
@@ -282,12 +324,20 @@ export async function clearRemFormatting(
   const warnings: string[] = [];
   const cleared: NonNullable<FormatRemResult['cleared']> = {};
   const unsupported: NonNullable<FormatRemResult['unsupported']> = {};
+  let headingVerification: Record<string, unknown> = {};
 
   await runSdkOperation('rem.setText', () => rem.setText(richText));
   cleared.textFormatting = true;
 
-  await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
-  cleared.heading = true;
+  if (existingRemHeadingStyleEnabled()) {
+    await runSdkOperation('rem.setFontSize', () => rem.setFontSize(undefined));
+    headingVerification = await headingReadback(rem, 'normal');
+    cleared.heading = true;
+  } else {
+    cleared.heading = false;
+    unsupported.headingReset = true;
+    warnings.push('Heading reset was not attempted because existing-Rem font-size mutation has not been live-validated.');
+  }
 
   await runSdkOperation('rem.setIsListItem', () => rem.setIsListItem(true));
   cleared.hideBullet = true;
@@ -306,7 +356,7 @@ export async function clearRemFormatting(
   }
 
   const after = await captureStyleMutationSnapshot(plugin, rem);
-  return withStyleMutationProof({
+  const result: FormatRemResult = withStyleMutationProof({
     remId: rem._id,
     status: warnings.length === 0 ? 'formatting_cleared' : 'formatting_partially_cleared',
     ok: warnings.length === 0,
@@ -314,6 +364,8 @@ export async function clearRemFormatting(
     unsupported,
     warnings,
   }, before, after);
+  result.verification = { ...(result.verification ?? {}), ...headingVerification };
+  return result;
 }
 
 async function resolveCommandTarget(plugin: RNPlugin, args: ApplyRemnoteCommandArgs): Promise<Rem> {
@@ -518,6 +570,21 @@ export async function applyRemnoteCommand(
   if (before) {
     const after = await captureStyleMutationSnapshot(plugin, rem);
     result.verification = verifyStyleOnlyMutation(rem._id, result.status, before, after);
+    const expectedHeading = command === 'heading_1'
+      ? 'H1'
+      : command === 'heading_2'
+        ? 'H2'
+        : command === 'heading_3'
+          ? 'H3'
+          : command === 'normal_text'
+            ? 'normal'
+            : undefined;
+    if (expectedHeading) {
+      result.verification = {
+        ...result.verification,
+        ...await headingReadback(rem, expectedHeading),
+      };
+    }
   }
   rememberRemnoteCommandResult(idempotencyKey, result);
   return result;
@@ -625,11 +692,45 @@ async function applyOneStyleOperation(
         methodUsed: 'rich_text_rebuild',
       } as FormatRemResult, before, after);
     }
-    case 'math_conversion':
-      throw new RemnoteWriteError(
-        'SDK_UNSUPPORTED',
-        'apply_style_plan math_conversion is not safe for existing arbitrary rich text in installed SDK. Use update_rem_rich or create_polished_note_tree with math spans.'
+    case 'math_conversion': {
+      const latex = operation.latex?.trim();
+      if (!latex) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'math_conversion requires latex.');
+      }
+      const rem = await findRequiredRem(plugin, operation.remId, 'Target');
+      const before = await captureStyleMutationSnapshot(plugin, rem);
+      const current = getRemRichText(rem);
+      const range = await resolveRangeFromPlainText(
+        plugin,
+        current,
+        operation.start,
+        operation.end,
+        operation.text,
+        operation.occurrence ?? 1
       );
+      const converted = await replaceRichTextRangeWithMathNode(
+        plugin,
+        current,
+        range.start,
+        range.end,
+        latex,
+        false
+      );
+      const expectedPlainText = `${before.plainText.slice(0, range.start)}${latex}${before.plainText.slice(range.end)}`;
+      await runSdkOperation('rem.setText', () => rem.setText(converted));
+      const refreshed = await findRequiredRem(plugin, rem._id, 'Target');
+      const after = await captureStyleMutationSnapshot(plugin, refreshed);
+      const richTextMatchesRequested = JSON.stringify(getRemRichText(refreshed)) === JSON.stringify(converted);
+      return withRichReplacementProof({
+        remId: rem._id,
+        status: 'updated_rich',
+        ok: true,
+        resolvedPlainText: range.resolvedPlainText,
+        start: range.start,
+        end: range.end,
+        methodUsed: 'rich_text_rebuild',
+      } as FormatRemResult, before, after, expectedPlainText, richTextMatchesRequested);
+    }
     default:
       throw new RemnoteWriteError('INVALID_ARGS', `Unsupported style operation "${operation.type}".`);
   }

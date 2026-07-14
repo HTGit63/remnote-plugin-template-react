@@ -323,6 +323,7 @@ export interface StylingPlanOperation {
   start?: number;
   end?: number;
   text?: string;
+  latex?: string;
   occurrence?: number;
   value?: string;
   color?: RemColorName | string;
@@ -349,6 +350,7 @@ export interface CreatePolishedNoteTreeArgs extends NoteStylePresetFields {
 
 export type MarkdownImportMode =
   | 'create_child'
+  | 'append_children_to_target'
   | 'replace_target_children'
   | 'update_target_and_replace_children'
   | 'append_to_target';
@@ -521,6 +523,25 @@ export interface VerifyNoteDesignArgs extends NoteStylePresetFields {
 export type NoteDesignTemplateSchemaVersion = 1;
 export type NoteDesignConflictBehavior = 'last_write_wins' | 'versioned_reject';
 
+export interface NoteDesignRoleTreatment {
+  remStyle?: RemStyleInput;
+  fullTextStyle?: RichTextSpanStyle;
+  prefixStyle?: RichTextSpanStyle;
+}
+
+export interface NoteDesignRoleRules {
+  root?: NoteDesignRoleTreatment;
+  section?: NoteDesignRoleTreatment;
+  keyIdea?: NoteDesignRoleTreatment;
+  formula?: NoteDesignRoleTreatment;
+  workedExample?: NoteDesignRoleTreatment;
+  answer?: NoteDesignRoleTreatment;
+  warning?: NoteDesignRoleTreatment;
+  summary?: NoteDesignRoleTreatment;
+  concept?: NoteDesignRoleTreatment;
+  descriptor?: NoteDesignRoleTreatment;
+}
+
 export interface NoteDesignRules {
   headingPattern: {
     rootHeadingLevel?: RemHeadingLevel;
@@ -569,6 +590,7 @@ export interface NoteDesignRules {
     workedExampleCount: number;
     labels: string[];
   };
+  roleRules?: NoteDesignRoleRules;
   expectedStyleMap?: ExpectedStyleMap;
   stylePreset?: NoteStylePreset;
 }
@@ -611,6 +633,7 @@ export interface SaveNoteDesignTemplateArgs {
   rootRemId?: string;
   rules?: NoteDesignRules;
   overwrite?: boolean;
+  expectedVersion?: number;
 }
 
 export interface ListNoteDesignTemplatesArgs {
@@ -638,6 +661,7 @@ export interface ExportNoteDesignTemplateArgs {
 export interface ImportNoteDesignTemplateArgs {
   templateJson: string;
   overwrite?: boolean;
+  expectedVersion?: number;
 }
 
 export type DesignedNoteWritingMode = 'markdown' | 'styled_tree';

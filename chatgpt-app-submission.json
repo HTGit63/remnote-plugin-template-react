@@ -211,16 +211,28 @@
         "destructive_justification": "Does not delete Rems and skips chunks already verified as applied."
       }
     },
-    "verify_note_import_job": {
+    "reconcile_note_import_job_chunk": {
       "annotations": {
         "readOnlyHint": false,
         "openWorldHint": false,
         "destructiveHint": false
       },
       "justifications": {
-        "read_only_justification": "Reads source/live RemNote content and persists verification status for the import job.",
-        "open_world_justification": "Reads private RemNote content and updates private verification state without publishing externally.",
-        "destructive_justification": "Does not overwrite or delete RemNote content."
+        "read_only_justification": "Explicitly changes one import chunk only after exact revision, parent, mutation-ID, and source-readback evidence is supplied.",
+        "open_world_justification": "Reads private RemNote evidence and changes only the user's private import-job state.",
+        "destructive_justification": "Does not delete Rems or blindly replay writes; ambiguous evidence remains blocked."
+      }
+    },
+    "verify_note_import_job": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Reports source/live RemNote fidelity without mutating or persisting import-job state.",
+        "open_world_justification": "Reads private RemNote content without publishing or changing external state.",
+        "destructive_justification": "Does not create, update, overwrite, or delete RemNote or import-job state."
       }
     },
     "cancel_note_import_job": {

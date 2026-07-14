@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
   BulkImportCheckpoint,
   BulkImportChunk,
+  BulkImportChunkAttempt,
   BulkImportChunkStatus,
   BulkImportJob,
   BulkImportJobStatus,
@@ -16,6 +17,7 @@ import {
   bulkSectionIdempotencyKey,
   isBulkImportChunkRunnable,
   isBulkImportJobComplete,
+  migrateBulkImportJob,
   summarizeBulkImportProgress,
 } from '../../../shared/bridge/bulk-import.js';
 
@@ -43,8 +45,9 @@ export class BulkImportJobStore {
   }
 
   saveJob(job: BulkImportJob): BulkImportJob {
-    this.jobs.set(job.jobId, job);
-    return job;
+    const migrated = migrateBulkImportJob(job);
+    this.jobs.set(migrated.jobId, migrated);
+    return migrated;
   }
 
   createJob(
@@ -72,7 +75,9 @@ export class BulkImportJobStore {
       chunks: section.chunks.map((chunk) => chunksByOriginalId.get(chunk.chunkId) ?? chunk),
     }));
     const job: BulkImportJob = {
+      schemaVersion: 2,
       jobId,
+      revision: 0,
       planId,
       ownerId: plan.ownerId,
       sourceName: plan.sourceName,
@@ -167,6 +172,14 @@ export class BulkImportJobStore {
     if (patch.expectedSourceText && patch.expectedSourceText !== chunk.expectedSourceText) {
       throw new Error('Cannot change chunk expectedSourceText after planning.');
     }
+    if (
+      chunk.status === 'pending' &&
+      (chunk.attempts?.length ?? 0) === 0 &&
+      patch.status &&
+      ['partial', 'partial_needs_verification', 'written_not_verified', 'failed', 'needs_manual_review'].includes(patch.status)
+    ) {
+      throw new Error(`Cannot classify bulk import chunk ${chunk.chunkId} as ${patch.status}; it was never attempted.`);
+    }
     const nextChunk: BulkImportChunk = {
       ...chunk,
       ...patch,
@@ -197,6 +210,167 @@ export class BulkImportJobStore {
       return null;
     }
     return job.chunks.find((chunk) => isBulkImportChunkRunnable(chunk.status)) ?? null;
+  }
+
+  firstReconciliationRequiredChunk(jobId: string): BulkImportChunk | null {
+    const job = this.requireJob(jobId);
+    return job.chunks.find((chunk) => chunk.reconciliationStatus === 'required') ?? null;
+  }
+
+  beginChunkAttempt(
+    jobId: string,
+    chunkId: string,
+    input: Pick<BulkImportChunkAttempt, 'attemptId' | 'operationId' | 'expectedParent'>
+  ): BulkImportJob {
+    const job = this.requireJob(jobId);
+    const chunk = job.chunks.find((candidate) => candidate.chunkId === chunkId);
+    if (!chunk) {
+      throw new Error(`Unknown import chunk: ${chunkId}`);
+    }
+    if (chunk.status !== 'pending') {
+      throw new Error(`Cannot dispatch bulk import chunk ${chunkId} from ${chunk.status}; reconcile it first.`);
+    }
+    const startedAt = new Date().toISOString();
+    const attempt: BulkImportChunkAttempt = {
+      ...input,
+      state: 'dispatching',
+      sourceHash: chunk.sourceHash,
+      semanticHash: chunk.sourceManifest.semanticHash,
+      idempotencyKey: chunk.idempotencyKey,
+      stage: 'chunk_write',
+      startedAt,
+      hierarchyCreatedRemIds: [],
+      createdRemIds: [],
+      updatedRemIds: [],
+      provenance: 'runtime',
+    };
+    return this.updateChunk(jobId, chunkId, {
+      status: 'running',
+      startedAt,
+      attempts: [...chunk.attempts, attempt],
+      reconciliationStatus: 'not_required',
+      reconciliationProvenance: undefined,
+      error: undefined,
+    });
+  }
+
+  finishChunkAttempt(
+    jobId: string,
+    chunkId: string,
+    input: {
+      attemptId: string;
+      state: BulkImportChunkAttempt['state'];
+      status: BulkImportChunkStatus;
+      verificationStatus: BulkImportChunk['verificationStatus'];
+      hierarchyCreatedRemIds?: string[];
+      createdRemIds?: string[];
+      updatedRemIds?: string[];
+      error?: string;
+      errorCode?: string;
+      lifecycle?: unknown[];
+      finishedAt?: string;
+    }
+  ): BulkImportJob {
+    const job = this.requireJob(jobId);
+    const chunk = job.chunks.find((candidate) => candidate.chunkId === chunkId);
+    if (!chunk) {
+      throw new Error(`Unknown import chunk: ${chunkId}`);
+    }
+    const attemptIndex = chunk.attempts.findIndex((attempt) => attempt.attemptId === input.attemptId);
+    if (attemptIndex < 0) {
+      throw new Error(`Unknown import attempt: ${input.attemptId}`);
+    }
+    const finishedAt = input.finishedAt ?? new Date().toISOString();
+    const hierarchyCreatedRemIds = Array.from(new Set([
+      ...chunk.hierarchyCreatedRemIds,
+      ...(input.hierarchyCreatedRemIds ?? []),
+    ]));
+    const createdRemIds = Array.from(new Set([...chunk.createdRemIds, ...(input.createdRemIds ?? [])]));
+    const updatedRemIds = Array.from(new Set([...chunk.updatedRemIds, ...(input.updatedRemIds ?? [])]));
+    const attempts = chunk.attempts.map((attempt, index) => index === attemptIndex
+      ? {
+          ...attempt,
+          state: input.state,
+          finishedAt,
+          hierarchyCreatedRemIds: Array.from(new Set([
+            ...attempt.hierarchyCreatedRemIds,
+            ...(input.hierarchyCreatedRemIds ?? []),
+          ])),
+          createdRemIds: Array.from(new Set([...attempt.createdRemIds, ...(input.createdRemIds ?? [])])),
+          updatedRemIds: Array.from(new Set([...attempt.updatedRemIds, ...(input.updatedRemIds ?? [])])),
+          error: input.error,
+          errorCode: input.errorCode,
+          lifecycle: input.lifecycle,
+        }
+      : attempt);
+    return this.updateChunk(jobId, chunkId, {
+      status: input.status,
+      verificationStatus: input.verificationStatus,
+      attempts,
+      hierarchyCreatedRemIds,
+      createdRemIds,
+      updatedRemIds,
+      finishedAt,
+      reconciliationStatus: input.state === 'unknown'
+        ? 'required'
+        : input.state === 'failed_before_write'
+          ? 'required'
+          : input.status === 'verified'
+            ? 'reconciled_written'
+            : 'required',
+      error: input.error,
+    });
+  }
+
+  reconcileChunk(
+    jobId: string,
+    chunkId: string,
+    input: {
+      outcome: 'written' | 'not_written' | 'manual_review';
+      createdRemIds?: string[];
+      updatedRemIds?: string[];
+      provenance: string;
+    }
+  ): BulkImportJob {
+    const job = this.requireJob(jobId);
+    const chunk = job.chunks.find((candidate) => candidate.chunkId === chunkId);
+    if (!chunk) {
+      throw new Error(`Unknown import chunk: ${chunkId}`);
+    }
+    if (chunk.reconciliationStatus !== 'required') {
+      throw new Error(`Chunk ${chunkId} does not require reconciliation.`);
+    }
+    const createdRemIds = Array.from(new Set([...chunk.createdRemIds, ...(input.createdRemIds ?? [])]));
+    const updatedRemIds = Array.from(new Set([...chunk.updatedRemIds, ...(input.updatedRemIds ?? [])]));
+    const attempts = chunk.attempts.map((attempt, index) => index === chunk.attempts.length - 1
+      ? {
+          ...attempt,
+          state: input.outcome === 'written' ? 'acknowledged' as const : attempt.state,
+          createdRemIds: Array.from(new Set([...attempt.createdRemIds, ...(input.createdRemIds ?? [])])),
+          updatedRemIds: Array.from(new Set([...attempt.updatedRemIds, ...(input.updatedRemIds ?? [])])),
+        }
+      : attempt);
+    if (input.outcome === 'manual_review') {
+      return this.updateChunk(jobId, chunkId, {
+        status: 'needs_manual_review',
+        verificationStatus: 'not_verifiable',
+        reconciliationStatus: 'manual_review',
+        reconciliationProvenance: input.provenance,
+        attempts,
+        createdRemIds,
+        updatedRemIds,
+      });
+    }
+    return this.updateChunk(jobId, chunkId, {
+      status: input.outcome === 'written' ? 'verified' : 'pending',
+      verificationStatus: input.outcome === 'written' ? 'passed' : 'not_verifiable',
+      reconciliationStatus: input.outcome === 'written' ? 'reconciled_written' : 'reconciled_not_written',
+      reconciliationProvenance: input.provenance,
+      attempts,
+      createdRemIds,
+      updatedRemIds,
+      error: undefined,
+    });
   }
 
   recordChapterRoot(jobId: string, chapterRootRemId: string): BulkImportJob {

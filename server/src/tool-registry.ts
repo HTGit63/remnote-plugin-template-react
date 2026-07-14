@@ -30,6 +30,7 @@ export const SERVER_LOCAL_MCP_TOOLS = [
   'run_note_import_job_step',
   'get_note_import_job_status',
   'resume_note_import_job',
+  'reconcile_note_import_job_chunk',
   'verify_note_import_job',
   'cancel_note_import_job',
   'preview_markdown_note_tree',

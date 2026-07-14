@@ -1,3 +1,4 @@
+import { RemType } from '@remnote/plugin-sdk';
 import type { PluginRem as Rem, RNPlugin, RichTextInterface } from '@remnote/plugin-sdk';
 import type {
   AnalyzeNoteDesignArgs,
@@ -9,6 +10,8 @@ import type {
   ListNoteDesignTemplatesArgs,
   ListNoteDesignTemplatesResult,
   NoteDesignRules,
+  NoteDesignRoleRules,
+  NoteDesignRoleTreatment,
   NoteStylePreset,
   NoteDesignTemplate,
   NoteDesignTemplateSummary,
@@ -16,11 +19,14 @@ import type {
   PreviewNoteDesignPlanResult,
   RemColorName,
   RemHeadingLevel,
+  RemTypeName,
+  RichTextSpanStyle,
   SaveNoteDesignTemplateArgs,
   SaveNoteDesignTemplateResult,
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from '../write/writeErrors';
 import { findRequiredRem, getRemPlainString, getRemRichText } from '../write/remnoteSdkHelpers';
+import { compileNoteDesignPlan } from './designPlanCompiler';
 
 const DESIGN_TEMPLATE_STORAGE_KEY = 'bridge-note-design-templates-v1';
 const TEMPLATE_SCHEMA_VERSION = 1;
@@ -50,6 +56,13 @@ const UNSAFE_RULE_WORDS = [
   'fetch',
 ];
 
+function containsUnsafeRuleWord(value: string): boolean {
+  const separated = value.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  return UNSAFE_RULE_WORDS.some((word) =>
+    new RegExp(`(^|[^a-z0-9])${word}([^a-z0-9]|$)`).test(separated)
+  );
+}
+
 interface TemplateStore {
   schemaVersion: 1;
   templates: NoteDesignTemplate[];
@@ -62,6 +75,9 @@ interface DesignRecord {
   childCount: number;
   headingLevel: RemHeadingLevel;
   wholeRemHighlight?: string;
+  parentId?: string;
+  remType: RemTypeName;
+  hideBullet: boolean;
 }
 
 function nowIso(): string {
@@ -227,8 +243,103 @@ function countMath(richText: RichTextInterface | undefined): { inline: number; b
   return { inline, block };
 }
 
+function richStyleFromRecord(item: Record<string, unknown>): RichTextSpanStyle | undefined {
+  const style: RichTextSpanStyle = {};
+  if (item.b === true) style.bold = true;
+  if (item.i === true || item.italic === true) style.italic = true;
+  if (item.u === true || item.underline === true) style.underline = true;
+  if (item.q === true || item.quote === true) style.quote = true;
+  if (typeof item.tc === 'number' && COLOR_BY_NUMBER[item.tc]) style.color = COLOR_BY_NUMBER[item.tc];
+  if (typeof item.h === 'number' && COLOR_BY_NUMBER[item.h]) style.highlight = COLOR_BY_NUMBER[item.h];
+  return Object.keys(style).length ? style : undefined;
+}
+
+function fullTextStyle(record: DesignRecord): RichTextSpanStyle | undefined {
+  const textItems = richTextRecords(getRemRichText(record.rem)).filter((item) =>
+    typeof item.text === 'string' && item.text.length > 0 && item.i !== 'x'
+  );
+  if (!textItems.length) return undefined;
+  const styles = textItems.map(richStyleFromRecord);
+  const first = styles[0];
+  if (!first) return undefined;
+  return styles.every((style) => stableStringify(style) === stableStringify(first)) ? first : undefined;
+}
+
+function prefixStyle(record: DesignRecord): RichTextSpanStyle | undefined {
+  const firstText = richTextRecords(getRemRichText(record.rem)).find((item) =>
+    typeof item.text === 'string' && item.text.length > 0 && item.i !== 'x'
+  );
+  return firstText ? richStyleFromRecord(firstText) : undefined;
+}
+
+function recordTreatment(
+  record: DesignRecord,
+  textStyleMode: 'full' | 'prefix' | 'none' = 'full'
+): NoteDesignRoleTreatment | undefined {
+  const remStyle: NonNullable<NoteDesignRoleTreatment['remStyle']> = {};
+  if (record.headingLevel !== 'normal') remStyle.headingLevel = record.headingLevel;
+  if (record.hideBullet) remStyle.hideBullet = true;
+  if (record.remType !== 'normal') remStyle.remType = record.remType;
+  const style = textStyleMode === 'full'
+    ? fullTextStyle(record)
+    : textStyleMode === 'prefix'
+      ? prefixStyle(record)
+      : undefined;
+  const treatment: NoteDesignRoleTreatment = {
+    ...(Object.keys(remStyle).length ? { remStyle } : {}),
+    ...(textStyleMode === 'full' && style ? { fullTextStyle: style } : {}),
+    ...(textStyleMode === 'prefix' && style ? { prefixStyle: style } : {}),
+  };
+  return Object.keys(treatment).length ? treatment : undefined;
+}
+
+function formulaRecord(record: DesignRecord): boolean {
+  const math = countMath(getRemRichText(record.rem));
+  if (math.inline + math.block > 0) return true;
+  const text = record.plainText.trim();
+  return text.length <= 240 && /[=≈⇌→]/.test(text) && !/[.!?]\s/.test(text);
+}
+
+function buildRoleRules(records: DesignRecord[]): NoteDesignRoleRules | undefined {
+  const byId = new Map(records.map((record) => [record.rem._id, record]));
+  const first = (predicate: (record: DesignRecord) => boolean) => records.find(predicate);
+  const treatment = (
+    predicate: (record: DesignRecord) => boolean,
+    mode: 'full' | 'prefix' | 'none' = 'full'
+  ) => {
+    const record = first(predicate);
+    return record ? recordTreatment(record, mode) : undefined;
+  };
+  const answerRecord = first((record) => {
+    const parent = record.parentId ? byId.get(record.parentId) : undefined;
+    return /^answer$/i.test(parent?.plainText.trim() ?? '');
+  }) ?? first((record) => /^answer\s*:/i.test(record.plainText.trim()));
+  const rules: NoteDesignRoleRules = {
+    root: records[0] ? recordTreatment(records[0], 'full') : undefined,
+    section: treatment((record) => record.depth === 1 && record.plainText !== '\u200b' && record.plainText.trim().length > 0),
+    keyIdea: treatment((record) => /^key\s+idea\s*:/i.test(record.plainText.trim()), 'prefix'),
+    formula: treatment(formulaRecord),
+    workedExample: treatment((record) => /^(problem|given|formula|substitution|answer)$/i.test(record.plainText.trim())),
+    answer: answerRecord ? recordTreatment(answerRecord) : undefined,
+    warning: treatment((record) => /^warning\s*:/i.test(record.plainText.trim()), 'prefix'),
+    summary: treatment((record) => /^summary$/i.test(record.plainText.trim())),
+    concept: treatment((record) => record.remType === 'concept', 'none'),
+    descriptor: treatment((record) => record.remType === 'descriptor', 'none'),
+  };
+  const compact = Object.fromEntries(
+    Object.entries(rules).filter(([, value]) => value !== undefined)
+  ) as NoteDesignRoleRules;
+  return Object.keys(compact).length ? compact : undefined;
+}
+
 function normalizeHeadingLevel(value: unknown): RemHeadingLevel {
   return value === 'H1' || value === 'H2' || value === 'H3' ? value : 'normal';
+}
+
+function normalizeRemType(value: unknown): RemTypeName {
+  if (value === RemType.CONCEPT || value === 'concept') return 'concept';
+  if (value === RemType.DESCRIPTOR || value === 'descriptor') return 'descriptor';
+  return 'normal';
 }
 
 async function collectDesignRecords(
@@ -255,6 +366,9 @@ async function collectDesignRecords(
       childCount: children.length,
       headingLevel: normalizeHeadingLevel(await rem.getFontSize().catch(() => undefined)),
       wholeRemHighlight: String(await rem.getHighlightColor().catch(() => '') || '').toLowerCase() || undefined,
+      parentId: typeof rem.parent === 'string' ? rem.parent : undefined,
+      remType: normalizeRemType(await rem.getType().catch(() => undefined)),
+      hideBullet: !(await rem.isListItem().catch(() => true)),
     });
 
     for (const child of children) {
@@ -279,6 +393,7 @@ function buildRules(records: DesignRecord[]): NoteDesignRules {
   let spacerCount = 0;
   let inlineMathCount = 0;
   let blockMathCount = 0;
+  let separateFormulaLikeRemCount = 0;
   let visibleDelimiterCount = 0;
   let tableLikeRemCount = 0;
   let markdownTableCount = 0;
@@ -302,15 +417,18 @@ function buildRules(records: DesignRecord[]): NoteDesignRules {
     const math = countMath(getRemRichText(record.rem));
     inlineMathCount += math.inline;
     blockMathCount += math.block;
+    if (formulaRecord(record) && record.depth > 0) {
+      separateFormulaLikeRemCount += 1;
+    }
     if (/\$\$|\\\[|\\\]/.test(record.plainText)) {
       visibleDelimiterCount += 1;
     }
 
     const trimmed = record.plainText.trim();
-    if (!trimmed) {
+    if (!trimmed || record.plainText === '\u200b') {
       blankRemCount += 1;
       spacerCount += 1;
-      spacerTexts.add('');
+      spacerTexts.add(record.plainText === '\u200b' ? '\u200b' : '');
     }
     if (/^[-_*]{3,}$/.test(trimmed)) {
       spacerCount += 1;
@@ -326,6 +444,9 @@ function buildRules(records: DesignRecord[]): NoteDesignRules {
     }
     if (/::/.test(trimmed)) {
       doubleColonMarkerCount += 1;
+      cardLikeRemCount += 1;
+    }
+    if (record.remType === 'concept') {
       cardLikeRemCount += 1;
     }
     if (/\{\{.+?\}\}/.test(trimmed)) {
@@ -380,7 +501,7 @@ function buildRules(records: DesignRecord[]): NoteDesignRules {
       averageChildrenPerNonLeaf: nonLeafCount ? Number((childTotalForNonLeaf / nonLeafCount).toFixed(2)) : 0,
     },
     formulaPlacement: {
-      displayFormulasAsSeparateRems: blockMathCount > 0,
+      displayFormulasAsSeparateRems: blockMathCount > 0 || separateFormulaLikeRemCount > 0,
       inlineFormulasInsideText: inlineMathCount > 0,
       rawDisplayDelimitersVisible: visibleDelimiterCount > 0,
     },
@@ -398,6 +519,7 @@ function buildRules(records: DesignRecord[]): NoteDesignRules {
       workedExampleCount,
       labels: [...workedLabels].slice(0, 10),
     },
+    roleRules: buildRoleRules(records),
   };
 }
 
@@ -432,7 +554,7 @@ function assertSafeRules(value: unknown, path = 'template'): void {
   if (typeof value !== 'object' || value === null) {
     if (typeof value === 'string') {
       const normalized = value.toLowerCase();
-      if (UNSAFE_RULE_WORDS.some((word) => normalized.includes(word))) {
+      if (containsUnsafeRuleWord(normalized)) {
         throw new RemnoteWriteError('INVALID_ARGS', `Template contains unsafe operation rule at ${path}.`, {
           path,
           value,
@@ -447,7 +569,7 @@ function assertSafeRules(value: unknown, path = 'template'): void {
     if ((normalizedKey === 'destructive' || normalizedKey === 'requiresdelete') && child === true) {
       throw new RemnoteWriteError('INVALID_ARGS', `Template contains unsafe destructive flag at ${path}.${key}.`);
     }
-    if (UNSAFE_RULE_WORDS.some((word) => normalizedKey.includes(word))) {
+    if (containsUnsafeRuleWord(key)) {
       throw new RemnoteWriteError('INVALID_ARGS', `Template contains unsafe operation rule at ${path}.${key}.`);
     }
     assertSafeRules(child, `${path}.${key}`);
@@ -494,6 +616,66 @@ function requireRuleStringArray(record: Record<string, unknown>, key: string, pa
   }
 }
 
+function assertRoleRules(value: unknown): void {
+  if (value === undefined) return;
+  const roles = designRuleRecord(value, 'template.rules.roleRules');
+  const allowedRoles = new Set([
+    'root', 'section', 'keyIdea', 'formula', 'workedExample', 'answer', 'warning', 'summary', 'concept', 'descriptor',
+  ]);
+  for (const [role, rawTreatment] of Object.entries(roles)) {
+    if (!allowedRoles.has(role)) {
+      throw new RemnoteWriteError('INVALID_ARGS', `Unknown reusable design role ${role}.`, { role });
+    }
+    const treatment = designRuleRecord(rawTreatment, `template.rules.roleRules.${role}`);
+    for (const key of Object.keys(treatment)) {
+      if (!['remStyle', 'fullTextStyle', 'prefixStyle'].includes(key)) {
+        throw new RemnoteWriteError('INVALID_ARGS', `Unknown treatment field ${key} for design role ${role}.`, {
+          role,
+          field: key,
+        });
+      }
+    }
+    for (const styleKey of ['fullTextStyle', 'prefixStyle'] as const) {
+      if (treatment[styleKey] === undefined) continue;
+      const style = designRuleRecord(treatment[styleKey], `template.rules.roleRules.${role}.${styleKey}`);
+      for (const [key, styleValue] of Object.entries(style)) {
+        if (!['color', 'highlight', 'bold', 'italic', 'underline', 'quote'].includes(key)) {
+          throw new RemnoteWriteError('INVALID_ARGS', `Unknown text style ${key} for design role ${role}.`, {
+            role,
+            field: key,
+          });
+        }
+        if (['bold', 'italic', 'underline', 'quote'].includes(key) && typeof styleValue !== 'boolean') {
+          throw new RemnoteWriteError('INVALID_ARGS', `Design role ${role}.${styleKey}.${key} must be boolean.`);
+        }
+        if (['color', 'highlight'].includes(key) && typeof styleValue !== 'string') {
+          throw new RemnoteWriteError('INVALID_ARGS', `Design role ${role}.${styleKey}.${key} must be a color string.`);
+        }
+      }
+    }
+    if (treatment.remStyle !== undefined) {
+      const remStyle = designRuleRecord(treatment.remStyle, `template.rules.roleRules.${role}.remStyle`);
+      const allowedRemStyleFields = new Set([
+        'headingLevel', 'textColor', 'highlightColor', 'hideBullet', 'remType', 'color', 'highlight', 'type',
+      ]);
+      for (const [key, styleValue] of Object.entries(remStyle)) {
+        if (!allowedRemStyleFields.has(key)) {
+          throw new RemnoteWriteError('INVALID_ARGS', `Unknown Rem style ${key} for design role ${role}.`, {
+            role,
+            field: key,
+          });
+        }
+        if (key === 'hideBullet' && typeof styleValue !== 'boolean') {
+          throw new RemnoteWriteError('INVALID_ARGS', `Design role ${role}.remStyle.hideBullet must be boolean.`);
+        }
+        if (key !== 'hideBullet' && typeof styleValue !== 'string') {
+          throw new RemnoteWriteError('INVALID_ARGS', `Design role ${role}.remStyle.${key} must be a string.`);
+        }
+      }
+    }
+  }
+}
+
 function assertCompleteDesignRules(value: unknown): asserts value is NoteDesignRules {
   const rules = designRuleRecord(value, 'template.rules');
   designRuleRecord(rules.headingPattern, 'template.rules.headingPattern');
@@ -534,6 +716,30 @@ function assertCompleteDesignRules(value: unknown): asserts value is NoteDesignR
   const examples = designRuleRecord(rules.workedExampleStyle, 'template.rules.workedExampleStyle');
   requireFiniteRuleNumber(examples, 'workedExampleCount', 'template.rules.workedExampleStyle');
   requireRuleStringArray(examples, 'labels', 'template.rules.workedExampleStyle');
+  assertRoleRules(rules.roleRules);
+}
+
+function sanitizeReusableRules(input: NoteDesignRules): { rules: NoteDesignRules; warnings: string[] } {
+  const rules = JSON.parse(JSON.stringify(input)) as NoteDesignRules;
+  const warnings: string[] = [];
+  if (rules.expectedStyleMap && Object.keys(rules.expectedStyleMap).length) {
+    delete rules.expectedStyleMap;
+    warnings.push('Source-ID expectedStyleMap was excluded from reusable template rules.');
+  }
+  if (rules.tableStyle.tableHeadings.length) {
+    rules.tableStyle.tableHeadings = [];
+    warnings.push('Source table headings were excluded; reusable table structure counts were retained.');
+  }
+  const reusableLabels = /^(worked\s+example|example|solution|problem|given|formula|substitution|answer|exam\s+tip|common\s+mistake)$/i;
+  const filteredLabels = rules.workedExampleStyle.labels.filter((label) => reusableLabels.test(label.trim()));
+  if (filteredLabels.length !== rules.workedExampleStyle.labels.length) {
+    warnings.push('Content-specific worked-example labels were excluded from reusable template rules.');
+  }
+  rules.workedExampleStyle.labels = filteredLabels;
+  rules.spacingPattern.spacerTexts = rules.spacingPattern.spacerTexts.filter((text) =>
+    text === '' || text === '\u200b' || /^[-_*]{3,}$/.test(text.trim())
+  );
+  return { rules, warnings };
 }
 
 function validateTemplateShape(template: Partial<NoteDesignTemplate>): NoteDesignTemplate {
@@ -573,31 +779,63 @@ function parseTemplateJson(templateJson: string): NoteDesignTemplate {
   return validateTemplateShape(template as Partial<NoteDesignTemplate>);
 }
 
-async function resolveSampleRem(plugin: RNPlugin, args: AnalyzeNoteDesignArgs): Promise<Rem> {
-  const requestedId = args.rootRemId ?? args.sampleRemId;
-  if (requestedId) {
-    return findRequiredRem(plugin, requestedId, 'Target');
+async function resolveSampleRem(
+  plugin: RNPlugin,
+  args: AnalyzeNoteDesignArgs
+): Promise<{
+  rem: Rem;
+  requestedSourceRemId: string;
+  sourceField: 'rootRemId' | 'sampleRemId' | 'rootRemId+sampleRemId';
+}> {
+  if (args.rootRemId && args.sampleRemId && args.rootRemId !== args.sampleRemId) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'rootRemId and sampleRemId identify different design sources. Provide exactly one source identity.',
+      { rootRemId: args.rootRemId, sampleRemId: args.sampleRemId }
+    );
   }
-  const focused = await plugin.focus.getFocusedRem().catch(() => undefined);
-  if (!focused) {
-    throw new RemnoteWriteError('NO_FOCUSED_REM', 'Provide rootRemId/sampleRemId or focus a sample Rem.');
+  const requestedSourceRemId = args.rootRemId ?? args.sampleRemId;
+  if (!requestedSourceRemId) {
+    throw new RemnoteWriteError(
+      'INVALID_ARGS',
+      'analyze_note_design requires rootRemId or sampleRemId; focused-Rem fallback is intentionally disabled.'
+    );
   }
-  return focused;
+  return {
+    rem: await findRequiredRem(plugin, requestedSourceRemId, 'Target'),
+    requestedSourceRemId,
+    sourceField: args.rootRemId && args.sampleRemId
+      ? 'rootRemId+sampleRemId'
+      : args.rootRemId
+        ? 'rootRemId'
+        : 'sampleRemId',
+  };
 }
 
 export async function analyzeNoteDesign(
   plugin: RNPlugin,
   args: AnalyzeNoteDesignArgs
 ): Promise<AnalyzeNoteDesignResult> {
-  const root = await resolveSampleRem(plugin, args);
+  const resolved = await resolveSampleRem(plugin, args);
+  const root = resolved.rem;
   const maxDepth = clampInt(args.maxDepth, DEFAULT_MAX_DEPTH, 0, 8);
   const maxNodes = clampInt(args.maxNodes, DEFAULT_MAX_NODES, 1, 500);
   const records = await collectDesignRecords(plugin, root, maxDepth, maxNodes);
-  const rules = buildRules(records);
+  const sanitized = sanitizeReusableRules(buildRules(records));
+  const rules = sanitized.rules;
+  const warnings = [
+    ...(records.length >= maxNodes ? ['Analysis stopped at maxNodes; template may be partial.'] : []),
+    ...sanitized.warnings,
+  ];
   return {
     status: 'analyzed',
     reusable: true,
     sourceRemId: root._id,
+    sourceIdentity: {
+      requestedSourceRemId: resolved.requestedSourceRemId,
+      resolvedSourceRemId: root._id,
+      sourceField: resolved.sourceField,
+    },
     analyzedNodeCount: records.length,
     maxDepth,
     rules,
@@ -607,7 +845,7 @@ export async function analyzeNoteDesign(
       `math inline=${rules.mathPattern.inlineMathCount} block=${rules.mathPattern.blockMathCount} visibleDelimiters=${rules.mathPattern.visibleDelimiterCount}`,
       `cards=${rules.cardStyle.cardLikeRemCount} tables=${rules.tableStyle.tableLikeRemCount} workedExamples=${rules.workedExampleStyle.workedExampleCount}`,
     ],
-    warnings: records.length >= maxNodes ? ['Analysis stopped at maxNodes; template may be partial.'] : undefined,
+    warnings: warnings.length ? warnings : undefined,
   };
 }
 
@@ -619,8 +857,20 @@ export async function saveNoteDesignTemplate(
   if (!name) {
     throw new RemnoteWriteError('INVALID_ARGS', 'Template name is required.');
   }
+  if (args.sourceRemId && args.rootRemId && args.sourceRemId !== args.rootRemId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'sourceRemId and rootRemId identify different template sources.', {
+      sourceRemId: args.sourceRemId,
+      rootRemId: args.rootRemId,
+    });
+  }
   const sourceRemId = args.sourceRemId ?? args.rootRemId;
-  const rules = args.rules ?? (await analyzeNoteDesign(plugin, { rootRemId: sourceRemId })).rules;
+  if (!args.rules && !sourceRemId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Saving analyzed rules requires an explicit sourceRemId/rootRemId.');
+  }
+  const analyzedRules = args.rules ?? (await analyzeNoteDesign(plugin, { rootRemId: sourceRemId })).rules;
+  assertCompleteDesignRules(analyzedRules);
+  const sanitized = sanitizeReusableRules(analyzedRules);
+  const rules = sanitized.rules;
   assertSafeRules(rules);
   const store = await readTemplateStore(plugin);
   const templateId = (args.templateId?.trim() || safeTemplateId(name)).slice(0, 128);
@@ -630,9 +880,17 @@ export async function saveNoteDesignTemplate(
       status: 'already_exists',
       template: store.templates[existingIndex],
       templateCount: store.templates.length,
+      warnings: sanitized.warnings.length ? sanitized.warnings : undefined,
     };
   }
   const existing = existingIndex >= 0 ? store.templates[existingIndex] : undefined;
+  if (args.expectedVersion !== undefined && args.expectedVersion !== (existing?.version ?? 0)) {
+    throw new RemnoteWriteError('STALE_STATE_CONFLICT', 'Design template version conflict.', {
+      templateId,
+      expectedVersion: args.expectedVersion,
+      actualVersion: existing?.version ?? 0,
+    });
+  }
   const template: NoteDesignTemplate = validateTemplateShape({
     schemaVersion: TEMPLATE_SCHEMA_VERSION,
     templateId,
@@ -656,6 +914,7 @@ export async function saveNoteDesignTemplate(
     status: 'saved',
     template,
     templateCount: store.templates.length,
+    warnings: sanitized.warnings.length ? sanitized.warnings : undefined,
   };
 }
 
@@ -682,7 +941,7 @@ export async function getNoteDesignTemplate(
 async function resolveRulesForPreview(
   plugin: RNPlugin,
   args: PreviewNoteDesignPlanArgs
-): Promise<{ rules: NoteDesignRules; templateId?: string }> {
+): Promise<{ rules: NoteDesignRules; templateId?: string; templateVersion?: number }> {
   if (args.rules) {
     assertCompleteDesignRules(args.rules);
     assertSafeRules(args.rules);
@@ -690,14 +949,22 @@ async function resolveRulesForPreview(
   }
   if (args.templateJson) {
     const template = parseTemplateJson(args.templateJson);
-    return { rules: template.rules, templateId: template.templateId };
+    return { rules: template.rules, templateId: template.templateId, templateVersion: template.version };
   }
   if (args.templateId) {
     const template = await getNoteDesignTemplate(plugin, args.templateId);
     if (!template) {
       throw new RemnoteWriteError('INVALID_ARGS', `Design template "${args.templateId}" was not found.`);
     }
-    return { rules: template.rules, templateId: template.templateId };
+    return { rules: template.rules, templateId: template.templateId, templateVersion: template.version };
+  }
+  const selectedTemplateId = await plugin.storage?.getLocal<string>('bridge-selected-template-id').catch(() => undefined);
+  if (selectedTemplateId) {
+    const template = await getNoteDesignTemplate(plugin, selectedTemplateId);
+    if (!template) {
+      throw new RemnoteWriteError('INVALID_ARGS', `Selected design template "${selectedTemplateId}" was not found.`);
+    }
+    return { rules: template.rules, templateId: template.templateId, templateVersion: template.version };
   }
   return { rules: defaultNoteDesignRules(args.stylePreset ?? DEFAULT_STYLE_PRESET) };
 }
@@ -706,8 +973,17 @@ export async function previewNoteDesignPlan(
   plugin: RNPlugin,
   args: PreviewNoteDesignPlanArgs
 ): Promise<PreviewNoteDesignPlanResult> {
-  const { rules, templateId } = await resolveRulesForPreview(plugin, args);
+  const { rules, templateId, templateVersion } = await resolveRulesForPreview(plugin, args);
   const mode = args.mode ?? (args.targetRemId ? 'repair' : 'create');
+  const previewTitle = args.title?.trim() || 'Design preview';
+  const compiled = compileNoteDesignPlan({
+    title: previewTitle,
+    content: args.content ?? { text: previewTitle, children: [] },
+    rules,
+    templateId,
+    templateVersion,
+    writingMode: 'markdown',
+  });
   const plannedChanges = [
     `Mode: ${mode}.`,
     `Style preset: ${rules.stylePreset ?? DEFAULT_STYLE_PRESET}.`,
@@ -715,6 +991,7 @@ export async function previewNoteDesignPlan(
     `Nesting: max depth ${rules.bulletNesting.maxDepth}, max children ${rules.bulletNesting.maxChildrenPerRem}.`,
     `Math: inline ${rules.mathPattern.inlineMathCount}, block ${rules.mathPattern.blockMathCount}, visible delimiters ${rules.mathPattern.visibleDelimiterCount}.`,
     `Cards/tables/examples: ${rules.cardStyle.cardLikeRemCount}/${rules.tableStyle.tableLikeRemCount}/${rules.workedExampleStyle.workedExampleCount}.`,
+    `Compiled manifest: ${compiled.manifest.manifestHash}.`,
   ];
   if (args.title) {
     plannedChanges.push(`Target title: ${args.title}.`);
@@ -723,6 +1000,13 @@ export async function previewNoteDesignPlan(
     plannedChanges.push(`Content preview length: ${args.content.length} chars.`);
   }
 
+  const warnings = [
+    ...(rules.mathPattern.malformedMathLikely
+      ? ['Template sample contains visible display-math delimiters; verify formulas before writing.']
+      : []),
+    ...compiled.manifest.unsupportedRuleIds.map((ruleId) => `Unsupported design rule: ${ruleId}.`),
+    ...(!args.content ? ['No target content was supplied; role match counts are preview placeholders.'] : []),
+  ];
   return {
     status: 'previewed',
     dryRun: true,
@@ -732,10 +1016,10 @@ export async function previewNoteDesignPlan(
     title: args.title,
     mode,
     plannedChanges,
-    warnings: rules.mathPattern.malformedMathLikely
-      ? ['Template sample contains visible display-math delimiters; verify formulas before writing.']
-      : [],
+    warnings,
     rules,
+    compiledManifest: compiled.manifest,
+    compiledTree: compiled.tree,
   };
 }
 
@@ -772,10 +1056,20 @@ export async function importNoteDesignTemplate(
   plugin: RNPlugin,
   args: ImportNoteDesignTemplateArgs
 ): Promise<ImportNoteDesignTemplateResult> {
-  const imported = parseTemplateJson(args.templateJson);
+  const parsed = parseTemplateJson(args.templateJson);
+  const sanitized = sanitizeReusableRules(parsed.rules);
+  const imported: NoteDesignTemplate = { ...parsed, rules: sanitized.rules };
   const importedTemplateHash = hashNoteDesignTemplate(imported);
   const store = await readTemplateStore(plugin);
   const existingIndex = store.templates.findIndex((template) => template.templateId === imported.templateId);
+  const existing = existingIndex >= 0 ? store.templates[existingIndex] : undefined;
+  if (args.expectedVersion !== undefined && args.expectedVersion !== (existing?.version ?? 0)) {
+    throw new RemnoteWriteError('STALE_STATE_CONFLICT', 'Design template import version conflict.', {
+      templateId: imported.templateId,
+      expectedVersion: args.expectedVersion,
+      actualVersion: existing?.version ?? 0,
+    });
+  }
   if (existingIndex >= 0 && !args.overwrite) {
     const existingNormalized = normalizeNoteDesignTemplate(store.templates[existingIndex]);
     const existingHash = stableHash(existingNormalized);
@@ -783,7 +1077,10 @@ export async function importNoteDesignTemplate(
       status: 'already_exists',
       template: store.templates[existingIndex],
       templateCount: store.templates.length,
-      warnings: ['Template already exists. Pass overwrite=true to replace it.'],
+      warnings: [
+        'Template already exists. Pass overwrite=true to replace it.',
+        ...sanitized.warnings,
+      ],
       normalizedTemplate: existingNormalized,
       normalizedTemplateHash: existingHash,
       importedTemplateHash,
@@ -812,5 +1109,6 @@ export async function importNoteDesignTemplate(
     normalizedTemplateHash,
     importedTemplateHash,
     roundTripEqual: normalizedTemplateHash === importedTemplateHash,
+    warnings: sanitized.warnings.length ? sanitized.warnings : undefined,
   };
 }

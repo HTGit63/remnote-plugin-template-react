@@ -1,5 +1,5 @@
 import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
-import type { SerializedRem } from '../../shared/bridge/protocol';
+import type { ReadContinuation, SerializedRem, TreeTruncationReason } from '../../shared/bridge/protocol';
 
 const DEFAULT_TREE_DEPTH = 0;
 const HARD_MAX_TREE_DEPTH = 3;
@@ -106,36 +106,72 @@ export async function serializeRem(
   const hasChildren = (rem.children?.length ?? 0) > 0;
   const breadcrumbs = await buildRemBreadcrumbs(plugin, rem);
   const children: SerializedRem[] = [];
-  let truncated = front.truncated || back.truncated || plain.truncated;
+  const truncationReasons = new Set<TreeTruncationReason>();
+  if (front.truncated || back.truncated || plain.truncated) {
+    truncationReasons.add('text_limit');
+  }
+  let nextChildIndex: number | undefined;
+  let descendantContinuation: ReadContinuation | undefined;
 
   if (depth > 0 && hasChildren && !state.seenRemIds.has(rem._id)) {
     state.seenRemIds.add(rem._id);
     const childRems = await rem.getChildrenRem();
     const limitedChildren = childRems.slice(0, maxChildren);
-    truncated = truncated || childRems.length > limitedChildren.length;
+    if (childRems.length > limitedChildren.length) {
+      truncationReasons.add('child_limit');
+      nextChildIndex = limitedChildren.length;
+    }
 
-    for (const child of limitedChildren) {
+    for (let childIndex = 0; childIndex < limitedChildren.length; childIndex += 1) {
+      const child = limitedChildren[childIndex];
       if (state.nodeCount >= maxNodes) {
         state.truncatedByNodeLimit = true;
-        truncated = true;
+        truncationReasons.add('node_limit');
+        nextChildIndex = childIndex;
         break;
       }
 
-      children.push(
-        await serializeRem(
-          plugin,
-          child,
-          {
-            ...options,
-            depth: depth - 1,
-          },
-          state
-        )
+      const serializedChild = await serializeRem(
+        plugin,
+        child,
+        {
+          ...options,
+          depth: depth - 1,
+        },
+        state
       );
+      children.push(serializedChild);
+      if (serializedChild.truncated) {
+        for (const reason of serializedChild.readCoverage?.truncationReasons ?? []) {
+          truncationReasons.add(reason);
+        }
+        descendantContinuation ??= serializedChild.readCoverage?.continuation;
+      }
     }
+  } else if (hasChildren && depth === 0) {
+    truncationReasons.add('depth_limit');
+    nextChildIndex = 0;
   }
 
-  truncated = truncated || state.truncatedByNodeLimit;
+  if (state.truncatedByNodeLimit && truncationReasons.size === 0) {
+    truncationReasons.add('node_limit');
+  }
+  const truncated = truncationReasons.size > 0;
+  const continuation = descendantContinuation ?? (nextChildIndex !== undefined
+    ? {
+        tool: 'get_children' as const,
+        args: {
+          parentRemId: rem._id,
+          maxChildren,
+          startIndex: nextChildIndex,
+        },
+      }
+    : truncationReasons.has('text_limit')
+      ? {
+          tool: 'get_rem_rich' as const,
+          args: { remId: rem._id },
+        }
+      : undefined);
 
   return {
     remId: rem._id,
@@ -146,5 +182,19 @@ export async function serializeRem(
     hasChildren,
     ...(children.length ? { children } : {}),
     ...(truncated ? { truncated: true } : {}),
+    ...(truncated
+      ? {
+          readCoverage: {
+            appliedLimits: {
+              depth,
+              maxChildrenPerNode: maxChildren,
+              maxNodes,
+              maxChars,
+            },
+            truncationReasons: Array.from(truncationReasons),
+            ...(continuation ? { continuation } : {}),
+          },
+        }
+      : {}),
   };
 }

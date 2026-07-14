@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
+import {
+  migrateBulkImportJob,
+  type BulkImportJob,
+  type BulkImportPlan,
+} from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
   CodexClientLink,
@@ -12,7 +16,9 @@ import type {
   StorageProvider,
   StoredAuditEvent,
   User,
+  BulkImportJobSaveOptions,
 } from './types.js';
+import { BulkImportRevisionConflictError } from './types.js';
 import { hashToken } from './crypto-utils.js';
 import { normalizeToolProfile } from '../tool-policy.js';
 
@@ -829,21 +835,38 @@ export class PostgresStorageProvider implements StorageProvider {
     return data ? this.cloneJson(data as BulkImportPlan) : null;
   }
 
-  async saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob> {
-    const stored = this.cloneJson({
+  async saveBulkImportJob(job: BulkImportJob, options: BulkImportJobSaveOptions = {}): Promise<BulkImportJob> {
+    const expectedRevision = options.expectedRevision ?? job.revision ?? 0;
+    const stored = this.cloneJson(migrateBulkImportJob({
       ...job,
+      revision: expectedRevision + 1,
       storageDurability: this.bulkImportStorageDurability(),
-    });
-    await this.pool.query(
-      `INSERT INTO bulk_import_jobs (
-        job_id, plan_id, status, storage_durability, data, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (job_id) DO UPDATE SET
-        plan_id = EXCLUDED.plan_id,
-        status = EXCLUDED.status,
-        storage_durability = EXCLUDED.storage_durability,
-        data = EXCLUDED.data,
-        updated_at = EXCLUDED.updated_at`,
+    }));
+    const saved = await this.pool.query(
+      `WITH updated AS (
+        UPDATE bulk_import_jobs
+        SET plan_id = $2,
+            status = $3,
+            storage_durability = $4,
+            data = $5,
+            updated_at = $7
+        WHERE job_id = $1
+          AND COALESCE((data->>'revision')::INTEGER, 0) = $8
+        RETURNING data
+      ), inserted AS (
+        INSERT INTO bulk_import_jobs (
+          job_id, plan_id, status, storage_durability, data, created_at, updated_at
+        )
+        SELECT $1, $2, $3, $4, $5, $6, $7
+        WHERE $8 = 0
+          AND NOT EXISTS (SELECT 1 FROM bulk_import_jobs WHERE job_id = $1)
+        ON CONFLICT (job_id) DO NOTHING
+        RETURNING data
+      )
+      SELECT data FROM updated
+      UNION ALL
+      SELECT data FROM inserted
+      LIMIT 1`,
       [
         stored.jobId,
         stored.planId,
@@ -852,18 +875,28 @@ export class PostgresStorageProvider implements StorageProvider {
         JSON.stringify(stored),
         stored.createdAt,
         stored.updatedAt,
+        expectedRevision,
       ]
     );
-    return stored;
+    if (!saved.rows[0]?.data) {
+      const current = await this.pool.query(
+        `SELECT COALESCE((data->>'revision')::INTEGER, 0) AS revision
+         FROM bulk_import_jobs WHERE job_id = $1`,
+        [job.jobId]
+      );
+      const actualRevision = Number(current.rows[0]?.revision ?? 0);
+      throw new BulkImportRevisionConflictError(job.jobId, expectedRevision, actualRevision);
+    }
+    return this.cloneJson(migrateBulkImportJob(saved.rows[0].data as BulkImportJob));
   }
 
   async getBulkImportJob(jobId: string): Promise<BulkImportJob | null> {
     const res = await this.pool.query('SELECT data FROM bulk_import_jobs WHERE job_id = $1', [jobId]);
     const data = res.rows[0]?.data;
-    return data ? this.cloneJson({
+    return data ? this.cloneJson(migrateBulkImportJob({
       ...(data as BulkImportJob),
       storageDurability: this.bulkImportStorageDurability(),
-    }) : null;
+    })) : null;
   }
 
   private sessionSelectSql(): string {

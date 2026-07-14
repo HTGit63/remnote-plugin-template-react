@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import type { BulkImportJob, BulkImportPlan } from '../../../shared/bridge/bulk-import.js';
+import {
+  migrateBulkImportJob,
+  type BulkImportJob,
+  type BulkImportPlan,
+} from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
   CodexClientLink,
@@ -12,7 +16,9 @@ import type {
   StorageProvider,
   StoredAuditEvent,
   User,
+  BulkImportJobSaveOptions,
 } from './types.js';
+import { BulkImportRevisionConflictError } from './types.js';
 import { hashToken } from './crypto-utils.js';
 import { normalizeToolProfile } from '../tool-policy.js';
 
@@ -340,18 +346,25 @@ export class MemoryStorageProvider implements StorageProvider {
     return plan ? this.cloneJson(plan) : null;
   }
 
-  async saveBulkImportJob(job: BulkImportJob): Promise<BulkImportJob> {
-    const stored = this.cloneJson({
+  async saveBulkImportJob(job: BulkImportJob, options: BulkImportJobSaveOptions = {}): Promise<BulkImportJob> {
+    const current = this.bulkImportJobs.get(job.jobId);
+    const actualRevision = current ? migrateBulkImportJob(current).revision : 0;
+    const expectedRevision = options.expectedRevision ?? job.revision ?? 0;
+    if (actualRevision !== expectedRevision) {
+      throw new BulkImportRevisionConflictError(job.jobId, expectedRevision, actualRevision);
+    }
+    const stored = this.cloneJson(migrateBulkImportJob({
       ...job,
+      revision: expectedRevision + 1,
       storageDurability: this.bulkImportStorageDurability(),
-    });
+    }));
     this.bulkImportJobs.set(stored.jobId, stored);
     return this.cloneJson(stored);
   }
 
   async getBulkImportJob(jobId: string): Promise<BulkImportJob | null> {
     const job = this.bulkImportJobs.get(jobId);
-    return job ? this.cloneJson(job) : null;
+    return job ? this.cloneJson(migrateBulkImportJob(job)) : null;
   }
 
   private idempotencyKey(userId: string, tool: string, idempotencyKey: string): string {

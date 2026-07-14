@@ -347,6 +347,20 @@ async function resolvePublicSourceAddress(hostname: string): Promise<{ address: 
   return addresses[0];
 }
 
+export function createPinnedSourceLookup(pinnedAddress: { address: string; family: 4 | 6 }) {
+  return (
+    _hostname: string,
+    options: { all?: boolean } | number | undefined,
+    callback: (...args: any[]) => void
+  ): void => {
+    if (typeof options === 'object' && options?.all) {
+      callback(null, [{ address: pinnedAddress.address, family: pinnedAddress.family }]);
+      return;
+    }
+    callback(null, pinnedAddress.address, pinnedAddress.family);
+  };
+}
+
 function validatedRemoteUrl(value: string): URL {
   let url: URL;
   try {
@@ -382,9 +396,7 @@ async function downloadRemoteBytes(
           accept: 'text/markdown, text/plain, application/octet-stream;q=0.8',
           'accept-encoding': 'identity',
         },
-        lookup: ((_requestedHost: string, _options: unknown, callback: (error: Error | null, address: string, family: number) => void) => {
-          callback(null, pinnedAddress.address, pinnedAddress.family);
-        }) as any,
+        lookup: createPinnedSourceLookup(pinnedAddress) as any,
         servername: isIP(hostname) ? undefined : hostname,
         signal,
       },

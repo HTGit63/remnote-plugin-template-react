@@ -114,6 +114,11 @@ export interface MarkdownImportPlan {
   formulaValidation: MarkdownFormulaValidationResult;
 }
 
+export interface MarkdownImportFragmentPlan extends MarkdownImportPlan {
+  nodes: StyledRemTreeNode[];
+  outputText: string;
+}
+
 export interface MarkdownFormulaValidationResult {
   valid: boolean;
   errors: string[];
@@ -690,15 +695,28 @@ function markdownInlineToRichText(text: string): {
 } {
   const spans: RichTextSpanInput[] = [];
   let inlineMathCount = 0;
+  let hasRichFormatting = false;
   let cursor = 0;
   let textStart = 0;
 
-  function pushText(end: number) {
+  function pushText(end: number, styles?: RichTextSpanInput['styles']) {
     if (end <= textStart) return;
     const cleaned = cleanMarkdownTextSegment(text.slice(textStart, end));
     if (cleaned) {
-      spans.push({ text: cleaned });
+      spans.push({ text: cleaned, ...(styles ? { styles } : {}) });
+      if (styles) hasRichFormatting = true;
     }
+  }
+
+  function pushStyledRange(openLength: number, closeAt: number, closeLength: number, styles?: RichTextSpanInput['styles']) {
+    pushText(cursor);
+    const cleaned = cleanMarkdownTextSegment(text.slice(cursor + openLength, closeAt));
+    if (cleaned) {
+      spans.push({ text: cleaned, ...(styles ? { styles } : {}) });
+      if (styles) hasRichFormatting = true;
+    }
+    cursor = closeAt + closeLength;
+    textStart = cursor;
   }
 
   while (cursor < text.length) {
@@ -710,6 +728,7 @@ function markdownInlineToRichText(text: string): {
         if (latex) {
           spans.push({ type: 'inlineMath', latex });
           inlineMathCount += 1;
+          hasRichFormatting = true;
         }
         cursor = closeAt + 2;
         textStart = cursor;
@@ -725,10 +744,71 @@ function markdownInlineToRichText(text: string): {
         if (latex) {
           spans.push({ type: 'inlineMath', latex });
           inlineMathCount += 1;
+          hasRichFormatting = true;
         }
         cursor = closeAt + 1;
         textStart = cursor;
         continue;
+      }
+    }
+
+    if (text.startsWith('**', cursor) && !markdownCharEscaped(text, cursor)) {
+      const closeAt = findUnescapedMarkdownDelimiter(text, '**', cursor + 2);
+      if (closeAt > cursor + 2) {
+        pushStyledRange(2, closeAt, 2, { bold: true });
+        continue;
+      }
+    }
+
+    if (text.startsWith('__', cursor) && !markdownCharEscaped(text, cursor)) {
+      const closeAt = findUnescapedMarkdownDelimiter(text, '__', cursor + 2);
+      if (closeAt > cursor + 2) {
+        pushStyledRange(2, closeAt, 2, { bold: true });
+        continue;
+      }
+    }
+
+    if (text[cursor] === '*' && !markdownCharEscaped(text, cursor) && text[cursor + 1] !== '*') {
+      const closeAt = findUnescapedMarkdownDelimiter(text, '*', cursor + 1);
+      if (closeAt > cursor + 1 && text[closeAt + 1] !== '*') {
+        pushStyledRange(1, closeAt, 1, { italic: true });
+        continue;
+      }
+    }
+
+    if (
+      text[cursor] === '_' &&
+      !markdownCharEscaped(text, cursor) &&
+      text[cursor + 1] !== '_' &&
+      !/[A-Za-z0-9_]/.test(text[cursor - 1] ?? '')
+    ) {
+      const closeAt = findUnescapedMarkdownDelimiter(text, '_', cursor + 1);
+      if (closeAt > cursor + 1 && !/[A-Za-z0-9_]/.test(text[closeAt + 1] ?? '')) {
+        pushStyledRange(1, closeAt, 1, { italic: true });
+        continue;
+      }
+    }
+
+    if (text[cursor] === '`' && !markdownCharEscaped(text, cursor)) {
+      const closeAt = findUnescapedMarkdownDelimiter(text, '`', cursor + 1);
+      if (closeAt > cursor + 1) {
+        pushStyledRange(1, closeAt, 1);
+        continue;
+      }
+    }
+
+    if (text[cursor] === '[' && !markdownCharEscaped(text, cursor)) {
+      const labelEnd = findUnescapedMarkdownDelimiter(text, ']', cursor + 1);
+      if (labelEnd > cursor + 1 && text[labelEnd + 1] === '(') {
+        const destinationEnd = findUnescapedMarkdownDelimiter(text, ')', labelEnd + 2);
+        if (destinationEnd > labelEnd + 2) {
+          pushText(cursor);
+          const label = cleanMarkdownTextSegment(text.slice(cursor + 1, labelEnd));
+          if (label) spans.push({ text: label });
+          cursor = destinationEnd + 1;
+          textStart = cursor;
+          continue;
+        }
       }
     }
 
@@ -741,7 +821,7 @@ function markdownInlineToRichText(text: string): {
     spans.map((span) => span.latex ?? span.text ?? '').join('')
   );
   return {
-    richText: inlineMathCount > 0 ? spans : undefined,
+    richText: hasRichFormatting ? spans : undefined,
     text: plainText || stripMarkdownInline(text),
     inlineMathCount,
   };
@@ -1034,7 +1114,8 @@ export function parseMarkdownImportPlan(
         if (/^```/.test(lines[index].trim())) break;
         index += 1;
       }
-      const text = block.join('\n');
+      const closingFence = block.length > 1 && /^```/.test(block[block.length - 1].trim());
+      const text = block.slice(1, closingFence ? -1 : undefined).join('\n');
       pushChild(currentParent(), {
         clientNodeId: `code-${codeCount += 1}`,
         type: 'rem',
@@ -1223,6 +1304,60 @@ export function parseMarkdownImportPlan(
   return plan;
 }
 
+function normalizeMarkdownFragmentIndentation(markdownText: string): string {
+  const lines = markdownText.replace(/\r\n/g, '\n').split('\n');
+  const indents = lines
+    .filter((line) => line.trim())
+    .map((line) => (/^[ \t]*/.exec(line)?.[0] ?? '').replace(/\t/g, '    ').length);
+  const commonIndent = indents.length ? Math.min(...indents) : 0;
+  if (commonIndent === 0) return lines.join('\n').trim();
+  return lines.map((line) => {
+    if (!line.trim()) return '';
+    const leading = /^[ \t]*/.exec(line)?.[0] ?? '';
+    const expanded = leading.replace(/\t/g, '    ');
+    return `${expanded.slice(Math.min(commonIndent, expanded.length))}${line.slice(leading.length)}`;
+  }).join('\n').trim();
+}
+
+export function parseMarkdownImportFragmentPlan(
+  markdownText: string,
+  options: MarkdownImportParseOptions = {}
+): MarkdownImportFragmentPlan {
+  const marker = '__REMNOTE_MCP_FRAGMENT_ROOT__';
+  const normalizedFragment = normalizeMarkdownFragmentIndentation(markdownText);
+  if (!normalizedFragment) {
+    throw new Error('markdownText is empty.');
+  }
+  const plan = parseMarkdownImportPlan(`# ${marker}\n${normalizedFragment}`, {
+    ...options,
+    headingMapping: {
+      ...options.headingMapping,
+      rootHeading: 'first_h1',
+    },
+    limits: {
+      ...options.limits,
+      maxMarkdownChars: Math.min(
+        HARD_MARKDOWN_IMPORT_LIMITS.maxMarkdownChars,
+        Math.max(options.limits?.maxMarkdownChars ?? DEFAULT_MARKDOWN_IMPORT_LIMITS.maxMarkdownChars, normalizedFragment.length + marker.length + 4)
+      ),
+      maxNodes: Math.min(
+        HARD_MARKDOWN_IMPORT_LIMITS.maxNodes,
+        Math.max(options.limits?.maxNodes ?? DEFAULT_MARKDOWN_IMPORT_LIMITS.maxNodes, 2)
+      ),
+    },
+  });
+  const nodes = plan.tree.children ?? [];
+  const outputText = nodes.map((node) => treeOutputText(node)).join('\n');
+  return {
+    ...plan,
+    sourceHash: stableHash(normalizedFragment),
+    outputHash: stableHash(outputText),
+    sourceSnippets: plan.sourceSnippets.filter((snippet) => snippet !== marker),
+    nodes,
+    outputText,
+  };
+}
+
 export function verifyMarkdownSourceFidelity(
   sourceSnippets: readonly string[],
   outputText: string,
@@ -1320,12 +1455,13 @@ function normalizeMarkdownImportMode(
     case undefined:
       return 'create_child';
     case 'create_child':
+    case 'append_children_to_target':
     case 'append_to_target':
     case 'replace_target_children':
     case 'update_target_and_replace_children':
       return mode;
     default:
-      throw new Error('mode must be create_child, append_to_target, replace_target_children, or update_target_and_replace_children.');
+      throw new Error('mode must be create_child, append_children_to_target, append_to_target, replace_target_children, or update_target_and_replace_children.');
   }
 }
 

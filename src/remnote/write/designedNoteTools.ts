@@ -29,12 +29,18 @@ import type {
 } from '../../../shared/bridge/protocol';
 import { getRemPlainText } from '../serialize';
 import {
+  defaultNoteDesignRules,
   getNoteDesignTemplate,
   previewNoteDesignPlan,
 } from '../templates/designTemplates';
+import {
+  getAppliedDesignVerificationManifest,
+  saveAppliedDesignVerificationManifest,
+} from '../templates/designVerificationManifest';
+import { compileNoteDesignPlan } from '../templates/designPlanCompiler';
 import { createBasicFlashcard, createClozeCard } from './cardWrites';
 import { createOrReplaceNoteFromMarkdown } from './markdownImportExecutor';
-import { findRequiredRem, getRemPlainString } from './remnoteSdkHelpers';
+import { findRequiredRem, getRemPlainString, getRemRichText } from './remnoteSdkHelpers';
 import { applyStylePlan } from './formattingWrites';
 import { createPolishedNoteTree } from './treeWrites';
 import { verifyNoteDesign } from './verification';
@@ -46,6 +52,14 @@ const DEFAULT_CARD_VERIFY_NODE_LIMIT = 250;
 const MAX_CARD_VERIFY_NODE_LIMIT = 500;
 const DEFAULT_CARD_VERIFY_TIMEOUT_MS = 1000;
 const MAX_CARD_VERIFY_TIMEOUT_MS = 10000;
+const DESIGN_COLOR_NUMBERS: Record<string, number> = {
+  red: 1,
+  orange: 2,
+  yellow: 3,
+  green: 4,
+  purple: 5,
+  blue: 6,
+};
 
 function clampCardLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) {
@@ -89,32 +103,12 @@ function contentToMarkdown(title: string, content: string | StyledRemTreeNode): 
     return `# ${title}`;
   }
   const trimmed = content.trim();
-  if (/^#\s+/m.test(trimmed)) {
-    return trimmed;
+  const initialHeading = /^#\s+(.+?)(?:\n|$)/.exec(trimmed);
+  if (initialHeading?.[1].replace(/\s+/g, ' ').trim().toLowerCase() === title.replace(/\s+/g, ' ').trim().toLowerCase()) {
+    const body = trimmed.slice(initialHeading[0].length).trim();
+    return [`# ${title.trim()}`, body].filter(Boolean).join('\n\n');
   }
   return [`# ${title.trim()}`, '', trimmed].filter(Boolean).join('\n');
-}
-
-function contentToStyledTree(title: string, content: string | StyledRemTreeNode): StyledRemTreeNode {
-  if (typeof content !== 'string') {
-    return {
-      ...content,
-      text: content.text ?? content.title ?? title,
-    };
-  }
-  return {
-    text: title,
-    style: { headingLevel: 'H1' },
-    children: content
-      .split(/\n{2,}/)
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((text) => ({ text })),
-  };
-}
-
-function templateHeadingRules(template?: NoteDesignTemplate): Pick<NoteDesignRules, 'headingPattern'> | undefined {
-  return template?.rules ? { headingPattern: template.rules.headingPattern } : undefined;
 }
 
 function buildExpectedStyleMap(rootRemId: string, rules?: NoteDesignRules) {
@@ -127,6 +121,149 @@ function buildExpectedStyleMap(rootRemId: string, rules?: NoteDesignRules) {
     [rootRemId]: rootExpected,
     ...(rules?.expectedStyleMap ?? {}),
   };
+}
+
+function richRecords(rem: Rem): Array<Record<string, unknown>> {
+  return (getRemRichText(rem) ?? []).filter(
+    (item): item is RichTextInterface[number] & Record<string, unknown> =>
+      typeof item === 'object' && item !== null && !Array.isArray(item)
+  ) as Array<Record<string, unknown>>;
+}
+
+function richRecordMatchesStyle(
+  record: Record<string, unknown>,
+  style: NonNullable<NonNullable<NoteDesignRules['roleRules']>[keyof NonNullable<NoteDesignRules['roleRules']>]>['fullTextStyle']
+): boolean {
+  if (!style) return true;
+  if (style.bold !== undefined && (record.b === true) !== style.bold) return false;
+  if (style.italic !== undefined && (record.italic === true || record.i === true) !== style.italic) return false;
+  if (style.underline !== undefined && (record.u === true || record.underline === true) !== style.underline) return false;
+  if (style.quote !== undefined && (record.q === true || record.quote === true) !== style.quote) return false;
+  if (style.color && record.tc !== DESIGN_COLOR_NUMBERS[style.color.toLowerCase()]) return false;
+  if (style.highlight && record.h !== DESIGN_COLOR_NUMBERS[style.highlight.toLowerCase()]) return false;
+  return true;
+}
+
+async function verifyRoleTreatment(
+  rem: Rem,
+  treatment: NonNullable<NonNullable<NoteDesignRules['roleRules']>[keyof NonNullable<NoteDesignRules['roleRules']>]>
+): Promise<{ passed: boolean; actual: Record<string, unknown> }> {
+  const actual: Record<string, unknown> = {};
+  let passed = true;
+  if (treatment.remStyle?.headingLevel) {
+    actual.headingLevel = (await rem.getFontSize().catch(() => undefined)) ?? 'normal';
+    passed = passed && actual.headingLevel === treatment.remStyle.headingLevel;
+  }
+  if (treatment.remStyle?.hideBullet !== undefined) {
+    actual.hideBullet = !(await rem.isListItem().catch(() => true));
+    passed = passed && actual.hideBullet === treatment.remStyle.hideBullet;
+  }
+  if (treatment.remStyle?.remType) {
+    const remType = await safeRemType(rem);
+    actual.remType = remType === RemType.CONCEPT || remType === ('concept' as unknown as RemType)
+      ? 'concept'
+      : remType === RemType.DESCRIPTOR || remType === ('descriptor' as unknown as RemType)
+        ? 'descriptor'
+        : 'normal';
+    passed = passed && actual.remType === treatment.remStyle.remType;
+  }
+  const records = richRecords(rem).filter((record) => record.i !== 'x' && typeof record.text === 'string');
+  if (treatment.fullTextStyle) {
+    actual.fullTextStyleMatched = records.length > 0 && records.every((record) =>
+      richRecordMatchesStyle(record, treatment.fullTextStyle)
+    );
+    passed = passed && actual.fullTextStyleMatched === true;
+  }
+  if (treatment.prefixStyle) {
+    actual.prefixStyleMatched = Boolean(records[0] && richRecordMatchesStyle(records[0], treatment.prefixStyle));
+    passed = passed && actual.prefixStyleMatched === true;
+  }
+  return { passed, actual };
+}
+
+async function collectDesignMaterializationEvidence(
+  plugin: RNPlugin,
+  compiled: ReturnType<typeof compileNoteDesignPlan>,
+  rules: NoteDesignRules,
+  polishedTreeResult: Awaited<ReturnType<typeof createPolishedNoteTree>>,
+  dryRun: boolean
+): Promise<CreateDesignedNoteTreeResult['materializationEvidence']> {
+  const rootRemId = polishedTreeResult.rootRemId ?? polishedTreeResult.rootCreatedRemId;
+  const idMap = polishedTreeResult.idMap ?? {};
+  return Promise.all(compiled.manifest.ruleResults.map(async (rule) => {
+    const targetRemIds = rule.matchedClientNodeIds
+      .map((clientNodeId) => idMap[clientNodeId]
+        ?? (clientNodeId === compiled.tree.clientNodeId ? rootRemId : undefined))
+      .filter((remId): remId is string => Boolean(remId));
+    if (dryRun) {
+      return { ruleId: rule.ruleId, targetRemIds: [], status: 'planned' as const };
+    }
+    if (rule.status === 'unsupported') {
+      return { ruleId: rule.ruleId, targetRemIds, status: 'unsupported' as const, actual: rule.reason };
+    }
+    if (rule.matchedNodeCount === 0) {
+      return { ruleId: rule.ruleId, targetRemIds, status: 'not_applicable' as const };
+    }
+    if (targetRemIds.length !== rule.matchedNodeCount) {
+      return {
+        ruleId: rule.ruleId,
+        targetRemIds,
+        status: 'failed' as const,
+        expected: { matchedNodeCount: rule.matchedNodeCount },
+        actual: { mappedTargetCount: targetRemIds.length },
+      };
+    }
+    const rems = (await Promise.all(targetRemIds.map((remId) => plugin.rem.findOne(remId))))
+      .filter((rem): rem is Rem => Boolean(rem));
+    if (rems.length !== targetRemIds.length) {
+      return {
+        ruleId: rule.ruleId,
+        targetRemIds,
+        status: 'failed' as const,
+        expected: { existingRemCount: targetRemIds.length },
+        actual: { existingRemCount: rems.length },
+      };
+    }
+    if (rule.ruleId === 'heading.root' || rule.ruleId === 'heading.section') {
+      const expectedHeading = rule.ruleId === 'heading.root'
+        ? rules.headingPattern.rootHeadingLevel
+        : rules.headingPattern.sectionHeadingLevel;
+      const actual = await Promise.all(rems.map(async (rem) =>
+        (await rem.getFontSize().catch(() => undefined)) ?? 'normal'
+      ));
+      return {
+        ruleId: rule.ruleId,
+        targetRemIds,
+        status: actual.every((value) => value === (expectedHeading ?? 'normal')) ? 'verified' as const : 'failed' as const,
+        expected: expectedHeading ?? 'normal',
+        actual,
+      };
+    }
+    if (rule.ruleId === 'spacing.sibling_spacer') {
+      const actual = await Promise.all(rems.map((rem) => getRemPlainString(plugin, rem)));
+      const passed = actual.every((text) => text === '\u200b' || text.trim().length === 0 || /^[-_*]{3,}$/.test(text.trim()));
+      return {
+        ruleId: rule.ruleId,
+        targetRemIds,
+        status: passed ? 'verified' as const : 'failed' as const,
+        expected: 'safe spacer text',
+        actual,
+      };
+    }
+    const role = rule.role;
+    const treatment = role ? rules.roleRules?.[role] : undefined;
+    if (!treatment) {
+      return { ruleId: rule.ruleId, targetRemIds, status: 'verified' as const };
+    }
+    const checks = await Promise.all(rems.map((rem) => verifyRoleTreatment(rem, treatment)));
+    return {
+      ruleId: rule.ruleId,
+      targetRemIds,
+      status: checks.every((check) => check.passed) ? 'verified' as const : 'failed' as const,
+      expected: treatment,
+      actual: checks.map((check) => check.actual),
+    };
+  }));
 }
 
 async function assertDesignOperationsInsideRoot(
@@ -166,12 +303,14 @@ async function assertDesignOperationsInsideRoot(
 }
 
 async function resolveTemplate(plugin: RNPlugin, templateId?: string): Promise<NoteDesignTemplate | undefined> {
-  if (!templateId) {
+  const resolvedTemplateId = templateId
+    ?? await plugin.storage?.getLocal<string>('bridge-selected-template-id').catch(() => undefined);
+  if (!resolvedTemplateId) {
     return undefined;
   }
-  const template = await getNoteDesignTemplate(plugin, templateId);
+  const template = await getNoteDesignTemplate(plugin, resolvedTemplateId);
   if (!template) {
-    throw new RemnoteWriteError('INVALID_ARGS', `Design template "${templateId}" was not found.`);
+    throw new RemnoteWriteError('INVALID_ARGS', `Design template "${resolvedTemplateId}" was not found.`);
   }
   return template;
 }
@@ -257,6 +396,69 @@ function cardTypeFromBackText(
   return 'basic';
 }
 
+function exactRemTypeName(remType: RemType | undefined): 'concept' | 'descriptor' | 'normal' {
+  if (remType === RemType.CONCEPT || remType === ('concept' as unknown as RemType)) return 'concept';
+  if (remType === RemType.DESCRIPTOR || remType === ('descriptor' as unknown as RemType)) return 'descriptor';
+  return 'normal';
+}
+
+async function verifyAppliedDesignRules(
+  plugin: RNPlugin,
+  manifest: Awaited<ReturnType<typeof getAppliedDesignVerificationManifest>>
+): Promise<VerifyNoteAgainstDesignResult['mismatches']> {
+  if (!manifest) return [];
+  const mismatches: VerifyNoteAgainstDesignResult['mismatches'] = [];
+  for (const evidence of manifest.materializationEvidence) {
+    if (evidence.status === 'unsupported' || evidence.status === 'not_applicable' || evidence.status === 'planned') {
+      continue;
+    }
+    const actual: unknown[] = [];
+    let passed = evidence.targetRemIds.length > 0;
+    for (const remId of evidence.targetRemIds) {
+      const rem = await plugin.rem.findOne(remId);
+      if (!rem) {
+        passed = false;
+        actual.push({ remId, missing: true });
+        continue;
+      }
+      if (evidence.ruleId === 'heading.root' || evidence.ruleId === 'heading.section') {
+        const value = (await rem.getFontSize().catch(() => undefined)) ?? 'normal';
+        actual.push(value);
+        passed = passed && value === evidence.expected;
+        continue;
+      }
+      if (evidence.ruleId === 'spacing.sibling_spacer') {
+        const value = await getRemPlainString(plugin, rem);
+        actual.push(value);
+        passed = passed && (value === '\u200b' || value.trim().length === 0 || /^[-_*]{3,}$/.test(value.trim()));
+        continue;
+      }
+      if (evidence.ruleId.startsWith('role.')) {
+        const check = await verifyRoleTreatment(
+          rem,
+          evidence.expected as NonNullable<NonNullable<NoteDesignRules['roleRules']>[keyof NonNullable<NoteDesignRules['roleRules']>]>
+        );
+        actual.push(check.actual);
+        passed = passed && check.passed;
+      }
+    }
+    if (!passed) {
+      mismatches.push({
+        remId: evidence.targetRemIds[0] ?? manifest.rootRemId,
+        type: 'designRule',
+        property: evidence.ruleId,
+        evidenceMethod: 'live_property_readback',
+        expected: evidence.expected,
+        actual,
+        message: `Applied design rule ${evidence.ruleId} failed exact target readback.`,
+        fixSuggestion: 'Use repair_note_design with exact target IDs after reviewing this finding.',
+        safeNextStep: 'Preview repair_note_design against exact target Rem IDs, then approve only the failed rule repair.',
+      });
+    }
+  }
+  return mismatches;
+}
+
 export async function createDesignedNoteTree(
   plugin: RNPlugin,
   args: CreateDesignedNoteTreeArgs
@@ -265,75 +467,72 @@ export async function createDesignedNoteTree(
   const template = await resolveTemplate(plugin, args.templateId);
   const writingMode = args.writingMode ?? (typeof args.content === 'string' ? 'markdown' : 'styled_tree');
   const dryRun = Boolean(args.dryRun);
-
-  if (writingMode === 'styled_tree') {
-    const polishedTreeResult = await createPolishedNoteTree(plugin, {
-      parentId: args.parentId,
-      tree: contentToStyledTree(args.title, args.content),
-      dryRun,
-      verifyAfterWrite: args.verifyAfterWrite,
-      idempotencyKey: args.idempotencyKey,
-      maxDepth: args.maxDepth,
-      maxNodeCount: args.maxNodeCount,
-      ...(template?.rules.stylePreset ? { stylePreset: template.rules.stylePreset } : {}),
-    });
-    const durationMs = Date.now() - startedAt;
-    const overBudget = typeof args.performanceTargetMs === 'number' && durationMs > args.performanceTargetMs;
-    return {
-      status: dryRun ? 'dry_run' : overBudget ? 'success_with_performance_warning' : 'created',
-      ok: true,
-      dryRun,
-      parentId: args.parentId,
-      rootRemId: dryRun ? undefined : polishedTreeResult.rootRemId ?? polishedTreeResult.rootCreatedRemId,
-      createdRemIds: dryRun ? [] : polishedTreeResult.createdRemIds,
-      createdNodeCount: dryRun ? 0 : polishedTreeResult.createdNodeCount,
-      templateId: template?.templateId,
-      writingMode,
-      verification: polishedTreeResult.verification,
-      performance: polishedTreeResult.performance,
-      durationMs,
-      polishedTreeResult,
-    };
-  }
-
-  const markdownResult = await createOrReplaceNoteFromMarkdown(plugin, {
-    parentRemId: args.parentId,
-    markdownText: contentToMarkdown(args.title, args.content),
-    mode: 'create_child',
-    duplicatePolicy: 'create_new',
-    headingMapping: {
-      rootHeading: 'explicit_title',
-      explicitTitle: args.title,
-      rootHeadingLevel: templateHeadingRules(template)?.headingPattern.rootHeadingLevel ?? 'H1',
-      sectionHeadingLevel: templateHeadingRules(template)?.headingPattern.sectionHeadingLevel ?? 'H3',
-    },
-    safetyOptions: {
-      dryRun,
-      verifyAfterWrite: args.verifyAfterWrite ?? true,
-      rollbackOnFailure: true,
-      idempotencyKey: args.idempotencyKey,
-    },
-    limits: {
-      maxDepth: args.maxDepth,
-      maxNodes: args.maxNodeCount,
-    },
+  const compiled = compileNoteDesignPlan({
+    title: args.title,
+    content: args.content,
+    rules: template?.rules ?? defaultNoteDesignRules(),
+    templateId: template?.templateId,
+    templateVersion: template?.version,
+    writingMode,
   });
+  const polishedTreeResult = await createPolishedNoteTree(plugin, {
+    parentId: args.parentId,
+    tree: compiled.tree,
+    dryRun,
+    verifyAfterWrite: args.verifyAfterWrite ?? true,
+    idempotencyKey: args.idempotencyKey,
+    maxDepth: args.maxDepth,
+    maxNodeCount: args.maxNodeCount,
+  });
+  const materializationEvidence = await collectDesignMaterializationEvidence(
+    plugin,
+    compiled,
+    template?.rules ?? defaultNoteDesignRules(),
+    polishedTreeResult,
+    dryRun
+  );
+  const rootRemId = dryRun ? undefined : polishedTreeResult.rootRemId ?? polishedTreeResult.rootCreatedRemId;
+  if (rootRemId) {
+    await saveAppliedDesignVerificationManifest(plugin, {
+      schemaVersion: 1,
+      rootRemId,
+      templateId: template?.templateId,
+      templateVersion: template?.version,
+      rules: template?.rules ?? defaultNoteDesignRules(),
+      compiledManifest: compiled.manifest,
+      materializationEvidence,
+      recordedAt: new Date().toISOString(),
+    });
+  }
   const durationMs = Date.now() - startedAt;
   const overBudget = typeof args.performanceTargetMs === 'number' && durationMs > args.performanceTargetMs;
+  const failedRules = materializationEvidence.filter((evidence) => evidence.status === 'failed');
   return {
-    status: dryRun ? 'dry_run' : overBudget ? 'success_with_performance_warning' : 'created',
-    ok: markdownResult.ok,
+    status: dryRun
+      ? 'dry_run'
+      : failedRules.length
+        ? 'success_with_design_warning'
+        : overBudget
+          ? 'success_with_performance_warning'
+          : 'created',
+    ok: true,
     dryRun,
     parentId: args.parentId,
-    rootRemId: markdownResult.rootRemId,
-    createdRemIds: markdownResult.createdRemIds,
-    createdNodeCount: markdownResult.createdRemIds.length,
+    rootRemId,
+    createdRemIds: dryRun ? [] : polishedTreeResult.createdRemIds,
+    createdNodeCount: dryRun ? 0 : polishedTreeResult.createdNodeCount,
     templateId: template?.templateId,
+    templateVersion: template?.version,
     writingMode,
-    verification: markdownResult.verification,
-    performance: markdownResult.performance,
+    compiledManifest: compiled.manifest,
+    materializationEvidence,
+    warnings: failedRules.length
+      ? failedRules.map((evidence) => `Design rule ${evidence.ruleId} failed live readback.`)
+      : undefined,
+    verification: polishedTreeResult.verification,
+    performance: polishedTreeResult.performance,
     durationMs,
-    markdownResult,
+    polishedTreeResult,
   };
 }
 
@@ -426,8 +625,9 @@ export async function verifyNoteAgainstDesign(
   plugin: RNPlugin,
   args: VerifyNoteAgainstDesignArgs
 ): Promise<VerifyNoteAgainstDesignResult> {
+  const appliedManifest = await getAppliedDesignVerificationManifest(plugin, args.rootRemId);
   const template = await resolveTemplate(plugin, args.templateId);
-  const rules = args.rules ?? template?.rules;
+  const rules = args.rules ?? appliedManifest?.rules ?? template?.rules;
   const expectedStyleMap = {
     ...buildExpectedStyleMap(args.rootRemId, rules),
     ...(args.expectedStyleMap ?? {}),
@@ -437,18 +637,26 @@ export async function verifyNoteAgainstDesign(
     expectedStyleMap,
     ...(rules?.stylePreset ? { stylePreset: rules.stylePreset } : {}),
   });
+  const appliedMismatches = await verifyAppliedDesignRules(plugin, appliedManifest);
+  const mismatches = [...baseVerification.mismatches, ...appliedMismatches];
   const designIssues = [
     ...(baseVerification.issues ?? []),
-    ...baseVerification.mismatches.map((mismatch) => mismatch.message),
+    ...mismatches.map((mismatch) => mismatch.message),
   ];
   return {
     status: 'verified',
     rootRemId: args.rootRemId,
     templateId: template?.templateId,
-    ok: baseVerification.ok && designIssues.length === 0,
+    ok: baseVerification.ok && appliedMismatches.length === 0 && designIssues.length === 0,
+    evidenceMode: appliedManifest
+      ? 'exact_manifest'
+      : args.expectedStyleMap
+        ? 'exact_manifest'
+        : 'live_property_readback',
+    appliedTemplateVersion: appliedManifest?.templateVersion,
     checkedRemIds: baseVerification.checkedRemIds,
     designIssues,
-    mismatches: baseVerification.mismatches,
+    mismatches,
     unsupportedChecks: baseVerification.unsupportedChecks,
     repairSuggestions: baseVerification.repairSuggestions,
     baseVerification,
@@ -687,6 +895,8 @@ function cardWorkflowResult(input: {
   rootRemId?: string;
   parentId?: string;
   cards: CardWorkflowCardPlan[];
+  verificationMode?: CardWorkflowResult['verificationMode'];
+  advisoryFindings?: CardWorkflowResult['advisoryFindings'];
   createdRemIds?: string[];
   issues?: string[];
   warnings?: string[];
@@ -707,6 +917,8 @@ function cardWorkflowResult(input: {
     parentId: input.parentId,
     cardCount: input.cards.length,
     cards: input.cards,
+    verificationMode: input.verificationMode,
+    advisoryFindings: input.advisoryFindings,
     createdRemIds: input.createdRemIds,
     issues: input.issues,
     warnings: input.warnings,
@@ -797,6 +1009,7 @@ export async function verifyCardSet(
   const issues: string[] = [];
   const warnings: string[] = [];
   const malformedCards: NonNullable<CardWorkflowResult['malformedCards']> = [];
+  const advisoryFindings: NonNullable<CardWorkflowResult['advisoryFindings']> = [];
   const expectedCards = args.expectedCards ?? [];
   const initialChildrenRead = await withVerifierTimeout(
     runSdkOperation('rem.getChildrenRem', () => root.getChildrenRem()).catch(() => []),
@@ -881,6 +1094,7 @@ export async function verifyCardSet(
           front: text.frontText || child._id,
           back: text.backText,
           sourceRemId: child._id,
+          evidenceMethod: 'live_property_readback',
           cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
         });
       } else if (practiceEnabled && cardItemChildren.length > 0) {
@@ -897,19 +1111,18 @@ export async function verifyCardSet(
           front: text.frontText || child._id,
           back,
           sourceRemId: child._id,
+          evidenceMethod: 'live_property_readback',
           cardType: cardTypeFromBackText(back, remType, cardItemChildren.length),
         });
-      } else if (
-        /\{\{.+?\}\}/.test(text.frontText) ||
-        richTextHasClozeMetadata(child.text as RichTextInterface | undefined)
-      ) {
+      } else if (richTextHasClozeMetadata(child.text as RichTextInterface | undefined)) {
         cards.push({
           front: text.frontText,
           text: text.frontText,
           sourceRemId: child._id,
+          evidenceMethod: 'live_property_readback',
           cardType: 'cloze',
         });
-      } else if (practiceEnabled) {
+      } else if (exactRemTypeName(remType) !== 'normal') {
         const reason = 'Practice enabled but no back text or cloze metadata.';
         issues.push(`Rem ${child._id} has practice enabled but no back text or cloze metadata.`);
         malformedCards.push({
@@ -917,6 +1130,25 @@ export async function verifyCardSet(
           ...(text.frontText ? { front: text.frontText } : {}),
           reason,
         });
+      } else {
+        if (/\{\{.+?\}\}/.test(text.frontText)) {
+          advisoryFindings.push({
+            remId: child._id,
+            evidenceMethod: 'generic_heuristic',
+            property: 'literalClozeSyntax',
+            actual: text.frontText,
+            message: 'Literal cloze syntax found, but no functional cloze metadata is present.',
+          });
+        }
+        if (practiceEnabled) {
+          advisoryFindings.push({
+            remId: child._id,
+            evidenceMethod: 'live_property_readback',
+            property: 'practiceEnabled',
+            actual: true,
+            message: 'Practice is enabled, but no exact card payload metadata is present; Rem excluded from card defects.',
+          });
+        }
       }
     }
 
@@ -989,6 +1221,8 @@ export async function verifyCardSet(
     rootRemId: args.rootRemId,
     parentId: args.rootRemId,
     cards,
+    verificationMode: 'live_property_readback',
+    advisoryFindings: advisoryFindings.length ? advisoryFindings : undefined,
     issues,
     warnings,
     malformedCards: malformedCards.length ? malformedCards : undefined,

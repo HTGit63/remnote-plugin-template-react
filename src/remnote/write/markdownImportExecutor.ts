@@ -79,6 +79,7 @@ import type {
 import {
   markdownImportOutputTextFromTree,
   normalizeMarkdownImportArgs,
+  parseMarkdownImportFragmentPlan,
   parseMarkdownImportPlan,
   verifyMarkdownSourceFidelity,
 } from '../../../shared/bridge/markdown-importer';
@@ -519,8 +520,9 @@ export async function createOrReplaceNoteFromMarkdown(
   }
 
   let plan: ReturnType<typeof parseMarkdownImportPlan>;
+  let fragmentNodes: StyledRemTreeNode[] | undefined;
   try {
-    plan = parseMarkdownImportPlan(normalized.markdownText, {
+    const parseOptions = {
       headingMapping: normalized.headingMapping,
       remnoteLayout: normalized.remnoteLayout,
       mathOptions: normalized.mathOptions,
@@ -535,7 +537,14 @@ export async function createOrReplaceNoteFromMarkdown(
       spacerText: normalized.spacerText,
       majorFormulaMode: normalized.majorFormulaMode,
       verifyAfterWrite: normalized.verifyAfterWrite,
-    });
+    };
+    if (normalized.mode === 'append_children_to_target') {
+      const fragmentPlan = parseMarkdownImportFragmentPlan(normalized.markdownText, parseOptions);
+      plan = fragmentPlan;
+      fragmentNodes = fragmentPlan.nodes.map(markdownContentWriteNode);
+    } else {
+      plan = parseMarkdownImportPlan(normalized.markdownText, parseOptions);
+    }
   } catch (error: unknown) {
     throw new RemnoteWriteError(
       'INVALID_ARGS',
@@ -554,7 +563,7 @@ export async function createOrReplaceNoteFromMarkdown(
       dryRun,
       idempotencyKey,
       target: { parentId: normalized.parentRemId, targetRemId: normalized.targetRemId },
-      nodes: [plan.tree],
+      nodes: fragmentNodes ?? [plan.tree],
       nodesToUpdate: normalized.mode === 'update_target_and_replace_children' ? 1 : 0,
       verificationChecks: [
         'parse_markdown_import_plan',
@@ -565,7 +574,7 @@ export async function createOrReplaceNoteFromMarkdown(
       replacement: {
         strategy: replacementMode
           ? 'create_new_verify_swap'
-          : normalized.mode === 'append_to_target'
+          : normalized.mode === 'append_to_target' || normalized.mode === 'append_children_to_target'
             ? 'direct_append'
             : 'create_child_tree',
         preservesExistingUntilVerified: replacementMode,
@@ -795,16 +804,16 @@ export async function createOrReplaceNoteFromMarkdown(
         });
         rootRemId = batchResult.rootCreatedRemId;
       }
-    } else if (normalized.mode === 'append_to_target') {
+    } else if (normalized.mode === 'append_to_target' || normalized.mode === 'append_children_to_target') {
       if (!normalized.targetRemId) {
-        throw new RemnoteWriteError('INVALID_ARGS', 'append_to_target mode requires targetRemId.');
+        throw new RemnoteWriteError('INVALID_ARGS', `${normalized.mode} mode requires targetRemId.`);
       }
-      batchResult = fallback.used
+      batchResult = fallback.used && normalized.mode === 'append_to_target'
         ? await createRootThenAppendSectionChunks(normalized.targetRemId)
         : await applyStructuredNoteBatch(plugin, {
             target: { mode: 'rem_id', remId: normalized.targetRemId },
             operation: 'append_children',
-            note: { children: [writeTree] },
+            note: { children: normalized.mode === 'append_children_to_target' ? fragmentNodes ?? [] : [writeTree] },
             dryRun: false,
             idempotencyKey,
             rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,

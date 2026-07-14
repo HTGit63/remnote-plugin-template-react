@@ -571,7 +571,6 @@ export class BridgeHub {
 
       try {
         lifecycle.push(createLifecycleEvent('forwarded_to_plugin', 'Request forwarded to RemNote plugin WebSocket.'));
-        lifecycle.push(createLifecycleEvent('executing', 'Request forwarded to RemNote plugin WebSocket.'));
         target.socket.send(JSON.stringify(request), (error) => {
           if (!error) {
             return;

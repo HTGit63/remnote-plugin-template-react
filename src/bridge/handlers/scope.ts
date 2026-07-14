@@ -42,24 +42,54 @@ import { RemnoteWriteError } from '../../remnote/write';
 import type { BridgeHandlerContext } from '../handlers';
 import { getCurrentSelection } from '../../remnote/read';
 
+export type BridgeErrorLayer =
+  | 'validation'
+  | 'conflict'
+  | 'plugin_scope'
+  | 'plugin_permission'
+  | 'sdk'
+  | 'persistence'
+  | 'connection'
+  | 'internal';
+
+function errorLayerForCode(code: string): BridgeErrorLayer {
+  if (code === 'INVALID_ARGS' || code === 'NO_FOCUSED_REM' || code === 'PARENT_NOT_FOUND') return 'validation';
+  if (code === 'STALE_STATE_CONFLICT' || code === 'DEVICE_CONFLICT') return 'conflict';
+  if (code === 'OUT_OF_SCOPE' || code === 'INSUFFICIENT_SCOPE' || code === 'REM_NOT_FOUND') return 'plugin_scope';
+  if (['PERMISSION_DENIED', 'TRUSTED_WRITE_REQUIRED', 'APPROVAL_REJECTED', 'APPROVAL_TIMEOUT'].includes(code)) return 'plugin_permission';
+  if (['SDK_UNSUPPORTED', 'SDK_ERROR', 'SDK_CREATE_TREE_EMPTY_RESULT', 'SDK_CREATE_TREE_UNSUPPORTED', 'TRANSACTION_RETURN_BUG'].includes(code)) return 'sdk';
+  if (code === 'ROLLBACK_FAILED') return 'persistence';
+  if (['PLUGIN_NOT_CONNECTED', 'PLUGIN_NOT_PAIRED', 'NO_PAIRED_PLUGIN_SESSION', 'HOSTED_SESSION_MISSING', 'CODEX_PAIRING_REQUIRED', 'PLUGIN_SESSION_EXPIRED', 'PLUGIN_SESSION_REVOKED', 'NO_ACTIVE_DEVICE', 'TIMEOUT', 'CLIENT_DISCONNECTED', 'RETRYABLE_UNKNOWN_WRITE_STATUS', 'RETRYABLE_UNKNOWN_DELETE_STATUS', 'REQUEST_CANCELLED'].includes(code)) return 'connection';
+  return 'internal';
+}
+
+function recommendedFixForLayer(layer: BridgeErrorLayer, code: string): string {
+  switch (layer) {
+    case 'validation':
+      return 'Fix the tool arguments identified by this error, then retry the same operation.';
+    case 'conflict':
+      return 'Read the current target state, compare expected and actual values, then issue a new guarded operation if still intended.';
+    case 'plugin_scope':
+      return 'Focus the intended root Rem, select the target Rem, or use a known in-scope Rem ID before retrying.';
+    case 'plugin_permission':
+      return 'Approve this write in RemNote or use an operation allowed by the current permission mode; do not widen scope for validation failures.';
+    case 'sdk':
+      return code === 'SDK_UNSUPPORTED'
+        ? 'Inspect the SDK capability report and use the documented supported fallback.'
+        : 'Inspect the SDK operation details and target readback before deciding whether a retry is safe.';
+    case 'persistence':
+      return 'Inspect durable state and live artifact IDs, reconcile them, and do not replay the write blindly.';
+    case 'connection':
+      return 'Reconnect the same plugin session, restore operation and idempotency identity, then read before retrying any write with an unknown outcome.';
+    default:
+      return 'Inspect the operation ID and internal diagnostics before retrying.';
+  }
+}
+
 export function mapSdkError(id: string, error: unknown): BridgeResponse {
   if (error instanceof RemnoteWriteError) {
-    const layer =
-      error.code === 'OUT_OF_SCOPE'
-        ? 'plugin_scope'
-        : error.code === 'PERMISSION_DENIED' || error.code === 'TRUSTED_WRITE_REQUIRED'
-          ? 'plugin_permission'
-          : error.code === 'SDK_UNSUPPORTED' || error.code === 'SDK_ERROR'
-            ? 'sdk'
-            : 'plugin_permission';
-    const recommendedFix =
-      error.code === 'OUT_OF_SCOPE'
-        ? 'Focus the intended root Rem, select the target Rem, or change RemnoteMCP writing scope before retrying.'
-        : error.code === 'TRUSTED_WRITE_REQUIRED'
-          ? 'Approve this write in RemNote, or enable trusted writes inside the approved scope.'
-          : error.code === 'SDK_UNSUPPORTED'
-            ? 'Use the fallback tool shown in diagnostics or upgrade/verify the RemNote plugin SDK capability.'
-            : 'Check RemnoteMCP permission mode, scope, and the target Rem ID, then retry.';
+    const layer = errorLayerForCode(error.code);
+    const recommendedFix = recommendedFixForLayer(layer, error.code);
     return createBridgeFailure(id, error.code, error.message, {
       ...(error.details && typeof error.details === 'object' ? error.details : {}),
       layer,
@@ -80,9 +110,9 @@ export function mapSdkError(id: string, error: unknown): BridgeResponse {
 
   if (/missing|empty|too long|exceeds/i.test(message)) {
     return createBridgeFailure(id, 'INVALID_ARGS', message, {
-      layer: 'plugin_permission',
+      layer: 'validation',
       code: 'INVALID_ARGS',
-      recommendedFix: 'Fix the tool arguments shown by the error, then retry with a tiny payload first.',
+      recommendedFix: recommendedFixForLayer('validation', 'INVALID_ARGS'),
     });
   }
 

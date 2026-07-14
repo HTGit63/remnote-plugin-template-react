@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  buildBulkImportSourceManifest,
   expectedBulkImportReadbackText,
   extractMarkedSourceText,
   planNoteImport,
@@ -9,6 +10,7 @@ import {
 } from '../shared/bridge/bulk-import';
 import {
   markdownImportOutputTextFromTree,
+  parseMarkdownImportFragmentPlan,
   parseMarkdownImportPlan,
   verifyMarkdownSourceFidelity,
 } from '../shared/bridge/markdown-importer';
@@ -236,6 +238,100 @@ describe('bulk import planner', () => {
     expect(plan.chunks.map((chunk) => chunk.sourceText).join('\n')).toContain('TEST_07_BULK_IMPORT_VERIFICATION_ANCHOR');
   });
 
+  test('keeps nested headings inside principal logical sections and reports native mapping', () => {
+    const plan = planNoteImport({
+      sourceText: [
+        '# Chapter One',
+        '',
+        '## 1.1 Principal section',
+        '',
+        '### Topic A',
+        '',
+        '- Alpha',
+        '  - Alpha child',
+        '',
+        '### Topic B',
+        '',
+        '- Beta',
+        '',
+        '## 1.2 Second principal section',
+        '',
+        '### Topic C',
+        '',
+        '- Gamma',
+      ].join('\n'),
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 24000, maxRemsPerChunk: 120 },
+    });
+
+    expect(plan.sections.map((section) => section.title)).toEqual([
+      '1.1 Principal section',
+      '1.2 Second principal section',
+    ]);
+    expect(plan.sections[0].bodySourceText).toContain('### Topic A');
+    expect(plan.sections[0].bodySourceText).toContain('### Topic B');
+    expect(plan.logicalChunkCount).toBe(2);
+    expect(plan.nativeChunkCount).toBe(plan.chunks.length);
+    expect(plan.chunks.every((chunk) => chunk.logicalSectionKey === chunk.sectionKey)).toBe(true);
+  });
+
+  test('never starts a native chunk inside a nested list subtree', () => {
+    const plan = planNoteImport({
+      sourceText: [
+        '# Chapter One',
+        '## 1.1 Lists',
+        '- Parent A',
+        '  - Child A1',
+        '  - Child A2',
+        '- Parent B',
+        '  - Child B1',
+      ].join('\n'),
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 500, maxRemsPerChunk: 2 },
+    });
+
+    expect(plan.chunks).toHaveLength(2);
+    expect(plan.chunks.map((chunk) => chunk.sourceText.split('\n').find((line) => line.trim()))).toEqual([
+      '- Parent A',
+      '- Parent B',
+    ]);
+    expect(plan.chunks[0].estimatedRemCount).toBe(3);
+    expect(plan.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/atomic Markdown subtree exceeded.*maxRemsPerChunk/i),
+    ]));
+  });
+
+  test('parses a Markdown chunk as sibling fragment nodes without a visible wrapper', () => {
+    const fragment = parseMarkdownImportFragmentPlan([
+      '- **1. Derivative**',
+      '  - Definition',
+      '  - Notation',
+      '- 2. Partial Derivative',
+      '- 3. Differential',
+    ].join('\n'));
+
+    expect(fragment.nodes.map((node) => node.text)).toEqual([
+      '1. Derivative',
+      '2. Partial Derivative',
+      '3. Differential',
+    ]);
+    expect(fragment.nodes[0].children?.map((node) => node.text)).toEqual(['Definition', 'Notation']);
+    expect(fragment.outputText.split('\n')).not.toContain('- 1. Derivative');
+  });
+
+  test('represents supported strong and emphasis spans as rich text', () => {
+    const plan = parseMarkdownImportPlan('# Styled\n\n**Gross counts** and *net counts*.');
+    const paragraph = plan.tree.children?.find((node) => node.clientNodeId?.startsWith('paragraph-'));
+
+    expect(paragraph?.text).toBe('Gross counts and net counts.');
+    expect(paragraph?.richText).toEqual([
+      { text: 'Gross counts', styles: { bold: true } },
+      { text: ' and ' },
+      { text: 'net counts', styles: { italic: true } },
+      { text: '.' },
+    ]);
+  });
+
   test('hashes are deterministic and source fidelity reports mismatch previews', () => {
     const hashA = stableBulkImportHash('same source');
     const hashB = stableBulkImportHash('same source');
@@ -278,6 +374,57 @@ describe('bulk import planner', () => {
 
     expect(report.passed).toBe(true);
     expect(report.missingTextSnippets).toEqual([]);
+  });
+
+  test('builds distinct raw and semantic manifests for rendered Markdown equivalents', () => {
+    const source = [
+      '## Results',
+      '- **Energy**: [Einstein relation](https://example.test/e) is $E=mc^2$.',
+      '> Observation:  caf\u00e9  is stable.',
+    ].join('\n');
+    const rendered = [
+      'Results',
+      'Energy: Einstein relation is E=mc^2.',
+      'Callout: Observation: café is stable.',
+    ].join('\n');
+    const manifest = buildBulkImportSourceManifest(source);
+    const renderedManifest = buildBulkImportSourceManifest(rendered, { renderedReadback: true });
+    const report = verifyBulkImportSourceText({ expectedText: source, actualText: rendered });
+
+    expect(manifest.rawSourceHash).not.toBe(manifest.semanticHash);
+    expect(manifest.semanticHash).toBe(renderedManifest.semanticHash);
+    expect(manifest.units.map((unit) => unit.semanticText)).toEqual([
+      'Results',
+      'Energy: Einstein relation is E=mc^2.',
+      'Observation: café is stable.',
+    ]);
+    expect(manifest.formattingExpectations).toEqual(expect.arrayContaining(['emphasis', 'link', 'inline_math', 'blockquote']));
+    expect(manifest.supportedLosses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ feature: 'link_destination' }),
+    ]));
+    expect(report.ok).toBe(true);
+    expect(report.method).toBe('semantic_manifest');
+    expect(report.rawSourceHash).toBe(manifest.rawSourceHash);
+    expect(report.semanticHash).toBe(manifest.semanticHash);
+    expect(report.renderedReadbackHash).toBe(renderedManifest.rawSourceHash);
+  });
+
+  test('reports exact semantic units and source spans on fidelity failure', () => {
+    const report = verifyBulkImportSourceText({
+      expectedText: '## Results\n- Alpha\n- Beta',
+      actualText: 'Results\nAlpha\nGamma',
+      jobId: 'job-semantic',
+      sectionKey: 'results',
+      chunkIndex: 2,
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.missingUnits).toEqual([
+      expect.objectContaining({ semanticText: 'Beta', sourceSpan: { startLine: 3, endLine: 3 } }),
+    ]);
+    expect(report.extraUnits).toEqual([
+      expect.objectContaining({ semanticText: 'Gamma', sourceSpan: { startLine: 3, endLine: 3 } }),
+    ]);
   });
 
   test('preserves underscore anchors and rejects visible style metadata pollution', () => {
@@ -346,7 +493,8 @@ describe('bulk import planner', () => {
     expect(row?.children).toHaveLength(3);
     expect(row?.children?.[1]?.text).toBe(' ');
     expect(plan.stats.tableCellCount).toBe(6);
-    expect(code?.text).toBe('```ts\nconst formula = "$not_math$";\n```');
+    expect(code?.text).toBe('const formula = "$not_math$";');
+    expect(code?.text).not.toContain('```');
     expect(preview.massNoteManifest?.warnings).toEqual(expect.arrayContaining([
       expect.stringMatching(/tables.*Rem hierarchy.*not native/i),
       expect.stringMatching(/code blocks.*literal text.*not native/i),
@@ -481,14 +629,17 @@ describe('bulk import final verification', () => {
           children: [{ plainText: 'Alpha source sentence.' }],
         },
         {
+          remId: 'section-a-rem',
           plainText: 'Section A',
           children: [
             {
+              remId: 'bullet-a-rem',
               plainText: 'Bullet A',
               children: [
                 {
+                  remId: 'bullet-b-rem',
                   plainText: 'Bullet B',
-                  children: [{ plainText: 'Formula: $E=mc^2$' }],
+                  children: [{ remId: 'formula-rem', plainText: 'Formula: $E=mc^2$' }],
                 },
               ],
             },
@@ -500,6 +651,16 @@ describe('bulk import final verification', () => {
     const report = verifyBulkImportFinalReadback({ job, readbackTree: wrongTree });
     expect(report.ok).toBe(false);
     expect(report.wrongParentChunks).toEqual(expect.arrayContaining([sectionChunk?.chunkId]));
+    expect(report.hierarchyMismatches).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        chunkId: sectionChunk?.chunkId,
+        semanticText: 'Bullet B',
+        sourceSpan: { startLine: 2, endLine: 2 },
+        expectedParentRemId: 'section-a-rem',
+        actualParentRemId: 'bullet-a-rem',
+        remId: 'bullet-b-rem',
+      }),
+    ]));
     expect(report.warnings.join(' ')).toContain('Bullet B');
   });
 });
@@ -551,7 +712,14 @@ describe('bulk import job store', () => {
     const first = store.nextRunnableChunk(job.jobId);
     expect(first).toBeTruthy();
 
-    store.updateChunk(job.jobId, first?.chunkId ?? '', {
+    store.beginChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'transition-attempt',
+      operationId: 'transition-operation',
+      expectedParent: first?.expectedParent ?? 'Plugin Test',
+    });
+    store.finishChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'transition-attempt',
+      state: 'unknown',
       status: 'partial',
       verificationStatus: 'partial',
       error: 'Readback missing.',
@@ -573,6 +741,51 @@ describe('bulk import job store', () => {
     })).toThrow(/Cannot transition bulk import chunk/);
   });
 
+  test('rejects failure classification for a chunk that was never attempted', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 160, maxRemsPerChunk: 5 },
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:never-attempted');
+    const first = store.nextRunnableChunk(job.jobId);
+
+    expect(() => store.updateChunk(job.jobId, first?.chunkId ?? '', {
+      status: 'partial',
+      verificationStatus: 'partial',
+      error: 'A verifier must not classify untouched work.',
+    })).toThrow(/never attempted/i);
+  });
+
+  test('does not select attempted-unknown chunks for blind resume', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 160, maxRemsPerChunk: 5 },
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:unknown-outcome');
+    const first = store.nextRunnableChunk(job.jobId);
+    expect(first).toBeTruthy();
+
+    store.beginChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'attempt-1',
+      operationId: 'operation-1',
+      expectedParent: first?.expectedParent ?? 'Plugin Test',
+    });
+    store.finishChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'attempt-1',
+      state: 'unknown',
+      status: 'partial_needs_verification',
+      verificationStatus: 'partial',
+      error: 'Acknowledgement was lost.',
+    });
+
+    expect(store.nextRunnableChunk(job.jobId)?.chunkId).not.toBe(first?.chunkId);
+    expect(store.firstReconciliationRequiredChunk(job.jobId)?.chunkId).toBe(first?.chunkId);
+  });
+
   test('rejects manual job completion while unsafe chunks remain', () => {
     const store = new BulkImportJobStore();
     const plan = store.savePlan(planNoteImport({
@@ -583,7 +796,14 @@ describe('bulk import job store', () => {
     const job = store.createJob(plan.planId, 'bulk-job:job-transition-guard');
     const first = store.nextRunnableChunk(job.jobId);
     expect(first).toBeTruthy();
-    store.updateChunk(job.jobId, first?.chunkId ?? '', {
+    store.beginChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'completion-attempt',
+      operationId: 'completion-operation',
+      expectedParent: first?.expectedParent ?? 'Plugin Test',
+    });
+    store.finishChunkAttempt(job.jobId, first?.chunkId ?? '', {
+      attemptId: 'completion-attempt',
+      state: 'unknown',
       status: 'failed',
       verificationStatus: 'failed',
       error: 'Plugin disconnected.',
@@ -612,6 +832,65 @@ describe('bulk import job store', () => {
     expect(storedJob?.jobId).toBe(job.jobId);
     expect(storedJob?.storageDurability).toBe('memory_only');
     expect(storedJob?.chunks).toHaveLength(job.chunks.length);
+    await storage.close();
+  });
+
+  test('storage rejects a stale bulk-import writer with expected and actual revisions', async () => {
+    const storage = new MemoryStorageProvider();
+    await storage.initialize();
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:cas');
+    const firstSave = await storage.saveBulkImportJob(job, { expectedRevision: 0 });
+    const writerA = structuredClone(firstSave);
+    const writerB = structuredClone(firstSave);
+    writerA.lastError = 'writer-a';
+    writerB.lastError = 'writer-b';
+
+    const secondSave = await storage.saveBulkImportJob(writerA, { expectedRevision: firstSave.revision });
+    expect(secondSave.revision).toBe(firstSave.revision + 1);
+    await expect(storage.saveBulkImportJob(writerB, { expectedRevision: firstSave.revision }))
+      .rejects.toMatchObject({
+        code: 'BULK_IMPORT_REVISION_CONFLICT',
+        expectedRevision: firstSave.revision,
+        actualRevision: secondSave.revision,
+      });
+    await storage.close();
+  });
+
+  test('legacy ambiguous job JSON migrates conservatively and remains non-runnable', async () => {
+    const storage = new MemoryStorageProvider();
+    await storage.initialize();
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: chapter,
+      targetRootId: 'Plugin Test',
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:legacy-migration');
+    const legacy = structuredClone(job) as any;
+    delete legacy.revision;
+    legacy.chunks[0].status = 'running';
+    delete legacy.chunks[0].attempts;
+    delete legacy.chunks[0].reconciliationStatus;
+    await storage.saveBulkImportJob(legacy, { expectedRevision: 0 });
+
+    const migrated = await storage.getBulkImportJob(job.jobId);
+    expect(migrated?.chunks[0]).toMatchObject({
+      reconciliationStatus: 'required',
+    });
+    expect(migrated?.chunks[0].attempts[0]).toMatchObject({
+      state: 'unknown',
+      provenance: 'legacy_migration',
+      semanticHash: expect.stringMatching(/^fnv1a32:/),
+      stage: 'chunk_write',
+    });
+    expect(migrated?.schemaVersion).toBe(2);
+    const restartedStore = new BulkImportJobStore();
+    restartedStore.saveJob(migrated as any);
+    expect(restartedStore.nextRunnableChunk(job.jobId)?.chunkId).not.toBe(migrated?.chunks[0].chunkId);
     await storage.close();
   });
 });

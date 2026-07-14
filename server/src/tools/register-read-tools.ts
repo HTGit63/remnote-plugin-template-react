@@ -154,12 +154,13 @@ export function registerReadTools({ registerTool, callPlugin }: ToolRegistration
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('get_children'),
     },
-    async ({ parentRemId, remId, maxChildren, limit }) =>
+    async ({ parentRemId, remId, maxChildren, limit, startIndex }) =>
       bridgeToolResult(
         () =>
           callPlugin('get_children', {
             parentRemId: parentRemId ?? remId ?? '',
             maxChildren: maxChildren ?? limit,
+            startIndex,
           }),
         'Read ordered Rem children.'
       )

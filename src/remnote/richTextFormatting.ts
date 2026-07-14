@@ -260,6 +260,57 @@ function isTextElement(item: unknown): boolean {
   return item.i === 'm' || (typeof item.text === 'string' && item.i !== 'x');
 }
 
+export function richTextContainsNonTextNodes(richText: RichTextInterface): boolean {
+  return richText.some((item) => !isTextElement(item));
+}
+
+function metadataFromTextElement(item: unknown): Record<string, unknown> {
+  if (!isRecord(item)) return {};
+  const metadata = JSON.parse(JSON.stringify(item)) as Record<string, unknown>;
+  delete metadata.i;
+  delete metadata.text;
+  delete metadata.block;
+  return metadata;
+}
+
+export async function replaceRichTextRangeWithMathNode(
+  plugin: RNPlugin,
+  richText: RichTextInterface,
+  start: number,
+  end: number,
+  latex: string,
+  block = false
+): Promise<RichTextInterface> {
+  const normalizedLatex = latex.trim();
+  if (!normalizedLatex) {
+    throw new RichTextFormattingError('INVALID_ARGS', 'Math conversion requires non-empty latex.');
+  }
+  const split = await splitRichTextByCharRange(plugin, richText, start, end);
+  if (!split.target.length || split.target.some((item) => !isTextElement(item))) {
+    throw new RichTextFormattingError(
+      'INVALID_ARGS',
+      'Math conversion range must contain text nodes only; existing rich nodes cannot be replaced implicitly.',
+      { start, end, target: split.target }
+    );
+  }
+  const metadata = split.target.map(metadataFromTextElement);
+  const firstMetadata = metadata[0] ?? {};
+  if (metadata.some((value) => JSON.stringify(value) !== JSON.stringify(firstMetadata))) {
+    throw new RichTextFormattingError(
+      'SDK_UNSUPPORTED',
+      'Math conversion range contains incompatible style metadata; split the conversion into uniform styled spans.',
+      { start, end, metadata }
+    );
+  }
+  const mathNode = {
+    i: 'x',
+    text: normalizedLatex,
+    block,
+    ...firstMetadata,
+  } as RichTextInterface[number];
+  return [...split.before, mathNode, ...split.after] as RichTextInterface;
+}
+
 function getTextElementText(item: unknown): string {
   if (typeof item === 'string') {
     return item;

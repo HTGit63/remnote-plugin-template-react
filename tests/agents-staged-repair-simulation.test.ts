@@ -68,6 +68,7 @@ const expectedMassNoteTools = [
   'run_note_import_job_step',
   'get_note_import_job_status',
   'resume_note_import_job',
+  'reconcile_note_import_job_chunk',
   'verify_note_import_job',
   'cancel_note_import_job',
 ] as const;

@@ -100,6 +100,7 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   run_note_import_job_step: { toolName: 'run_note_import_job_step', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   get_note_import_job_status: { toolName: 'get_note_import_job_status', category: 'read', requiredAccessScope: 'focused-rem-only' },
   resume_note_import_job: { toolName: 'resume_note_import_job', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  reconcile_note_import_job_chunk: { toolName: 'reconcile_note_import_job_chunk', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   verify_note_import_job: { toolName: 'verify_note_import_job', category: 'read', requiredAccessScope: 'current-rem-tree' },
   cancel_note_import_job: { toolName: 'cancel_note_import_job', category: 'write', requiredAccessScope: 'focused-rem-only', requiresWrite: true },
   preview_markdown_note_tree: { toolName: 'preview_markdown_note_tree', category: 'read', requiredAccessScope: 'focused-rem-only' },

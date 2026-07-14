@@ -106,6 +106,7 @@ describe('verifyCardSet', () => {
     const malformed = fake.addRem('malformed-card', 'Practice without answer');
     await malformed.setParent(root);
     await malformed.setEnablePractice(true);
+    await malformed.setType('concept');
 
     const result = await verifyCardSet(fake.asPlugin(), {
       rootRemId: root._id,

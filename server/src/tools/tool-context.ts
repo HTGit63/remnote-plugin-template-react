@@ -435,6 +435,9 @@ function standardResponse(input: {
   const errorCode = firstString(input.error?.code, result?.errorCode);
   const errorMessage = firstString(input.error?.message, result?.errorMessage);
   const errorRecord = asRecord(input.error);
+  const errorDetails = asRecord(input.error?.details);
+  const errorLayer = firstString(errorDetails?.layer);
+  const recommendedAction = firstString(errorDetails?.recommendedFix, errorDetails?.recommendedAction);
   const retryable = typeof errorRecord?.retryable === 'boolean'
     ? errorRecord.retryable
     : typeof result?.retryable === 'boolean'
@@ -447,10 +450,11 @@ function standardResponse(input: {
         ? 'retryable_unknown'
         : input.status === 'PARTIAL' || partialExecution || rawStatus?.includes('partial')
           ? 'partial'
-          : input.status === 'FAIL'
+          : input.status !== 'PASS'
             ? 'failed'
             : undefined;
   return {
+    ok: input.ok && input.status === 'PASS',
     status: input.status,
     toolName: input.toolName ?? firstString(result?.toolName) ?? 'unknown',
     operationId: input.operationId,
@@ -471,6 +475,8 @@ function standardResponse(input: {
     error: input.error,
     errorCode,
     errorMessage,
+    errorLayer,
+    recommendedAction,
     retryable,
     retryClassification,
     phaseDurations,
@@ -499,7 +505,6 @@ export function failureToToolResult(failure: BridgeFailure, toolName?: string, b
       },
     ],
     structuredContent: {
-      ok: false,
       ...standard,
       error: failure.error,
       lifecycle: failure.lifecycle ?? [],
@@ -537,6 +542,7 @@ export function successToToolResult(response: BridgeResponse, message: string): 
     lifecycle: response.lifecycle,
   });
   return {
+    ...(standard.ok ? {} : { isError: true }),
     content: [
       {
         type: 'text',
@@ -544,7 +550,6 @@ export function successToToolResult(response: BridgeResponse, message: string): 
       },
     ],
     structuredContent: {
-      ok: true,
       ...standard,
       result: response.result,
       lifecycle: response.lifecycle ?? [],

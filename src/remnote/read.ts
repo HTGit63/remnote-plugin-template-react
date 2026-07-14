@@ -167,19 +167,36 @@ export async function readChildren(
 
   const maxChildren = clampLimit(args.maxChildren, DEFAULT_CHILD_LIMIT, MAX_CHILD_LIMIT);
   const children = await parent.getChildrenRem();
-  const limitedChildren = children.slice(0, maxChildren);
+  const startIndex = Math.max(0, Math.min(Math.floor(args.startIndex ?? 0), children.length));
+  const limitedChildren = children.slice(startIndex, startIndex + maxChildren);
   const summaries: RemChildSummary[] = [];
 
   for (let index = 0; index < limitedChildren.length; index += 1) {
-    summaries.push(await summarizeRem(plugin, limitedChildren[index], index));
+    summaries.push(await summarizeRem(plugin, limitedChildren[index], startIndex + index));
   }
+
+  const endIndexExclusive = startIndex + limitedChildren.length;
 
   return {
     parentRemId: parent._id,
     remId: parent._id,
     children: summaries,
     childCount: children.length,
-    truncated: children.length > limitedChildren.length,
+    truncated: endIndexExclusive < children.length,
+    returnedRange: { startIndex, endIndexExclusive },
+    appliedLimits: { maxChildren },
+    ...(endIndexExclusive < children.length
+      ? {
+          continuation: {
+            tool: 'get_children' as const,
+            args: {
+              parentRemId: parent._id,
+              maxChildren,
+              startIndex: endIndexExclusive,
+            },
+          },
+        }
+      : {}),
   };
 }
 
@@ -251,6 +268,14 @@ export async function searchRems(
         results: [],
         truncated: false,
         searchSupported: true,
+        coverage: {
+          kind: 'bounded_sdk_search',
+          exhaustive: false,
+          matchState: 'no_match_in_bounded_search',
+          maxResults,
+          exactTitleVerificationRequired: true,
+          fallback: { tool: 'get_rem', requiresKnownRemId: true },
+        },
         scopeMetadata: {
           scopeRequested: args.scope ?? 'current_permission_scope',
           scopeEnforcement: 'post_filter_ancestor_chain',
@@ -293,6 +318,14 @@ export async function searchRems(
     results: summaries,
     truncated: filteredResults.length > limitedResults.length,
     searchSupported: true,
+    coverage: {
+      kind: 'bounded_sdk_search',
+      exhaustive: false,
+      matchState: summaries.length > 0 ? 'matches_returned' : 'no_match_in_bounded_search',
+      maxResults,
+      exactTitleVerificationRequired: true,
+      fallback: { tool: 'get_rem', requiresKnownRemId: true },
+    },
     scopeMetadata: {
       scopeRequested: args.scope ?? 'current_permission_scope',
       scopeEnforcement: contextRem ? 'post_filter_ancestor_chain' : 'none',

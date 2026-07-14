@@ -186,9 +186,16 @@ export const GET_CHILDREN_INPUT_SCHEMA = z
     remId: REM_ID_SCHEMA.optional().describe('Alias for parentRemId.'),
     maxChildren: MAX_CHILDREN_SCHEMA.optional().describe('Maximum direct children to return, capped at 100.'),
     limit: MAX_CHILDREN_SCHEMA.optional().describe('Alias for maxChildren.'),
+    startIndex: z.number().int().min(0).max(1000000).default(0).describe('Zero-based child index used by continuation reads.'),
   })
   .refine((value) => Boolean(value.parentRemId || value.remId), {
     message: 'Provide parentRemId or remId.',
+  })
+  .refine((value) => !(value.parentRemId && value.remId && value.parentRemId !== value.remId), {
+    message: 'parentRemId and remId aliases must match when both are provided.',
+  })
+  .refine((value) => !(value.maxChildren && value.limit && value.maxChildren !== value.limit), {
+    message: 'maxChildren and limit aliases must match when both are provided.',
   });
 
 export const SEARCH_REMS_INPUT_SCHEMA = z.object({
@@ -342,6 +349,34 @@ export const STYLED_REM_TREE_NODE_SCHEMA: z.ZodType<StyledRemTreeNodeInput> = z.
 
 const SIMPLE_COUNT_MAP_SCHEMA = z.record(z.string(), z.number().int().min(0).max(100000));
 
+const DESIGN_ROLE_TEXT_STYLE_SCHEMA = z.object({
+  color: COLOR_SCHEMA.optional(),
+  highlight: COLOR_SCHEMA.optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  underline: z.boolean().optional(),
+  quote: z.boolean().optional(),
+}).strict();
+
+const DESIGN_ROLE_TREATMENT_SCHEMA = z.object({
+  remStyle: REM_STYLE_SCHEMA.optional(),
+  fullTextStyle: DESIGN_ROLE_TEXT_STYLE_SCHEMA.optional(),
+  prefixStyle: DESIGN_ROLE_TEXT_STYLE_SCHEMA.optional(),
+}).strict();
+
+const DESIGN_ROLE_RULES_SCHEMA = z.object({
+  root: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  section: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  keyIdea: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  formula: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  workedExample: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  answer: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  warning: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  summary: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  concept: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+  descriptor: DESIGN_ROLE_TREATMENT_SCHEMA.optional(),
+}).strict();
+
 export const CONNECTOR_SAFE_EXPECTED_STYLE_SCHEMA = z.object({
   plainText: z.string().max(5000).optional(),
   headingLevel: HEADING_LEVEL_SCHEMA.optional(),
@@ -417,12 +452,13 @@ export const DESIGN_TEMPLATE_RULES_SCHEMA = z
         workedExampleCount: z.number().int().min(0).max(10000),
         labels: z.array(z.string().max(200)).max(100),
       }),
+    roleRules: DESIGN_ROLE_RULES_SCHEMA.optional(),
     expectedStyleMap: CONNECTOR_SAFE_EXPECTED_STYLE_MAP_SCHEMA.optional(),
     stylePreset: NOTE_STYLE_PRESET_SCHEMA.optional(),
   })
   .describe('Reusable note design rules. Destructive operation rules are rejected by the plugin before storage/import.');
 
-export const DESIGNED_NOTE_CONTENT_SCHEMA = LONG_MARKDOWN_SCHEMA;
+export const DESIGNED_NOTE_CONTENT_SCHEMA = z.union([LONG_MARKDOWN_SCHEMA, STYLED_REM_TREE_NODE_SCHEMA]);
 
 export const CARD_REPAIR_CARD_SCHEMA = z.object({
   front: z.string().trim().min(1).max(5000),
@@ -484,8 +520,8 @@ export const CREATE_OR_REPLACE_NOTE_FROM_MARKDOWN_INPUT_SCHEMA = z.object({
   targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for append/replace/update modes.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown. Content is preserved; no summarization or compression.'),
   mode: z
-    .enum(['create_child', 'replace_target_children', 'update_target_and_replace_children', 'append_to_target'])
-    .describe('Bulk import mode. create_child creates one root under parentRemId; target modes write under targetRemId.'),
+    .enum(['create_child', 'append_children_to_target', 'replace_target_children', 'update_target_and_replace_children', 'append_to_target'])
+    .describe('Bulk import mode. create_child creates one root; append_children_to_target appends fragment siblings without a wrapper; other target modes write under targetRemId.'),
   duplicatePolicy: z.enum(['skip', 'replace', 'create_new']).optional(),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),

@@ -87,6 +87,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
       return {
         parentRemId: requiredRemIdFromFields(args, ['parentRemId', 'remId']),
         maxChildren: optionalBoundedNumber(args, 'maxChildren') ?? optionalBoundedNumber(args, 'limit'),
+        startIndex: optionalBoundedNumber(args, 'startIndex'),
       } as BridgeToolArgs[TTool];
     case 'get_rem_breadcrumbs':
       return {
@@ -451,6 +452,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         rootRemId: optionalRemId(args, 'rootRemId') ?? undefined,
         rules: isPlainObject(raw.rules) ? (raw.rules as unknown as BridgeToolArgs['save_note_design_template']['rules']) : undefined,
         overwrite: optionalBoolean(args, 'overwrite'),
+        expectedVersion: optionalBoundedNumber(args, 'expectedVersion'),
       } as BridgeToolArgs[TTool];
     }
     case 'list_note_design_templates':
@@ -480,6 +482,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
       return {
         templateJson: requiredTextField(args, 'templateJson'),
         overwrite: optionalBoolean(args, 'overwrite'),
+        expectedVersion: optionalBoundedNumber(args, 'expectedVersion'),
       } as BridgeToolArgs[TTool];
     case 'create_designed_note_tree':
     {

@@ -104,12 +104,27 @@ export function requestStartedExecution(response: BridgeResponse): boolean {
 }
 
 export function mutationCouldHaveStarted(response: BridgeResponse): boolean {
+  if (requestStartedExecution(response)) {
+    return true;
+  }
   if (hasAnyLifecyclePhase(response.lifecycle, [
     'sdk_mutation_started',
     'sdk_mutation_completed',
     'partial_failure',
   ])) {
     return true;
+  }
+
+  if (!response.ok && isRecord(response.error.details)) {
+    if (response.error.details.mutationCouldHaveStarted === true) {
+      return true;
+    }
+    const originalDetails = isRecord(response.error.details.originalDetails)
+      ? response.error.details.originalDetails
+      : undefined;
+    if (originalDetails?.mutationCouldHaveStarted === true) {
+      return true;
+    }
   }
 
   return payloadHasMutationEvidence(response.ok ? response.result : response.error.details);

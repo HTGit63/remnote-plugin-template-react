@@ -256,6 +256,20 @@ function assertStyleInvariant(
   assert(verification?.childOrderUnchanged === true, `${label} did not verify childOrderUnchanged.`);
 }
 
+function assertRichReplacementInvariant(
+  label: string,
+  before: RemSnapshot,
+  after: RemSnapshot,
+  verification?: Record<string, unknown>
+) {
+  assert(JSON.stringify(after.childIds) === JSON.stringify(before.childIds), `${label} changed child IDs/order.`);
+  assert(verification?.operationInvariant === 'rich_replacement', `${label} used wrong operation invariant.`);
+  assert(verification?.plainTextMatchesRequested === true, `${label} did not match requested plain text.`);
+  assert(verification?.richTextMatchesRequested === true, `${label} did not match requested rich text.`);
+  assert(verification?.childOrderUnchanged === true, `${label} did not verify childOrderUnchanged.`);
+  assert(verification?.noChildrenCreated === true, `${label} did not verify noChildrenCreated.`);
+}
+
 async function createTwoChildStyleRoot(fake: FakePlugin, label: string): Promise<FakeRem> {
   const id = `style-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
   const root = fake.addRem(id, 'Smoke alpha beta');
@@ -277,6 +291,19 @@ async function runTwoChildStyleCase(
   const result = await operation(root);
   const after = await snapshotRem(plugin, root);
   assertStyleInvariant(label, before, after, result?.verification);
+}
+
+async function runTwoChildRichReplacementCase(
+  fake: FakePlugin,
+  plugin: RNPlugin,
+  label: string,
+  operation: (root: FakeRem) => Promise<{ verification?: Record<string, unknown> } | undefined>
+) {
+  const root = await createTwoChildStyleRoot(fake, label);
+  const before = await snapshotRem(plugin, root);
+  const result = await operation(root);
+  const after = await snapshotRem(plugin, root);
+  assertRichReplacementInvariant(label, before, after, result?.verification);
 }
 
 async function runUnsupportedStyleCase(
@@ -414,7 +441,7 @@ async function main() {
   assert(headingPlan.operations[0]?.status === 'unsupported', 'Heading style operation should be marked unsupported.');
   assert(JSON.stringify(headingPlanAfter.childIds) === JSON.stringify(headingPlanBefore.childIds), 'Heading style plan changed child IDs/order.');
   assert(headingPlanAfter.plainText === headingPlanBefore.plainText, 'Heading style plan changed plain text.');
-  await runTwoChildStyleCase(fake, plugin, 'update_rem_rich', (root) =>
+  await runTwoChildRichReplacementCase(fake, plugin, 'update_rem_rich', (root) =>
     updateRemRich(plugin, {
       remId: root._id,
       richText: [{ text: 'Smoke alpha beta', styles: { bold: true } }],
@@ -484,7 +511,13 @@ async function main() {
   assert(basicVerify.ok && basicVerify.cardCount === 1 && basicVerify.cards[0].cardType === 'basic', 'Basic card should verify.');
 
   const clozeRoot = fake.addRem('cards-cloze-root', 'Cloze cards');
-  const clozeCard = fake.addRem('cards-cloze-front', 'The {{nucleus}} emits energy');
+  const clozeCard = fake.addRem('cards-cloze-front', 'The nucleus emits energy');
+  await clozeCard.setText([
+    { i: 'm', text: 'The ' } as FakeRichTextItem,
+    { i: 'm', text: 'nucleus', cId: 'style-regression-cloze' } as FakeRichTextItem,
+    { i: 'm', text: ' emits energy' } as FakeRichTextItem,
+  ]);
+  await clozeCard.setEnablePractice(true);
   await clozeCard.setParent(clozeRoot, 0);
   const clozeVerify = await verifyCardSet(plugin, { rootRemId: clozeRoot._id, maxDepth: 1, timeoutMs: 1000 });
   assert(clozeVerify.ok && clozeVerify.cardCount === 1 && clozeVerify.cards[0].cardType === 'cloze', 'Cloze card should verify.');
@@ -499,7 +532,7 @@ async function main() {
     await child.setParent(mixedRoot, index);
   }
   const mixedVerify = await verifyCardSet(plugin, { rootRemId: mixedRoot._id, maxDepth: 1, maxNodes: 80, maxCards: 80, timeoutMs: 1000 });
-  assert(mixedVerify.ok && mixedVerify.cardCount >= 7, '50 mixed card/ordinary Rems should verify within cap.');
+  assert(mixedVerify.ok && mixedVerify.cardCount === 5, 'Only the five Rems with functional card metadata should verify as cards.');
   const cappedVerify = await verifyCardSet(plugin, { rootRemId: mixedRoot._id, maxDepth: 1, maxNodes: 10, maxCards: 80, timeoutMs: 1000 });
   assert(!cappedVerify.ok && cappedVerify.status === 'partial' && cappedVerify.truncated, 'Traversal cap should return PARTIAL.');
 

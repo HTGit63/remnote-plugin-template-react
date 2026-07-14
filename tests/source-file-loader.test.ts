@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
   createBulkImportSourceFileLoader,
+  createPinnedSourceLookup,
   isPublicSourceAddress,
   loadBulkImportSourceFile,
   parseBulkImportSourceReference,
@@ -50,6 +51,25 @@ describe('bulk import source file loader', () => {
       mimeType: 'text/markdown',
     });
     expect(JSON.stringify(loaded.sourceReference)).not.toContain('signature=temporary');
+  });
+
+  test('returns the pinned address in both Node lookup callback shapes', async () => {
+    const lookup = createPinnedSourceLookup({ address: '203.0.114.8', family: 4 });
+    const single = await new Promise<{ address: string; family: number }>((resolve, reject) => {
+      lookup('files.example.test', { all: false }, ((error: Error | null, address: string, family: number) => {
+        if (error) reject(error);
+        else resolve({ address, family });
+      }) as never);
+    });
+    const all = await new Promise<Array<{ address: string; family: number }>>((resolve, reject) => {
+      lookup('files.example.test', { all: true }, ((error: Error | null, addresses: Array<{ address: string; family: number }>) => {
+        if (error) reject(error);
+        else resolve(addresses);
+      }) as never);
+    });
+
+    expect(single).toEqual({ address: '203.0.114.8', family: 4 });
+    expect(all).toEqual([{ address: '203.0.114.8', family: 4 }]);
   });
 
   test('blocks private, loopback, link-local, documentation, and mapped addresses', () => {

@@ -201,6 +201,7 @@ export interface FormatRemResult {
     remType?: boolean;
   };
   unsupported?: {
+    headingReset?: boolean;
     wholeRemHighlightReset?: boolean;
     remTypeReset?: boolean;
     reason?: string;
@@ -498,10 +499,13 @@ export interface VerifyNoteDesignResult {
   mismatches: Array<{
     remId: string;
     type: string;
+    property?: string;
+    evidenceMethod?: VerificationEvidenceMethod;
     expected?: unknown;
     actual?: unknown;
     message: string;
     fixSuggestion?: string;
+    safeNextStep?: string;
   }>;
   unsupportedChecks: Array<{
     remId: string;
@@ -520,6 +524,11 @@ export interface AnalyzeNoteDesignResult {
   status: 'analyzed';
   reusable: true;
   sourceRemId: string;
+  sourceIdentity: {
+    requestedSourceRemId: string;
+    resolvedSourceRemId: string;
+    sourceField: 'rootRemId' | 'sampleRemId' | 'rootRemId+sampleRemId';
+  };
   analyzedNodeCount: number;
   maxDepth: number;
   rules: NoteDesignRules;
@@ -531,6 +540,26 @@ export interface SaveNoteDesignTemplateResult {
   status: 'saved' | 'already_exists';
   template: NoteDesignTemplate;
   templateCount: number;
+  warnings?: string[];
+}
+
+export interface CompiledNoteDesignRuleResult {
+  ruleId: string;
+  role?: keyof NonNullable<NoteDesignRules['roleRules']>;
+  status: 'supported' | 'unsupported';
+  matchedNodeCount: number;
+  matchedClientNodeIds: string[];
+  reason?: string;
+}
+
+export interface CompiledNoteDesignManifest {
+  schemaVersion: 1;
+  templateId?: string;
+  templateVersion?: number;
+  manifestHash: string;
+  ruleResults: CompiledNoteDesignRuleResult[];
+  supportedRuleIds: string[];
+  unsupportedRuleIds: string[];
 }
 
 export interface ListNoteDesignTemplatesResult {
@@ -550,6 +579,8 @@ export interface PreviewNoteDesignPlanResult {
   plannedChanges: string[];
   warnings: string[];
   rules: NoteDesignRules;
+  compiledManifest: CompiledNoteDesignManifest;
+  compiledTree: StyledRemTreeNode;
 }
 
 export interface ExportNoteDesignTemplateResult {
@@ -573,7 +604,7 @@ export interface ImportNoteDesignTemplateResult {
 }
 
 export interface CreateDesignedNoteTreeResult {
-  status: 'dry_run' | 'created' | 'success_with_performance_warning';
+  status: 'dry_run' | 'created' | 'success_with_performance_warning' | 'success_with_design_warning';
   ok: boolean;
   dryRun: boolean;
   parentId: string;
@@ -582,6 +613,16 @@ export interface CreateDesignedNoteTreeResult {
   createdNodeCount: number;
   templateId?: string;
   writingMode: 'markdown' | 'styled_tree';
+  templateVersion?: number;
+  compiledManifest: CompiledNoteDesignManifest;
+  materializationEvidence: Array<{
+    ruleId: string;
+    targetRemIds: string[];
+    status: 'verified' | 'failed' | 'unsupported' | 'not_applicable' | 'planned';
+    expected?: unknown;
+    actual?: unknown;
+  }>;
+  warnings?: string[];
   verification?: unknown;
   performance?: WritePerformanceReport;
   durationMs?: number;
@@ -606,6 +647,8 @@ export interface VerifyNoteAgainstDesignResult {
   rootRemId: string;
   templateId?: string;
   ok: boolean;
+  evidenceMode: VerificationEvidenceMethod;
+  appliedTemplateVersion?: number;
   checkedRemIds: string[];
   designIssues: string[];
   mismatches: VerifyNoteDesignResult['mismatches'];
@@ -632,8 +675,16 @@ export interface CardWorkflowCardPlan {
   text?: string;
   clozeText?: string;
   sourceRemId?: string;
+  evidenceMethod?: VerificationEvidenceMethod;
   cardType: 'basic' | 'concept' | 'descriptor' | 'cloze' | 'multiple_choice' | 'list_answer';
 }
+
+export type VerificationEvidenceMethod =
+  | 'generic_heuristic'
+  | 'exact_manifest'
+  | 'id_based'
+  | 'semantic'
+  | 'live_property_readback';
 
 export interface CardWorkflowResult {
   status: 'dry_run' | 'created' | 'verified' | 'repaired' | 'partial';
@@ -643,6 +694,14 @@ export interface CardWorkflowResult {
   parentId?: string;
   cardCount: number;
   cards: CardWorkflowCardPlan[];
+  verificationMode?: VerificationEvidenceMethod;
+  advisoryFindings?: Array<{
+    remId: string;
+    evidenceMethod: VerificationEvidenceMethod;
+    message: string;
+    property?: string;
+    actual?: unknown;
+  }>;
   createdRemIds?: string[];
   issues?: string[];
   warnings?: string[];

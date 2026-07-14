@@ -120,6 +120,29 @@ describe('write idempotency and duplicate protection', () => {
     expect(visibleText).not.toEqual(expect.arrayContaining(['Size', 'H1', 'H2', 'H3', 'normal']));
   });
 
+  test('bulk fragment mode appends sibling nodes without a visible chunk wrapper', async () => {
+    const fake = new FakePlugin();
+    const section = fake.addRem('fragment-section', '1.1 Atomic nuclei');
+
+    const result = await createOrReplaceNoteFromMarkdown(fake.asPlugin(), {
+      targetRemId: section._id,
+      markdownText: ['- First sibling', '- Second sibling'].join('\n'),
+      mode: 'append_children_to_target',
+      duplicatePolicy: 'skip',
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:markdown-fragment-siblings',
+      },
+    });
+
+    const childTexts = await Promise.all(
+      section.children.map((childId) => fake.richText.toString(fake.rems.get(childId)?.text ?? []))
+    );
+    expect(result.rootRemId).toBe(section._id);
+    expect(childTexts).toEqual(['First sibling', 'Second sibling']);
+  });
+
   test('markdown readback rejects formulas flattened into plain text', async () => {
     const fake = new FakePlugin();
     fake.flattenMathToPlainText = true;

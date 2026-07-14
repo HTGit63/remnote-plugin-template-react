@@ -1,7 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import {
   bulkImportDurabilityWarning,
   bulkSectionIdempotencyKey,
+  buildBulkImportSourceManifest,
   flattenBulkImportReadbackText,
   normalizeBulkImportTitle,
   planNoteImport,
@@ -10,11 +12,15 @@ import {
   verifyBulkImportReadback,
   verifyBulkImportSourceText,
   stableBulkImportHash,
+  isBulkImportJobComplete,
   type BulkImportChunk,
   type BulkImportChunkStatus,
   type BulkImportJob,
 } from '../../../shared/bridge/bulk-import.js';
 import type { BridgeFailure, BridgeResponse } from '../../../shared/bridge/protocol.js';
+import { extractCreatedRemIds, getUpdatedDeletedEvidence } from '../bridge/bridge-hub-evidence.js';
+import { mutationCouldHaveStarted } from '../bridge/bridge-hub-retry.js';
+import { BulkImportRevisionConflictError } from '../storage/types.js';
 import { BRIDGE_TOOL_OUTPUT_SCHEMA } from './schemas.js';
 import {
   estimateWriteTimeoutMs,
@@ -57,6 +63,8 @@ const FILE_BULK_TOOL_ANNOTATIONS = {
   openWorldHint: false,
   destructiveHint: false,
 } as const;
+
+const activeBulkChunkCommands = new Set<string>();
 
 const BULK_IMPORT_OPTIONS_SCHEMA = z.object({
   maxCharsPerChunk: z.number().int().min(500).max(24000).optional(),
@@ -292,6 +300,7 @@ function planStructuredOutput(plan: ReturnType<typeof planNoteImport>, toolName:
     toolName,
     planId: plan.planId,
     sourceHash: plan.sourceHash,
+    sourceManifest: plan.sourceManifest,
     sourceMetadata: plan.sourceMetadata,
     plannedSourceLength: plan.plannedSourceLength,
     extractedSourceLength: plan.extractedSourceLength,
@@ -302,11 +311,21 @@ function planStructuredOutput(plan: ReturnType<typeof planNoteImport>, toolName:
       sectionKey: section.sectionKey,
       title: section.title,
       sourceHash: section.sourceHash,
+      sourceManifest: section.sourceManifest,
       sourceLength: section.sourceText.length,
       bodySourceLength: section.bodySourceText.length,
       chunkCount: section.chunkCount,
+      chunks: section.chunks.map((chunk) => ({
+        chunkId: chunk.chunkId,
+        logicalSectionKey: chunk.logicalSectionKey,
+        nativeChunkIndex: chunk.nativeChunkIndex,
+        sourceHash: chunk.sourceHash,
+        sourceManifest: chunk.sourceManifest,
+      })),
     })),
     estimatedChunks: plan.estimatedChunks,
+    logicalChunkCount: plan.logicalChunkCount,
+    nativeChunkCount: plan.nativeChunkCount,
     estimatedRems: plan.estimatedRems,
     warnings: plan.warnings,
     nextAction: 'call start_note_import_job with this planId',
@@ -317,10 +336,16 @@ function bridgeFailureMessage(response: BridgeFailure): string {
   return `${response.error.code}: ${response.error.message}`;
 }
 
-function partialFailureStatus(response: BridgeFailure): BulkImportChunkStatus {
-  return response.error.code === 'TIMEOUT' || response.error.code === 'RETRYABLE_UNKNOWN_WRITE_STATUS'
-    ? 'partial'
-    : 'failed';
+function failureAttemptState(response: BridgeFailure): 'unknown' | 'failed_before_write' {
+  return response.error.code === 'TIMEOUT' ||
+    response.error.code === 'RETRYABLE_UNKNOWN_WRITE_STATUS' ||
+    mutationCouldHaveStarted(response)
+    ? 'unknown'
+    : 'failed_before_write';
+}
+
+function failureChunkStatus(response: BridgeFailure): BulkImportChunkStatus {
+  return failureAttemptState(response) === 'unknown' ? 'partial_needs_verification' : 'failed';
 }
 
 function childTitle(child: Record<string, unknown>): string {
@@ -392,9 +417,9 @@ export function registerBulkImportTools({
     return null;
   }
 
-  async function hydrateJob(jobId: string): Promise<BulkImportJob | null> {
+  async function hydrateJob(jobId: string, refreshFromStorage = false): Promise<BulkImportJob | null> {
     const existing = bulkImportJobStore.getJob(jobId);
-    if (existing) {
+    if (existing && (!refreshFromStorage || !storage)) {
       return isOwnedBulkImportRecord(existing, ownerId) ? existing : null;
     }
     if (!storage) {
@@ -417,9 +442,24 @@ export function registerBulkImportTools({
       const stored = await storage.saveBulkImportJob({
         ...job,
         storageDurability,
-      });
+      }, { expectedRevision: job.revision });
       bulkImportJobStore.saveJob(stored);
     }
+  }
+
+  function persistenceConflictResult(toolName: string, error: BulkImportRevisionConflictError): McpToolResult {
+    return toolResult(error.message, {
+      ok: false,
+      status: 'FAIL',
+      toolName,
+      jobId: error.jobId,
+      errorCode: error.code,
+      errorMessage: error.message,
+      expectedRevision: error.expectedRevision,
+      actualRevision: error.actualRevision,
+      retryable: false,
+      recommendedAction: 'Reload the job status and reconcile the newer durable revision before another write.',
+    }, true);
   }
 
   async function createJob(planId: string, jobId?: string): Promise<BulkImportJob> {
@@ -455,6 +495,52 @@ export function registerBulkImportTools({
       errorMessage: 'Job is cancelled. No content was deleted; create a new job to continue.',
       nextAction: 'create a new bulk import job if more chunks should run',
     }, true);
+  }
+
+  function reconciliationRequiredResult(toolName: string, job: BulkImportJob, chunk: BulkImportChunk): McpToolResult {
+    const attempt = chunk.attempts.at(-1);
+    return toolResult('Import chunk has an unresolved write outcome. Reconcile live IDs and content before retry.', {
+      ok: false,
+      status: 'PARTIAL',
+      toolName,
+      jobId: job.jobId,
+      jobStatus: job.status,
+      jobRevision: job.revision,
+      chunkId: chunk.chunkId,
+      attemptId: attempt?.attemptId,
+      operationId: attempt?.operationId,
+      expectedParent: chunk.expectedParent,
+      expectedSourceHash: chunk.expectedSourceHash,
+      createdRemIds: chunk.createdRemIds,
+      updatedRemIds: chunk.updatedRemIds,
+      errorCode: 'RECONCILIATION_REQUIRED',
+      errorMessage: 'Unknown or unverified write outcome blocks blind replay.',
+      retryable: false,
+      progress: summarizeBulkImportProgress(job),
+      recommendedAction: 'call reconcile_note_import_job_chunk with exact live IDs, expected parent, and source readback',
+    });
+  }
+
+  function manualReviewRequiredResult(toolName: string, job: BulkImportJob, chunk: BulkImportChunk): McpToolResult {
+    const attempt = chunk.attempts.at(-1);
+    return toolResult('Import chunk is in terminal manual-review state; no automatic resume was attempted.', {
+      ok: false,
+      status: 'PARTIAL',
+      toolName,
+      jobId: job.jobId,
+      jobStatus: job.status,
+      jobRevision: job.revision,
+      chunkId: chunk.chunkId,
+      attemptId: attempt?.attemptId,
+      operationId: attempt?.operationId,
+      expectedParent: chunk.expectedParent,
+      chunk: publicBulkImportChunk(chunk),
+      errorCode: 'MANUAL_REVIEW_REQUIRED',
+      errorMessage: 'The durable chunk state was explicitly classified for manual review and cannot be replayed automatically.',
+      retryable: false,
+      progress: summarizeBulkImportProgress(job),
+      recommendedAction: 'Inspect the exact live Rem IDs and parent tree, then create a new import job only after resolving the ambiguous artifact.',
+    });
   }
 
   registerTool(
@@ -562,6 +648,9 @@ export function registerBulkImportTools({
           nextAction: 'call run_note_import_job_step',
         });
       } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('start_note_import_job', error);
+        }
         const message = error instanceof Error ? error.message : String(error);
         return toolResult(message, {
           ok: false,
@@ -616,6 +705,9 @@ export function registerBulkImportTools({
           nextAction: 'call run_note_import_job_step',
         });
       } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('start_note_import_from_file', error);
+        }
         const message = error instanceof Error ? error.message : String(error);
         return toolResult(message, {
           ok: false,
@@ -665,25 +757,43 @@ export function registerBulkImportTools({
   );
 
   async function runOneChunk(jobId: string, chunk: BulkImportChunk, dryRun: boolean) {
+    const commandKey = jobId;
+    if (activeBulkChunkCommands.has(commandKey)) {
+      throw new Error(`Bulk import chunk ${chunk.chunkId} already has an in-flight command.`);
+    }
+    activeBulkChunkCommands.add(commandKey);
+    try {
     const startedAt = new Date().toISOString();
+    const attemptId = `attempt:${randomUUID()}`;
+    const operationId = `bulk-import:${jobId}:${attemptId}`;
     bulkImportJobStore.updateJobStatus(jobId, 'running');
-    bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-      status: 'running',
-      startedAt,
-      retryCount: chunk.retryCount + (chunk.status === 'failed' || chunk.status === 'partial' ? 1 : 0),
+    bulkImportJobStore.beginChunkAttempt(jobId, chunk.chunkId, {
+      attemptId,
+      operationId,
+      expectedParent: chunk.expectedParent,
     });
     await persistJob(jobId);
 
     const hierarchy = await ensureChunkHierarchy(jobId, chunk, dryRun);
     if (!hierarchy.ok) {
-      const status = partialFailureStatus(hierarchy.response);
+      const attemptState = failureAttemptState(hierarchy.response);
+      const status = failureChunkStatus(hierarchy.response);
       const finishedAt = new Date().toISOString();
-      const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+      const evidence = getUpdatedDeletedEvidence(hierarchy.response);
+      const job = bulkImportJobStore.finishChunkAttempt(jobId, chunk.chunkId, {
+        attemptId,
+        state: attemptState,
         status,
-        verificationStatus: status === 'partial' ? 'partial' : 'failed',
+        verificationStatus: attemptState === 'unknown' ? 'partial' : 'failed',
+        hierarchyCreatedRemIds: Array.from(new Set([
+          ...hierarchy.createdRemIds,
+          ...extractCreatedRemIds(hierarchy.response),
+        ])),
+        updatedRemIds: evidence.updatedRemIds,
         finishedAt,
-        durationMs: Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt)),
         error: bridgeFailureMessage(hierarchy.response),
+        errorCode: hierarchy.response.error.code,
+        lifecycle: hierarchy.response.lifecycle,
       });
       bulkImportJobStore.saveCheckpoint(jobId, {
         chunkId: chunk.chunkId,
@@ -699,7 +809,10 @@ export function registerBulkImportTools({
         job,
         status,
         step: chunkStepOutput(updatedChunk, status, {
-          attempted: false,
+          attempted: true,
+          attemptId,
+          operationId,
+          outcome: attemptState,
           method: 'plugin_write_verification_and_chunk_readback',
           warnings: [hierarchy.response.error.message],
           error: bridgeFailureMessage(hierarchy.response),
@@ -708,10 +821,13 @@ export function registerBulkImportTools({
     }
 
     const markdownArgs = {
-      parentRemId: hierarchy.parentRemId,
+      targetRemId: hierarchy.parentRemId,
       markdownText: chunk.sourceText,
-      mode: 'create_child' as const,
+      mode: 'append_children_to_target' as const,
       duplicatePolicy: 'skip' as const,
+      remnoteLayout: {
+        bulletMode: 'plain_child_rems' as const,
+      },
       safetyOptions: {
         dryRun,
         verifyAfterWrite: !dryRun,
@@ -742,15 +858,24 @@ export function registerBulkImportTools({
     );
     const finishedAt = new Date().toISOString();
     if (!response.ok) {
-      const status = partialFailureStatus(response);
+      const attemptState = failureAttemptState(response);
+      const status = failureChunkStatus(response);
       const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
-      const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+      const evidence = getUpdatedDeletedEvidence(response);
+      const job = bulkImportJobStore.finishChunkAttempt(jobId, chunk.chunkId, {
+        attemptId,
+        state: attemptState,
         status,
-        verificationStatus: status === 'partial' ? 'partial' : 'failed',
+        verificationStatus: attemptState === 'unknown' ? 'partial' : 'failed',
+        hierarchyCreatedRemIds: hierarchy.createdRemIds,
+        createdRemIds: extractCreatedRemIds(response),
+        updatedRemIds: evidence.updatedRemIds,
         finishedAt,
-        durationMs,
         error: bridgeFailureMessage(response),
+        errorCode: response.error.code,
+        lifecycle: response.lifecycle,
       });
+      bulkImportJobStore.updateChunk(jobId, chunk.chunkId, { durationMs });
       bulkImportJobStore.saveCheckpoint(jobId, {
         chunkId: chunk.chunkId,
         sectionKey: chunk.sectionKey,
@@ -765,7 +890,10 @@ export function registerBulkImportTools({
         job,
         status,
         step: chunkStepOutput(updatedChunk, status, {
-          attempted: false,
+          attempted: true,
+          attemptId,
+          operationId,
+          outcome: attemptState,
           method: 'plugin_write_verification_and_chunk_readback',
           warnings: [response.error.message],
           error: bridgeFailureMessage(response),
@@ -777,7 +905,6 @@ export function registerBulkImportTools({
     const durationMs = Math.max(0, Date.parse(finishedAt) - Date.parse(startedAt));
     const createdRemIds = Array.from(new Set([
       ...chunk.createdRemIds,
-      ...hierarchy.createdRemIds,
       ...stringArray(result.createdRemIds),
       ...stringArray(result.createdRemId ? [result.createdRemId] : undefined),
     ]));
@@ -785,6 +912,18 @@ export function registerBulkImportTools({
       ...chunk.updatedRemIds,
       ...stringArray(result.updatedRemIds),
     ]));
+    const hasChunkMutationIds = createdRemIds.length > 0 || updatedRemIds.length > 0;
+    bulkImportJobStore.finishChunkAttempt(jobId, chunk.chunkId, {
+      attemptId,
+      state: 'acknowledged',
+      status: 'written_not_verified',
+      verificationStatus: 'written_not_verified',
+      hierarchyCreatedRemIds: hierarchy.createdRemIds,
+      createdRemIds,
+      updatedRemIds,
+      finishedAt,
+    });
+    await persistJob(jobId);
     const verification = typeof result.verification === 'object' && result.verification !== null
       ? result.verification as { passed?: boolean }
       : undefined;
@@ -810,25 +949,28 @@ export function registerBulkImportTools({
     }
     const nextStatus = dryRun
       ? 'pending'
-      : readbackVerification?.ok === true && pluginVerificationPassed
+      : readbackVerification?.ok === true && pluginVerificationPassed && hasChunkMutationIds
         ? 'verified'
         : readbackVerification?.ok === false || verification?.passed === false
         ? 'partial'
         : 'written_not_verified';
-    const job = bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
+    const job = bulkImportJobStore.finishChunkAttempt(jobId, chunk.chunkId, {
+      attemptId,
+      state: 'acknowledged',
       status: nextStatus,
       verificationStatus: dryRun
         ? 'not_verifiable'
-        : readbackVerification?.ok === true && pluginVerificationPassed
+        : readbackVerification?.ok === true && pluginVerificationPassed && hasChunkMutationIds
           ? 'passed'
           : readbackVerification?.ok === false || verification?.passed === false
             ? 'source_fidelity_failed'
             : 'written_not_verified',
       finishedAt,
-      durationMs,
       createdRemIds,
       updatedRemIds,
-      error: readbackVerification?.ok === false
+      error: !dryRun && readbackVerification?.ok === true && pluginVerificationPassed && !hasChunkMutationIds
+        ? 'Write and readback verification passed, but exact chunk mutation IDs were missing.'
+        : readbackVerification?.ok === false
         ? [
             readbackVerification.missingTextPreview
               ? `Missing: ${readbackVerification.missingTextPreview}`
@@ -840,6 +982,7 @@ export function registerBulkImportTools({
           ].filter(Boolean).join(' ')
         : readbackError,
     });
+    bulkImportJobStore.updateChunk(jobId, chunk.chunkId, { durationMs });
     bulkImportJobStore.saveCheckpoint(jobId, {
       chunkId: chunk.chunkId,
       sectionKey: chunk.sectionKey,
@@ -863,7 +1006,12 @@ export function registerBulkImportTools({
       readbackStatus: readbackVerification?.status ?? (readbackError ? 'not_verifiable' : undefined),
       missingTextPreview: readbackVerification?.missingTextPreview,
       extraTextPreview: readbackVerification?.extraTextPreview,
-      warnings: readbackVerification?.warnings ?? (readbackError ? [readbackError] : []),
+      warnings: [
+        ...(readbackVerification?.warnings ?? (readbackError ? [readbackError] : [])),
+        ...(!dryRun && readbackVerification?.ok === true && pluginVerificationPassed && !hasChunkMutationIds
+          ? ['Exact chunk mutation IDs were missing; hierarchy root IDs cannot verify the chunk write.']
+          : []),
+      ],
       error: readbackError,
     };
     return {
@@ -872,6 +1020,9 @@ export function registerBulkImportTools({
       status: nextStatus,
       step: chunkStepOutput(updatedChunk, nextStatus, verificationEvidence),
     };
+    } finally {
+      activeBulkChunkCommands.delete(commandKey);
+    }
   }
 
   function previewRunnableChunks(jobId: string, maxChunks = 1, maxChars?: number) {
@@ -880,9 +1031,7 @@ export function registerBulkImportTools({
       throw new Error(`Unknown import job: ${jobId}`);
     }
     const runnable = job.chunks
-      .filter((chunk) =>
-        ['pending', 'partial', 'partial_needs_verification', 'written_not_verified', 'failed'].includes(chunk.status)
-      )
+      .filter((chunk) => chunk.status === 'pending')
       .slice(0, maxChunks);
     const blocked = maxChars
       ? runnable.find((chunk) => chunk.charCount > maxChars)
@@ -902,7 +1051,9 @@ export function registerBulkImportTools({
       chunk: runnable[0],
       blocked,
       nextAction: runnable.length === 0
-        ? 'call verify_note_import_job'
+        ? bulkImportJobStore.firstReconciliationRequiredChunk(jobId)
+          ? 'call reconcile_note_import_job_chunk before any retry'
+          : 'call verify_note_import_job'
         : 'retry with dryRun=false to write the previewed chunk',
     };
   }
@@ -964,7 +1115,7 @@ export function registerBulkImportTools({
     dryRun: boolean
   ): Promise<
     | { ok: true; parentRemId: string; createdRemIds: string[] }
-    | { ok: false; response: BridgeFailure }
+    | { ok: false; response: BridgeFailure; createdRemIds: string[] }
   > {
     const job = bulkImportJobStore.getJob(jobId);
     if (!job) {
@@ -982,7 +1133,7 @@ export function registerBulkImportTools({
           dryRun,
         });
         if (!importRoot.ok) {
-          return importRoot;
+          return { ...importRoot, createdRemIds };
         }
         importRootRemId = importRoot.remId;
         createdRemIds.push(...importRoot.createdRemIds);
@@ -994,6 +1145,7 @@ export function registerBulkImportTools({
               message: `Duplicate import roots detected for "${job.importRootTitle}". Reused first match.`,
             });
           }
+          await persistJob(jobId);
         }
       }
       chapterParentRemId = importRootRemId;
@@ -1010,6 +1162,7 @@ export function registerBulkImportTools({
           status: 'skipped_already_verified',
           message: `Chapter root reused import root because titles match "${job.chapterTitle}".`,
         });
+        await persistJob(jobId);
       }
     }
     if (!chapterRootRemId) {
@@ -1020,7 +1173,7 @@ export function registerBulkImportTools({
         dryRun,
       });
       if (!chapter.ok) {
-        return chapter;
+        return { ...chapter, createdRemIds };
       }
       chapterRootRemId = chapter.remId;
       createdRemIds.push(...chapter.createdRemIds);
@@ -1032,6 +1185,7 @@ export function registerBulkImportTools({
             message: `Duplicate chapter roots detected for "${job.chapterTitle}". Reused first match.`,
           });
         }
+        await persistJob(jobId);
       }
     }
 
@@ -1049,7 +1203,7 @@ export function registerBulkImportTools({
         dryRun,
       });
       if (!sectionRoot.ok) {
-        return sectionRoot;
+        return { ...sectionRoot, createdRemIds };
       }
       sectionRootRemId = sectionRoot.remId;
       createdRemIds.push(...sectionRoot.createdRemIds);
@@ -1062,6 +1216,7 @@ export function registerBulkImportTools({
             message: `Duplicate section roots detected for "${section.title}". Reused first match.`,
           });
         }
+        await persistJob(jobId);
       }
     }
 
@@ -1088,12 +1243,22 @@ export function registerBulkImportTools({
     },
     async ({ jobId, maxChunks, maxChars, dryRun }) => {
       try {
-        const existingJob = await hydrateJob(jobId);
+        const existingJob = await hydrateJob(jobId, true);
         if (!existingJob) {
           throw new Error(`Unknown import job: ${jobId}`);
         }
         if (existingJob.status === 'cancelled') {
           return cancelledJobResult('run_note_import_job_step', existingJob);
+        }
+        const manualReview = existingJob.chunks.find((chunk) =>
+          chunk.status === 'needs_manual_review' || chunk.reconciliationStatus === 'manual_review'
+        );
+        if (manualReview) {
+          return manualReviewRequiredResult('run_note_import_job_step', existingJob, manualReview);
+        }
+        const unresolved = bulkImportJobStore.firstReconciliationRequiredChunk(jobId);
+        if (unresolved) {
+          return reconciliationRequiredResult('run_note_import_job_step', existingJob, unresolved);
         }
         if (dryRun) {
           const preview = previewRunnableChunks(jobId, maxChunks, maxChars);
@@ -1123,13 +1288,22 @@ export function registerBulkImportTools({
             break;
           }
           if (maxChars && chunk.charCount > maxChars) {
-            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-              status: 'needs_manual_review',
-              verificationStatus: 'not_verifiable',
-              error: `Chunk ${chunk.chunkId} exceeds maxChars ${maxChars}.`,
+            return toolResult(`Chunk ${chunk.chunkId} exceeds maxChars ${maxChars}; no write was attempted.`, {
+              ok: false,
+              status: 'PARTIAL',
+              toolName: 'run_note_import_job_step',
+              jobId,
+              jobStatus: existingJob.status,
+              ...durabilityFields(existingJob),
+              chunk: publicBulkImportChunk(chunk),
+              maxChars,
+              actualChars: chunk.charCount,
+              errorCode: 'CHUNK_EXCEEDS_MAX_CHARS',
+              errorMessage: `Chunk ${chunk.chunkId} exceeds maxChars ${maxChars}; no write was attempted.`,
+              retryable: false,
+              progress: summarizeBulkImportProgress(existingJob),
+              nextAction: 'Increase maxChars to at least actualChars or create a new plan with smaller native chunks.',
             });
-            await persistJob(jobId);
-            break;
           }
           const step = await runOneChunk(jobId, chunk, dryRun);
           steps.push(step.step);
@@ -1160,6 +1334,9 @@ export function registerBulkImportTools({
           nextAction: job.status === 'completed' ? 'call verify_note_import_job' : 'call run_note_import_job_step again',
         });
       } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('run_note_import_job_step', error);
+        }
         const message = error instanceof Error ? error.message : String(error);
         return toolResult(message, {
           ok: false,
@@ -1182,7 +1359,8 @@ export function registerBulkImportTools({
       annotations: WRITE_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, dryRun }) => {
-      const existingJob = await hydrateJob(jobId);
+      try {
+      const existingJob = await hydrateJob(jobId, true);
       if (!existingJob) {
         return toolResult(`Unknown import job: ${jobId}`, {
           ok: false,
@@ -1194,6 +1372,16 @@ export function registerBulkImportTools({
       }
       if (existingJob.status === 'cancelled') {
         return cancelledJobResult('resume_note_import_job', existingJob);
+      }
+      const manualReview = existingJob.chunks.find((chunk) =>
+        chunk.status === 'needs_manual_review' || chunk.reconciliationStatus === 'manual_review'
+      );
+      if (manualReview) {
+        return manualReviewRequiredResult('resume_note_import_job', existingJob, manualReview);
+      }
+      const unresolved = bulkImportJobStore.firstReconciliationRequiredChunk(jobId);
+      if (unresolved) {
+        return reconciliationRequiredResult('resume_note_import_job', existingJob, unresolved);
       }
       if (dryRun) {
         try {
@@ -1252,6 +1440,9 @@ export function registerBulkImportTools({
           nextAction: job.status === 'completed' ? 'call verify_note_import_job' : 'call run_note_import_job_step again',
         }))
         .catch((error: unknown) => {
+          if (error instanceof BulkImportRevisionConflictError) {
+            return persistenceConflictResult('resume_note_import_job', error);
+          }
           const message = error instanceof Error ? error.message : String(error);
           return toolResult(message, {
             ok: false,
@@ -1261,6 +1452,202 @@ export function registerBulkImportTools({
             errorMessage: message,
           }, true);
         });
+      } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('resume_note_import_job', error);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return toolResult(message, {
+          ok: false,
+          status: 'FAIL',
+          toolName: 'resume_note_import_job',
+          errorCode: 'INTERNAL_ERROR',
+          errorMessage: message,
+        }, true);
+      }
+    }
+  );
+
+  registerTool(
+    'reconcile_note_import_job_chunk',
+    {
+      title: 'Reconcile note import job chunk',
+      description: 'Use this when live ID, parent, and source readback resolves an unknown chunk outcome and job state must be explicitly reconciled.',
+      inputSchema: z.object({
+        jobId: z.string().trim().min(1).max(256),
+        chunkId: z.string().trim().min(1).max(512).optional(),
+        expectedRevision: z.number().int().min(0).optional(),
+        expectedParent: z.string().trim().min(1).max(256).optional(),
+        outcome: z.enum(['written', 'not_written', 'manual_review']).optional(),
+        actualText: z.string().max(240000).optional(),
+        createdRemIds: z.array(z.string().trim().min(1).max(256)).max(1000).default([]),
+        updatedRemIds: z.array(z.string().trim().min(1).max(256)).max(1000).default([]),
+        provenance: z.string().trim().min(3).max(1000).optional(),
+        dryRun: z.boolean().default(false),
+      }).superRefine((value, context) => {
+        if (value.dryRun) return;
+        for (const field of ['chunkId', 'expectedRevision', 'expectedParent', 'outcome', 'provenance'] as const) {
+          if (value[field] === undefined) {
+            context.addIssue({ code: 'custom', path: [field], message: `${field} is required unless dryRun=true.` });
+          }
+        }
+      }),
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
+    },
+    async ({
+      jobId,
+      chunkId,
+      expectedRevision,
+      expectedParent,
+      outcome,
+      actualText,
+      createdRemIds,
+      updatedRemIds,
+      provenance,
+      dryRun,
+    }) => {
+      try {
+        const suppliedCreatedRemIds = createdRemIds ?? [];
+        const suppliedUpdatedRemIds = updatedRemIds ?? [];
+        const job = await hydrateJob(jobId, true);
+        if (!job) {
+          throw new Error(`Unknown import job: ${jobId}`);
+        }
+        if (dryRun) {
+          const previewChunk = bulkImportJobStore.firstReconciliationRequiredChunk(jobId) ?? job.chunks[0];
+          return toolResult('Dry run: reconciliation requirements previewed without changing job state.', {
+            ok: true,
+            status: 'PASS',
+            toolName: 'reconcile_note_import_job_chunk',
+            dryRun: true,
+            jobId,
+            jobRevision: job.revision,
+            chunk: previewChunk ? publicBulkImportChunk(previewChunk) : undefined,
+            requiredEvidence: ['expectedRevision', 'chunkId', 'expectedParent', 'outcome', 'provenance'],
+          });
+        }
+        if (
+          chunkId === undefined ||
+          expectedRevision === undefined ||
+          expectedParent === undefined ||
+          outcome === undefined ||
+          provenance === undefined
+        ) {
+          throw new Error('Reconciliation identity, outcome, revision, and provenance are required.');
+        }
+        if (job.revision !== expectedRevision) {
+          return persistenceConflictResult(
+            'reconcile_note_import_job_chunk',
+            new BulkImportRevisionConflictError(jobId, expectedRevision, job.revision)
+          );
+        }
+        const chunk = job.chunks.find((candidate) => candidate.chunkId === chunkId);
+        if (!chunk) {
+          throw new Error(`Unknown import chunk: ${chunkId}`);
+        }
+        if (chunk.expectedParent !== expectedParent) {
+          return toolResult('Reconciliation parent identity does not match the durable chunk manifest.', {
+            ok: false,
+            status: 'FAIL',
+            toolName: 'reconcile_note_import_job_chunk',
+            jobId,
+            chunkId,
+            errorCode: 'RECONCILIATION_IDENTITY_MISMATCH',
+            errorMessage: `Expected parent ${chunk.expectedParent}, received ${expectedParent}.`,
+            expectedParent: chunk.expectedParent,
+            actualParent: expectedParent,
+            retryable: false,
+          }, true);
+        }
+        const sourceReport = actualText === undefined
+          ? undefined
+          : verifyBulkImportSourceText({
+              expectedText: chunk.expectedSourceText,
+              actualText,
+              jobId,
+              sectionKey: chunk.sectionKey,
+              chunkIndex: chunk.chunkIndex,
+            });
+        const observedExpectedUnitCount = actualText === undefined
+          ? undefined
+          : buildBulkImportSourceManifest(actualText, { renderedReadback: true }).units
+              .filter((actualUnit) => chunk.sourceManifest.units.some(
+                (expectedUnit) => expectedUnit.semanticText === actualUnit.semanticText
+              )).length;
+        const allCreatedIds = Array.from(new Set([...chunk.createdRemIds, ...suppliedCreatedRemIds]));
+        const allUpdatedIds = Array.from(new Set([...chunk.updatedRemIds, ...suppliedUpdatedRemIds]));
+        if (outcome === 'written' && (!sourceReport?.ok || allCreatedIds.length + allUpdatedIds.length === 0)) {
+          return toolResult('Written reconciliation requires both matching source readback and exact mutation IDs.', {
+            ok: false,
+            status: 'FAIL',
+            toolName: 'reconcile_note_import_job_chunk',
+            jobId,
+            chunkId,
+            errorCode: 'RECONCILIATION_EVIDENCE_INSUFFICIENT',
+            errorMessage: 'A hash-only or ID-only match cannot establish written identity.',
+            verification: sourceReport,
+            createdRemIds: allCreatedIds,
+            updatedRemIds: allUpdatedIds,
+            retryable: false,
+          }, true);
+        }
+        if (outcome === 'not_written' && (actualText === undefined || (observedExpectedUnitCount ?? 0) > 0)) {
+          return toolResult('Not-written reconciliation requires live readback with no semantic units from the expected chunk.', {
+            ok: false,
+            status: 'FAIL',
+            toolName: 'reconcile_note_import_job_chunk',
+            jobId,
+            chunkId,
+            errorCode: 'RECONCILIATION_EVIDENCE_INSUFFICIENT',
+            errorMessage: 'Supply live parent readback proving the expected chunk is entirely absent; partial presence requires written reconciliation or manual review.',
+            verification: sourceReport,
+            observedExpectedUnitCount,
+            retryable: false,
+          }, true);
+        }
+        const reconciled = bulkImportJobStore.reconcileChunk(jobId, chunkId, {
+          outcome,
+          createdRemIds: suppliedCreatedRemIds,
+          updatedRemIds: suppliedUpdatedRemIds,
+          provenance,
+        });
+        bulkImportJobStore.saveCheckpoint(jobId, {
+          chunkId,
+          sectionKey: chunk.sectionKey,
+          chunkIndex: chunk.chunkIndex,
+          status: outcome === 'written' ? 'verified' : outcome === 'not_written' ? 'pending' : 'needs_manual_review',
+          message: `Chunk explicitly reconciled as ${outcome}. Provenance: ${provenance}`,
+        });
+        await persistJob(jobId);
+        const durableJob = bulkImportJobStore.getJob(jobId) ?? reconciled;
+        const durableChunk = durableJob.chunks.find((candidate) => candidate.chunkId === chunkId) ?? chunk;
+        return toolResult('Note import chunk reconciliation persisted.', {
+          ok: true,
+          status: 'PASS',
+          toolName: 'reconcile_note_import_job_chunk',
+          jobId,
+          jobRevision: durableJob.revision,
+          chunk: publicBulkImportChunk(durableChunk),
+          progress: summarizeBulkImportProgress(durableJob),
+          verification: sourceReport,
+          nextAction: outcome === 'not_written'
+            ? 'call resume_note_import_job to perform the explicitly cleared retry'
+            : 'call get_note_import_job_status',
+        });
+      } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('reconcile_note_import_job_chunk', error);
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        return toolResult(message, {
+          ok: false,
+          status: 'FAIL',
+          toolName: 'reconcile_note_import_job_chunk',
+          errorCode: 'INVALID_ARGS',
+          errorMessage: message,
+        }, true);
+      }
     }
   );
 
@@ -1268,14 +1655,14 @@ export function registerBulkImportTools({
     'verify_note_import_job',
     {
       title: 'Verify note import job',
-      description: 'Use this when you need to verify import source fidelity and persist verification state from supplied text or live RemNote readback.',
+      description: 'Use this when you need a read-only import source-fidelity report from supplied text or live RemNote readback without changing job state.',
       inputSchema: z.object({
         jobId: z.string().trim().min(1).max(256),
         actualTextByChunkId: z.record(z.string(), z.string()).optional(),
         readbackTree: z.unknown().optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: STATEFUL_BULK_TOOL_ANNOTATIONS,
+      annotations: READ_ONLY_BULK_TOOL_ANNOTATIONS,
     },
     async ({ jobId, actualTextByChunkId, readbackTree }) => {
       try {
@@ -1315,32 +1702,14 @@ export function registerBulkImportTools({
             continue;
           }
           const hasMutationIds = chunk.createdRemIds.length > 0 || chunk.updatedRemIds.length > 0;
-          if (report.ok && hasMutationIds) {
-            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-              status: 'verified',
-              verificationStatus: 'passed',
-              error: undefined,
-            });
-          } else if (report.ok && !hasMutationIds) {
-            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-              status: 'partial_needs_verification',
-              verificationStatus: 'partial',
-              error: 'Readback text matched, but created/updated Rem IDs are missing.',
-            });
+          if (report.ok && !hasMutationIds) {
             report.ok = false;
             report.status = 'partial';
             report.missingChunks = [...(report.missingChunks ?? []), chunk.chunkId];
             report.warnings.push('Created/updated Rem IDs are missing for this chunk.');
-          } else if (report.status === 'source_fidelity_failed') {
-            bulkImportJobStore.updateChunk(jobId, chunk.chunkId, {
-              status: 'partial_needs_verification',
-              verificationStatus: 'source_fidelity_failed',
-              error: 'Source fidelity verification failed.',
-            });
           }
         }
-        const updatedJob = bulkImportJobStore.getJob(jobId) ?? job;
-        await persistJob(jobId);
+        const updatedJob = job;
         const finalReport = verifyBulkImportFinalReadback({
           job: updatedJob,
           readbackTree: liveReadbackTree,
@@ -1418,7 +1787,7 @@ export function registerBulkImportTools({
     },
     async ({ jobId }) => {
       try {
-        const ownedJob = await hydrateJob(jobId);
+        const ownedJob = await hydrateJob(jobId, true);
         if (!ownedJob) {
           throw new Error(`Unknown import job: ${jobId}`);
         }
@@ -1436,6 +1805,9 @@ export function registerBulkImportTools({
           nextAction: 'No future chunks will run for this job.',
         });
       } catch (error: unknown) {
+        if (error instanceof BulkImportRevisionConflictError) {
+          return persistenceConflictResult('cancel_note_import_job', error);
+        }
         const message = error instanceof Error ? error.message : String(error);
         return toolResult(message, {
           ok: false,

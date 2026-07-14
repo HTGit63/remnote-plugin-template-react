@@ -8,6 +8,9 @@ import type { AuthenticatedPrincipal } from '../server/src/auth/types';
 import type { BulkImportSourceFileLoader } from '../server/src/bulk-import/source-file-loader';
 import type { McpToolResult, ToolRegistrationContext } from '../server/src/tools/tool-context';
 import type { BridgeResponse, BridgeToolArgs, BridgeToolName } from '../shared/bridge/protocol';
+import { MemoryStorageProvider } from '../server/src/storage/memory-store';
+import { BulkImportRevisionConflictError, type BulkImportJobSaveOptions, type StorageProvider } from '../server/src/storage/types';
+import type { BulkImportJob } from '../shared/bridge/bulk-import';
 
 type Handler = (args: any) => Promise<McpToolResult>;
 
@@ -42,6 +45,23 @@ function failure(id: string, code: 'TIMEOUT' | 'PLUGIN_NOT_CONNECTED', message =
   return { id, ok: false, error: { code, message } };
 }
 
+function failureWithDetails(
+  id: string,
+  code: 'TIMEOUT' | 'PLUGIN_NOT_CONNECTED',
+  details: Record<string, unknown>,
+  message = code
+): BridgeResponse {
+  return {
+    id,
+    ok: false,
+    error: { code, message, details },
+    lifecycle: [
+      { phase: 'forwarded_to_plugin', at: new Date().toISOString() },
+      { phase: 'execution_started', at: new Date().toISOString() },
+    ],
+  };
+}
+
 function text(result: McpToolResult): Record<string, any> {
   return result.structuredContent as Record<string, any>;
 }
@@ -70,12 +90,13 @@ function makeHarness(options: {
   sourceFileAllowRoots?: string[];
   sourceFileMaxBytes?: number;
   sourceFileLoader?: BulkImportSourceFileLoader;
+  storage?: StorageProvider;
 } = {}) {
   const handlers: Record<string, Handler> = {};
   const toolConfigs: Record<string, Record<string, any>> = {};
   const childMap = new Map<string, Array<{ remId: string; title: string; frontText: string; plainText: string; children: any[] }>>();
   const createCalls: Array<{ parentId: string | null; markdown: string; idempotencyKey?: string }> = [];
-  const writeCalls: Array<{ parentRemId: string; idempotencyKey?: string; markdownText: string }> = [];
+  const writeCalls: Array<{ parentRemId: string; idempotencyKey?: string; markdownText: string; mode?: string }> = [];
   const idempotency = new Map<string, string>();
   let idCounter = 0;
   const nextId = () => `fake-rem-${++idCounter}`;
@@ -138,17 +159,19 @@ function makeHarness(options: {
     }
     if (tool === 'create_or_replace_note_from_markdown') {
       const input = args as any;
+      const targetRemId = input.targetRemId ?? input.parentRemId;
       writeCalls.push({
-        parentRemId: input.parentRemId,
+        parentRemId: targetRemId,
         idempotencyKey: input.safetyOptions?.idempotencyKey,
         markdownText: input.markdownText,
+        mode: input.mode,
       });
       const queued = writeResponses.shift();
       if (queued && !queued.ok) {
         return queued;
       }
       const createdRemId = nextId();
-      ensureList(input.parentRemId).push({
+      ensureList(targetRemId).push({
         remId: createdRemId,
         title: input.markdownText,
         frontText: input.markdownText,
@@ -165,7 +188,7 @@ function makeHarness(options: {
           plainText: 'Size',
           children: [],
         };
-        ensureList(input.parentRemId).push(sizeNode);
+        ensureList(targetRemId).push(sizeNode);
         ensureList(sizeId).push({
           remId: hId,
           title: 'H3',
@@ -207,6 +230,7 @@ function makeHarness(options: {
       remoteTimeoutMs: 5000,
     },
     sourceFileLoader: options.sourceFileLoader,
+    storage: options.storage,
   });
 
   async function createJob(jobId: string) {
@@ -587,6 +611,23 @@ describe('bulk import MCP tools', () => {
     expect(status.job.chunks[0].verificationStatus).toBe('written_not_verified');
   });
 
+  test('hierarchy root IDs cannot substitute for missing chunk mutation IDs', async () => {
+    const h = makeHarness({
+      writeResponses: [success('write', { verification: { passed: true } })],
+    });
+    const { jobId } = await h.createJob('bulk-job:hierarchy-ids-are-not-chunk-ids');
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(run.progress.createdRemIds.length).toBeGreaterThan(0);
+    expect(run.progress.chunksVerified).toBe(0);
+    expect(status.job.chunks[0]).toMatchObject({
+      status: 'written_not_verified',
+      createdRemIds: [],
+      updatedRemIds: [],
+    });
+  });
+
   test('marks chunk verified only when verification passed is true', async () => {
     const h = makeHarness({ writeResponses: [success('write', { createdRemIds: ['chunk-1'], verification: { passed: true } })] });
     const { jobId } = await h.createJob('bulk-job:verified-only');
@@ -618,11 +659,46 @@ describe('bulk import MCP tools', () => {
       idempotencyKey: expect.any(String),
     });
     expect(run.lastStep.createdRemIds.length).toBeGreaterThan(0);
+    expect(h.writeCalls[0].mode).toBe('append_children_to_target');
     expect(run.lastStep.verification).toMatchObject({
       pluginPassed: true,
       readbackPassed: true,
       readbackStatus: 'passed',
     });
+  });
+
+  test('maxChars refusal leaves an unattempted chunk pending', async () => {
+    const h = makeHarness();
+    const sourceText = ['# Long chapter', '', '## Long section', '', 'x'.repeat(700)].join('\n');
+    const plan = text(await h.handlers.plan_note_import({
+      sourceText,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 2000, maxRemsPerChunk: 30 },
+    }));
+    const jobId = 'bulk-job:max-chars-refusal';
+    await h.handlers.start_note_import_job({ planId: plan.planId, jobId });
+
+    const run = text(await h.handlers.run_note_import_job_step({
+      jobId,
+      maxChunks: 1,
+      maxChars: 500,
+      dryRun: false,
+    }));
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(run).toMatchObject({
+      ok: false,
+      status: 'PARTIAL',
+      errorCode: 'CHUNK_EXCEEDS_MAX_CHARS',
+      retryable: false,
+    });
+    expect(status.job.chunks[0]).toMatchObject({
+      status: 'pending',
+      attempts: [],
+      reconciliationStatus: 'not_required',
+    });
+    expect(h.writeCalls).toHaveLength(0);
+    expect(h.createCalls).toHaveLength(0);
   });
 
   test('collapses matching import root and chapter titles during small bulk import', async () => {
@@ -677,7 +753,7 @@ describe('bulk import MCP tools', () => {
     expect(status.job.chunks[0].error).toContain('Formatting pollution');
   });
 
-  test('resume retries unverified chunk with same idempotency key', async () => {
+  test('resume refuses to replay an unverified attempted chunk', async () => {
     const h = makeHarness({
       readbackFailures: 1,
       writeResponses: [
@@ -687,23 +763,104 @@ describe('bulk import MCP tools', () => {
     });
     const { jobId } = await h.createJob('bulk-job:resume-unverified');
     await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
-    await h.handlers.resume_note_import_job({ jobId, dryRun: false });
+    const resumed = text(await h.handlers.resume_note_import_job({ jobId, dryRun: false }));
 
-    expect(h.writeCalls.length).toBe(2);
-    expect(h.writeCalls[1].idempotencyKey).toBe(h.writeCalls[0].idempotencyKey);
+    expect(resumed.status).toBe('PARTIAL');
+    expect(resumed.errorCode).toBe('RECONCILIATION_REQUIRED');
+    expect(resumed.recommendedAction).toContain('reconcile_note_import_job_chunk');
+    expect(h.writeCalls.length).toBe(1);
     expect(h.createCalls.filter((call) => call.markdown === 'Chapter One')).toHaveLength(1);
     expect(h.createCalls.filter((call) => call.markdown === '1.1 Atomic nuclei')).toHaveLength(1);
   });
 
-  test('timeout marks chunk partial and keeps it resumable', async () => {
+  test('serializes concurrent commands for the same job before plugin dispatch', async () => {
+    const h = makeHarness();
+    const { jobId } = await h.createJob('bulk-job:concurrent-command');
+
+    const results = await Promise.all([
+      h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }),
+      h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }),
+    ]);
+    const structured = results.map(text);
+
+    expect(h.writeCalls).toHaveLength(1);
+    expect(structured.some((result) => result.errorMessage?.includes('in-flight command'))).toBe(true);
+  });
+
+  test('returns a dedicated revision conflict when durable state changes before dispatch', async () => {
+    class ConflictOnSecondJobSave extends MemoryStorageProvider {
+      private jobSaveCount = 0;
+
+      override async saveBulkImportJob(job: BulkImportJob, options: BulkImportJobSaveOptions = {}) {
+        this.jobSaveCount += 1;
+        if (this.jobSaveCount === 2) {
+          const expectedRevision = options.expectedRevision ?? job.revision;
+          throw new BulkImportRevisionConflictError(job.jobId, expectedRevision, expectedRevision + 1);
+        }
+        return super.saveBulkImportJob(job, options);
+      }
+    }
+    const storage = new ConflictOnSecondJobSave();
+    const h = makeHarness({ storage });
+    const { jobId } = await h.createJob('bulk-job:stale-durable-revision');
+
+    const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+
+    expect(run).toMatchObject({
+      ok: false,
+      status: 'FAIL',
+      errorCode: 'BULK_IMPORT_REVISION_CONFLICT',
+      expectedRevision: 1,
+      actualRevision: 2,
+      retryable: false,
+    });
+    expect(h.writeCalls).toHaveLength(0);
+    expect(h.createCalls).toHaveLength(0);
+  });
+
+  test('persists mutation IDs from an unknown partial response before reconciliation', async () => {
+    const h = makeHarness({
+      writeResponses: [failureWithDetails('timeout-after-write', 'TIMEOUT', {
+        partialExecution: {
+          createdRemIds: ['partial-rem-1'],
+          rollbackStatus: 'not_attempted',
+        },
+        updatedRemIds: ['updated-rem-1'],
+      }, 'Timed out after plugin execution started.')],
+    });
+    const { jobId } = await h.createJob('bulk-job:partial-evidence');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(status.job.chunks[0]).toMatchObject({
+      createdRemIds: expect.arrayContaining(['partial-rem-1']),
+      updatedRemIds: ['updated-rem-1'],
+      reconciliationStatus: 'required',
+    });
+    expect(status.job.chunks[0].attempts.at(-1)).toMatchObject({
+      state: 'unknown',
+      operationId: expect.any(String),
+      semanticHash: expect.stringMatching(/^fnv1a32:/),
+      idempotencyKey: expect.any(String),
+      stage: 'chunk_write',
+      errorCode: 'TIMEOUT',
+      createdRemIds: expect.arrayContaining(['partial-rem-1']),
+      updatedRemIds: ['updated-rem-1'],
+    });
+    expect(status.job.schemaVersion).toBe(2);
+  });
+
+  test('timeout marks chunk reconciliation-required and blocks blind resume', async () => {
     const h = makeHarness({ writeResponses: [failure('timeout', 'TIMEOUT', 'Timed out waiting for chunk.')] });
     const { jobId } = await h.createJob('bulk-job:timeout');
     const run = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
 
     expect(run.status).toBe('PARTIAL');
-    expect(run.lastStep.status).toBe('partial');
+    expect(run.lastStep.status).toBe('partial_needs_verification');
     const status = text(await h.handlers.get_note_import_job_status({ jobId }));
     expect(status.job.chunks[0].error).toContain('TIMEOUT');
+    expect(status.job.chunks[0].reconciliationStatus).toBe('required');
+    expect(status.job.progress.recommendedNextAction).toContain('reconcile_note_import_job_chunk');
   });
 
   test('disconnect marks chunk failed without verified progress', async () => {
@@ -714,6 +871,26 @@ describe('bulk import MCP tools', () => {
     expect(run.status).toBe('PARTIAL');
     expect(run.lastStep.status).toBe('failed');
     expect(run.progress.chunksVerified).toBe(0);
+  });
+
+  test('transport forwarding without plugin execution is failed-before-write, not unknown', async () => {
+    const h = makeHarness({
+      writeResponses: [{
+        id: 'forwarded-disconnect',
+        ok: false,
+        error: { code: 'PLUGIN_NOT_CONNECTED', message: 'Socket closed while sending.' },
+        lifecycle: [{ phase: 'forwarded_to_plugin', at: new Date().toISOString() }],
+      }],
+    });
+    const { jobId } = await h.createJob('bulk-job:forwarded-disconnect');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(status.job.chunks[0]).toMatchObject({
+      status: 'failed',
+      verificationStatus: 'failed',
+    });
+    expect(status.job.chunks[0].attempts.at(-1)).toMatchObject({ state: 'failed_before_write' });
   });
 
   test('cancel blocks later run and resume without deleting written content', async () => {
@@ -753,6 +930,140 @@ describe('bulk import MCP tools', () => {
     expect(verify.limitation).toContain('Live/readback verification unavailable');
   });
 
+  test('verify is byte-for-byte read-only for persisted job progress', async () => {
+    const h = makeHarness({
+      writeResponses: [success('write', { createdRemIds: ['chunk-1'] })],
+    });
+    const { jobId } = await h.createJob('bulk-job:read-only-verify');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const before = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+    const chunk = before.chunks[0];
+
+    await h.handlers.verify_note_import_job({
+      jobId,
+      actualTextByChunkId: { [chunk.chunkId]: 'Alpha source text.' },
+    });
+    await h.handlers.verify_note_import_job({
+      jobId,
+      actualTextByChunkId: { [chunk.chunkId]: 'different text' },
+    });
+    const after = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+
+    expect(JSON.stringify(after)).toBe(JSON.stringify(before));
+  });
+
+  test('explicit ID-and-hash reconciliation closes an unknown chunk without replay', async () => {
+    const h = makeHarness({
+      writeResponses: [failureWithDetails('timeout-after-write', 'TIMEOUT', {
+        partialExecution: {
+          createdRemIds: ['partial-rem-1'],
+          rollbackStatus: 'not_attempted',
+        },
+      })],
+    });
+    const { jobId } = await h.createJob('bulk-job:reconcile-written');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const before = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+    const chunk = before.chunks[0];
+
+    const reconciled = text(await h.handlers.reconcile_note_import_job_chunk({
+      jobId,
+      chunkId: chunk.chunkId,
+      expectedRevision: before.revision,
+      expectedParent: chunk.expectedParent,
+      outcome: 'written',
+      actualText: 'Alpha source text.',
+      createdRemIds: ['partial-rem-1'],
+      provenance: 'live ID readback in test harness',
+    }));
+
+    expect(reconciled, JSON.stringify(reconciled)).toMatchObject({ status: 'PASS' });
+    expect(reconciled.chunk).toMatchObject({
+      status: 'verified',
+      verificationStatus: 'passed',
+      reconciliationStatus: 'reconciled_written',
+    });
+    expect(h.writeCalls).toHaveLength(1);
+  });
+
+  test('not-written reconciliation rejects partial source presence to prevent duplicate replay', async () => {
+    const h = makeHarness({
+      writeResponses: [failureWithDetails('timeout-after-partial-write', 'TIMEOUT', {
+        partialExecution: { createdRemIds: ['partial-rem-1'], rollbackStatus: 'not_attempted' },
+      })],
+    });
+    const plan = text(await h.handlers.plan_note_import({
+      sourceText: [
+        '# Partial chapter',
+        '',
+        '## Partial section',
+        '',
+        'FIRST_PARTIAL_RECONCILIATION_ANCHOR',
+        '',
+        'SECOND_PARTIAL_RECONCILIATION_ANCHOR',
+      ].join('\n'),
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 2000, maxRemsPerChunk: 30 },
+    }));
+    const jobId = 'bulk-job:reject-partial-not-written';
+    await h.handlers.start_note_import_job({ planId: plan.planId, jobId });
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const before = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+    const chunk = before.chunks[0];
+
+    const reconciliation = text(await h.handlers.reconcile_note_import_job_chunk({
+      jobId,
+      chunkId: chunk.chunkId,
+      expectedRevision: before.revision,
+      expectedParent: chunk.expectedParent,
+      outcome: 'not_written',
+      actualText: 'FIRST_PARTIAL_RECONCILIATION_ANCHOR',
+      provenance: 'partial live parent readback in test harness',
+    }));
+    const after = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+
+    expect(reconciliation).toMatchObject({
+      ok: false,
+      errorCode: 'RECONCILIATION_EVIDENCE_INSUFFICIENT',
+      retryable: false,
+    });
+    expect(after.chunks[0]).toMatchObject({
+      status: 'partial_needs_verification',
+      reconciliationStatus: 'required',
+    });
+  });
+
+  test('manual-review reconciliation blocks resume with a typed non-retryable result', async () => {
+    const h = makeHarness({
+      writeResponses: [failureWithDetails('timeout-manual-review', 'TIMEOUT', {
+        mutationCouldHaveStarted: true,
+      })],
+    });
+    const { jobId } = await h.createJob('bulk-job:manual-review');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+    const before = text(await h.handlers.get_note_import_job_status({ jobId })).job;
+    const chunk = before.chunks[0];
+    await h.handlers.reconcile_note_import_job_chunk({
+      jobId,
+      chunkId: chunk.chunkId,
+      expectedRevision: before.revision,
+      expectedParent: chunk.expectedParent,
+      outcome: 'manual_review',
+      provenance: 'live state remained ambiguous in test harness',
+    });
+
+    const resumed = text(await h.handlers.resume_note_import_job({ jobId, dryRun: false }));
+
+    expect(resumed).toMatchObject({
+      ok: false,
+      status: 'PARTIAL',
+      errorCode: 'MANUAL_REVIEW_REQUIRED',
+      retryable: false,
+      chunkId: chunk.chunkId,
+    });
+    expect(h.writeCalls).toHaveLength(1);
+  });
+
   test('supplied readback verifies source fidelity and chunk order', async () => {
     const h = makeHarness({
       writeResponses: [success('write', { createdRemIds: ['chunk-1'] })],
@@ -773,7 +1084,7 @@ describe('bulk import MCP tools', () => {
       status: 'not_verifiable',
       method: 'supplied_chunk_text',
     });
-    const verified = text(await h.handlers.get_note_import_job_status({ jobId }));
-    expect(verified.job.chunks[0].status).toBe('verified');
+    const after = text(await h.handlers.get_note_import_job_status({ jobId }));
+    expect(after.job.chunks[0].status).toBe('written_not_verified');
   });
 });

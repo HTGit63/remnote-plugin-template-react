@@ -28,6 +28,39 @@ export type BulkImportVerificationStatus =
   | 'source_fidelity_failed'
   | 'not_verifiable';
 
+export type BulkImportAttemptState =
+  | 'dispatching'
+  | 'acknowledged'
+  | 'unknown'
+  | 'failed_before_write';
+
+export type BulkImportReconciliationStatus =
+  | 'not_required'
+  | 'required'
+  | 'reconciled_written'
+  | 'reconciled_not_written'
+  | 'manual_review';
+
+export interface BulkImportChunkAttempt {
+  attemptId: string;
+  operationId: string;
+  state: BulkImportAttemptState;
+  expectedParent: string;
+  sourceHash: string;
+  semanticHash: string;
+  idempotencyKey: string;
+  stage: 'chunk_write';
+  startedAt: string;
+  finishedAt?: string;
+  hierarchyCreatedRemIds: string[];
+  createdRemIds: string[];
+  updatedRemIds: string[];
+  error?: string;
+  errorCode?: string;
+  lifecycle?: unknown[];
+  provenance: 'runtime' | 'legacy_migration' | 'reconciliation';
+}
+
 export type BulkImportSourceNormalization = 'none' | 'auto' | 'remnote_export';
 
 export interface BulkImportPlannerOptions {
@@ -68,8 +101,59 @@ export interface BulkImportSourceMetadata {
   extractedSourceHash: string;
   plannedSourceLength: number;
   plannedSourceHash: string;
+  semanticSourceHash: string;
   normalization: BulkImportSourceNormalization;
   normalizationDescription: string;
+}
+
+export type BulkImportSemanticUnitKind =
+  | 'heading'
+  | 'paragraph'
+  | 'list_item'
+  | 'ordered_list_item'
+  | 'blockquote'
+  | 'inline_math'
+  | 'block_math'
+  | 'code'
+  | 'table_cell';
+
+export interface BulkImportSemanticUnit {
+  unitId: string;
+  kind: BulkImportSemanticUnitKind;
+  semanticText: string;
+  rawText: string;
+  sourceSpan: {
+    startLine: number;
+    endLine: number;
+  };
+  parentPath: string[];
+  listMarker?: string;
+}
+
+export interface BulkImportSupportedLoss {
+  feature: 'link_destination' | 'code_language' | 'native_table' | 'ordered_list_marker';
+  detail: string;
+}
+
+export interface BulkImportSourceManifest {
+  rawSourceHash: string;
+  semanticHash: string;
+  units: BulkImportSemanticUnit[];
+  hierarchyRelationships: Array<{
+    unitId: string;
+    parentPath: string[];
+  }>;
+  formattingExpectations: Array<'emphasis' | 'link' | 'inline_math' | 'block_math' | 'blockquote' | 'code' | 'table' | 'ordered_list'>;
+  supportedLosses: BulkImportSupportedLoss[];
+}
+
+export interface BulkImportHierarchyMismatch {
+  chunkId: string;
+  semanticText: string;
+  sourceSpan?: BulkImportSemanticUnit['sourceSpan'];
+  expectedParentRemId?: string;
+  actualParentRemId?: string;
+  remId?: string;
 }
 
 export interface BulkImportChunk {
@@ -83,14 +167,21 @@ export interface BulkImportChunk {
   sectionKey: string;
   sectionTitle: string;
   chunkIndex: number;
+  logicalSectionKey: string;
+  nativeChunkIndex: number;
   sourceText: string;
   sourceHash: string;
+  sourceManifest: BulkImportSourceManifest;
   expectedSourceText: string;
   expectedSourceHash: string;
   expectedParent: string;
   chunkParentRemId?: string;
+  hierarchyCreatedRemIds: string[];
   createdRemIds: string[];
   updatedRemIds: string[];
+  attempts: BulkImportChunkAttempt[];
+  reconciliationStatus: BulkImportReconciliationStatus;
+  reconciliationProvenance?: string;
   startedAt?: string;
   finishedAt?: string;
   durationMs?: number;
@@ -107,6 +198,7 @@ export interface BulkImportSection {
   sectionKey: string;
   title: string;
   sourceHash: string;
+  sourceManifest: BulkImportSourceManifest;
   sourceText: string;
   bodySourceText: string;
   sectionRootRemId?: string;
@@ -121,6 +213,7 @@ export interface BulkImportPlan {
   ownerId?: string;
   sourceName?: string;
   sourceHash: string;
+  sourceManifest: BulkImportSourceManifest;
   sourceMetadata: BulkImportSourceMetadata;
   plannedSourceLength: number;
   extractedSourceLength: number;
@@ -135,6 +228,8 @@ export interface BulkImportPlan {
   sections: BulkImportSection[];
   chunks: BulkImportChunk[];
   estimatedChunks: number;
+  logicalChunkCount: number;
+  nativeChunkCount: number;
   estimatedRems: number;
   warnings: string[];
   options: Required<BulkImportPlannerOptions>;
@@ -157,18 +252,26 @@ export interface BulkImportVerificationResult {
   chunkIndex?: number;
   expectedHash?: string;
   actualHash?: string;
+  rawSourceHash?: string;
+  semanticHash?: string;
+  renderedReadbackHash?: string;
+  missingUnits?: BulkImportSemanticUnit[];
+  extraUnits?: BulkImportSemanticUnit[];
   missingTextPreview?: string;
   extraTextPreview?: string;
   duplicateSections?: string[];
   missingChunks?: string[];
   wrongParentChunks?: string[];
+  hierarchyMismatches?: BulkImportHierarchyMismatch[];
   warnings: string[];
   recommendedAction?: string;
-  method: 'normalized_plain_text' | 'manifest_only';
+  method: 'semantic_manifest' | 'normalized_plain_text' | 'manifest_only';
 }
 
 export interface BulkImportJob {
+  schemaVersion: 2;
   jobId: string;
+  revision: number;
   planId: string;
   ownerId?: string;
   sourceName?: string;
@@ -231,6 +334,240 @@ export function stableBulkImportHash(input: string): string {
     hash = Math.imul(hash, 0x01000193);
   }
   return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function semanticInlineText(value: string, renderedReadback: boolean): string {
+  return value
+    .normalize('NFC')
+    .replace(renderedReadback ? /^Callout:\s*/i : /$^/, '')
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/\$\$([\s\S]+?)\$\$/g, '$1')
+    .replace(/\\\[([\s\S]+?)\\\]/g, '$1')
+    .replace(/\$([^$\n]+?)\$/g, '$1')
+    .replace(/\\\(([\s\S]+?)\\\)/g, '$1')
+    .replace(/\*\*([\s\S]+?)\*\*/g, '$1')
+    .replace(/__([^_\n]+?)__/g, '$1')
+    .replace(/(^|[^*])\*([^*\n]+?)\*(?=$|[^*])/g, '$1$2')
+    .replace(/(^|[^A-Za-z0-9_])_([^_\n]+?)_(?=$|[^A-Za-z0-9_])/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\\([\\`*{}\[\]()#+\-.!_>])/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function markdownTableCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+}
+
+export function buildBulkImportSourceManifest(
+  text: string,
+  options: { renderedReadback?: boolean } = {}
+): BulkImportSourceManifest {
+  const normalizedSource = text.replace(/\r\n/g, '\n').normalize('NFC');
+  const lines = normalizedSource.split('\n');
+  const units: BulkImportSemanticUnit[] = [];
+  const headingStack: Array<{ level: number; text: string }> = [];
+  const listStack: Array<{ indent: number; text: string }> = [];
+  const formattingExpectations = new Set<BulkImportSourceManifest['formattingExpectations'][number]>();
+  const supportedLosses = new Map<BulkImportSupportedLoss['feature'], BulkImportSupportedLoss>();
+
+  if (/\*\*[^*]+\*\*|__[^_]+__|(^|\W)\*[^*\n]+\*|(^|\W)_[^_\n]+_/m.test(normalizedSource)) {
+    formattingExpectations.add('emphasis');
+  }
+  if (/!?\[[^\]]+\]\([^)]+\)/.test(normalizedSource)) {
+    formattingExpectations.add('link');
+    supportedLosses.set('link_destination', {
+      feature: 'link_destination',
+      detail: 'The current rich-text write schema preserves link labels but has no link-destination node.',
+    });
+  }
+  if (/\$[^$\n]+\$|\\\([\s\S]+?\\\)/.test(normalizedSource)) {
+    formattingExpectations.add('inline_math');
+  }
+  if (/\$\$|\\\[/.test(normalizedSource)) {
+    formattingExpectations.add('block_math');
+  }
+  if (/^\s*>/m.test(normalizedSource)) formattingExpectations.add('blockquote');
+  if (/^\s*(?:```|~~~)/m.test(normalizedSource)) {
+    formattingExpectations.add('code');
+    supportedLosses.set('code_language', {
+      feature: 'code_language',
+      detail: 'Fenced code content is preserved without visible fences; native language metadata is unavailable.',
+    });
+  }
+  if (/^\s*\|?.+\|.+\|?\s*$/m.test(normalizedSource)) {
+    formattingExpectations.add('table');
+    supportedLosses.set('native_table', {
+      feature: 'native_table',
+      detail: 'Markdown tables are represented as a row-and-cell Rem hierarchy.',
+    });
+  }
+  if (/^\s*\d+[.)]\s+/m.test(normalizedSource)) {
+    formattingExpectations.add('ordered_list');
+    supportedLosses.set('ordered_list_marker', {
+      feature: 'ordered_list_marker',
+      detail: 'Ordered items preserve source order even when visible numeric markers are not native metadata.',
+    });
+  }
+
+  const addUnit = (input: Omit<BulkImportSemanticUnit, 'unitId'>) => {
+    if (!input.semanticText) return;
+    units.push({
+      ...input,
+      unitId: `unit:${String(units.length + 1).padStart(4, '0')}:line:${input.sourceSpan.startLine}`,
+    });
+  };
+
+  let inFence = false;
+  let fenceMarker = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const rawLine = lines[index];
+    const trimmed = rawLine.trim();
+    const lineNumber = index + 1;
+    const fence = /^(?:```|~~~)/.exec(trimmed)?.[0];
+    if (fence) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fence;
+      } else if (trimmed.startsWith(fenceMarker)) {
+        inFence = false;
+        fenceMarker = '';
+      }
+      continue;
+    }
+    if (inFence) {
+      addUnit({
+        kind: 'code',
+        semanticText: rawLine.normalize('NFC').replace(/[ \t]+$/, ''),
+        rawText: rawLine,
+        sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+        parentPath: headingStack.map((entry) => entry.text),
+      });
+      continue;
+    }
+    if (!trimmed) {
+      listStack.length = 0;
+      continue;
+    }
+
+    if (trimmed === '$$' || trimmed === '\\[' || trimmed.startsWith('$$') || trimmed.startsWith('\\[')) {
+      const close = trimmed.startsWith('\\[') ? '\\]' : '$$';
+      const blockLines = [trimmed];
+      const startLine = lineNumber;
+      while (!blockLines[blockLines.length - 1].endsWith(close) || blockLines.length === 1 && trimmed === close) {
+        if (index + 1 >= lines.length) break;
+        index += 1;
+        blockLines.push(lines[index].trim());
+        if (lines[index].trim() === close || lines[index].trim().endsWith(close)) break;
+      }
+      const semanticText = semanticInlineText(blockLines.join(' '), Boolean(options.renderedReadback));
+      addUnit({
+        kind: 'block_math',
+        semanticText,
+        rawText: blockLines.join('\n'),
+        sourceSpan: { startLine, endLine: index + 1 },
+        parentPath: headingStack.map((entry) => entry.text),
+      });
+      listStack.length = 0;
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+(.+?)\s*$/.exec(trimmed);
+    if (heading) {
+      const level = heading[1].length;
+      const semanticText = semanticInlineText(heading[2], Boolean(options.renderedReadback));
+      while (headingStack.length && headingStack[headingStack.length - 1].level >= level) headingStack.pop();
+      addUnit({
+        kind: 'heading',
+        semanticText,
+        rawText: rawLine,
+        sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+        parentPath: headingStack.map((entry) => entry.text),
+      });
+      headingStack.push({ level, text: semanticText });
+      listStack.length = 0;
+      continue;
+    }
+
+    if (/^\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?$/.test(trimmed)) {
+      continue;
+    }
+    if (trimmed.includes('|') && /^\|.*\|$/.test(trimmed)) {
+      for (const cell of markdownTableCells(trimmed)) {
+        addUnit({
+          kind: 'table_cell',
+          semanticText: semanticInlineText(cell, Boolean(options.renderedReadback)),
+          rawText: cell,
+          sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+          parentPath: headingStack.map((entry) => entry.text),
+        });
+      }
+      listStack.length = 0;
+      continue;
+    }
+
+    const list = /^(\s*)([-*+]|\d+[.)])\s+(.+)$/.exec(rawLine);
+    if (list) {
+      const indent = list[1].replace(/\t/g, '    ').length;
+      while (listStack.length && listStack[listStack.length - 1].indent >= indent) listStack.pop();
+      const semanticText = semanticInlineText(list[3], Boolean(options.renderedReadback));
+      addUnit({
+        kind: /^\d/.test(list[2]) ? 'ordered_list_item' : 'list_item',
+        semanticText,
+        rawText: rawLine,
+        sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+        parentPath: [
+          ...headingStack.map((entry) => entry.text),
+          ...listStack.map((entry) => entry.text),
+        ],
+        listMarker: list[2],
+      });
+      listStack.push({ indent, text: semanticText });
+      continue;
+    }
+
+    const quote = /^>\s?(.*)$/.exec(trimmed);
+    if (quote) {
+      addUnit({
+        kind: 'blockquote',
+        semanticText: semanticInlineText(quote[1], Boolean(options.renderedReadback)),
+        rawText: rawLine,
+        sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+        parentPath: headingStack.map((entry) => entry.text),
+      });
+      listStack.length = 0;
+      continue;
+    }
+
+    const semanticText = semanticInlineText(trimmed, Boolean(options.renderedReadback));
+    if (options.renderedReadback && /^(?:Table \d+|Header|Row \d+)$/.test(semanticText)) {
+      continue;
+    }
+    addUnit({
+      kind: 'paragraph',
+      semanticText,
+      rawText: rawLine,
+      sourceSpan: { startLine: lineNumber, endLine: lineNumber },
+      parentPath: headingStack.map((entry) => entry.text),
+    });
+    listStack.length = 0;
+  }
+
+  const semanticHash = stableBulkImportHash(units.map((unit) => unit.semanticText).join('\n'));
+  return {
+    rawSourceHash: stableBulkImportHash(normalizedSource),
+    semanticHash,
+    units,
+    hierarchyRelationships: units.map((unit) => ({ unitId: unit.unitId, parentPath: unit.parentPath })),
+    formattingExpectations: Array.from(formattingExpectations),
+    supportedLosses: Array.from(supportedLosses.values()),
+  };
 }
 
 function slugKey(input: string, fallback: string): string {
@@ -329,13 +666,23 @@ function looksLikeRemNoteExportMarkdown(text: string): boolean {
 }
 
 export function normalizeRemNoteExportMarkdown(text: string): string {
+  let contentBaseIndent = 0;
   return text.replace(/\r\n/g, '\n').split('\n').map((line) => {
     if (/^\s*[-*+]\s*$/.test(line)) {
       return '';
     }
-    const headingBullet = line.match(/^\s*[-*+]\s+(#{1,6}\s+.*)$/);
+    const headingBullet = line.match(/^(\s*)[-*+]\s+(#{1,6}\s+.*)$/);
     if (headingBullet) {
-      return headingBullet[1].trimEnd();
+      const headingIndent = headingBullet[1].replace(/\t/g, '    ').length;
+      contentBaseIndent = headingIndent + 4;
+      return headingBullet[2].trimEnd();
+    }
+    if (contentBaseIndent > 0) {
+      const leading = /^\s*/.exec(line)?.[0] ?? '';
+      const expanded = leading.replace(/\t/g, '    ');
+      if (expanded.length >= contentBaseIndent) {
+        return `${expanded.slice(contentBaseIndent)}${line.slice(leading.length)}`.trimEnd();
+      }
     }
     return line;
   }).join('\n').trimEnd();
@@ -405,6 +752,7 @@ export function extractMarkedSourceText(input: {
     extractedSourceHash: stableBulkImportHash(extracted),
     plannedSourceLength: planned.length,
     plannedSourceHash: stableBulkImportHash(planned),
+    semanticSourceHash: buildBulkImportSourceManifest(planned).semanticHash,
     normalization,
     normalizationDescription: shouldNormalizeRemNoteExport
       ? 'RemNote exported heading bullets were normalized to Markdown headings before chunk planning.'
@@ -424,19 +772,23 @@ function markdownHeadingLevel(line: string): number | null {
   return heading ? heading[1].length : null;
 }
 
-function isSectionHeading(line: string): boolean {
-  const headingLevel = markdownHeadingLevel(line);
-  if (headingLevel !== null) {
-    return headingLevel >= 2;
-  }
-  return /^\s*\d+(?:\.\d+)+\s+\S/.test(line);
-}
-
 function splitSections(chapterText: string): Array<{ title: string; text: string; bodyText: string; sectionKey: string }> {
   const lines = chapterText.replace(/\r\n/g, '\n').split('\n');
-  const starts = lines
-    .map((line, index) => ({ line, index }))
-    .filter(({ line }) => isSectionHeading(line));
+  const headingStarts = lines
+    .map((line, index) => ({ line, index, level: markdownHeadingLevel(line) }))
+    .filter((entry): entry is { line: string; index: number; level: number } =>
+      entry.level !== null && entry.level >= 2
+    );
+  const principalHeadingLevel = headingStarts.length
+    ? Math.min(...headingStarts.map((entry) => entry.level))
+    : undefined;
+  const starts = principalHeadingLevel !== undefined
+    ? headingStarts
+        .filter((entry) => entry.level === principalHeadingLevel)
+        .map(({ line, index }) => ({ line, index }))
+    : lines
+        .map((line, index) => ({ line, index }))
+        .filter(({ line }) => /^\s*\d+(?:\.\d+)+\s+\S/.test(line));
 
   if (!starts.length) {
     const firstHeadingIndex = lines.findIndex((line) => markdownHeadingLevel(line) !== null);
@@ -501,47 +853,64 @@ function estimatedRemCount(text: string): number {
 
 function splitSectionIntoChunks(sectionText: string, options: Required<BulkImportPlannerOptions>): string[] {
   const lines = sectionText.replace(/\r\n/g, '\n').split('\n');
-  const chunks: string[] = [];
-  let current: string[] = [];
-  let currentRems = 0;
-  let inFence = false;
-  let inMathBlock = false;
+  const headingEntries = lines
+    .map((line, index) => ({ index, level: markdownHeadingLevel(line) }))
+    .filter((entry): entry is { index: number; level: number } => entry.level !== null);
+  const principalHeadingLevel = headingEntries.length
+    ? Math.min(...headingEntries.map((entry) => entry.level))
+    : undefined;
+  let starts = principalHeadingLevel === undefined
+    ? []
+    : headingEntries.filter((entry) => entry.level === principalHeadingLevel).map((entry) => entry.index);
 
-  function flush() {
-    const text = current.join('\n').trimEnd();
-    if (text.trim()) {
-      chunks.push(text);
+  if (starts.length === 0) {
+    const bullets = lines
+      .map((line, index) => {
+        const match = /^(\s*)(?:[-*+]|\d+[.)])\s+\S/.exec(line);
+        return match
+          ? { index, indent: match[1].replace(/\t/g, '    ').length }
+          : undefined;
+      })
+      .filter((entry): entry is { index: number; indent: number } => Boolean(entry));
+    if (bullets.length) {
+      const rootIndent = Math.min(...bullets.map((entry) => entry.indent));
+      starts = bullets.filter((entry) => entry.indent === rootIndent).map((entry) => entry.index);
     }
-    current = [];
-    currentRems = 0;
   }
 
-  for (const line of lines) {
-    const trimmed = line.trim();
-    const togglesFence = /^```/.test(trimmed) || /^~~~/.test(trimmed);
-    const togglesMath = trimmed === '$$';
-    const nextCharCount = current.join('\n').length + line.length + 1;
-    const nextRemCount = currentRems + (trimmed ? 1 : 0);
-    const canSplit = current.length > 0 && !inFence && !inMathBlock;
+  const blocks: string[] = [];
+  if (starts.length) {
+    if (starts[0] > 0) {
+      const intro = lines.slice(0, starts[0]).join('\n').trim();
+      if (intro) blocks.push(intro);
+    }
+    starts.forEach((start, index) => {
+      const block = lines.slice(start, starts[index + 1] ?? lines.length).join('\n').trim();
+      if (block) blocks.push(block);
+    });
+  } else {
+    const paragraphs = sectionText.replace(/\r\n/g, '\n').split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+    blocks.push(...(paragraphs.length ? paragraphs : [sectionText.trim()]));
+  }
+
+  const chunks: string[] = [];
+  let currentBlocks: string[] = [];
+  const remCount = (value: string) => value.split('\n').filter((line) => line.trim()).length;
+  const flush = () => {
+    const chunk = currentBlocks.join('\n').trim();
+    if (chunk) chunks.push(chunk);
+    currentBlocks = [];
+  };
+  for (const block of blocks) {
+    const candidate = [...currentBlocks, block].join('\n');
     if (
-      canSplit &&
-      (nextCharCount > options.maxCharsPerChunk || nextRemCount > options.maxRemsPerChunk)
+      currentBlocks.length > 0 &&
+      (candidate.length > options.maxCharsPerChunk || remCount(candidate) > options.maxRemsPerChunk)
     ) {
       flush();
     }
-
-    current.push(line);
-    if (trimmed) {
-      currentRems += 1;
-    }
-    if (togglesFence) {
-      inFence = !inFence;
-    }
-    if (togglesMath) {
-      inMathBlock = !inMathBlock;
-    }
+    currentBlocks.push(block);
   }
-
   flush();
   return chunks.length ? chunks : [sectionText];
 }
@@ -577,13 +946,88 @@ export function bulkImportChunkHasVerifiedEvidence(chunk: BulkImportChunk): bool
 }
 
 export function isBulkImportChunkRunnable(status: BulkImportChunkStatus): boolean {
-  return [
-    'pending',
-    'partial',
-    'partial_needs_verification',
-    'written_not_verified',
-    'failed',
-  ].includes(status);
+  return status === 'pending';
+}
+
+function legacyAttemptForChunk(chunk: BulkImportChunk, at: string): BulkImportChunkAttempt | undefined {
+  if (chunk.status === 'pending') {
+    return undefined;
+  }
+  const safelyAcknowledged = chunk.status === 'verified' || chunk.status === 'skipped_already_verified';
+  return {
+    attemptId: `legacy:${chunk.chunkId}`,
+    operationId: `legacy:${chunk.chunkId}`,
+    state: safelyAcknowledged ? 'acknowledged' : 'unknown',
+    expectedParent: chunk.expectedParent,
+    sourceHash: chunk.sourceHash,
+    semanticHash: chunk.sourceManifest?.semanticHash ?? chunk.sourceHash,
+    idempotencyKey: chunk.idempotencyKey,
+    stage: 'chunk_write',
+    startedAt: chunk.startedAt ?? at,
+    finishedAt: chunk.finishedAt,
+    hierarchyCreatedRemIds: [...(chunk.hierarchyCreatedRemIds ?? [])],
+    createdRemIds: [...(chunk.createdRemIds ?? [])],
+    updatedRemIds: [...(chunk.updatedRemIds ?? [])],
+    error: chunk.error,
+    provenance: 'legacy_migration',
+  };
+}
+
+export function migrateBulkImportJob(job: BulkImportJob): BulkImportJob {
+  const at = job.updatedAt || job.createdAt || new Date(0).toISOString();
+  const migrateChunk = (chunk: BulkImportChunk): BulkImportChunk => {
+    const legacyAttempt = !Array.isArray(chunk.attempts) ? legacyAttemptForChunk(chunk, at) : undefined;
+    const attempts = Array.isArray(chunk.attempts)
+      ? chunk.attempts.map((attempt) => ({
+          ...attempt,
+          semanticHash: attempt.semanticHash ?? chunk.sourceManifest?.semanticHash ?? chunk.sourceHash,
+          idempotencyKey: attempt.idempotencyKey ?? chunk.idempotencyKey,
+          stage: attempt.stage ?? 'chunk_write',
+          provenance: attempt.provenance ?? 'legacy_migration',
+          hierarchyCreatedRemIds: [...(attempt.hierarchyCreatedRemIds ?? [])],
+          createdRemIds: [...(attempt.createdRemIds ?? [])],
+          updatedRemIds: [...(attempt.updatedRemIds ?? [])],
+        }))
+      : legacyAttempt
+        ? [legacyAttempt]
+        : [];
+    const claimedComplete = chunk.status === 'verified' || chunk.status === 'skipped_already_verified';
+    const completed = claimedComplete &&
+      chunk.verificationStatus === 'passed' &&
+      ((chunk.createdRemIds?.length ?? 0) > 0 || (chunk.updatedRemIds?.length ?? 0) > 0);
+    const reconciliationStatus = chunk.reconciliationStatus ?? (
+      chunk.status === 'pending'
+        ? 'not_required'
+        : completed
+          ? 'reconciled_written'
+          : 'required'
+    );
+    return {
+      ...chunk,
+      status: claimedComplete && !completed ? 'partial_needs_verification' : chunk.status,
+      verificationStatus: claimedComplete && !completed ? 'partial' : chunk.verificationStatus,
+      hierarchyCreatedRemIds: [...(chunk.hierarchyCreatedRemIds ?? [])],
+      createdRemIds: [...(chunk.createdRemIds ?? [])],
+      updatedRemIds: [...(chunk.updatedRemIds ?? [])],
+      attempts,
+      reconciliationStatus,
+    };
+  };
+  const chunks = job.chunks.map(migrateChunk);
+  const byId = new Map(chunks.map((chunk) => [chunk.chunkId, chunk]));
+  return {
+    ...job,
+    schemaVersion: 2,
+    revision: Number.isSafeInteger(job.revision) && job.revision >= 0 ? job.revision : 0,
+    status: job.status === 'completed' && chunks.some((chunk) => !bulkImportChunkHasVerifiedEvidence(chunk))
+      ? 'partial'
+      : job.status,
+    chunks,
+    sections: job.sections.map((section) => ({
+      ...section,
+      chunks: section.chunks.map((chunk) => byId.get(chunk.chunkId) ?? migrateChunk(chunk)),
+    })),
+  };
 }
 
 export function canTransitionBulkImportChunkStatus(
@@ -609,7 +1053,7 @@ export function canTransitionBulkImportChunkStatus(
 export function isBulkImportJobComplete(job: BulkImportJob): boolean {
   return job.chunks.every((chunk) =>
     (chunk.status === 'verified' || chunk.status === 'skipped_already_verified') &&
-    chunk.verificationStatus === 'passed'
+    bulkImportChunkHasVerifiedEvidence(chunk)
   );
 }
 
@@ -658,6 +1102,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
           extractedSourceHash: stableBulkImportHash(chapter.text),
           plannedSourceLength: normalized.length,
           plannedSourceHash: stableBulkImportHash(normalized),
+          semanticSourceHash: buildBulkImportSourceManifest(normalized).semanticHash,
           normalization: input.sourceNormalization ?? 'auto',
           normalizationDescription: normalized === chapter.text
             ? 'Source text was planned without RemNote export heading normalization.'
@@ -672,6 +1117,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
       })();
   const chapterTitle = input.chapterTitle?.trim() || selected.chapterTitle;
   const sourceHash = stableBulkImportHash(selected.text);
+  const sourceManifest = buildBulkImportSourceManifest(selected.text);
   const planId = `plan:${stableBulkImportHash(`${input.ownerId ?? ''}:${input.sourceName ?? ''}:${input.targetRootId}:${input.rootTitle ?? ''}:${chapterTitle}:${sourceHash}`)}`;
   const sections = splitSections(selected.text).map((section) => {
     const writableSectionText = section.bodyText.trim() ? section.bodyText : section.text;
@@ -687,13 +1133,19 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
         sectionKey: section.sectionKey,
         sectionTitle: section.title,
         chunkIndex,
+        logicalSectionKey: section.sectionKey,
+        nativeChunkIndex: chunkIndex,
         sourceText: chunkText,
         sourceHash: chunkSourceHash,
+        sourceManifest: buildBulkImportSourceManifest(chunkText),
         expectedSourceText: chunkText,
         expectedSourceHash: chunkSourceHash,
         expectedParent: input.targetRootId,
+        hierarchyCreatedRemIds: [],
         createdRemIds: [],
         updatedRemIds: [],
+        attempts: [],
+        reconciliationStatus: 'not_required',
         verificationStatus: 'not_verifiable',
         status: 'pending',
         retryCount: 0,
@@ -706,6 +1158,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
       sectionKey: section.sectionKey,
       title: section.title,
       sourceHash: stableBulkImportHash(section.text),
+      sourceManifest: buildBulkImportSourceManifest(section.text),
       sourceText: section.text,
       bodySourceText: writableSectionText,
       chunkCount: chunks.length,
@@ -718,6 +1171,13 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
   if (chunks.length > sections.length) {
     warnings.push('Large sections were split into bounded chunks; run one job step at a time.');
   }
+  if (chunks.some((chunk) =>
+    chunk.charCount > options.maxCharsPerChunk || chunk.estimatedRemCount > options.maxRemsPerChunk
+  )) {
+    warnings.push(
+      'An atomic Markdown subtree exceeded maxCharsPerChunk or maxRemsPerChunk and was kept intact to preserve hierarchy.'
+    );
+  }
 
   return {
     ok: true,
@@ -725,6 +1185,7 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
     ownerId: input.ownerId,
     sourceName: input.sourceName,
     sourceHash,
+    sourceManifest,
     sourceMetadata: selected.metadata,
     plannedSourceLength: selected.metadata.plannedSourceLength,
     extractedSourceLength: selected.metadata.extractedSourceLength,
@@ -737,6 +1198,8 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
     sections,
     chunks,
     estimatedChunks: chunks.length,
+    logicalChunkCount: sections.length,
+    nativeChunkCount: chunks.length,
     estimatedRems: chunks.reduce((sum, chunk) => sum + chunk.estimatedRemCount, 0),
     warnings,
     options,
@@ -744,13 +1207,10 @@ export function planNoteImport(input: PlanNoteImportInput): BulkImportPlan {
 }
 
 export function normalizeForSourceFidelity(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/[ \t]+$/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/^[ \t]*#{1,6}\s+/gm, '')
-    .replace(/^[ \t]*[-*+]\s+/gm, '')
-    .trim();
+  return buildBulkImportSourceManifest(text, { renderedReadback: true })
+    .units
+    .map((unit) => unit.semanticText)
+    .join('\n');
 }
 
 function previewAround(value: string, maxLength = 240): string {
@@ -772,6 +1232,7 @@ export function verifyBulkImportSourceText(input: {
   sectionKey?: string;
   chunkIndex?: number;
 }): BulkImportVerificationResult {
+  const expectedManifest = buildBulkImportSourceManifest(input.expectedText);
   if (input.actualText === undefined) {
     return {
       ok: false,
@@ -779,17 +1240,34 @@ export function verifyBulkImportSourceText(input: {
       jobId: input.jobId,
       sectionKey: input.sectionKey,
       chunkIndex: input.chunkIndex,
-      expectedHash: stableBulkImportHash(normalizeForSourceFidelity(input.expectedText)),
+      expectedHash: expectedManifest.semanticHash,
+      rawSourceHash: expectedManifest.rawSourceHash,
+      semanticHash: expectedManifest.semanticHash,
       warnings: ['No actual RemNote text was supplied; live/readback verification was not run.'],
       recommendedAction: 'Run verify_note_import_job after readback is available.',
       method: 'manifest_only',
     };
   }
 
-  const expected = normalizeForSourceFidelity(input.expectedText);
-  const actual = normalizeForSourceFidelity(input.actualText);
-  const expectedHash = stableBulkImportHash(expected);
-  const actualHash = stableBulkImportHash(actual);
+  const actualManifest = buildBulkImportSourceManifest(input.actualText, { renderedReadback: true });
+  const expectedHash = expectedManifest.semanticHash;
+  const actualHash = actualManifest.semanticHash;
+  const matchedActualIndexes = new Set<number>();
+  const missingUnits: BulkImportSemanticUnit[] = [];
+  let cursor = 0;
+  for (const unit of expectedManifest.units) {
+    const relativeIndex = actualManifest.units
+      .slice(cursor)
+      .findIndex((candidate) => candidate.semanticText === unit.semanticText);
+    if (relativeIndex < 0) {
+      missingUnits.push(unit);
+      continue;
+    }
+    const actualIndex = cursor + relativeIndex;
+    matchedActualIndexes.add(actualIndex);
+    cursor = actualIndex + 1;
+  }
+  const extraUnits = actualManifest.units.filter((_, index) => !matchedActualIndexes.has(index));
   const pollutionRems = visibleStylePollutionRems(input.actualText);
   if (pollutionRems.length > 0) {
     const unique = Array.from(new Set(pollutionRems));
@@ -801,13 +1279,18 @@ export function verifyBulkImportSourceText(input: {
       chunkIndex: input.chunkIndex,
       expectedHash,
       actualHash,
+      rawSourceHash: expectedManifest.rawSourceHash,
+      semanticHash: expectedManifest.semanticHash,
+      renderedReadbackHash: actualManifest.rawSourceHash,
+      missingUnits: missingUnits.slice(0, 5),
+      extraUnits: extraUnits.slice(0, 5),
       extraTextPreview: previewAround(unique.join('\n')),
       warnings: [`Formatting pollution Rems detected: ${unique.join(', ')}.`],
       recommendedAction: 'Inspect readback tree before resume.',
-      method: 'normalized_plain_text',
+      method: 'semantic_manifest',
     };
   }
-  if (expectedHash === actualHash || actual.includes(expected)) {
+  if (missingUnits.length === 0) {
     return {
       ok: true,
       status: 'passed',
@@ -816,17 +1299,18 @@ export function verifyBulkImportSourceText(input: {
       chunkIndex: input.chunkIndex,
       expectedHash,
       actualHash,
+      rawSourceHash: expectedManifest.rawSourceHash,
+      semanticHash: expectedManifest.semanticHash,
+      renderedReadbackHash: actualManifest.rawSourceHash,
       warnings: [],
-      method: 'normalized_plain_text',
+      method: 'semantic_manifest',
     };
   }
 
-  const expectedUnits = expected.split('\n').map((line) => line.trim()).filter(Boolean);
-  const actualUnits = actual.split('\n').map((line) => line.trim()).filter(Boolean);
-  const missingUnits = expectedUnits.filter((unit) => !actual.includes(unit)).slice(0, 5);
-  const extraUnits = actualUnits.filter((unit) => !expected.includes(unit)).slice(0, 5);
-  const missingTextPreview = missingUnits.length ? previewAround(missingUnits.join('\n')) : previewAround(expected);
-  const extraTextPreview = extraUnits.length ? previewAround(extraUnits.join('\n')) : undefined;
+  const missingTextPreview = previewAround(missingUnits.slice(0, 5).map((unit) => unit.semanticText).join('\n'));
+  const extraTextPreview = extraUnits.length
+    ? previewAround(extraUnits.slice(0, 5).map((unit) => unit.semanticText).join('\n'))
+    : undefined;
   return {
     ok: false,
     status: 'source_fidelity_failed',
@@ -835,11 +1319,16 @@ export function verifyBulkImportSourceText(input: {
     chunkIndex: input.chunkIndex,
     expectedHash,
     actualHash,
+    rawSourceHash: expectedManifest.rawSourceHash,
+    semanticHash: expectedManifest.semanticHash,
+    renderedReadbackHash: actualManifest.rawSourceHash,
+    missingUnits: missingUnits.slice(0, 5),
+    extraUnits: extraUnits.slice(0, 5),
     missingTextPreview,
     extraTextPreview,
-    warnings: ['Normalized plain-text source fidelity failed. Rich text/math formatting was not fully verified.'],
+    warnings: ['Semantic source-manifest verification failed. Inspect the exact missing/extra units and source spans.'],
     recommendedAction: 'resume_note_import_job',
-    method: 'normalized_plain_text',
+    method: 'semantic_manifest',
   };
 }
 
@@ -863,6 +1352,7 @@ export interface BulkImportFinalVerificationReport extends BulkImportVerificatio
 }
 
 interface ReadbackNodeView {
+  remId?: string;
   text: string;
   children: ReadbackNodeView[];
 }
@@ -897,10 +1387,12 @@ function readbackNodeView(value: unknown): ReadbackNodeView {
     return { text: '', children: [] };
   }
   const record = value as Record<string, unknown>;
+  const remId = [record.remId, record._id, record.id]
+    .find((item): item is string => typeof item === 'string' && item.length > 0);
   const textValue = [record.plainText, record.frontText, record.title]
     .find((item): item is string => typeof item === 'string' && item.trim().length > 0);
   const children = Array.isArray(record.children) ? record.children.map(readbackNodeView) : [];
-  return { text: textValue ?? '', children };
+  return { remId, text: textValue ?? '', children };
 }
 
 function directExpectedUnits(sourceText: string): string[] {
@@ -940,45 +1432,66 @@ function findReadbackNodeByText(root: ReadbackNodeView, text: string): ReadbackN
   return null;
 }
 
-function directChildHasText(node: ReadbackNodeView, text: string): boolean {
+function directChildWithText(node: ReadbackNodeView, text: string): ReadbackNodeView | undefined {
   const target = normalizeForSourceFidelity(text);
-  return node.children.some((child) => normalizeForSourceFidelity(child.text) === target);
+  return node.children.find((child) => normalizeForSourceFidelity(child.text) === target);
 }
 
-function descendantHasText(node: ReadbackNodeView, text: string): boolean {
+function descendantWithTextAndParent(
+  node: ReadbackNodeView,
+  text: string
+): { node: ReadbackNodeView; parent: ReadbackNodeView } | undefined {
   const target = normalizeForSourceFidelity(text);
-  return node.children.some((child) =>
-    normalizeForSourceFidelity(child.text) === target || descendantHasText(child, text)
-  );
+  for (const child of node.children) {
+    if (normalizeForSourceFidelity(child.text) === target) {
+      return { node: child, parent: node };
+    }
+    const nested = descendantWithTextAndParent(child, text);
+    if (nested) return nested;
+  }
+  return undefined;
 }
 
 function verifyBulkImportHierarchy(input: {
   job: BulkImportJob;
   readbackTree?: unknown;
-}): { wrongParentChunks: string[]; warnings: string[] } {
+}): { wrongParentChunks: string[]; hierarchyMismatches: BulkImportHierarchyMismatch[]; warnings: string[] } {
   if (!input.readbackTree) {
-    return { wrongParentChunks: [], warnings: [] };
+    return { wrongParentChunks: [], hierarchyMismatches: [], warnings: [] };
   }
   const root = readbackNodeView(input.readbackTree);
   const wrongParentChunks = new Set<string>();
+  const hierarchyMismatches: BulkImportHierarchyMismatch[] = [];
   const warnings: string[] = [];
   for (const chunk of input.job.chunks) {
     const sectionNode = findReadbackNodeByText(root, chunk.sectionTitle);
     if (!sectionNode) {
       continue;
     }
-    const expectedDirectUnits = directExpectedUnits(chunk.expectedSourceText ?? chunk.sourceText);
+    const manifestDirectUnits = chunk.sourceManifest?.units.filter((unit) => unit.parentPath.length === 0) ?? [];
+    const expectedDirectUnits = manifestDirectUnits.length
+      ? manifestDirectUnits
+      : directExpectedUnits(chunk.expectedSourceText ?? chunk.sourceText).map((semanticText) => ({ semanticText }));
     for (const unit of expectedDirectUnits) {
-      if (directChildHasText(sectionNode, unit)) {
+      if (directChildWithText(sectionNode, unit.semanticText)) {
         continue;
       }
-      if (descendantHasText(sectionNode, unit)) {
+      const nested = descendantWithTextAndParent(sectionNode, unit.semanticText);
+      if (nested) {
         wrongParentChunks.add(chunk.chunkId);
-        warnings.push(`Hierarchy mismatch: "${unit}" is nested under the wrong parent in section "${chunk.sectionTitle}".`);
+        hierarchyMismatches.push({
+          chunkId: chunk.chunkId,
+          semanticText: unit.semanticText,
+          sourceSpan: (unit as Partial<BulkImportSemanticUnit>).sourceSpan,
+          expectedParentRemId: sectionNode.remId ?? chunk.sectionRootRemId ?? chunk.expectedParent,
+          actualParentRemId: nested.parent.remId,
+          remId: nested.node.remId,
+        });
+        warnings.push(`Hierarchy mismatch: "${unit.semanticText}" is nested under the wrong parent in section "${chunk.sectionTitle}".`);
       }
     }
   }
-  return { wrongParentChunks: Array.from(wrongParentChunks), warnings };
+  return { wrongParentChunks: Array.from(wrongParentChunks), hierarchyMismatches, warnings };
 }
 
 export function verifyBulkImportFinalReadback(input: {
@@ -1079,6 +1592,7 @@ export function verifyBulkImportFinalReadback(input: {
     duplicateSections: duplicateSectionTitles.length ? duplicateSectionTitles : undefined,
     missingChunks: failedChunkIds.length ? failedChunkIds : undefined,
     wrongParentChunks: hierarchy.wrongParentChunks.length ? hierarchy.wrongParentChunks : undefined,
+    hierarchyMismatches: hierarchy.hierarchyMismatches.length ? hierarchy.hierarchyMismatches : undefined,
     warnings: ok
       ? []
       : [
@@ -1208,13 +1722,12 @@ export function summarizeBulkImportProgress(job: BulkImportJob) {
       ))
       .map((section) => section.sectionKey)
   );
-  const nextChunk = job.chunks.find((chunk) =>
-    chunk.status === 'pending' ||
-    chunk.status === 'partial' ||
-    chunk.status === 'partial_needs_verification' ||
-    chunk.status === 'written_not_verified' ||
-    chunk.status === 'failed'
+  const manualReviewChunk = job.chunks.find((chunk) =>
+    chunk.status === 'needs_manual_review' || chunk.reconciliationStatus === 'manual_review'
   );
+  const reconciliationChunk = job.chunks.find((chunk) => chunk.reconciliationStatus === 'required');
+  const pendingChunk = job.chunks.find((chunk) => chunk.status === 'pending');
+  const nextChunk = manualReviewChunk ?? reconciliationChunk ?? pendingChunk;
   return {
     sectionsTotal,
     sectionsVerified: verifiedSections.size,
@@ -1228,14 +1741,26 @@ export function summarizeBulkImportProgress(job: BulkImportJob) {
     failedChunks: chunksFailed,
     lastError: job.lastError,
     lastSuccessfulCheckpoint: [...job.checkpoints].reverse().find((checkpoint) => checkpoint.status === 'verified'),
-    createdRemIds: Array.from(new Set(job.chunks.flatMap((chunk) => chunk.createdRemIds))),
-    manualReviewItems: job.chunks.filter((chunk) => chunk.status === 'needs_manual_review').map((chunk) => chunk.chunkId),
+    createdRemIds: Array.from(new Set([
+      job.importRootRemId,
+      job.chapterRootRemId,
+      ...job.sections.map((section) => section.sectionRootRemId),
+      ...job.chunks.flatMap((chunk) => chunk.hierarchyCreatedRemIds),
+      ...job.chunks.flatMap((chunk) => chunk.createdRemIds),
+    ].filter((remId): remId is string => Boolean(remId)))),
+    manualReviewItems: job.chunks
+      .filter((chunk) => chunk.status === 'needs_manual_review' || chunk.reconciliationStatus === 'manual_review')
+      .map((chunk) => chunk.chunkId),
     recommendedNextAction:
       job.status === 'completed'
         ? 'run verify_note_import_job if live readback is available'
         : job.status === 'cancelled'
           ? 'job is cancelled; create a new job to continue'
-          : nextChunk
+          : manualReviewChunk
+            ? 'manual review is required; inspect exact live Rem IDs and parent state before creating a new job'
+          : reconciliationChunk
+            ? 'call reconcile_note_import_job_chunk before any retry'
+          : pendingChunk
             ? 'call run_note_import_job_step again'
             : 'run verify_note_import_job',
   };

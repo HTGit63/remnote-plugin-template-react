@@ -243,6 +243,8 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
       return { jobId: bulkImportSampleJobId };
     case 'resume_note_import_job':
       return { jobId: bulkImportSampleJobId, dryRun: true };
+    case 'reconcile_note_import_job_chunk':
+      return { jobId: bulkImportSampleJobId, dryRun: true };
     case 'verify_note_import_job':
       return { jobId: bulkImportSampleJobId };
     case 'cancel_note_import_job':

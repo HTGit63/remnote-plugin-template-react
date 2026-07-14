@@ -36,11 +36,17 @@ export function registerDesignTemplateTools({ registerTool, callPlugin }: ToolRe
       description:
         'Extract reusable RemNote design rules from a sample Rem tree: headings, colors, spacing, formulas, tables, cards, and worked examples.',
       inputSchema: z.object({
-        rootRemId: REM_ID_SCHEMA.optional().describe('Sample/root Rem to analyze. Defaults to focused Rem when omitted.'),
+        rootRemId: REM_ID_SCHEMA.optional().describe('Exact sample/root Rem to analyze.'),
         sampleRemId: REM_ID_SCHEMA.optional().describe('Alias for rootRemId.'),
         maxDepth: TREE_DEPTH_SCHEMA.optional(),
         maxNodes: MAX_TREE_NODE_COUNT_SCHEMA.optional(),
-      }),
+      })
+        .refine((value) => Boolean(value.rootRemId || value.sampleRemId), {
+          message: 'Provide rootRemId or sampleRemId; focus fallback is disabled.',
+        })
+        .refine((value) => !(value.rootRemId && value.sampleRemId && value.rootRemId !== value.sampleRemId), {
+          message: 'rootRemId and sampleRemId must match when both are provided.',
+        }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('analyze_note_design'),
     },
@@ -61,6 +67,7 @@ export function registerDesignTemplateTools({ registerTool, callPlugin }: ToolRe
         rootRemId: REM_ID_SCHEMA.optional(),
         rules: DESIGN_TEMPLATE_RULES_SCHEMA.optional(),
         overwrite: z.boolean().optional(),
+        expectedVersion: z.number().int().min(1).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('save_note_design_template'),
@@ -126,6 +133,7 @@ export function registerDesignTemplateTools({ registerTool, callPlugin }: ToolRe
       inputSchema: z.object({
         templateJson: TEMPLATE_JSON_SCHEMA,
         overwrite: z.boolean().optional(),
+        expectedVersion: z.number().int().min(1).optional(),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('import_note_design_template'),

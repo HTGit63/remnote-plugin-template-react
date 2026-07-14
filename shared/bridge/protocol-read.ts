@@ -15,6 +15,34 @@ export interface SerializedRem {
   hasChildren: boolean;
   children?: SerializedRem[];
   truncated?: boolean;
+  readCoverage?: TreeReadCoverage;
+}
+
+export type TreeTruncationReason =
+  | 'depth_limit'
+  | 'child_limit'
+  | 'node_limit'
+  | 'text_limit';
+
+export interface ReadContinuation {
+  tool: 'get_children' | 'get_rem_rich';
+  args: {
+    parentRemId?: string;
+    remId?: string;
+    maxChildren?: number;
+    startIndex?: number;
+  };
+}
+
+export interface TreeReadCoverage {
+  appliedLimits: {
+    depth: number;
+    maxChildrenPerNode: number;
+    maxNodes: number;
+    maxChars: number;
+  };
+  truncationReasons: TreeTruncationReason[];
+  continuation?: ReadContinuation;
 }
 
 export type RemStructureType = 'rem' | 'document' | 'folder' | 'unknown';
@@ -126,6 +154,7 @@ export interface GetCurrentSelectionArgs {}
 export interface GetChildrenArgs {
   parentRemId: string;
   maxChildren?: number;
+  startIndex?: number;
 }
 
 export interface GetRemBreadcrumbsArgs {
@@ -211,6 +240,21 @@ export interface GetChildrenResult {
   children: RemChildSummary[];
   childCount: number;
   truncated: boolean;
+  returnedRange: {
+    startIndex: number;
+    endIndexExclusive: number;
+  };
+  appliedLimits: {
+    maxChildren: number;
+  };
+  continuation?: {
+    tool: 'get_children';
+    args: {
+      parentRemId: string;
+      maxChildren: number;
+      startIndex: number;
+    };
+  };
 }
 
 export interface GetRemBreadcrumbsResult {
@@ -224,6 +268,17 @@ export interface SearchRemsResult {
   results: RemChildSummary[];
   truncated: boolean;
   searchSupported: boolean;
+  coverage: {
+    kind: 'bounded_sdk_search';
+    exhaustive: false;
+    matchState: 'matches_returned' | 'no_match_in_bounded_search';
+    maxResults: number;
+    exactTitleVerificationRequired: true;
+    fallback: {
+      tool: 'get_rem';
+      requiresKnownRemId: true;
+    };
+  };
   scopeMetadata?: {
     scopeRequested: string;
     scopeEnforcement: 'post_filter_ancestor_chain' | 'none';

@@ -1,4 +1,4 @@
-import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
+import type { PluginRem as Rem, RichTextFormatName, RichTextInterface, RNPlugin } from '@remnote/plugin-sdk';
 
 type RichTextItem = RichTextInterface[number];
 
@@ -12,6 +12,8 @@ export class FakeRem {
   private practiceEnabled = false;
   private practiceDirection = 'both';
   private cardItem = false;
+  private listItem = true;
+  private remType: unknown = 'normal';
 
   constructor(
     private readonly plugin: FakePlugin,
@@ -91,13 +93,17 @@ export class FakeRem {
   async getHighlightColor() {
     return 'default';
   }
-  async setIsListItem() {}
-  async isListItem() {
-    return true;
+  async setIsListItem(listItem: boolean) {
+    this.listItem = listItem;
   }
-  async setType() {}
+  async isListItem() {
+    return this.listItem;
+  }
+  async setType(type: unknown) {
+    this.remType = type;
+  }
   async getType() {
-    return 'normal';
+    return this.remType;
   }
 
   async setParent(parent: FakeRem, index?: number) {
@@ -153,8 +159,15 @@ export class FakePlugin {
   private nextId = 1;
 
   richText = {
-    text: (text: string) => ({
-      value: async () => [{ i: 'm', text } as RichTextItem],
+    text: (text: string, formats: RichTextFormatName[] = []) => ({
+      value: async () => [{
+        i: 'm',
+        text,
+        ...(formats.includes('bold') ? { b: true } : {}),
+        ...(formats.includes('italic') ? { italic: true } : {}),
+        ...(formats.includes('underline') ? { u: true } : {}),
+        ...(formats.includes('quote') ? { q: true } : {}),
+      } as RichTextItem],
     }),
     toString: async (richText: RichTextInterface) =>
       richText
