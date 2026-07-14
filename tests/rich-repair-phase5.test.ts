@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { updateRemRich } from '../src/remnote/write/basicWrites';
+import { readRemRich } from '../src/remnote/read';
 import {
   applyStylePlan,
   clearRemFormatting,
@@ -29,6 +30,94 @@ afterEach(() => {
 });
 
 describe('Phase 5 rich repair invariants', () => {
+  test('plain-text lookup after a math node maps to SDK rich offsets', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('mixed-offset-target', 'placeholder');
+    target.text = [
+      { i: 'm', text: 'alpha ', b: true },
+      { i: 'x', text: 'E=mc^2', block: false },
+      { i: 'm', text: ' omega', l: true },
+    ] as never;
+
+    const plainLength = fake.richText.length;
+    const plainSubstring = fake.richText.substring;
+    fake.richText.length = async (richText) => richText.reduce((sum, item) => {
+      if (typeof item === 'object' && item !== null && (item as { i?: string }).i === 'x') return sum + 2;
+      return sum + (typeof item === 'string' ? item.length : String((item as { text?: string }).text ?? '').length);
+    }, 0);
+    fake.richText.substring = async (richText, start, end) => {
+      const output: typeof richText = [];
+      let cursor = 0;
+      const stop = end ?? Number.MAX_SAFE_INTEGER;
+      for (const item of richText) {
+        const record = typeof item === 'object' && item !== null ? item as Record<string, unknown> : undefined;
+        const text = typeof item === 'string' ? item : String(record?.text ?? '');
+        const width = record?.i === 'x' ? 2 : text.length;
+        const itemStart = cursor;
+        const itemEnd = cursor + width;
+        cursor = itemEnd;
+        if (itemEnd <= start || itemStart >= stop) continue;
+        if (record?.i === 'x') {
+          if (start <= itemStart && stop >= itemEnd) output.push(item);
+          continue;
+        }
+        const sliceStart = Math.max(0, start - itemStart);
+        const sliceEnd = Math.min(text.length, stop - itemStart);
+        const sliced = text.slice(sliceStart, sliceEnd);
+        if (!sliced) continue;
+        output.push(typeof item === 'string' ? sliced : ({ ...record, text: sliced } as never));
+      }
+      return output;
+    };
+
+    try {
+      const result = await setTextSpanHighlight(fake.asPlugin(), {
+        remId: target._id,
+        text: 'omega',
+        color: 'yellow',
+      });
+
+      expect(result).toMatchObject({
+        status: 'span_highlight_set',
+        resolvedPlainText: 'omega',
+        start: 13,
+        end: 18,
+      });
+      expect(target.text).toEqual([
+        { i: 'm', text: 'alpha ', b: true },
+        { i: 'x', text: 'E=mc^2', block: false },
+        { i: 'm', text: ' ' , l: true },
+        { i: 'm', text: 'omega', l: true, h: 3 },
+      ]);
+    } finally {
+      fake.richText.length = plainLength;
+      fake.richText.substring = plainSubstring;
+    }
+  });
+
+  test('rich replacement preserves and verifies supported styles on math nodes', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('math-style-replacement', 'placeholder');
+
+    const result = await updateRemRich(fake.asPlugin(), {
+      remId: target._id,
+      richText: [{ type: 'mathBlock', latex: 'E=mc^2', styles: { color: 'blue', highlight: 'yellow', bold: true } }],
+      idempotencyKey: 'phase5-math-style-replacement',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.verification).toMatchObject({ richTextMatchesRequested: true });
+    expect(target.text).toEqual([{ i: 'x', text: 'E=mc^2', block: true, tc: 6, h: 3, b: true }]);
+    const readback = await readRemRich(fake.asPlugin(), { remId: target._id });
+    expect(readback?.richText).toEqual([
+      expect.objectContaining({
+        type: 'mathBlock',
+        latex: 'E=mc^2',
+        styles: expect.objectContaining({ color: 'blue', highlight: 'yellow', bold: true }),
+      }),
+    ]);
+  });
+
   test('full rich replacement may change text while preserving identity and structure', async () => {
     const fake = new FakePlugin();
     const parent = fake.addRem('replace-parent', 'Parent');

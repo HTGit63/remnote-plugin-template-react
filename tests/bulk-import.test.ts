@@ -409,6 +409,69 @@ describe('bulk import planner', () => {
     expect(report.renderedReadbackHash).toBe(renderedManifest.rawSourceHash);
   });
 
+  test('ordinary blockquotes preserve exact visible text and native quote style without a synthetic label', () => {
+    const plan = parseMarkdownImportPlan('# Quote note\n\n> Exact warning text.');
+    const quote = plan.tree.children?.find((child) => child.text === 'Exact warning text.');
+
+    expect(quote).toBeDefined();
+    expect(quote?.text).toBe('Exact warning text.');
+    expect(quote?.richText).toEqual([
+      expect.objectContaining({ text: 'Exact warning text.', styles: expect.objectContaining({ quote: true }) }),
+    ]);
+    expect(JSON.stringify(plan.tree)).not.toContain('Callout:');
+  });
+
+  test('preview declares native heading loss instead of counting planned headings as live properties', () => {
+    const preview = previewMarkdownNoteTree({
+      markdownText: '# Root heading\n\n## Section heading\n\nBody.',
+    });
+
+    expect(preview.plan.headingCount).toBe(2);
+    expect(preview.verification).toMatchObject({
+      passed: true,
+      verificationScope: 'semantic_content_math_and_order',
+      requestedHeadingCount: 2,
+      nativeHeadingCount: 0,
+    });
+    expect(preview.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/native heading properties are not written/i),
+    ]));
+  });
+
+  test('declares inline-code presentation as a supported semantic loss', () => {
+    const manifest = buildBulkImportSourceManifest('Use `npm test` before release.');
+
+    expect(manifest.supportedLosses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ feature: 'inline_code_style' }),
+    ]));
+  });
+
+  test('does not call section names duplicated when they recur only inside content text', () => {
+    const store = new BulkImportJobStore();
+    const plan = store.savePlan(planNoteImport({
+      sourceText: '# Direction Notes\n\n## North\n\nNorth paragraph.\n\n## East\n\nEast item.',
+      sourceName: 'directions.md',
+      targetRootId: 'target-root',
+      rootTitle: 'Direction Notes',
+    }));
+    const job = store.createJob(plan.planId, 'bulk-job:section-words-in-content');
+    const report = verifyBulkImportFinalReadback({
+      job,
+      readbackTree: {
+        remId: 'import-root',
+        frontText: job.chapterTitle,
+        children: [
+          { remId: 'north', frontText: 'North', children: [{ remId: 'north-body', frontText: 'North paragraph.', children: [] }] },
+          { remId: 'east', frontText: 'East', children: [{ remId: 'east-body', frontText: 'East item.', children: [] }] },
+        ],
+      },
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.structure.duplicateSectionTitles).toEqual([]);
+    expect(report.recommendedAction).toBeUndefined();
+  });
+
   test('reports exact semantic units and source spans on fidelity failure', () => {
     const report = verifyBulkImportSourceText({
       expectedText: '## Results\n- Alpha\n- Beta',

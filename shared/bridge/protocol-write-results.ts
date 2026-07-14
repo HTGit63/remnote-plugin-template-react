@@ -257,6 +257,8 @@ export interface StructuredNoteBatchVerification {
 }
 
 export interface MarkdownImportVerification {
+  attempted?: true;
+  method?: VerificationEvidenceMethod;
   passed: boolean;
   checkedNodeCount: number;
   headingCount: number;
@@ -270,6 +272,10 @@ export interface MarkdownImportVerification {
   extraTextSnippets: string[];
   structureMismatches: string[];
   pollutionRems: string[];
+  verificationScope?: 'semantic_content_math_and_order';
+  requestedHeadingCount?: number;
+  nativeHeadingCount?: number;
+  warnings?: string[];
 }
 
 export interface MarkdownFormulaValidationResult {
@@ -325,6 +331,7 @@ export interface PreviewMarkdownNoteTreeResult {
   verification: MarkdownImportVerification;
   notePlan?: NotePlanSummary;
   massNoteManifest?: MarkdownMassNoteManifest;
+  warnings?: string[];
   plan: {
     previewOutline: string[];
     headingCount: number;
@@ -480,6 +487,7 @@ export interface CreateOrReplaceNoteFromMarkdownResult {
     chunkCount?: number;
     strategy?: 'one_shot' | 'section_chunks';
   };
+  warnings?: string[];
 }
 
 export type CreateNoteFromMarkdownTreeResult = CreateOrReplaceNoteFromMarkdownResult;
@@ -655,6 +663,12 @@ export interface VerifyNoteAgainstDesignResult {
   unsupportedChecks: VerifyNoteDesignResult['unsupportedChecks'];
   repairSuggestions?: VerifyNoteDesignResult['repairSuggestions'];
   baseVerification: VerifyNoteDesignResult;
+  verification: {
+    attempted: true;
+    passed: boolean;
+    method: VerificationEvidenceMethod;
+    warnings: string[];
+  };
 }
 
 export interface RepairNoteDesignResult {
@@ -667,6 +681,13 @@ export interface RepairNoteDesignResult {
   plan: string[];
   verificationBefore: VerifyNoteAgainstDesignResult;
   result?: ApplyStylePlanResult;
+  updatedRemIds?: string[];
+  verification?: {
+    attempted: boolean;
+    passed: boolean;
+    method: 'operation_result_readback';
+    warnings: string[];
+  };
 }
 
 export interface CardWorkflowCardPlan {
@@ -695,6 +716,12 @@ export interface CardWorkflowResult {
   cardCount: number;
   cards: CardWorkflowCardPlan[];
   verificationMode?: VerificationEvidenceMethod;
+  verification?: {
+    attempted: true;
+    passed: boolean;
+    method: VerificationEvidenceMethod;
+    warnings: string[];
+  };
   advisoryFindings?: Array<{
     remId: string;
     evidenceMethod: VerificationEvidenceMethod;

@@ -119,6 +119,12 @@ describe('Phase 4 verifier evidence routing', () => {
       expect.objectContaining({ evidenceMethod: 'live_property_readback', sourceRemId: expect.any(String) }),
     ]));
     expect(result.verificationMode).toBe('live_property_readback');
+    expect(result.verification).toEqual({
+      attempted: true,
+      passed: true,
+      method: 'live_property_readback',
+      warnings: [],
+    });
   });
 
   test('saved applied manifest drives read-only non-heading design verification', async () => {
@@ -161,6 +167,12 @@ describe('Phase 4 verifier evidence routing', () => {
 
     expect(result.ok).toBe(false);
     expect(result.evidenceMode).toBe('exact_manifest');
+    expect(result.verification).toMatchObject({
+      attempted: true,
+      passed: false,
+      method: 'exact_manifest',
+    });
+    expect(result.checkedRemIds).toContain(keyIdea._id);
     expect(result.mismatches).toEqual(expect.arrayContaining([
       expect.objectContaining({
         remId: keyIdea._id,
@@ -187,6 +199,26 @@ describe('Phase 4 verifier evidence routing', () => {
       ok: false,
       status: 'FAIL',
       operationId: 'phase4-envelope',
+      standard: { status: 'FAIL' },
+    });
+  });
+
+  test('failed verification cannot retain an outer PASS envelope', () => {
+    const result = successToToolResult({
+      id: 'phase4-verification-envelope',
+      ok: true,
+      result: {
+        ok: true,
+        status: 'repaired',
+        verification: { attempted: true, passed: false, method: 'live_property_readback' },
+      },
+    } as never, 'Repair processed.');
+
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      status: 'FAIL',
+      verification: { attempted: true, passed: false },
       standard: { status: 'FAIL' },
     });
   });

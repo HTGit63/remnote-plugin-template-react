@@ -293,6 +293,15 @@ function recordTreatment(
   return Object.keys(treatment).length ? treatment : undefined;
 }
 
+function mathStyle(record: DesignRecord): RichTextSpanStyle | undefined {
+  const mathItems = richTextRecords(getRemRichText(record.rem)).filter((item) => item.i === 'x');
+  if (!mathItems.length) return undefined;
+  const styles = mathItems.map(richStyleFromRecord);
+  const first = styles[0];
+  if (!first) return undefined;
+  return styles.every((style) => stableStringify(style) === stableStringify(first)) ? first : undefined;
+}
+
 function formulaRecord(record: DesignRecord): boolean {
   const math = countMath(getRemRichText(record.rem));
   if (math.inline + math.block > 0) return true;
@@ -312,16 +321,26 @@ function buildRoleRules(records: DesignRecord[]): NoteDesignRoleRules | undefine
   };
   const answerRecord = first((record) => {
     const parent = record.parentId ? byId.get(record.parentId) : undefined;
-    return /^answer$/i.test(parent?.plainText.trim() ?? '');
-  }) ?? first((record) => /^answer\s*:/i.test(record.plainText.trim()));
+    return /^answer(?:\s+treatment)?$/i.test(parent?.plainText.trim() ?? '');
+  }) ?? first((record) => /^answer(?:\s+treatment)?(?:\s*:|$)/i.test(record.plainText.trim()));
+  const warningRecord = first((record) => /^warning\s+treatment$/i.test(record.plainText.trim()))
+    ?? first((record) => /^warning\s*:/i.test(record.plainText.trim()));
+  const formula = first(formulaRecord);
+  const formulaMathStyle = formula ? mathStyle(formula) : undefined;
+  const formulaTreatment = formula ? {
+    ...(recordTreatment(formula) ?? {}),
+    ...(formulaMathStyle ? { mathStyle: formulaMathStyle } : {}),
+  } : undefined;
   const rules: NoteDesignRoleRules = {
     root: records[0] ? recordTreatment(records[0], 'full') : undefined,
     section: treatment((record) => record.depth === 1 && record.plainText !== '\u200b' && record.plainText.trim().length > 0),
     keyIdea: treatment((record) => /^key\s+idea\s*:/i.test(record.plainText.trim()), 'prefix'),
-    formula: treatment(formulaRecord),
+    formula: formulaTreatment && Object.keys(formulaTreatment).length ? formulaTreatment : undefined,
     workedExample: treatment((record) => /^(problem|given|formula|substitution|answer)$/i.test(record.plainText.trim())),
     answer: answerRecord ? recordTreatment(answerRecord) : undefined,
-    warning: treatment((record) => /^warning\s*:/i.test(record.plainText.trim()), 'prefix'),
+    warning: warningRecord
+      ? recordTreatment(warningRecord, /^warning\s+treatment$/i.test(warningRecord.plainText.trim()) ? 'full' : 'prefix')
+      : undefined,
     summary: treatment((record) => /^summary$/i.test(record.plainText.trim())),
     concept: treatment((record) => record.remType === 'concept', 'none'),
     descriptor: treatment((record) => record.remType === 'descriptor', 'none'),
@@ -628,14 +647,14 @@ function assertRoleRules(value: unknown): void {
     }
     const treatment = designRuleRecord(rawTreatment, `template.rules.roleRules.${role}`);
     for (const key of Object.keys(treatment)) {
-      if (!['remStyle', 'fullTextStyle', 'prefixStyle'].includes(key)) {
+      if (!['remStyle', 'fullTextStyle', 'prefixStyle', 'mathStyle'].includes(key)) {
         throw new RemnoteWriteError('INVALID_ARGS', `Unknown treatment field ${key} for design role ${role}.`, {
           role,
           field: key,
         });
       }
     }
-    for (const styleKey of ['fullTextStyle', 'prefixStyle'] as const) {
+    for (const styleKey of ['fullTextStyle', 'prefixStyle', 'mathStyle'] as const) {
       if (treatment[styleKey] === undefined) continue;
       const style = designRuleRecord(treatment[styleKey], `template.rules.roleRules.${role}.${styleKey}`);
       for (const [key, styleValue] of Object.entries(style)) {

@@ -9,6 +9,7 @@ import type {
   SerializedRem,
 } from '../../shared/bridge/protocol.js';
 import { startCompanionApp } from './app.js';
+import { getPublicMcpToolNames } from './tool-registry.js';
 
 let nextId = 1;
 
@@ -277,8 +278,20 @@ try {
   const discoveredTools = (discovery.json as {
     result?: { tools?: Array<{ name?: string; securitySchemes?: Array<{ type?: string; scopes?: string[] }> }> };
   })?.result?.tools ?? [];
-  if (discovery.status !== 200 || discoveredTools.length !== 19) {
-    throw new Error(`Hosted tools/list missed default mass_note_writer surface: ${discovery.status} ${discovery.text}`);
+  const expectedToolNames = getPublicMcpToolNames(false, 'mass_note_writer');
+  const discoveredToolNames = discoveredTools
+    .map((tool) => tool.name)
+    .filter((name): name is string => typeof name === 'string')
+    .sort();
+  const expectedToolNameSet = new Set<string>(expectedToolNames);
+  const missingToolNames = expectedToolNames.filter((name) => !discoveredToolNames.includes(name));
+  const unexpectedToolNames = discoveredToolNames.filter((name) => !expectedToolNameSet.has(name));
+  if (discovery.status !== 200 || missingToolNames.length || unexpectedToolNames.length) {
+    throw new Error(
+      `Hosted tools/list mismatched the default mass_note_writer surface: status=${discovery.status} ` +
+      `expected=${expectedToolNames.length} actual=${discoveredToolNames.length} ` +
+      `missing=${missingToolNames.join(',') || 'none'} unexpected=${unexpectedToolNames.join(',') || 'none'}`
+    );
   }
   for (const tool of discoveredTools) {
     if (

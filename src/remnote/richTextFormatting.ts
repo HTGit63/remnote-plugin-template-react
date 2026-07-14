@@ -44,6 +44,8 @@ export class RichTextFormattingError extends Error {
 export interface ResolvedTextRange {
   start: number;
   end: number;
+  sdkStart: number;
+  sdkEnd: number;
   resolvedPlainText: string;
   plainTextLength: number;
 }
@@ -150,6 +152,68 @@ async function richTextLength(plugin: RNPlugin, richText: RichTextInterface): Pr
   }
 }
 
+async function plainRangeToSdkRange(
+  plugin: RNPlugin,
+  richText: RichTextInterface,
+  plainStart: number,
+  plainEnd: number
+): Promise<{ sdkStart: number; sdkEnd: number }> {
+  const segments: Array<{
+    plainStart: number;
+    plainEnd: number;
+    sdkStart: number;
+    sdkEnd: number;
+    textNode: boolean;
+  }> = [];
+  let plainCursor = 0;
+  let sdkCursor = 0;
+  for (const item of richText) {
+    const node = [item] as RichTextInterface;
+    const plainLength = (await plugin.richText.toString(node)).length;
+    const sdkLength = await richTextLength(plugin, node);
+    const record: Record<string, unknown> | undefined = isRecord(item)
+      ? item as unknown as Record<string, unknown>
+      : undefined;
+    const textNode = typeof item === 'string' || (
+      record !== undefined && (record.i === 'm' || (typeof record.text === 'string' && record.i !== 'x'))
+    );
+    segments.push({
+      plainStart: plainCursor,
+      plainEnd: plainCursor + plainLength,
+      sdkStart: sdkCursor,
+      sdkEnd: sdkCursor + sdkLength,
+      textNode,
+    });
+    plainCursor += plainLength;
+    sdkCursor += sdkLength;
+  }
+
+  const mapBoundary = (offset: number): number => {
+    if (offset === 0) return 0;
+    if (offset === plainCursor) return sdkCursor;
+    for (const segment of segments) {
+      if (offset === segment.plainStart) return segment.sdkStart;
+      if (offset === segment.plainEnd) return segment.sdkEnd;
+      if (offset > segment.plainStart && offset < segment.plainEnd) {
+        if (!segment.textNode || segment.plainEnd - segment.plainStart !== segment.sdkEnd - segment.sdkStart) {
+          throw new RichTextFormattingError(
+            'INVALID_ARGS',
+            'Requested plain-text boundary falls inside a non-text rich node. Select the whole node or adjacent text only.',
+            { offset, segment }
+          );
+        }
+        return segment.sdkStart + offset - segment.plainStart;
+      }
+    }
+    throw new RichTextFormattingError('INVALID_ARGS', 'Range must be inside the Rem plain text.', {
+      offset,
+      plainTextLength: plainCursor,
+    });
+  };
+
+  return { sdkStart: mapBoundary(plainStart), sdkEnd: mapBoundary(plainEnd) };
+}
+
 function validateRange(start: number, end: number, textLength: number, details?: Record<string, unknown>) {
   if (
     !Number.isInteger(start) ||
@@ -176,7 +240,7 @@ export async function resolveRangeFromPlainText(
   occurrence = 1
 ): Promise<ResolvedTextRange> {
   const plainText = await plugin.richText.toString(richText);
-  const textLength = await richTextLength(plugin, richText);
+  const textLength = plainText.length;
 
   if (start !== undefined || end !== undefined) {
     if (start === undefined || end === undefined) {
@@ -184,9 +248,11 @@ export async function resolveRangeFromPlainText(
     }
 
     validateRange(start, end, textLength);
+    const sdkRange = await plainRangeToSdkRange(plugin, richText, start, end);
     return {
       start,
       end,
+      ...sdkRange,
       resolvedPlainText: plainText.slice(start, end),
       plainTextLength: textLength,
     };
@@ -219,9 +285,11 @@ export async function resolveRangeFromPlainText(
 
   const resolvedEnd = found + needle.length;
   validateRange(found, resolvedEnd, textLength, { text: needle, occurrence });
+  const sdkRange = await plainRangeToSdkRange(plugin, richText, found, resolvedEnd);
   return {
     start: found,
     end: resolvedEnd,
+    ...sdkRange,
     resolvedPlainText: plainText.slice(found, resolvedEnd),
     plainTextLength: textLength,
   };

@@ -527,6 +527,7 @@ export interface NoteDesignRoleTreatment {
   remStyle?: RemStyleInput;
   fullTextStyle?: RichTextSpanStyle;
   prefixStyle?: RichTextSpanStyle;
+  mathStyle?: RichTextSpanStyle;
 }
 
 export interface NoteDesignRoleRules {

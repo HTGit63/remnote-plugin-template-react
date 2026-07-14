@@ -447,10 +447,19 @@ function normalizeRichSpans(value: unknown): RichTextSpanInput[] {
 
     const record = item as Record<string, unknown>;
     if (record.i === 'x') {
+      const color = richTextColorName(record[RICH_TEXT_FONT_COLOR_FIELD] ?? record.color ?? record.textColor);
+      const highlight = richTextColorName(record[RICH_TEXT_HIGHLIGHT_FIELD]);
       spans.push({
         type: record.block ? 'mathBlock' : 'inlineMath',
         latex: typeof record.text === 'string' ? record.text : '',
-        styles: {},
+        styles: {
+          ...(color ? { color } : {}),
+          ...(highlight ? { highlight } : {}),
+          ...(record.b ? { bold: true } : {}),
+          ...(record.l ? { italic: true } : {}),
+          ...(record.u ? { underline: true } : {}),
+          ...(record.q ? { quote: true } : {}),
+        },
       });
       continue;
     }

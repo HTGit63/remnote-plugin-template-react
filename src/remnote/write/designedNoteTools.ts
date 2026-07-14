@@ -178,6 +178,13 @@ async function verifyRoleTreatment(
     actual.prefixStyleMatched = Boolean(records[0] && richRecordMatchesStyle(records[0], treatment.prefixStyle));
     passed = passed && actual.prefixStyleMatched === true;
   }
+  if (treatment.mathStyle) {
+    const mathRecords = richRecords(rem).filter((record) => record.i === 'x');
+    actual.mathStyleMatched = mathRecords.length > 0 && mathRecords.every((record) =>
+      richRecordMatchesStyle(record, treatment.mathStyle)
+    );
+    passed = passed && actual.mathStyleMatched === true;
+  }
   return { passed, actual };
 }
 
@@ -643,23 +650,37 @@ export async function verifyNoteAgainstDesign(
     ...(baseVerification.issues ?? []),
     ...mismatches.map((mismatch) => mismatch.message),
   ];
+  const evidenceMode = appliedManifest
+    ? 'exact_manifest'
+    : args.expectedStyleMap
+      ? 'exact_manifest'
+      : 'live_property_readback';
+  const checkedRemIds = Array.from(new Set([
+    ...baseVerification.checkedRemIds,
+    ...(appliedManifest?.materializationEvidence.flatMap((evidence) => evidence.targetRemIds) ?? []),
+  ]));
+  const ok = baseVerification.ok && appliedMismatches.length === 0 && designIssues.length === 0;
   return {
     status: 'verified',
     rootRemId: args.rootRemId,
     templateId: template?.templateId,
-    ok: baseVerification.ok && appliedMismatches.length === 0 && designIssues.length === 0,
-    evidenceMode: appliedManifest
-      ? 'exact_manifest'
-      : args.expectedStyleMap
-        ? 'exact_manifest'
-        : 'live_property_readback',
+    ok,
+    evidenceMode,
     appliedTemplateVersion: appliedManifest?.templateVersion,
-    checkedRemIds: baseVerification.checkedRemIds,
+    checkedRemIds,
     designIssues,
     mismatches,
     unsupportedChecks: baseVerification.unsupportedChecks,
     repairSuggestions: baseVerification.repairSuggestions,
     baseVerification,
+    verification: {
+      attempted: true,
+      passed: ok,
+      method: evidenceMode,
+      warnings: baseVerification.unsupportedChecks.map((check) =>
+        `${check.type} on Rem ${check.remId}: ${check.reason}`
+      ),
+    },
   };
 }
 
@@ -733,9 +754,15 @@ export async function repairNoteDesign(
     dryRun: false,
     idempotencyKey: args.idempotencyKey,
   });
+  const updatedRemIds = Array.from(new Set(
+    result.operations
+      .filter((operation) => operation.status === 'applied')
+      .map((operation) => operation.remId)
+  ));
+  const failedOperations = result.operations.filter((operation) => operation.status !== 'applied');
   return {
     status: 'repaired',
-    ok: result.status === 'applied' || result.status === 'partial',
+    ok: result.status === 'applied' && failedOperations.length === 0,
     dryRun,
     approved: true,
     rootRemId: args.rootRemId,
@@ -743,6 +770,15 @@ export async function repairNoteDesign(
     plan,
     verificationBefore,
     result,
+    updatedRemIds,
+    verification: {
+      attempted: args.verifyAfterWrite ?? true,
+      passed: result.status === 'applied' && failedOperations.length === 0,
+      method: 'operation_result_readback',
+      warnings: failedOperations.map((operation) =>
+        `${operation.type} on Rem ${operation.remId} ended ${operation.status}.`
+      ),
+    },
   };
 }
 
@@ -909,6 +945,14 @@ function cardWorkflowResult(input: {
   durationMs?: number;
   limits?: CardWorkflowResult['limits'];
 }): CardWorkflowResult {
+  const verification = input.status === 'verified' || input.status === 'partial'
+    ? {
+        attempted: true as const,
+        passed: input.ok,
+        method: input.verificationMode ?? ('live_property_readback' as const),
+        warnings: input.warnings ?? [],
+      }
+    : undefined;
   return {
     status: input.status,
     ok: input.ok,
@@ -917,7 +961,8 @@ function cardWorkflowResult(input: {
     parentId: input.parentId,
     cardCount: input.cards.length,
     cards: input.cards,
-    verificationMode: input.verificationMode,
+    verificationMode: input.verificationMode ?? verification?.method,
+    verification,
     advisoryFindings: input.advisoryFindings,
     createdRemIds: input.createdRemIds,
     issues: input.issues,
@@ -1198,10 +1243,21 @@ export async function verifyCardSet(
     });
     issues.push(`Duplicate ${first.cardType} card "${first.front}" found at Rem IDs ${sourceRemIds.join(', ')}.`);
   }
+  const expectedBackMatches = (actual: CardWorkflowCardPlan, expectedBack: string | undefined): boolean => {
+    if (expectedBack === undefined) return true;
+    if (normalizeCardText(actual.back) === normalizeCardText(expectedBack)) return true;
+    if (actual.cardType === 'multiple_choice') {
+      const answer = actual.back?.split(/\r?\n/)
+        .map((line) => /^Answer:\s*(.*)$/i.exec(line.trim())?.[1])
+        .find((value): value is string => value !== undefined);
+      return normalizeCardText(answer) === normalizeCardText(expectedBack);
+    }
+    return false;
+  };
   const missingCards = expectedCards.filter((expected) =>
     !cards.some((actual) =>
       normalizeCardText(actual.front) === normalizeCardText(expected.front) &&
-      (expected.back === undefined || normalizeCardText(actual.back) === normalizeCardText(expected.back)) &&
+      expectedBackMatches(actual, expected.back) &&
       (expected.cardType === undefined || actual.cardType === expected.cardType)
     )
   );

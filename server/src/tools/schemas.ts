@@ -362,6 +362,7 @@ const DESIGN_ROLE_TREATMENT_SCHEMA = z.object({
   remStyle: REM_STYLE_SCHEMA.optional(),
   fullTextStyle: DESIGN_ROLE_TEXT_STYLE_SCHEMA.optional(),
   prefixStyle: DESIGN_ROLE_TEXT_STYLE_SCHEMA.optional(),
+  mathStyle: DESIGN_ROLE_TEXT_STYLE_SCHEMA.optional(),
 }).strict();
 
 const DESIGN_ROLE_RULES_SCHEMA = z.object({

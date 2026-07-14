@@ -63,12 +63,20 @@ function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TR
     verifyAfterWrite: args.verifyAfterWrite,
   });
   const outputText = markdownImportOutputTextFromTree(plan.tree);
-  const verification = verifyMarkdownSourceFidelity(
-    plan.sourceSnippets,
-    outputText,
-    plan.options.fidelityOptions,
-    plan.stats
-  );
+  const verification = {
+    ...verifyMarkdownSourceFidelity(
+      plan.sourceSnippets,
+      outputText,
+      plan.options.fidelityOptions,
+      plan.stats
+    ),
+    attempted: true as const,
+    method: 'semantic' as const,
+    verificationScope: 'semantic_content_math_and_order' as const,
+    requestedHeadingCount: plan.stats.headingCount,
+    nativeHeadingCount: 0,
+    warnings: [...plan.representationWarnings],
+  };
   const result = {
     ok: true,
     status: 'previewed',
@@ -83,6 +91,7 @@ function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TR
     formulaValidation: plan.formulaValidation,
     flashcardOptions: plan.options.flashcardOptions,
     verification,
+    warnings: [...plan.representationWarnings],
     plan: {
       previewOutline: plan.previewOutline,
       headingCount: plan.stats.headingCount,
@@ -101,6 +110,7 @@ function markdownPreviewToolResult(args: z.infer<typeof PREVIEW_MARKDOWN_NOTE_TR
     },
   };
   const warnings = [
+    ...plan.representationWarnings,
     ...verification.structureMismatches,
     ...verification.missingTextSnippets.map((snippet) => `Missing source snippet: ${snippet.slice(0, 80)}`),
   ];

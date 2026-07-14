@@ -676,8 +676,8 @@ async function applyOneStyleOperation(
       const richText = await applyFormatsToRichTextRange(
         plugin,
         getRemRichText(rem),
-        range.start,
-        range.end,
+        range.sdkStart,
+        range.sdkEnd,
         [operation.type === 'bold_span' ? 'bold' : 'italic']
       );
       await runSdkOperation('rem.setText', () => rem.setText(richText));
@@ -711,8 +711,8 @@ async function applyOneStyleOperation(
       const converted = await replaceRichTextRangeWithMathNode(
         plugin,
         current,
-        range.start,
-        range.end,
+        range.sdkStart,
+        range.sdkEnd,
         latex,
         false
       );

@@ -106,6 +106,10 @@ export class FakeRem {
     return this.remType;
   }
 
+  async getCards() {
+    return [];
+  }
+
   async setParent(parent: FakeRem, index?: number) {
     if (this.parent) {
       const oldParent = this.plugin.rems.get(this.parent);

@@ -306,7 +306,11 @@ function statusFromFailure(failure: BridgeFailure, blockedByProfile = false): St
 function statusFromResult(result: unknown): StandardToolStatus {
   const record = asRecord(result);
   const rawStatus = firstString(record?.status)?.toLowerCase() ?? '';
+  const verification = asRecord(record?.verification);
   if (record?.ok === false) {
+    return rawStatus.includes('partial') ? 'PARTIAL' : 'FAIL';
+  }
+  if (verification && verification.attempted !== false && (verification.passed === false || verification.ok === false)) {
     return rawStatus.includes('partial') ? 'PARTIAL' : 'FAIL';
   }
   if (rawStatus.includes('partial')) {

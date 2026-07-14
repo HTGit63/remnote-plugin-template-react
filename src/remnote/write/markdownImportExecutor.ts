@@ -192,16 +192,20 @@ async function collectMarkdownReadbackSubtree(
 ): Promise<{
   outputText: string;
   mathStats: { inlineMathCount: number; mathBlockCount: number };
+  nativeHeadingCount: number;
 }> {
   const root = await findRequiredRem(plugin, remId, 'Target', 'REM_NOT_FOUND');
   const parts: string[] = [];
   const mathStats = { inlineMathCount: 0, mathBlockCount: 0 };
+  let nativeHeadingCount = 0;
 
   async function visit(rem: Rem) {
     parts.push(await getRemPlainString(plugin, rem));
     const remMath = countRichTextMathSpans(rem.text);
     mathStats.inlineMathCount += remMath.inlineMathCount;
     mathStats.mathBlockCount += remMath.mathBlockCount;
+    const headingLevel = await rem.getFontSize().catch(() => undefined);
+    if (headingLevel === 'H1' || headingLevel === 'H2' || headingLevel === 'H3') nativeHeadingCount += 1;
     const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem());
     for (const child of children) {
       await visit(child);
@@ -212,6 +216,23 @@ async function collectMarkdownReadbackSubtree(
   return {
     outputText: parts.filter((part) => part.trim()).join('\n'),
     mathStats,
+    nativeHeadingCount,
+  };
+}
+
+function withMarkdownVerificationEvidence(
+  verification: NonNullable<CreateOrReplaceNoteFromMarkdownResult['verification']>,
+  plan: ReturnType<typeof parseMarkdownImportPlan>,
+  nativeHeadingCount: number
+): NonNullable<CreateOrReplaceNoteFromMarkdownResult['verification']> {
+  return {
+    ...verification,
+    attempted: true,
+    method: 'semantic',
+    verificationScope: 'semantic_content_math_and_order',
+    requestedHeadingCount: plan.stats.headingCount,
+    nativeHeadingCount,
+    warnings: [...plan.representationWarnings],
   };
 }
 
@@ -282,6 +303,7 @@ function buildMassNoteManifest(
   if (plan.stats.codeBlockCount > 0) {
     warnings.push('Markdown code blocks are preserved as literal text Rems, not native RemNote code blocks.');
   }
+  warnings.push(...plan.representationWarnings);
 
   const chunks = fallback.used
     ? [
@@ -432,12 +454,12 @@ export function previewMarkdownNoteTree(
     flashcardOptions: plan.options.flashcardOptions,
     notePlan,
     massNoteManifest: buildMassNoteManifest(plan, fallback, 'preview-markdown-note-tree'),
-    verification: verifyMarkdownSourceFidelity(
-      plan.sourceSnippets,
-      outputText,
-      plan.options.fidelityOptions,
-      plan.stats
+    verification: withMarkdownVerificationEvidence(
+      verifyMarkdownSourceFidelity(plan.sourceSnippets, outputText, plan.options.fidelityOptions, plan.stats),
+      plan,
+      0
     ),
+    warnings: [...plan.representationWarnings],
     plan: markdownImportPlanSummary(plan),
   };
 }
@@ -607,6 +629,7 @@ export async function createOrReplaceNoteFromMarkdown(
     operationPlan,
     notePlan,
     massNoteManifest,
+    warnings: [...plan.representationWarnings],
     writeEngine: writeEngineExecutionFromPlan(operationPlan),
     plan: markdownImportPlanSummary(plan),
     fallback,
@@ -740,13 +763,13 @@ export async function createOrReplaceNoteFromMarkdown(
           ? await collectMarkdownReadbackSubtree(plugin, duplicate._id)
           : undefined;
         const verification = readback
-          ? verifyMarkdownSourceFidelity(
+          ? withMarkdownVerificationEvidence(verifyMarkdownSourceFidelity(
               plan.sourceSnippets,
               readback.outputText,
               normalized.fidelityOptions,
               plan.stats,
               readback.mathStats
-            )
+            ), plan, readback.nativeHeadingCount)
           : undefined;
         verificationDurationMs += Date.now() - verificationStartedAt;
         const performance = buildWritePerformanceReport({
@@ -877,7 +900,7 @@ export async function createOrReplaceNoteFromMarkdown(
         ...batchResult.createdRemIds,
         ...(batchResult.updatedRemIds ?? []),
       ]);
-      verification = verifyMarkdownSourceFidelity(
+      verification = withMarkdownVerificationEvidence(verifyMarkdownSourceFidelity(
         normalized.mode === 'replace_target_children'
           ? plan.sourceSnippets.slice(1)
           : plan.sourceSnippets,
@@ -885,7 +908,7 @@ export async function createOrReplaceNoteFromMarkdown(
         normalized.fidelityOptions,
         plan.stats,
         mathStats
-      );
+      ), plan, readback?.nativeHeadingCount ?? 0);
       verificationDurationMs += Date.now() - verificationStartedAt;
     }
     if (verification && !verification.passed && normalized.fidelityOptions.failOnContentLoss) {

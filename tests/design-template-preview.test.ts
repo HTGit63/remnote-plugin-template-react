@@ -127,4 +127,29 @@ describe('design template preview defaults', () => {
     expect(allowed.status).toBe('repaired');
     expect(child.text).toEqual(expect.arrayContaining([expect.objectContaining({ text: 'Child', b: true })]));
   });
+
+  test('approved repair exposes exact updated IDs and post-operation verification', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('repair-envelope-target', 'Target');
+    const child = fake.addRem('repair-envelope-child', 'Repair this text');
+    await child.setParent(target);
+
+    const result = await repairNoteDesign(fake.asPlugin(), {
+      rootRemId: target._id,
+      operations: [{ remId: child._id, type: 'bold_span', text: 'Repair' }],
+      dryRun: false,
+      approved: true,
+      verifyAfterWrite: true,
+      idempotencyKey: 'idem:repair-envelope',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.updatedRemIds).toEqual([child._id]);
+    expect(result.verification).toEqual({
+      attempted: true,
+      passed: true,
+      method: 'operation_result_readback',
+      warnings: [],
+    });
+  });
 });

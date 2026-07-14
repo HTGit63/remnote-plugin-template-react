@@ -131,7 +131,7 @@ export interface BulkImportSemanticUnit {
 }
 
 export interface BulkImportSupportedLoss {
-  feature: 'link_destination' | 'code_language' | 'native_table' | 'ordered_list_marker';
+  feature: 'link_destination' | 'inline_code_style' | 'code_language' | 'native_table' | 'ordered_list_marker';
   detail: string;
 }
 
@@ -385,6 +385,12 @@ export function buildBulkImportSourceManifest(
     supportedLosses.set('link_destination', {
       feature: 'link_destination',
       detail: 'The current rich-text write schema preserves link labels but has no link-destination node.',
+    });
+  }
+  if (/`[^`\n]+`/.test(normalizedSource)) {
+    supportedLosses.set('inline_code_style', {
+      feature: 'inline_code_style',
+      detail: 'Inline code text is preserved, but the current rich-text schema has no native code-span style.',
     });
   }
   if (/\$[^$\n]+\$|\\\([\s\S]+?\\\)/.test(normalizedSource)) {
@@ -1556,7 +1562,7 @@ export function verifyBulkImportFinalReadback(input: {
     sectionOffsets.every((offset, index) => index === 0 || offset > sectionOffsets[index - 1]);
   const sectionOccurrences = input.job.sections.flatMap((section) => {
     const title = normalizeForSourceFidelity(section.title);
-    return countOccurrences(actual, title) > 1 ? [section.title] : [];
+    return actualUnits.filter((unit) => unit === title).length > 1 ? [section.title] : [];
   });
   const duplicateSectionTitles = duplicateValues(sectionOccurrences).length ? duplicateValues(sectionOccurrences) : sectionOccurrences;
   const noChapterTwo = !/\bchapter\s+two\b/i.test(actualRaw) && !/^2\.\d+\b/m.test(actual);
@@ -1602,7 +1608,11 @@ export function verifyBulkImportFinalReadback(input: {
             ? [`Formatting pollution Rems detected: ${Array.from(new Set(pollutionRems)).join(', ')}.`]
             : []),
         ],
-    recommendedAction: ok ? undefined : 'resume_note_import_job',
+    recommendedAction: ok
+      ? undefined
+      : input.job.status === 'completed'
+        ? 'Inspect exact source-fidelity evidence; do not replay completed chunks. Use explicit reconciliation only if write identity is uncertain.'
+        : 'resume_note_import_job',
     method: 'normalized_plain_text',
     normalizedMatchPercentage,
     expectedSourceLength: expectedRaw.length,

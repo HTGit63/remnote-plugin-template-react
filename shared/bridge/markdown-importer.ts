@@ -10,6 +10,7 @@ import type {
   PracticeDirection,
   RemHeadingLevel,
   RichTextSpanInput,
+  RichTextSpanStyle,
   StyledRemTreeNode,
 } from './protocol.js';
 import { applyStylePresetToMarkdownArgs, isNuclearPhysicsSpacerNode } from './style-presets.js';
@@ -112,6 +113,7 @@ export interface MarkdownImportPlan {
   };
   previewOutline: string[];
   formulaValidation: MarkdownFormulaValidationResult;
+  representationWarnings: string[];
 }
 
 export interface MarkdownImportFragmentPlan extends MarkdownImportPlan {
@@ -309,6 +311,15 @@ function inlineMarkdownNode(
     ...(options.style ? { style: options.style } : {}),
     ...(options.children ? { children: options.children } : {}),
   };
+}
+
+function applyInlineStyle(node: StyledRemTreeNode, style: RichTextSpanStyle): StyledRemTreeNode {
+  const spans = node.richText?.length ? node.richText : [{ type: 'text' as const, text: node.text ?? '' }];
+  node.richText = spans.map((span) => ({
+    ...span,
+    styles: { ...(span.styles ?? {}), ...style },
+  }));
+  return node;
 }
 
 function spacerNode(index: number, text: string): StyledRemTreeNode {
@@ -1204,20 +1215,23 @@ export function parseMarkdownImportPlan(
       const admonition = /^\[!(\w+)\]\s*(.*)$/.exec(first);
       const label = admonition
         ? `${admonition[1].slice(0, 1).toUpperCase()}${admonition[1].slice(1).toLowerCase()}`
-        : 'Callout';
+        : '';
       const title = stripMarkdownInline(admonition?.[2] || quoteLines.find((entry) => entry.trim()) || label);
       const body = admonition ? quoteLines.slice(1) : quoteLines.slice(1);
       const calloutChildren = body
         .map((entry, entryIndex) => entry.trim())
         .filter(Boolean)
         .map((entry, entryIndex) =>
-          inlineMarkdownNode(`callout-${calloutCount + 1}-body-${entryIndex + 1}`, entry)
+          applyInlineStyle(
+            inlineMarkdownNode(`callout-${calloutCount + 1}-body-${entryIndex + 1}`, entry),
+            { quote: true }
+          )
         );
-      const calloutNode = inlineMarkdownNode(
+      const calloutNode = applyInlineStyle(inlineMarkdownNode(
         `callout-${calloutCount += 1}`,
-        title ? `${label}: ${title}` : label,
+        admonition && label ? `${label}${title ? `: ${title}` : ''}` : title,
         { children: calloutChildren }
-      );
+      ), { quote: true });
       pushChild(currentParent(), calloutNode);
       if (title) {
         addInlineSourceSnippets(snippets, title);
@@ -1290,15 +1304,30 @@ export function parseMarkdownImportPlan(
   flushParagraph();
 
   const outputText = treeOutputText(root);
+  const stats = analyzeTree(root);
   const plan: MarkdownImportPlan = {
     tree: root,
     sourceHash: stableHash(markdown),
     outputHash: stableHash(outputText),
     sourceSnippets: Array.from(new Set(snippets.map((snippet) => normalizeWhitespace(snippet)).filter(Boolean))),
-    stats: analyzeTree(root),
+    stats,
     options: normalizedOptions,
     previewOutline: previewOutline(root),
     formulaValidation,
+    representationWarnings: [
+      ...(stats.headingCount > 0
+        ? ['Native heading properties are not written by the safe Markdown path until the installed SDK round-trips them without visible metadata pollution; heading hierarchy is preserved and native readback is reported separately.']
+        : []),
+      ...(/`[^`\n]+`/.test(markdown)
+        ? ['Inline code text is preserved, but native inline-code styling is unavailable.']
+        : []),
+      ...(/!?\[[^\]]+\]\([^)]+\)/.test(markdown)
+        ? ['Link labels are preserved, but link destinations are unavailable in the current rich-text write schema.']
+        : []),
+      ...(/^\s*\d+[.)]\s+/m.test(markdown)
+        ? ['Ordered-list item order is preserved, but native numeric markers are unavailable.']
+        : []),
+    ],
   };
   assertPlanLimits(plan);
   return plan;

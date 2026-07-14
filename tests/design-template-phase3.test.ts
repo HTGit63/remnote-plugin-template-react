@@ -158,6 +158,75 @@ describe('Phase 3 design-template identity and compiler', () => {
     expect(serialized).not.toContain('Source-specific sentence');
   });
 
+  test('learns warning, answer, and math-node treatments from reusable role labels', async () => {
+    const fake = new FakePlugin();
+    const root = fake.addRem('role-source-root', 'Reusable treatment source');
+    const warning = fake.addRem('role-source-warning', 'Warning treatment');
+    warning.text = [{ i: 'm', text: 'Warning treatment', h: 3 }] as never;
+    const answer = fake.addRem('role-source-answer', 'Answer treatment');
+    answer.text = [{ i: 'm', text: 'Answer treatment', h: 4 }] as never;
+    const formula = fake.addRem('role-source-formula', 'Formula E=mc^2');
+    formula.text = [
+      { i: 'm', text: 'Formula ' },
+      { i: 'x', text: 'E=mc^2', block: false, tc: 6 },
+    ] as never;
+    await warning.setParent(root);
+    await answer.setParent(root);
+    await formula.setParent(root);
+
+    const analyzed = await analyzeNoteDesign(fake.asPlugin(), { rootRemId: root._id });
+
+    expect(analyzed.rules.roleRules?.warning?.fullTextStyle).toMatchObject({ highlight: 'yellow' });
+    expect(analyzed.rules.roleRules?.answer?.fullTextStyle).toMatchObject({ highlight: 'green' });
+    expect(analyzed.rules.roleRules?.formula?.mathStyle).toMatchObject({ color: 'blue' });
+
+    installLocalStorage(fake);
+    const targetParent = fake.addRem('role-target-parent', 'Role target parent');
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'learned-role-template',
+      name: 'Learned role template',
+      rules: analyzed.rules,
+    });
+    const created = await createDesignedNoteTree(fake.asPlugin(), {
+      parentId: targetParent._id,
+      title: 'Role target',
+      content: '## Warning treatment\n\nWarning body.\n\n## Answer treatment\n\nAnswer body.\n\n## Formula treatment\n\n$$E=mc^2$$',
+      templateId: saved.template.templateId,
+      writingMode: 'markdown',
+      verifyAfterWrite: true,
+      idempotencyKey: 'learned-role-target',
+    });
+    expect(created.materializationEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'role.warning', status: 'verified' }),
+      expect.objectContaining({ ruleId: 'role.answer', status: 'verified' }),
+      expect.objectContaining({ ruleId: 'role.formula', status: 'verified' }),
+    ]));
+    const targetFormula = await findByText(fake, 'E=mc^2');
+    expect(targetFormula.text).toEqual(expect.arrayContaining([
+      expect.objectContaining({ i: 'x', text: 'E=mc^2', tc: 6 }),
+    ]));
+  });
+
+  test('promotes a leading H1 body wrapper beneath the explicit designed-note title', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const parent = fake.addRem('wrapper-parent', 'Wrapper parent');
+
+    const created = await createDesignedNoteTree(fake.asPlugin(), {
+      parentId: parent._id,
+      title: 'Explicit root title',
+      content: '# Source body title\n\n## Section\n\nBody.',
+      writingMode: 'markdown',
+      verifyAfterWrite: true,
+      idempotencyKey: 'phase3-leading-h1-wrapper',
+    });
+    const root = fake.rems.get(created.rootRemId as string) as FakeRem;
+    const childTexts = await Promise.all(root.children.map((id) => plain(fake, fake.rems.get(id) as FakeRem)));
+
+    expect(childTexts).toContain('Section');
+    expect(childTexts).not.toContain('Source body title');
+  });
+
   test('uses one deterministic manifest for preview, markdown creation, styled creation, and UI selection', async () => {
     const fake = new FakePlugin();
     const storage = installLocalStorage(fake);

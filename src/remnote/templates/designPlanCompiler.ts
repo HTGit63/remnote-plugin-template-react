@@ -68,10 +68,10 @@ function normalized(value: string): string {
   return value.replace(/\s+/g, ' ').trim().toLowerCase();
 }
 
-function stripMatchingInitialTitle(title: string, content: string): string {
+function stripInitialRootHeading(content: string): string {
   const trimmed = content.trim();
-  const match = /^#\s+(.+?)(?:\n|$)/.exec(trimmed);
-  if (!match || normalized(match[1]) !== normalized(title)) {
+  const match = /^#\s+.+?(?:\n|$)/.exec(trimmed);
+  if (!match) {
     return trimmed;
   }
   return trimmed.slice(match[0].length).trim();
@@ -106,7 +106,7 @@ function contentTree(title: string, content: string | StyledRemTreeNode, rules: 
   if (typeof content !== 'string') {
     return normalizeStyledRoot(title, content);
   }
-  const body = stripMatchingInitialTitle(title, content);
+  const body = stripInitialRootHeading(content);
   if (!body) {
     return {
       clientNodeId: 'design-root',
@@ -202,6 +202,18 @@ function applyFullTextStyle(node: StyledRemTreeNode, style: RichTextSpanStyle): 
   return applied;
 }
 
+function applyMathStyle(node: StyledRemTreeNode, style: RichTextSpanStyle): boolean {
+  const spans = asTextSpans(node);
+  let applied = false;
+  node.richText = spans.map((span) => {
+    const type = span.type ?? (span.latex ? 'inlineMath' : 'text');
+    if (type !== 'inlineMath' && type !== 'mathBlock') return span;
+    applied = true;
+    return { ...span, styles: mergeTextStyle(span.styles, style) };
+  });
+  return applied;
+}
+
 function applyPrefixStyle(
   node: StyledRemTreeNode,
   prefixLength: number,
@@ -247,6 +259,9 @@ function mergeRemTreatment(node: StyledRemTreeNode, treatment: NoteDesignRoleTre
   if (treatment.fullTextStyle) {
     applied = applyFullTextStyle(node, treatment.fullTextStyle) || applied;
   }
+  if (treatment.mathStyle) {
+    applied = applyMathStyle(node, treatment.mathStyle) || applied;
+  }
   return applied;
 }
 
@@ -276,18 +291,18 @@ function rolesForNode(
   const lower = normalized(text);
   const roles: DesignRole[] = [];
   const ancestorTexts = ancestors.map((ancestor) => normalized(nodeText(ancestor)));
-  const insideAnswer = ancestorTexts.some((value) => /^answer$/.test(value));
+  const insideAnswer = ancestorTexts.some((value) => /^answer(?:\s+treatment)?$/.test(value));
   if (depth === 0) roles.push('root');
   if (depth === 1 && !isSpacer(node)) roles.push('section');
   if (/^key\s+idea\s*:/i.test(text)) roles.push('keyIdea');
-  if (/^warning\s*:/i.test(text)) roles.push('warning');
+  if (/^warning(?:\s+treatment)?(?:\s*:|$)/i.test(text)) roles.push('warning');
   if (formulaLike(node) && !insideAnswer) roles.push('formula');
 
   const insideWorkedExample = ancestorTexts.some((value) => /worked\s+example/.test(value));
   if (insideWorkedExample && /^(problem|given|formula|substitution|answer)$/.test(lower)) {
     roles.push('workedExample');
   }
-  if (insideAnswer || /^answer\s*:/.test(lower)) roles.push('answer');
+  if (insideAnswer || /^answer(?:\s+treatment)?(?:\s*:|$)/.test(lower)) roles.push('answer');
   if (lower === 'summary') roles.push('summary');
 
   const reviewIndex = ancestorTexts.findIndex((value) => /review\s+cards?|flashcards?/.test(value));

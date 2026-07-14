@@ -341,6 +341,10 @@ export function applyRawColorFieldsToTextItem(
   if (styles.cloze) {
     next.cId = `bridge-cloze-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
+  if (styles.bold) next.b = true;
+  if (styles.italic) next.l = true;
+  if (styles.underline) next.u = true;
+  if (styles.quote) next.q = true;
 
   return next as RichTextInterface[number];
 }
@@ -486,7 +490,13 @@ export async function buildRichTextFromSpans(
         throw new RemnoteWriteError('INVALID_ARGS', 'Math span requires latex.');
       }
 
-      output.push({ i: 'x', text: latex, block: type === 'mathBlock' } as RichTextInterface[number]);
+      if (span.styles?.cloze) {
+        throw new RemnoteWriteError('SDK_UNSUPPORTED', 'Cloze metadata cannot be applied safely to a math node.');
+      }
+      output.push(applyRawColorFieldsToTextItem(
+        { i: 'x', text: latex, block: type === 'mathBlock' } as RichTextInterface[number],
+        span.styles
+      ));
       appended = true;
       continue;
     }
@@ -500,7 +510,10 @@ export async function buildRichTextFromSpans(
       const parsedType = parsedSpan.type ?? 'text';
       if (parsedType === 'mathBlock' || parsedType === 'inlineMath') {
         const latex = parsedSpan.latex ?? parsedSpan.text ?? '';
-        output.push({ i: 'x', text: latex, block: parsedType === 'mathBlock' } as RichTextInterface[number]);
+        output.push(applyRawColorFieldsToTextItem(
+          { i: 'x', text: latex, block: parsedType === 'mathBlock' } as RichTextInterface[number],
+          parsedSpan.styles
+        ));
       } else {
         const built = await runSdkOperation('richText.text.value', () =>
           plugin.richText.text(parsedSpan.text ?? '', getTextFormats(parsedSpan.styles)).value()
@@ -581,12 +594,24 @@ export function rangeInputFromArgs(
 export async function setTextColorInRange(
   plugin: RNPlugin,
   rem: Rem,
-  range: { start: number; end: number; resolvedPlainText: string },
+  range: { start: number; end: number; sdkStart?: number; sdkEnd?: number; resolvedPlainText: string },
   color: string,
   status: FormatRemResult['status']
 ): Promise<FormatRemResult> {
   try {
-    const formatted = await applyTextColorToRange(plugin, getRemRichText(rem), range.start, range.end, color);
+    const resolved = range.sdkStart === undefined || range.sdkEnd === undefined
+      ? await resolveRangeFromPlainText(plugin, getRemRichText(rem), range.start, range.end)
+      : range;
+    if (resolved.sdkStart === undefined || resolved.sdkEnd === undefined) {
+      throw new RemnoteWriteError('INVALID_ARGS', 'Unable to map the plain-text range to rich-text offsets.');
+    }
+    const formatted = await applyTextColorToRange(
+      plugin,
+      getRemRichText(rem),
+      resolved.sdkStart,
+      resolved.sdkEnd,
+      color
+    );
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
     return {
       remId: rem._id,
@@ -610,11 +635,23 @@ export async function setTextColorInRange(
 export async function setTextHighlightInRange(
   plugin: RNPlugin,
   rem: Rem,
-  range: { start: number; end: number; resolvedPlainText: string },
+  range: { start: number; end: number; sdkStart?: number; sdkEnd?: number; resolvedPlainText: string },
   color: string
 ): Promise<FormatRemResult> {
   try {
-    const formatted = await applyTextHighlightToRange(plugin, getRemRichText(rem), range.start, range.end, color);
+    const resolved = range.sdkStart === undefined || range.sdkEnd === undefined
+      ? await resolveRangeFromPlainText(plugin, getRemRichText(rem), range.start, range.end)
+      : range;
+    if (resolved.sdkStart === undefined || resolved.sdkEnd === undefined) {
+      throw new RemnoteWriteError('INVALID_ARGS', 'Unable to map the plain-text range to rich-text offsets.');
+    }
+    const formatted = await applyTextHighlightToRange(
+      plugin,
+      getRemRichText(rem),
+      resolved.sdkStart,
+      resolved.sdkEnd,
+      color
+    );
     await runSdkOperation('rem.setText', () => rem.setText(formatted.richText));
     return {
       remId: rem._id,

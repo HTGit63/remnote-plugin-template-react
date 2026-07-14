@@ -9,7 +9,7 @@ import {
   FLASHCARD_RESULT_CACHE,
   MARKDOWN_IMPORT_RESULT_CACHE,
 } from '../src/remnote/write/writeCaches';
-import { createBasicFlashcard } from '../src/remnote/write/cardWrites';
+import { createBasicFlashcard, createMultipleChoiceCard } from '../src/remnote/write/cardWrites';
 import { FakePlugin } from './helpers/fakeRemnote';
 
 beforeEach(() => {
@@ -177,6 +177,30 @@ describe('verifyCardSet', () => {
     expect(result.ok).toBe(false);
     expect(result.missingCards).toEqual([expectedCard]);
     expect(result.repairPlan).toEqual(['Create missing basic card: Missing front']);
+  });
+
+  test('matches an expected MCQ answer against the functional Answer item, not the serialized choice block', async () => {
+    const fake = new FakePlugin();
+    const root = fake.addRem('mcq-verifier-root', 'MCQ verifier root');
+    await createMultipleChoiceCard(fake.asPlugin(), {
+      parentId: root._id,
+      question: 'SI unit of force?',
+      choices: ['Newton', 'Joule', 'Watt', 'Pascal'],
+      correctChoice: 'Newton',
+      direction: 'forward',
+      idempotencyKey: 'mcq-verifier-card',
+    });
+
+    const result = await verifyCardSet(fake.asPlugin(), {
+      rootRemId: root._id,
+      expectedCards: [{ front: 'SI unit of force?', back: 'Newton', cardType: 'multiple_choice' }],
+      maxDepth: 2,
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.missingCards).toBeUndefined();
+    expect(result.repairPlan).toBeUndefined();
   });
 
   test('cards-after-note workflow keeps stable card count on retry', async () => {

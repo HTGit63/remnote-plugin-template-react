@@ -114,6 +114,14 @@ describe('write idempotency and duplicate protection', () => {
     });
 
     expect(result.verification?.passed).toBe(true);
+    expect(result.verification).toMatchObject({
+      verificationScope: 'semantic_content_math_and_order',
+      requestedHeadingCount: 3,
+      nativeHeadingCount: 0,
+    });
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/native heading properties are not written/i),
+    ]));
     expect(fake.fontSizeCalls).toEqual([]);
     const visibleText = (await plainTreeAsync(fake, result.rootRemId as string)).map((line) => line.trim());
     expect(visibleText).toEqual(expect.arrayContaining(['Tiny Markdown Write Test', 'Section A', 'Section B']));
