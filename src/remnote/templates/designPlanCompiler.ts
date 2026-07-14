@@ -292,6 +292,7 @@ function rolesForNode(
   const roles: DesignRole[] = [];
   const ancestorTexts = ancestors.map((ancestor) => normalized(nodeText(ancestor)));
   const insideAnswer = ancestorTexts.some((value) => /^answer(?:\s+treatment)?$/.test(value));
+  const insideSummary = ancestorTexts.some((value) => /^(?:\d+(?:\.\d+)*[.)]?\s+)?summary$/.test(value));
   if (depth === 0) roles.push('root');
   if (depth === 1 && !isSpacer(node)) roles.push('section');
   if (/^key\s+idea\s*:/i.test(text)) roles.push('keyIdea');
@@ -302,8 +303,8 @@ function rolesForNode(
   if (insideWorkedExample && /^(problem|given|formula|substitution|answer)$/.test(lower)) {
     roles.push('workedExample');
   }
-  if (insideAnswer || /^answer(?:\s+treatment)?(?:\s*:|$)/.test(lower)) roles.push('answer');
-  if (lower === 'summary') roles.push('summary');
+  if (insideAnswer || /^answer(?:\s+treatment)?\s*:/.test(lower)) roles.push('answer');
+  if (insideSummary) roles.push('summary');
 
   const reviewIndex = ancestorTexts.findIndex((value) => /review\s+cards?|flashcards?/.test(value));
   if (reviewIndex >= 0) {

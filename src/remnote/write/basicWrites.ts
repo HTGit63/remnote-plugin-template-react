@@ -460,7 +460,7 @@ export async function moveRem(plugin: RNPlugin, args: MoveRemArgs): Promise<Move
   const beforeAncestorIds = new Set(beforeTarget.breadcrumbs.map((item) => item.id));
 
   if (args.expectedParentId && rem.parent !== args.expectedParentId) {
-    throw new RemnoteWriteError('INVALID_ARGS', 'expectedParentId did not match current parent.', {
+    throw new RemnoteWriteError('STALE_STATE_CONFLICT', 'expectedParentId did not match current parent.', {
       remId: rem._id,
       expectedParentId: args.expectedParentId,
       actualParentId: rem.parent ?? null,

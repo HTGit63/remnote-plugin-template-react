@@ -8,7 +8,10 @@ import {
   UPDATE_RICH_RESULT_CACHE,
 } from '../src/remnote/write/writeCaches';
 import { createRemFromMarkdown } from '../src/remnote/write/basicWrites';
-import { createOrReplaceNoteFromMarkdown } from '../src/remnote/write/markdownImportExecutor';
+import {
+  appendMarkdownAsRemTree,
+  createOrReplaceNoteFromMarkdown,
+} from '../src/remnote/write/markdownImportExecutor';
 import {
   createBasicFlashcard,
   createClozeCard,
@@ -149,6 +152,36 @@ describe('write idempotency and duplicate protection', () => {
     );
     expect(result.rootRemId).toBe(section._id);
     expect(childTexts).toEqual(['First sibling', 'Second sibling']);
+  });
+
+  test('structured Markdown append places same-level headings as direct siblings', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('structured-append-target', 'Advanced');
+
+    const result = await appendMarkdownAsRemTree(fake.asPlugin(), {
+      targetRemId: target._id,
+      markdownText: [
+        '### 4.1 First extension',
+        '',
+        'First body.',
+        '',
+        '### 4.2 Second extension',
+        '',
+        'Second body.',
+      ].join('\n'),
+      remnoteLayout: { preserveBlankLines: false },
+      safetyOptions: {
+        verifyAfterWrite: true,
+        rollbackOnFailure: true,
+        idempotencyKey: 'idem:structured-append-sibling-headings',
+      },
+    });
+
+    const childTexts = await Promise.all(
+      target.children.map((childId) => fake.richText.toString(fake.rems.get(childId)?.text ?? []))
+    );
+    expect(result.status).toBe('appended');
+    expect(childTexts).toEqual(['4.1 First extension', '4.2 Second extension']);
   });
 
   test('markdown readback rejects formulas flattened into plain text', async () => {

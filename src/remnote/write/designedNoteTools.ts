@@ -734,7 +734,7 @@ export async function repairNoteDesign(
   if (dryRun) {
     return {
       status: 'dry_run',
-      ok: verificationBefore.ok,
+      ok: true,
       dryRun,
       approved: Boolean(args.approved),
       rootRemId: args.rootRemId,

@@ -221,7 +221,14 @@ function normalizeOptions(options: MarkdownImportParseOptions = {}): MarkdownImp
     remnoteLayout: {
       ...DEFAULT_LAYOUT,
       ...presetOptions.remnoteLayout,
+      insertSpacerBetweenSections:
+        presetOptions.remnoteLayout?.insertSpacerBetweenSections ??
+        (presetOptions.remnoteLayout?.preserveBlankLines === false
+          ? false
+          : DEFAULT_LAYOUT.insertSpacerBetweenSections),
       spacerText: presetOptions.remnoteLayout?.spacerText ?? DEFAULT_LAYOUT.spacerText,
+      preserveBlankLines:
+        presetOptions.remnoteLayout?.preserveBlankLines ?? DEFAULT_LAYOUT.preserveBlankLines,
       paragraphMode: presetOptions.remnoteLayout?.paragraphMode ?? DEFAULT_LAYOUT.paragraphMode,
       bulletMode: presetOptions.remnoteLayout?.bulletMode ?? DEFAULT_LAYOUT.bulletMode,
     },
@@ -1271,22 +1278,21 @@ export function parseMarkdownImportPlan(
           firstChunk,
           normalizedOptions.flashcardOptions
         );
-        const node = pushChild(
-          bulletStack[bulletStack.length - 1].node,
-          flashcard ??
-            inlineMarkdownNode(
-              `bullet-${bulletCount += 1}`,
-              firstChunk,
-              {
-                children: chunks.slice(1).map((chunk, chunkIndex) =>
-                  inlineMarkdownNode(
-                    `bullet-${bulletCount}-chunk-${chunkIndex + 2}`,
-                    chunk
-                  )
-                ),
-              }
-            )
-        );
+        const bulletNode = flashcard ??
+          inlineMarkdownNode(
+            `bullet-${bulletCount += 1}`,
+            firstChunk,
+            {
+              children: chunks.slice(1).map((chunk, chunkIndex) =>
+                inlineMarkdownNode(
+                  `bullet-${bulletCount}-chunk-${chunkIndex + 2}`,
+                  chunk
+                )
+              ),
+            }
+          );
+        bulletNode.style = { ...(bulletNode.style ?? {}), hideBullet: false };
+        const node = pushChild(bulletStack[bulletStack.length - 1].node, bulletNode);
         if (flashcard) {
           bulletCount += 1;
         }

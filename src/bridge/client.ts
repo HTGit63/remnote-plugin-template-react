@@ -166,48 +166,78 @@ export class BrowserBridgeClient {
     }
 
     this.updateStatus(state, reason, lastError);
+    if (this.reconnectTimer) {
+      return;
+    }
     const delay = this.reconnectDelayMs;
     this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, MAX_RECONNECT_MS);
-    this.reconnectTimer = setTimeout(() => this.openSocket(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.openSocket();
+    }, delay);
   }
 
   private openSocket() {
     if (this.stopped) {
       return;
     }
+    if (
+      this.ws &&
+      (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.OPEN)
+    ) {
+      return;
+    }
 
     this.updateStatus('connecting', 'Connecting to local companion server.');
 
+    let socket: WebSocket;
     try {
-      this.ws = new WebSocket(this.options.serverUrl);
+      socket = new WebSocket(this.options.serverUrl);
+      this.ws = socket;
     } catch (error: unknown) {
+      this.ws = undefined;
       const message = error instanceof Error ? error.message : String(error);
       this.updateStatus('error', 'Failed to create WebSocket.', message);
       this.scheduleReconnect('Retrying after WebSocket creation failure.', message, 'server_unreachable');
       return;
     }
 
-    this.ws.addEventListener('open', () => {
-      this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+    socket.addEventListener('open', () => {
+      if (this.stopped || this.ws !== socket) {
+        socket.close();
+        return;
+      }
       this.updateStatus('connecting', 'WebSocket opened. Registering RemNote plugin...');
       this.sendHello().catch((error: unknown) => {
+        if (this.stopped || this.ws !== socket) {
+          return;
+        }
         const message = error instanceof Error ? error.message : String(error);
         this.updateStatus('error', 'Failed to prepare RemNote plugin registration.', message);
-        this.scheduleReconnect('Retrying after RemNote plugin registration failure.', message);
+        socket.close(1011, 'RemNote plugin registration failed.');
       });
     });
 
-    this.ws.addEventListener('message', (event) => {
+    socket.addEventListener('message', (event) => {
+      if (this.ws !== socket) {
+        return;
+      }
       this.handleMessage(event.data).catch((error: unknown) => {
         console.error('Bridge client message handling failed:', error);
       });
     });
 
-    this.ws.addEventListener('error', () => {
+    socket.addEventListener('error', () => {
+      if (this.ws !== socket) {
+        return;
+      }
       this.updateStatus('error', 'WebSocket error. Check server and token.');
     });
 
-    this.ws.addEventListener('close', (event) => {
+    socket.addEventListener('close', (event) => {
+      if (this.ws !== socket) {
+        return;
+      }
       this.ws = undefined;
       if (this.stopped) {
         return;
@@ -315,6 +345,11 @@ export class BrowserBridgeClient {
     }
 
     if (this.isServerHello(parsed)) {
+      this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = undefined;
+      }
       this.serverInfo = {
         toolProfile: parsed.toolProfile,
         toolTier: parsed.toolTier,

@@ -29,7 +29,7 @@ export function markdownTreeFastPathEnabled(): boolean {
 }
 
 export function nativeRemHighlightEnabled(): boolean {
-  return boolFromRuntimeEnv('REMNOTE_BRIDGE_ENABLE_NATIVE_REM_HIGHLIGHT') ?? false;
+  return boolFromRuntimeEnv('REMNOTE_BRIDGE_ENABLE_NATIVE_REM_HIGHLIGHT') ?? true;
 }
 
 export function existingRemHeadingStyleEnabled(): boolean {

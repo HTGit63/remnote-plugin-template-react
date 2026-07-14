@@ -812,30 +812,23 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
     }];
   }
 
-  const preSectionText = lines
-    .slice(0, starts[0].index)
+  const preSectionLines = lines.slice(0, starts[0].index);
+  const preSectionBodyLines = preSectionLines
     .filter((line) => {
       const level = markdownHeadingLevel(line);
       return level === null || level > 1;
-    })
-    .join('\n')
-    .replace(/^\n+/, '')
-    .trimEnd();
-  const introSection = preSectionText.trim()
-    ? [{
-        title: 'Chapter introduction',
-        text: preSectionText,
-        bodyText: preSectionText,
-        sectionKey: 'chapter-introduction',
-      }]
-    : [];
+    });
 
-  return [
-    ...introSection,
-    ...starts.map((start, startIndex) => {
+  return starts.map((start, startIndex) => {
     const end = starts[startIndex + 1]?.index ?? lines.length;
-    const text = lines.slice(start.index, end).join('\n').trimEnd();
-    const bodyText = lines.slice(start.index + 1, end).join('\n').replace(/^\n+/, '').trimEnd();
+    const text = lines
+      .slice(startIndex === 0 ? 0 : start.index, end)
+      .join('\n')
+      .trimEnd();
+    const bodyLines = startIndex === 0
+      ? [...preSectionBodyLines, ...lines.slice(start.index + 1, end)]
+      : lines.slice(start.index + 1, end);
+    const bodyText = bodyLines.join('\n').replace(/^\n+/, '').trimEnd();
     const title = normalizeHeadingText(start.line);
     return {
       title,
@@ -843,8 +836,7 @@ function splitSections(chapterText: string): Array<{ title: string; text: string
       bodyText,
       sectionKey: slugKey(title, `section-${startIndex + 1}`),
     };
-  }),
-  ];
+  });
 }
 
 function estimatedRemCount(text: string): number {

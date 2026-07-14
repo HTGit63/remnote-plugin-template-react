@@ -155,22 +155,23 @@ describe('Phase 5 rich repair invariants', () => {
     expect(target.children).toEqual([child._id]);
   });
 
-  test('whole-Rem highlight refuses math-node fallback before mutation', async () => {
+  test('whole-Rem highlight uses native SDK for math and preserves the rich node', async () => {
     const fake = new FakePlugin();
     const target = fake.addRem('math-highlight-target', 'placeholder');
     target.text = [{ i: 'x', text: 'E=mc^2', block: true }] as never;
     const before = JSON.stringify(target.text);
 
-    await expect(setRemHighlightColor(fake.asPlugin(), {
+    const result = await setRemHighlightColor(fake.asPlugin(), {
       remId: target._id,
       color: 'yellow',
-    })).rejects.toMatchObject({
-      code: 'SDK_UNSUPPORTED',
-      details: expect.objectContaining({
-        remId: target._id,
-        fallback: expect.stringMatching(/adjacent text|native/i),
-      }),
     });
+
+    expect(result).toMatchObject({
+      ok: true,
+      remId: target._id,
+      status: 'highlight_set',
+    });
+    expect(await target.getHighlightColor()).toBe('Yellow');
     expect(JSON.stringify(target.text)).toBe(before);
   });
 

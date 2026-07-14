@@ -14,6 +14,7 @@ export class FakeRem {
   private cardItem = false;
   private listItem = true;
   private remType: unknown = 'normal';
+  private highlightColor = 'default';
 
   constructor(
     private readonly plugin: FakePlugin,
@@ -89,9 +90,11 @@ export class FakeRem {
   async getFontSize() {
     return this.fontSize;
   }
-  async setHighlightColor() {}
+  async setHighlightColor(color: string) {
+    this.highlightColor = color;
+  }
   async getHighlightColor() {
-    return 'default';
+    return this.highlightColor;
   }
   async setIsListItem(listItem: boolean) {
     this.listItem = listItem;

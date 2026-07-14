@@ -3,12 +3,21 @@ import {
   defaultNoteDesignRules,
   importNoteDesignTemplate,
   previewNoteDesignPlan,
+  saveNoteDesignTemplate,
 } from '../src/remnote/templates/designTemplates';
 import {
   repairNoteDesign,
   updateNoteWithDesign,
 } from '../src/remnote/write/designedNoteTools';
 import { FakePlugin } from './helpers/fakeRemnote';
+
+function installLocalStorage(fake: FakePlugin) {
+  const values = new Map<string, unknown>();
+  (fake as unknown as { storage: unknown }).storage = {
+    getLocal: async <T>(key: string) => values.get(key) as T | undefined,
+    setLocal: async (key: string, value: unknown) => values.set(key, structuredClone(value)),
+  };
+}
 
 describe('design template preview defaults', () => {
   test('previews with the clean academic preset when no template is supplied', async () => {
@@ -151,5 +160,31 @@ describe('design template preview defaults', () => {
       method: 'operation_result_readback',
       warnings: [],
     });
+  });
+
+  test('dry-run repair succeeds as a plan while preserving failing before-state evidence', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const target = fake.addRem('repair-dry-run-target', 'Target');
+    const rules = defaultNoteDesignRules();
+    rules.headingPattern.rootHeadingLevel = 'H1';
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'repair-dry-run-template',
+      name: 'Repair dry-run template',
+      rules,
+    });
+
+    const result = await repairNoteDesign(fake.asPlugin(), {
+      rootRemId: target._id,
+      templateId: saved.template.templateId,
+      operations: [{ remId: target._id, type: 'heading', headingLevel: 'H1' }],
+      dryRun: true,
+      idempotencyKey: 'idem:repair-dry-run-envelope',
+    });
+
+    expect(result.status).toBe('dry_run');
+    expect(result.ok).toBe(true);
+    expect(result.verificationBefore.ok).toBe(false);
+    expect(target.fontSize).toBeUndefined();
   });
 });

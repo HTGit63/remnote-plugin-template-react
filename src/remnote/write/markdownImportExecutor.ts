@@ -489,7 +489,7 @@ export async function appendMarkdownAsRemTree(
   return createOrReplaceNoteFromMarkdown(plugin, {
     ...args,
     targetRemId: args.targetRemId,
-    mode: 'append_to_target',
+    mode: 'append_children_to_target',
     duplicatePolicy: 'create_new',
     safetyOptions: {
       dryRun: args.safetyOptions?.dryRun ?? false,
@@ -929,7 +929,7 @@ export async function createOrReplaceNoteFromMarkdown(
     }
 
     const status: CreateOrReplaceNoteFromMarkdownResult['status'] =
-      normalized.mode === 'append_to_target'
+      normalized.mode === 'append_to_target' || normalized.mode === 'append_children_to_target'
         ? 'appended'
         : normalized.mode === 'create_child'
           ? 'created'

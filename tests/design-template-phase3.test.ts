@@ -94,6 +94,76 @@ const DESIGNED_MARKDOWN = `# Designed Lesson
   - Forward and reverse rates are equal.`;
 
 describe('Phase 3 design-template identity and compiler', () => {
+  test('applies answer emphasis to the result, not the worked-example Answer label', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const parent = fake.addRem('answer-role-parent', 'Answer role parent');
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'answer-result-only-template',
+      name: 'Answer result only template',
+      rules: roleRules(),
+    });
+
+    await createDesignedNoteTree(fake.asPlugin(), {
+      parentId: parent._id,
+      title: 'Answer role target',
+      content: '## Worked Example\n\n### Answer\n\n- Kc≈2.96',
+      templateId: saved.template.templateId,
+      writingMode: 'markdown',
+      verifyAfterWrite: true,
+      idempotencyKey: 'answer-result-only-create',
+    });
+
+    const label = await findByText(fake, 'Answer');
+    const result = await findByText(fake, 'Kc≈2.96');
+    expect(label.text).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'Answer', tc: 6 }),
+    ]));
+    expect(label.text).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ h: 4 }),
+    ]));
+    expect(result.text).toEqual(expect.arrayContaining([
+      expect.objectContaining({ h: 4 }),
+    ]));
+  });
+
+  test('learns and reapplies visible-bullet treatment to numbered summary points', async () => {
+    const fake = new FakePlugin();
+    const source = fake.addRem('summary-source-root', 'Summary source');
+    const summary = fake.addRem('summary-source-heading', '6. Summary');
+    const point = fake.addRem('summary-source-point', 'First source point');
+    await summary.setParent(source);
+    await point.setParent(summary);
+
+    const analyzed = await analyzeNoteDesign(fake.asPlugin(), { rootRemId: source._id });
+    expect(analyzed.rules.roleRules?.summary?.remStyle?.hideBullet).toBe(false);
+
+    installLocalStorage(fake);
+    const parent = fake.addRem('summary-target-parent', 'Summary target parent');
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'summary-visible-bullet-template',
+      name: 'Summary visible bullet template',
+      rules: analyzed.rules,
+    });
+    const created = await createDesignedNoteTree(fake.asPlugin(), {
+      parentId: parent._id,
+      title: 'Summary target',
+      content: '## 6. Summary\n\n- First target point\n- Second target point',
+      templateId: saved.template.templateId,
+      writingMode: 'markdown',
+      verifyAfterWrite: true,
+      idempotencyKey: 'summary-visible-bullet-create',
+    });
+
+    const first = await findByText(fake, 'First target point');
+    const second = await findByText(fake, 'Second target point');
+    expect(await first.isListItem()).toBe(true);
+    expect(await second.isListItem()).toBe(true);
+    expect(created.materializationEvidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'role.summary', status: 'verified', targetRemIds: [first._id, second._id] }),
+    ]));
+  });
+
   test('analyzes only the explicit source and rejects ambiguous or missing identity', async () => {
     const fake = new FakePlugin();
     const focused = fake.addRem('focused-wrong', 'Focused wrong source');

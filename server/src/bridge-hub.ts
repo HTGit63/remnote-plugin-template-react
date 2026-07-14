@@ -71,6 +71,7 @@ export class BridgeHub {
   private pending = new Map<string, PendingRequest>();
   private heartbeatTimer: NodeJS.Timeout | undefined;
   private pluginSocketAlive = false;
+  private pluginSocketLastPongAtMs = 0;
   private lastConnectedAt: string | undefined;
   private lastDisconnectedAt: string | undefined;
   private readonly startedAt = new Date().toISOString();
@@ -980,6 +981,7 @@ export class BridgeHub {
     socket.on('pong', () => {
       if (socket === this.pluginSocket) {
         this.pluginSocketAlive = true;
+        this.pluginSocketLastPongAtMs = Date.now();
       }
     });
     socket.on('close', () => this.handlePluginClose(socket));
@@ -1301,18 +1303,22 @@ export class BridgeHub {
 
   private startHeartbeat() {
     this.stopHeartbeat();
+    if (this.config.deploymentMode !== 'hosted' && this.pluginSocket?.readyState === WebSocket.OPEN) {
+      this.pluginSocketLastPongAtMs = Date.now();
+    }
     this.heartbeatTimer = setInterval(() => {
+      const heartbeatTimeoutMs = Math.max(1, this.config.pluginHeartbeatTimeoutSeconds) * 1000;
       if (this.config.deploymentMode === 'hosted') {
         for (const connection of this.sessionRouter.getActiveConnectionInfos()) {
           const liveConnection = this.sessionRouter.getConnectionForUser(connection.userId);
           if (!liveConnection) {
             continue;
           }
-          if (!liveConnection.alive) {
+          const lastPongAtMs = Date.parse(liveConnection.lastPongAt);
+          if (!Number.isFinite(lastPongAtMs) || Date.now() - lastPongAtMs >= heartbeatTimeoutMs) {
             liveConnection.close(1011, 'Stale connection heartbeat missed.');
             continue;
           }
-          liveConnection.alive = false;
           liveConnection.ping();
         }
         return;
@@ -1323,12 +1329,14 @@ export class BridgeHub {
         return;
       }
 
-      if (!this.pluginSocketAlive) {
+      if (
+        this.pluginSocketLastPongAtMs <= 0 ||
+        Date.now() - this.pluginSocketLastPongAtMs >= heartbeatTimeoutMs
+      ) {
         socket.terminate();
         return;
       }
 
-      this.pluginSocketAlive = false;
       try {
         socket.ping();
       } catch {
@@ -1343,6 +1351,7 @@ export class BridgeHub {
       this.heartbeatTimer = undefined;
     }
     this.pluginSocketAlive = false;
+    this.pluginSocketLastPongAtMs = 0;
   }
 
 

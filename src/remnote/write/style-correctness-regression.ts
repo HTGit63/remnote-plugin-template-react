@@ -391,7 +391,7 @@ async function main() {
   });
   await runTwoChildStyleCase(fake, plugin, 'set_rem_highlight_color', async (root) => {
     const result = await setRemHighlightColor(plugin, { remId: root._id, color: 'Blue' });
-    assert(root.text.some((item) => typeof item === 'object' && item !== null && (item as Record<string, unknown>)[RICH_TEXT_HIGHLIGHT_FIELD] === 6), 'Whole-text rich highlight missing.');
+    assert((await root.getHighlightColor()) !== 'default', 'Native whole-Rem highlight missing.');
     return result;
   });
   await runTwoChildStyleCase(fake, plugin, 'set_text_span_color', async (root) => {

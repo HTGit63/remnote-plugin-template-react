@@ -278,7 +278,7 @@ function recordTreatment(
 ): NoteDesignRoleTreatment | undefined {
   const remStyle: NonNullable<NoteDesignRoleTreatment['remStyle']> = {};
   if (record.headingLevel !== 'normal') remStyle.headingLevel = record.headingLevel;
-  if (record.hideBullet) remStyle.hideBullet = true;
+  remStyle.hideBullet = record.hideBullet;
   if (record.remType !== 'normal') remStyle.remType = record.remType;
   const style = textStyleMode === 'full'
     ? fullTextStyle(record)
@@ -323,6 +323,10 @@ function buildRoleRules(records: DesignRecord[]): NoteDesignRoleRules | undefine
     const parent = record.parentId ? byId.get(record.parentId) : undefined;
     return /^answer(?:\s+treatment)?$/i.test(parent?.plainText.trim() ?? '');
   }) ?? first((record) => /^answer(?:\s+treatment)?(?:\s*:|$)/i.test(record.plainText.trim()));
+  const summaryRecord = first((record) => {
+    const parent = record.parentId ? byId.get(record.parentId) : undefined;
+    return /^(?:\d+(?:\.\d+)*[.)]?\s+)?summary$/i.test(parent?.plainText.trim() ?? '');
+  });
   const warningRecord = first((record) => /^warning\s+treatment$/i.test(record.plainText.trim()))
     ?? first((record) => /^warning\s*:/i.test(record.plainText.trim()));
   const formula = first(formulaRecord);
@@ -341,7 +345,7 @@ function buildRoleRules(records: DesignRecord[]): NoteDesignRoleRules | undefine
     warning: warningRecord
       ? recordTreatment(warningRecord, /^warning\s+treatment$/i.test(warningRecord.plainText.trim()) ? 'full' : 'prefix')
       : undefined,
-    summary: treatment((record) => /^summary$/i.test(record.plainText.trim())),
+    summary: summaryRecord ? recordTreatment(summaryRecord) : undefined,
     concept: treatment((record) => record.remType === 'concept', 'none'),
     descriptor: treatment((record) => record.remType === 'descriptor', 'none'),
   };

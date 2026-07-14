@@ -12,31 +12,31 @@ This repository provides a TypeScript RemNote plugin, an MCP server, ChatGPT/Cod
 
 - Audited branch: `fix/remnote-mcp-mass-note-creation-stability`.
 - Report-era audited commit: `ff5e6d1ebf12dfc41c0e037cff99bfe690def240` (`graphify update and 18 stage task complete`).
-- 2026-07-14 live-campaign deployed commit: `466b808bc82175f2671ef9a15e929706394d86fb` on the same branch. The post-campaign fixes described below are a local candidate and have **not** been deployed or live-retested.
-- Benchmark reports reviewed: **23 Markdown files**, covering Tests **01–15**.
+- Latest 2026-07-14 live-campaign deployed commit: `81eef931bf598fcb46d89c8a44f1f4d4a7034320` on the same branch. The post-campaign fixes described below are a local candidate and have **not** been deployed or live-retested.
+- Historical benchmark reports reviewed: **23 Markdown files**, covering Tests **01–15**. The report directory now also contains the new cross-test campaign report `remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
 - Report dates: 2026-07-12 and 2026-07-13.
-- Live connection on 2026-07-14: hosted endpoint connected; initial sync complete; one active plugin session; SDK `0.0.46`; focused Rem `Plugin Test` (`OjLcSppWfIH0cpPoh`). The campaign was self-scoped to `New test` (`SMPeZUPMV64bHl7JI`) and created one run root, `Live Verification 2026-07-14 — deployed 466b808` (`rz7TrAxJTSk66CQJQ`). `Old test` (`8RmenkVwDXr88CQYy`) was read only and retained its 17 original children.
-- Live proof boundary: all 2026-07-14 RemNote evidence applies to deployed `466b808`, not to the local post-campaign edits. Per deployment constraints, no edited code was live-retested in the same campaign. A push/deploy and targeted rerun are required before release.
-- Runtime diagnostics reported 73 public tools and one connected session; the installed app exposed 70 callable tool descriptors. `reconcile_note_import_job_chunk` and the `get_children.startIndex` descriptor were absent from that connector catalog even though both exist in current source. Treat this as deployment/connector-catalog drift until refreshed after deployment.
+- Latest live connection on 2026-07-14: hosted endpoint connected; initial sync complete; one active plugin session; SDK `0.0.46`; focused Rem `Plugin Test` (`OjLcSppWfIH0cpPoh`). The campaign was self-scoped to `New test` (`SMPeZUPMV64bHl7JI`) and created one run root, `Post-Deploy Benchmark 01–15 — 2026-07-14 — 81eef93` (`3QR2MpAEihc3YMXkJ`). `Old test` (`8RmenkVwDXr88CQYy`) was not mutated.
+- Live proof boundary: the latest Tests 01–15 evidence applies to deployed `81eef93`, not to the local post-campaign edits. Per deployment constraints, no edited code was live-retested in the same campaign. A push/deploy and targeted rerun are required before release.
+- The connection remained healthy for approximately 55 minutes with no reported reconnect attempt, late response, or pending-request leak. This is an in-run stability observation, not weak-network recovery proof. The installed connector still rejected `get_children.startIndex`; treat that as deployment/connector-catalog drift until refreshed after deployment.
 - Live access was `developer` with workspace/full-KB reach, broader than the default `mass_note_writer` profile. Every write used explicit IDs below `New test`; no scope violation, unauthorized write, blind retry, persistent duplicate, or late disconnect occurred during the campaign.
 
 ### Benchmark outcome
 
-The benchmark is not a blanket failure. Simple creation, structured notes, safe extension, guarded factual correction, hierarchy surgery, core math creation, and multi-family card creation are strong. The 2026-07-14 campaign proved the remediated resumable state machine twice: IDs persisted, reverification was read-only, resume selected the first pending chunk, and completed jobs did not replay. The remaining deployed blockers are reusable design-role transfer, verifier false negatives, rich text/math style round-tripping, and undeclared Markdown presentation loss. Local fixes and regressions now exist for those findings, but they require a new deployment before they can close live gates.
+The benchmark is not a blanket failure. Simple creation, structured notes, guarded factual correction, hierarchy surgery, core math creation, and multi-family card creation are strong. The latest campaign found locally reproducible defects in reconnect timing, Test 14 logical planning, blank-line/spacer handling, structured append, stale-parent classification, answer/summary design roles, dry-run envelopes, and native whole-Rem highlight enablement. Those code paths now have red/green regressions, but the deployed `81eef93` Test 14 run stopped safely before job creation and therefore did not re-prove persistent execution/resume behavior at that commit. Formula glyph font color and native heading mutation remain SDK limitations.
 
 ### 2026-07-14 deployed live-campaign supplement
 
-This campaign supplements the 23 report files; it does not rewrite their historical verdicts. Tests used disposable descendants of `rz7TrAxJTSk66CQJQ` only.
+This campaign supplements the 23 historical report files; it does not rewrite their historical verdicts. Tests used disposable descendants of `3QR2MpAEihc3YMXkJ` only. Full evidence is in `remnote report/remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
 
-| Roadmap area | Deployed `466b808` live result | Local candidate response | Post-deploy proof still required |
+| Roadmap area | Deployed `81eef93` live result | Local candidate response | Post-deploy proof still required |
 | --- | --- | --- | --- |
-| Phase 1 / Test 14 | Two fresh persistent jobs completed with stable created IDs, read-only incomplete verification, correct pending resume, and completed replay prevention. | No new Phase 1 code was required. Memory and disposable PostgreSQL 18 persistence gates pass. | Repeat Test 14 after deployment to prove no cross-phase regression. |
-| Phase 2 / Tests 05 and 14 | Test 14 hierarchy/bullets/titles were correct. Test 05 exposed undeclared inline-code, quote-label, ordered-list, link, and native-heading limits. Hosted local-path file input correctly failed pre-job with `SOURCE_FILE_LOCAL_AUTH_REQUIRED`; connector attachment handoff was unavailable. | Ordinary quotes retain exact text plus quote style; supported losses and heading readback scope are explicit; final duplicate detection uses exact semantic units. | Test 05; Test 14 final verifier; authorized connector attachment/file handoff. |
-| Phase 3 / Test 11 | Explicit target analysis was correct, but warning/answer/math treatments were not compiled, and a redundant H1 child wrapper appeared. | Analyzer stores math style and warning/answer roles; compiler applies them and removes the leading content H1 under an explicit root. | Two independent Test 11 runs in both writing modes. |
-| Phase 4 / Tests 11–15 | Design verification passed an incomplete stored subset; MCQ exact verification treated the serialized `Answer:` payload as a missing answer; Test 14 Run B counted section words inside body text as duplicate titles and recommended unsafe resume. | Exact role IDs join checked IDs; verifier envelopes are typed/read-only; MCQ answer parsing and exact-unit duplicate checks have regressions; completed jobs never recommend replay. | Tests 11, 12, 13, 14, and Test 15 card/design controls. |
-| Phase 5 / Tests 03, 05–07, 12 | Existing heading mutation returned truthful `SDK_UNSUPPORTED` with no visible pollution. Plain offsets after math failed SDK range validation; math-node styles were dropped while rich replacement claimed success; Markdown native heading loss was hidden. | Plain-to-SDK offset mapping is node-aware; math styles round-trip through writer/readback; Markdown verification reports requested versus native heading counts and supported losses. | Disposable mixed-rich/math probes and targeted Tests 03, 05, 06, 07, 12. |
-| Phase 6 / Tests 01, 02, 09, 10 | Tree reads, symbol-heavy search, stale conflict attribution, connection, and scope passed. Pagination output carried `startIndex`, but the installed connector schema could not submit it. | Hosted routing smoke now compares discovery to the canonical profile registry instead of stale count `19`; envelope false success is regression-tested. | Refresh connector catalog; submit `startIndex`; rerun targeted reads after deployment. |
-| Phase 7 / Test 15 | Capstone content and four specialized cards were structurally sound; design transfer and MCQ verification inherited the defects above. | 25 test files / 236 tests, types, validation, plugin/server builds, server smokes, real PostgreSQL durability, security, routing, schema, performance, and architecture gates pass. | New independent Test 15 run on the deployed candidate. |
+| Phase 1 / Test 14 | Exact source validation passed, but planning returned five logical sections instead of the required four, so no persistent job was created. | H1/preamble now belongs to the first H2 logical section. The exact 6,149-character fixture produces four logical and four native chunks locally with the benchmark limits. | Run two persistent Test 14 jobs after deployment, including pause/resume, reconnect, read-only reverification, and completed replay prevention. |
+| Phase 2 / Tests 05, 07, 08, 14 | Test 05 semantic content was strong; Test 07 created unwanted spacers; Test 08 structured append created a wrapper/duplicate; Test 14 stopped before write. | Blank-line false defaults, visible list bullets, structured append routing, and logical planning are regression-tested. | Rerun Tests 05, 07, 08, and exact Test 14; prove authorized connector attachment/file handoff separately. |
+| Phase 3 / Test 11 | Explicit target analysis and one-root creation passed, but answer treatment over-applied, summary bullets hid, and formula whole-Rem highlight was gated off. | Answer results are distinct from labels; numbered summary children transfer visible-bullet treatment; native whole-Rem highlight is enabled by default. | Two independent Test 11 runs in both writing modes with exact role/property readback. |
+| Phase 4 / Tests 11–15 | Test 11 self-manifest verification passed incomplete semantics; Test 12 dry-run outer `ok` contradicted its valid plan. Test 13 card verification passed cleanly. | Exact role targets, visible summary rules, and dry-run envelope truth have focused regressions. | Rerun Tests 11, 12, 13, the Test 14 verifier, and Test 15 controls. |
+| Phase 5 / Tests 03, 05–07, 12 | Formula creation stayed reliable. Whole-formula-Rem highlight failed on deployed code; native headings remained safely unsupported. | Native whole-Rem highlight is the supported formula emphasis path; style correctness now verifies it. Formula glyph font color is explicitly unsupported. | Rerun whole-Rem highlight and targeted Tests 03, 05, 06, 07, 12; never claim formula glyph color. |
+| Phase 6 / Tests 01, 02, 09, 10 | One session stayed healthy; symbol search was non-exhaustive; stale text conflict passed; stale parent used generic `INVALID_ARGS`; connector continuation schema drift remained. | Heartbeat timeout, reconnect timer/socket races, registration failure, stale-event handling, and stale-parent conflict are regression-tested. | Weak-network soak, connector refresh, `startIndex` call, and targeted read/error reruns. |
+| Phase 7 / Test 15 | 154 Rems, exactly 11 sections, 12/12 cards, and ID-preserving formula repair passed; design limitations remained. | 26 test files / 249 tests, types, SDK validation, plugin/server builds, style/source/schema/idempotency/performance gates pass. Socket-binding smokes are sandbox-blocked and PostgreSQL proof is blocked without `DATABASE_URL`. | Deploy, run targeted phases, then an independent Test 15 and connection soak. |
 
 ### Report inventory
 
@@ -90,7 +90,7 @@ The historical roadmap contained 19 stages with duplicated goal matrices and det
 | Previous phase or task | Status | Repository evidence | Carry forward? |
 | --- | --- | --- | --- |
 | Stage 0 — Evidence refresh and graph map | `COMPLETE` | `graphify-out/graph.json`, `graphify-out/graph.html`, and `graphify-out/GRAPH_REPORT.md` exist at the audited commit. | No; refresh only when architecture changes materially. |
-| Stage 1 — Tool registry and descriptor truth | `PARTIALLY_COMPLETE` | `server/src/tool-registry.ts`, `server/src/tool-policy.ts`, and `tests/tool-status-matrix.test.ts` exist; the 2026-07-14 live catalog still differed from source (73 public, 70 app-callable, missing reconciliation and `startIndex`). | Yes: retain truth labels and refresh connector descriptors in Phase 6. |
+| Stage 1 — Tool registry and descriptor truth | `PARTIALLY_COMPLETE` | `server/src/tool-registry.ts`, `server/src/tool-policy.ts`, and `tests/tool-status-matrix.test.ts` exist; the earlier `466b808` catalog differed from source (73 public, 70 app-callable), and the latest connector still rejected `startIndex`. | Yes: retain truth labels and refresh connector descriptors in Phase 6. |
 | Stage 2 — Auth, pairing, and session routing | `PARTIALLY_COMPLETE` | Hosted bridge, pairing stores, `server/src/bridge/session-router.ts`, and connection smokes exist; Test 06 saw a late disconnect and only a one-session live case was rechecked. | Yes: reconnection and unknown-outcome handling in Phases 1 and 6. |
 | Stage 3 — Scope, approval, and destructive safety | `PARTIALLY_COMPLETE` | Scope handlers, access tests, guarded delete/update, and zero observed scope violations are real; the audited live profile remained workspace/full-KB developer access. | Yes: preserve and re-prove least privilege in Phase 6. |
 | Stage 4 — Tool-by-tool correctness matrix | `PARTIALLY_COMPLETE` | Registry/matrix infrastructure exists, but Tests 02, 03, 07, 11–15 prove live behavior gaps and verifier misclassification. | Yes: phase-specific matrices and live proof. |
@@ -135,29 +135,31 @@ Prompt reproductions inside reports are context, not observed evidence. The find
 
 ## 4. Consolidated issue register
 
-Priority counts: **P0: 4**, **P1: 10**, **P2: 4**, **P3: 2**. Total: **20 consolidated issues**. “Live proven” below means deployed `466b808`; “local candidate” means the fix has automated proof but awaits deployment.
+Priority counts: **P0: 4**, **P1: 12**, **P2: 4**, **P3: 2**. Total: **22 consolidated issues**. Historical live closure at `466b808` is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `81eef93`; “local candidate” means automated proof that awaits deployment.
 
 | Issue ID | Priority | Subsystem | Evidence | Root-cause status | Planned phase |
 | --- | --- | --- | --- | --- | --- |
-| `IMP-001` | P0 | Resumable import / verifier | Test 14 Run 02 changed 11 untouched pending chunks to failed/verification-needed. `verify_note_import_job` updated chunk state and persisted it. | Closed by implementation plus two deployed live jobs: repeated incomplete/final verification did not change job revision, timestamps, cursor, or chunk states. | 1 |
-| `IMP-002` | P0 | Import outcomes / mutation identity | Test 14 adapted run found live chunk content with no durable created/updated IDs. | Closed by implementation plus two deployed live jobs: all five Run A chunks and all four Run B chunks retained stable created IDs through completion and reverification. | 1 |
-| `IMP-003` | P0 | Resume cursor / replay safety | Historical Test 14 reports showed resume selecting an unsafe attempted chunk. | Closed by implementation plus deployed live readback: resume selected the first pending chunk and completed-job dry runs never replayed a chunk. | 1 |
-| `IMP-004` | P0 | Persistence / reconnect / atomicity | Historical Test 14 state disagreed with live artifacts and lacked revision/CAS semantics. | Closed by live state/artifact agreement plus current memory/PostgreSQL 18 restart, revision, stale-writer, and migration proof. | 1 |
-| `IMP-005` | P1 | Import parser / hierarchy / chunk model | Test 14 found 55 native microchunks for 6 logical batches, duplicate section titles, visible bullet prefixes, and siblings nested as descendants. | Deployed live proof passed for both jobs: one root, exact sections, sibling hierarchy, clean bullets, and bounded logical/native chunks. | 2 |
+| `IMP-001` | P0 | Resumable import / verifier | Test 14 Run 02 changed 11 untouched pending chunks to failed/verification-needed. `verify_note_import_job` updated chunk state and persisted it. | Implementation and older live jobs support closure; latest `81eef93` stopped before a job. Final-candidate two-run proof remains required. | 1 |
+| `IMP-002` | P0 | Import outcomes / mutation identity | Test 14 adapted run found live chunk content with no durable created/updated IDs. | Implementation and older live jobs retained IDs; latest `81eef93` stopped before a job. Final-candidate proof remains required. | 1 |
+| `IMP-003` | P0 | Resume cursor / replay safety | Historical Test 14 reports showed resume selecting an unsafe attempted chunk. | Deterministic selection/replay tests and older live readback pass; latest deployment did not reach resume. | 1 |
+| `IMP-004` | P0 | Persistence / reconnect / atomicity | Historical Test 14 state disagreed with live artifacts and lacked revision/CAS semantics. | Revision/CAS, migration, memory, and reconnect unit proof pass. Current PostgreSQL and final-deployment restart proof remain outstanding. | 1 |
+| `IMP-005` | P1 | Import parser / hierarchy / chunk model | Test 14 found microchunking, duplicate titles, visible prefixes, hierarchy corruption, and latest `81eef93` planned an H1/preamble introduction as a fifth logical section. | Local candidate produces four exact logical/native chunks for the 6,149-character fixture and explicitly preserves visible bullets; deployment rerun pending. | 2 |
+| `IMP-006` | P1 | Import planner / logical sections | Latest Test 14 required four H2 logical chunks but received a synthetic introduction plus four H2 sections, so the safety gate blocked before job creation. | Root cause confirmed in `splitSections`; local candidate attaches H1/preamble to the first H2 section. | 2 |
 | `FILE-001` | P1 | File/connector ingestion | Test 14 could not use connector-backed file routes; local loader and alias tests pass. | Local adapters and actionable pre-job errors are complete; connector-host handoff still needs live validation. | 2 |
 | `MD-001` | P1 | Semantic fidelity / manifests | Test 14 compared rendered RemNote text against raw Markdown and rejected links, bold, and math despite readable content. `normalizeForSourceFidelity` is plain-text and destructive. | Local semantic/source manifest, hierarchy, and normalization fixes pass; live rendered readback pending. | 2 |
 | `DES-001` | P1 | Design analysis identity | Test 11 reported analysis of the focused/wrong Rem instead of the supplied sample. Current resolver honors `rootRemId ?? sampleRemId`, so schema/call/UI propagation remains suspect. | Local fix complete: explicit identity is required and echoed; ambiguous/focus fallback is rejected. Live Test 11 pending. | 3 |
-| `DES-002` | P1 | Template materialization | The 2026-07-14 live source contained warning, answer, and blue math treatments, but deployed analysis omitted the roles and both targets lacked them. | Root cause confirmed in analyzer/compiler. Local candidate stores/applies/verifies `warning`, `answer`, and `mathStyle`; deployment rerun pending. | 3 |
-| `DES-003` | P1 | Design UI / root construction | The 2026-07-14 explicit-root target created a redundant child H1 when content began with a different H1. | Root cause confirmed in content normalization. Local candidate strips the content H1 under an explicit target root; UI parity live proof remains pending. | 3 |
+| `DES-002` | P1 | Template materialization | Latest Test 11 over-applied answer emphasis to label and result, hid summary bullets, and failed whole-formula-Rem highlight. | Root cause confirmed in compiler roles, reusable bullet capture, and runtime highlight flag. Focused local regressions pass; deployment rerun pending. | 3 |
+| `DES-003` | P1 | Design UI / root construction | Historical Test 11 created a redundant child H1 when content began with a different H1. | Latest `81eef93` one-root creation passed; UI/direct parity still needs a post-candidate live run. | 3 |
 | `VER-001` | P1 | Design verifier | Tests 11–12 show H1/H3/default assumptions conflicting with saved rules. `verifyNoteAgainstDesign` and named-preset verification do not consume one complete stored-rule manifest. | Local fix complete: target-specific applied manifest drives read-only exact verification. Live Tests 11–12 pending. | 4 |
-| `VER-002` | P1 | Card verifier / preview | All 28 cards created across live Test 13 main/repeat were functional, but exact MCQ verification compared expected `Newton` with the complete `Answer/Choice` serialization and reported it missing. | Root cause confirmed in expected-back equality. Local candidate parses the serialized `Answer:` item and emits typed property-readback evidence; deployment rerun pending. | 4 |
+| `VER-002` | P1 | Card verifier / preview | Historical Test 13 runs exposed MCQ and organizational-heading false findings. | Latest `81eef93` Test 13 passed all 14 cards and aggregate direct-metadata verification; retain as a protected regression control. | 4 |
 | `VER-003` | P1 | Import final verifier | Live Test 14 Run B had one exact North/East/South/West tree and matching hashes, but substring duplicate detection counted `North paragraph` and similar content as duplicate section titles, failed all repeats, and recommended resume on a completed job. | Root cause confirmed in substring counting. Local candidate compares exact semantic units and forbids replay guidance for completed jobs; deployment rerun pending. | 4 |
 | `RICH-001` | P1 | Rich text / formula styling | Live mixed-rich readback measured plain length 18 versus SDK length 14; styling text after math rejected valid plain offsets. Rich replacement dropped math styles while claiming a match. | Root cause confirmed in offset-domain mixing and raw math serialization. Local candidate maps each rich node and preserves/reads math styles; deployment probe pending. | 5 |
 | `HEAD-001` | P2 | Heading/property mutation | Tests 03–07 and 15 show created headings read as normal, while existing mutation is disabled because SDK font size can create visible `Size` children. | Safe capability-off fallback, direct readback, no-op rejection, and clear-reset guard pass locally; live SDK probe pending. | 5 |
 | `MD-002` | P2 | Markdown representation | Live Test 05 preserved content/math/hierarchy, but ordinary quotes gained `Callout:`, inline code styling and native headings were lost without warning, and ordered/link fallbacks were incomplete. | Root causes confirmed. Local candidate preserves exact quote text with quote style and declares heading/inline-code/link/ordered-list limits in preview, manifest, result, and readback counts. | 5 |
-| `READ-001` | P2 | Tree reads / search | Live tree reads and symbol-heavy search passed; pagination produced a continuation index, but the installed connector descriptor lacked the `startIndex` input already present in source. | Plugin source behavior is live proven. Remaining gap is connector/deployment catalog refresh and a post-refresh continuation call. | 6 |
+| `READ-001` | P2 | Tree reads / search | Latest tree reads passed, symbol-heavy search produced a bounded false negative for content available by ID, and the installed connector descriptor lacked the source-implemented `startIndex` input. | Direct-ID fallback and non-exhaustive labeling exist; connector refresh and post-refresh continuation/search proof remain. | 6 |
 | `ERR-001` | P2 | Schemas / error taxonomy | Tests 09–10 found stale-state and structural validation returned `INVALID_ARGS`, `plugin_permission`, and irrelevant permission guidance; some calls used `text` where schema expected `title`. | Local fix complete: conflict code, layers/actions, aliases, and envelope tests pass. | 6 |
 | `OBS-001` | P3 | Envelopes / observability / performance | Live design repair returned applied operations but zero outer updated IDs and no attempted verification; verifier tools omitted standard verification evidence. | Local candidate lifts updated IDs, typed verification method/pass state, checked role IDs, and rejects inner verification failure at the standard envelope. | 6 |
+| `CONN-001` | P1 | Bridge / connection lifecycle | Weak internet caused repeated disconnects; code closed after a single missed-pong cycle and client timers/socket callbacks could race or stack. | Server now honors the configured pong timeout; client coalesces timers, ignores stale socket events, closes failed registration, and resets backoff only after `server_hello`. Six unit regressions pass; weak-network live soak pending. | 6 |
 | `ARCH-001` | P3 | Architecture / maintainability | Import registration, design tools, and verification files combine orchestration, persistence mutation, normalization, and policy. Defects cross these seams. | Bounded state/compiler/verifier seams and dependency/migration tests pass; no broad rewrite performed. | 7 |
 
 ## 5. Dependency-ordered remediation phases
@@ -166,7 +168,7 @@ The phases are ordered by data safety. A later phase may add characterization te
 
 ### Phase 1 — Make resumable import state truthful and crash-safe
 
-**Implementation status (2026-07-14): `COMPLETE / CROSS-PHASE RERUN REQUIRED`.** Automated state, fault, migration, and real PostgreSQL gates pass. Two deployed live Test 14 jobs proved stable IDs, read-only reverification, correct resume selection, state/artifact agreement, and completed replay prevention. Run B's final duplicate-title false negative is isolated as `VER-003`; it did not mutate progress or replay data and belongs to Phase 4.
+**Implementation status (2026-07-14): `LOCAL_STATE_MACHINE_COMPLETE / CURRENT DEPLOYMENT RERUN REQUIRED`.** Historical live work exercised state transitions, but the latest deployed `81eef93` exact Test 14 stopped at the pre-job planning gate because five logical sections were returned instead of four. The planner defect is fixed and exact-fixture planning passes locally; current-commit persistent execution, reconnect, reverification, and replay behavior still require two post-deploy runs. Memory persistence passes locally; PostgreSQL proof is blocked until `DATABASE_URL` is available.
 
 #### Objective
 
@@ -232,9 +234,9 @@ Guarantee that persisted job state, mutation identity, live RemNote state, and r
 - Commands: `npm test -- tests/bulk-import-tools.test.ts tests/bulk-import-access.test.ts`, `npm run server:test:bulk-storage`, `npm run server:test:idempotency`, `npm run server:build`.
 - Attach command output, fault-injection matrix, serialized before/after states, and exact operation/attempt IDs.
 - Rerun Test 14 twice consecutively; include before/after behavior and prove no regression in Tests 08, 09, 10, and 13 safety invariants.
-- [x] Local command gate passed: focused Phase 1 tests, idempotency certification, server build, full server smoke, and 236-test repository suite.
-- [x] Persistence gate passed against memory and a real temporary PostgreSQL 18 instance, including stale-writer rejection and provider-restart reload.
-- [x] Two deployed live Test 14 state-machine executions completed with no verifier mutation, lost IDs, unsafe resume, replay, hierarchy corruption, or persistent duplicate. The Run B final-verifier false negative is `VER-003` and must be rerun after deployment.
+- [x] Local command gate passed: focused Phase 1 tests, idempotency certification, server build, and the 249-test repository suite. Network-binding server smoke is environment-blocked; PostgreSQL durability remains externally blocked without `DATABASE_URL`.
+- [ ] Re-prove persistence against a real temporary PostgreSQL instance at the final candidate revision, including stale-writer rejection and provider-restart reload. Current memory proof passes; `DATABASE_URL` is unavailable in this run.
+- [ ] Complete two deployed live Test 14 state-machine executions at the final candidate revision with no verifier mutation, lost IDs, unsafe resume, replay, hierarchy corruption, or persistent duplicate. Deployed `81eef93` stopped before job creation.
 
 #### Definition of done
 
@@ -242,7 +244,7 @@ Phase 1 may be checked complete only when `IMP-001`–`IMP-004` are closed by au
 
 ### Phase 2 — Preserve import hierarchy and semantic source fidelity
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Live Test 14 direct-text hierarchy passed twice. Deployed Test 05 exposed quote/inline-code/heading disclosure defects now fixed locally. Authorized connector attachment handoff was unavailable, so this phase remains open.
+**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed `81eef93` preserved Test 05 semantics but exposed Test 07 spacer and Test 08 structured-append defects; exact Test 14 failed its logical-section planning gate before write. Planner, blank-line, visible-bullet, and append fixes pass locally. Authorized connector attachment handoff remains unavailable.
 
 #### Objective
 
@@ -305,8 +307,8 @@ Turn logical source sections into stable RemNote hierarchy through supported fil
 - Commands: `npm test -- tests/bulk-import.test.ts tests/source-file-loader.test.ts tests/bulk-import-tools.test.ts tests/style-presets.test.ts`, `npm run server:test:source-fidelity`, `npm run validate`.
 - Attach source/semantic manifests, tree before/after samples, exact connector-envelope fixtures, and Test 05/Test 14 rerun reports.
 - Prove no regression in Test 06 formulas and Test 08 safe extension.
-- [x] Local command gate passed: focused hierarchy/loader/write tests, source-fidelity and Markdown-importer certifications, validation, formula/style control, and simulated Test 08 control within the 236-test suite.
-- [ ] Deploy the local candidate, rerun Test 05, rerun the `VER-003` Test 14 final verifier, and prove one authorized connector attachment/file handoff. Deployed direct-text Test 14 hierarchy already passed twice.
+- [x] Local command gate passed: focused hierarchy/loader/write tests, exact Test 14 planning proof, source-fidelity and Markdown-importer certifications, SDK validation, formula/style control, and Test 08 append regressions within the 249-test suite.
+- [ ] Deploy the local candidate, rerun Test 05, rerun the `VER-003` Test 14 final verifier, and prove one authorized connector attachment/file handoff. Earlier `466b808` direct-text hierarchy evidence is historical; deployed `81eef93` stopped at the planner gate.
 
 #### Definition of done
 
@@ -314,7 +316,7 @@ Phase 2 is complete only when `IMP-005`, `FILE-001`, and `MD-001` meet the obser
 
 ### Phase 3 — Compile saved design rules into one deterministic note plan
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed Test 11 confirmed explicit source identity but exposed missing warning/answer/math role inference and a redundant content H1. The analyzer/compiler/schema/readback fixes pass locally; two independent deployed runs remain required.
+**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed `81eef93` confirmed explicit source identity, one target root, and seven sections, but over-applied answer emphasis, hid summary bullets, and could not apply whole-formula-Rem highlight. Answer-result classification, numbered-summary visible-bullet transfer, and native whole-Rem highlight pass locally; two independent deployed runs remain required.
 
 #### Objective
 
@@ -377,7 +379,7 @@ Analyze the requested source, save reusable content-independent rules, and creat
 - Commands: `npm test -- tests/design-template-preview.test.ts tests/bridge-ui-state.test.ts tests/style-presets.test.ts`, `npm run test:style-correctness`, `npm run check-types`, `npm run build`.
 - Attach template JSON before/after, compiled manifests, exact root/child IDs, property readback, and independent Test 11 reruns.
 - Prove reference/source notes remain unchanged and Test 08 extension still passes.
-- [x] Local command gate passed: focused design/UI/style tests, materialization readback, style correctness, type checking, schema certification, server smoke, and simulated source-isolation controls.
+- [x] Local command gate passed: focused design/UI/style tests, answer/summary materialization readback, style correctness, type checking, schema certification, and source-isolation controls. Network-binding server smoke is environment-blocked.
 - [ ] Deploy the local candidate and complete two independent Test 11 runs with warning, answer, math, root-wrapper, UI/direct parity, and exact property readback.
 
 #### Definition of done
@@ -386,7 +388,7 @@ Phase 3 is complete only when `DES-001`–`DES-003` pass analyzer identity, seri
 
 ### Phase 4 — Make verifiers read-only, typed, and evidence-specific
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Live metadata proved all 28 Test 13 cards functional and duplicate-free, while deployed MCQ, design, and Test 14 aggregate verifiers returned false findings. Exact-answer parsing, exact-unit duplicate checks, checked role IDs, typed evidence, and envelope truth pass locally.
+**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Latest live metadata proved all 14 Test 13 cards functional and duplicate-free, while Test 11 self-manifest verification could not prove omitted semantic requirements and Test 12 returned a contradictory dry-run envelope. Exact role targeting and dry-run envelope truth pass locally.
 
 #### Objective
 
@@ -450,7 +452,7 @@ Choose the correct verification mode for each claim and prevent heuristic warnin
 - Commands: `npm test -- tests/card-verifier.test.ts tests/verification-status.test.ts tests/tool-status-matrix.test.ts tests/design-template-preview.test.ts`, `npm run server:test:tool-schemas`, `npm run test:style-correctness`.
 - Attach mutation-spy output, exact-versus-heuristic fixtures, property readbacks, and Test 11/12/13 reruns.
 - Prove Test 13 remains 14/14 functional and duplicate-free twice.
-- [x] Local command gate passed: Phase 4 verifier/design/card regressions, schema certification, style correctness, and the 236-test repository suite.
+- [x] Local command gate passed: Phase 4 verifier/design/card regressions, schema certification, style correctness, and the 249-test repository suite.
 - [ ] Deploy the local candidate and rerun Tests 11, 12, 13, the Test 14 final verifier, and the Test 15 card/design controls with zero false findings.
 
 #### Definition of done
@@ -459,7 +461,7 @@ Phase 4 is complete only when `VER-001` and `VER-002` close with read-only invar
 
 ### Phase 5 — Preserve rich text, math, headings, and Markdown style on repair
 
-**Implementation status (2026-07-14): `LIVE_DIAGNOSED / LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed probes proved heading mutation is safely unsupported without pollution, measured mixed math/text offset divergence, and reproduced dropped math styles. Node-aware ranges, raw math-style serialization/readback, quote handling, and heading-loss evidence pass locally.
+**Implementation status (2026-07-14): `LIVE_DIAGNOSED / LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed probes proved heading mutation is safely unsupported without pollution and reproduced whole-formula-Rem highlight being gated off. Native whole-Rem highlight, node-aware ranges, raw math-style serialization/readback, quote handling, and heading-loss evidence pass locally. Formula glyph font color is an explicit SDK limitation.
 
 #### Objective
 
@@ -526,7 +528,7 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - Commands: `npm run test:style-correctness`, `npm test -- tests/style-presets.test.ts tests/write-idempotency-duplicates.test.ts tests/agents-staged-repair-simulation.test.ts`, `npm run check-types`, `npm run build`.
 - Attach raw rich-text before/after, exact Rem IDs, property readback, unsupported-capability results, and targeted benchmark reruns.
 - Prove Test 06 core rich-math creation remains at its prior reliable baseline.
-- [x] Local command gate passed: rich-repair, style, Markdown, idempotency, simulated workflow, type, build, and 236-test repository suites.
+- [x] Local command gate passed: rich-repair, native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and 249-test repository suites.
 - [ ] Deploy the local candidate and rerun mixed-rich/math readback plus targeted Tests 03, 05, 06, 07, and 12. Heading must remain truthful unsupported unless the deployed SDK proves a safe native mutation.
 
 #### Definition of done
@@ -535,7 +537,7 @@ Phase 5 is complete only when `RICH-001`, `HEAD-001`, and `MD-002` meet operatio
 
 ### Phase 6 — Make reads, schemas, errors, scope, and reconnection actionable
 
-**Implementation status (2026-07-14): `LOCALLY COMPLETE / LIVE CATALOG REFRESH REQUIRED`.** Live tree reads, symbol-heavy search, stale conflicts, one-session connection, and scope controls passed. The remaining deployed gap is connector catalog drift: live output had a continuation index, but the app descriptor omitted source-implemented `startIndex` and reconciliation.
+**Implementation status (2026-07-14): `LOCALLY COMPLETE / LIVE CATALOG_AND_SOAK REQUIRED`.** The latest one-session connection stayed healthy for approximately 55 minutes, but this does not prove weak-network recovery. Symbol-heavy search remained non-exhaustive, stale text conflict passed, stale parent used generic `INVALID_ARGS`, and the connector omitted source-implemented `startIndex`. Heartbeat timeout, socket/timer races, failed registration, stale close events, and stale-parent conflict pass locally.
 
 #### Objective
 
@@ -605,8 +607,8 @@ Return bounded data with usable continuation, stable schemas, correct error laye
 - Commands: `npm test -- tests/read-tools.test.ts tests/tool-status-matrix.test.ts tests/timeout-budgets.test.ts tests/http-body-limit.test.ts`, `npm run server:test:tool-schemas`, `npm run server:test:boundaries`, `npm run server:test:connector-compat-routing`, `npm run server:test:codex-routing`, `npm run server:smoke`.
 - Attach continuation examples, error matrix, reconnect timeline, live connection diagnostics, and targeted benchmark reports.
 - Prove no regression in guarded correction, hierarchy surgery, scope, approval, or idempotency.
-- [x] Local command gate passed: read/error/retry regressions, schemas, boundaries, connector/Codex/hosted routing, security, tool profiles, server smoke, performance, and the 236-test repository suite.
-- [x] Targeted deployed controls for Tests 01, 02, 09, and 10 passed: connection stayed healthy, tree/search succeeded, stale conflict had expected/actual evidence, and all writes remained below `New test`. Refresh the connector catalog and submit one continuation call after deployment.
+- [x] Local unit gate passed: read/error/retry/reconnect regressions, Area 1 schemas, source fidelity, idempotency, style schema, structured depth, performance, and the 249-test repository suite. Hosted/socket-binding routing, security, and server smoke cannot bind `127.0.0.1` in this sandbox and require an external run.
+- [x] Targeted deployed controls for Tests 01, 02, 09, and 10 completed: connection, tree/direct-ID reads, stale-text conflict, hierarchy operations, and scope passed; symbol search returned a bounded false negative, stale parent used `INVALID_ARGS`, and connector continuation drift remained. Local fixes cover stale parent/reconnect; refresh the connector and rerun search/continuation after deployment.
 
 #### Definition of done
 
@@ -614,7 +616,7 @@ Phase 6 is complete only when `READ-001`, `ERR-001`, and `OBS-001` meet read/sch
 
 ### Phase 7 — Lock architectural seams and pass the release benchmark
 
-**Implementation status (2026-07-14): `LOCAL_ARCHITECTURE_COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** State, compiler, verifier, migration, compatibility, hosted discovery, PostgreSQL, performance, and architecture gates pass. The standalone review is `/tmp/remnote-mcp-architecture-review.html`. Release remains open because edited code has not been deployed and cannot reuse pre-edit live evidence as post-fix proof.
+**Implementation status (2026-07-14): `LOCAL_ARCHITECTURE_COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** State, compiler, verifier, migration, compatibility, performance, and architecture unit gates pass. The fresh standalone review is `/tmp/remnote-mcp-architecture-review-2026-07-14.html`. PostgreSQL and socket-binding smokes are externally blocked in this environment. Release remains open because edited code has not been deployed and cannot reuse deployed `81eef93` evidence as post-fix proof.
 
 #### Objective
 
@@ -623,7 +625,7 @@ Reduce change coupling only around proven defects, then establish an honest rele
 #### Evidence
 
 - `ARCH-001` and the cross-file traces in Phases 1–6.
-- Historical Test 14 is blocked twice and Tests 11–12 are partial. The 2026-07-14 supplement adds a pre-fix Test 15 Run 03, but the local candidate still needs a post-deploy independent capstone.
+- Historical Test 14 is blocked twice; deployed `81eef93` Test 14 was blocked at its pre-job planner gate; Tests 11–12 remain partial. The latest Test 15 content/card core passed, but the local candidate still needs a post-deploy independent capstone.
 - Reliable tests show broad rewrites would create unnecessary regression risk.
 
 #### Current code areas
@@ -666,8 +668,8 @@ Reduce change coupling only around proven defects, then establish an honest rele
 
 - Commands: `npm test`, `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, `npm run server:smoke` plus all relevant `server:test:*` gates from prior phases.
 - Attach complete outputs, dependency diff, migration fixtures, before/after benchmark behavior, and a no-regression matrix.
-- [x] Local release gate passed: 25 test files/236 tests, types, validation, plugin build, server build/smoke, style and simulated workflows, real PostgreSQL storage, source fidelity, schemas, boundaries, hosted routing, idempotency, security, performance, and tool-profile gates.
-- [x] Dependency graph refreshed locally on 2026-07-14; architecture tests lock the import/compiler/verifier seams and conservative job/template migrations.
+- [x] Locally runnable release gate passed: 26 test files/249 tests, types, SDK validation, plugin/server builds, style and simulated workflows, source fidelity, Area 1 schemas, idempotency, structured depth, and performance. Socket-binding smokes are sandbox-blocked and PostgreSQL is blocked without `DATABASE_URL`; neither is claimed as passed.
+- [x] Dependency graph refreshed locally on 2026-07-14; architecture tests lock the import/compiler/verifier seams and conservative job/template migrations; the final standalone review was generated and opened from `/tmp/remnote-mcp-architecture-review-2026-07-14.html`.
 - [ ] After push/deploy, rerun the targeted Phase 2–5 failures, Test 14 final verification, Tests 11–13, and an independent Test 15. Pre-edit live evidence cannot close this candidate's release gate.
 
 #### Definition of done
@@ -785,18 +787,18 @@ Protect these evidence-backed capabilities. Change them only when a failing char
 
 Release is allowed only when all conditions below have current evidence at the candidate commit and deployed plugin version.
 
-- [x] No Priority 0 issue remains open; both deployed Test 14 state-machine runs and current memory/PostgreSQL gates prove `IMP-001`–`IMP-004`.
+- [ ] No Priority 0 issue remains open at the deployed candidate; local state-machine/memory tests pass, but current-commit PostgreSQL and two-run live Test 14 proof remain outstanding.
 - [ ] Every Priority 1 acceptance criterion is met; unsupported SDK features are explicit and cannot produce false success.
-- [x] `npm test` (25 files / 236 tests), `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, and the phase-specific local server gates pass with current output; live gates below remain open.
+- [ ] The complete local gate passes at the candidate revision. Current evidence: `npm test` (26 files / 249 tests), types, SDK validation, plugin/server builds, style/source/schema/idempotency/performance gates pass; socket-binding server gates and PostgreSQL remain externally blocked.
 - [ ] Test 14 passes twice consecutively with persistent storage, no verifier mutation, no replay, no lost IDs, no state/artifact disagreement, no hierarchy corruption, and no persistent duplicates.
 - [ ] Test 11 design learn/save/apply workflows pass in the required independent runs with one target root and complete supported-rule accounting.
 - [ ] Test 12 diagnosis/repair passes without style loss or generic-verifier false claims.
 - [ ] Test 13 remains functional, 14/14 correct, duplicate-free, and free of aggregate false card defects in main and repeat runs.
 - [ ] Test 15 passes the required independent run set, including a new Run 03, within the benchmark repeatability threshold.
-- [x] Connection, branch, deployed commit `466b808`, SDK `0.0.46`, explicit `New test` scope, developer profile, one active session, 73 public tools, and 70 app-callable descriptors are recorded. The post-fix candidate commit must be added after commit/deployment.
+- [x] Connection, branch, deployed commit `81eef93`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. The post-fix candidate commit must be added after commit/deployment.
 - [x] No scope violation, unauthorized write, secret disclosure, blind retry, or ambiguous-session write occurred in the 2026-07-14 campaign or local gates.
 - [ ] No silent content loss, Rem-ID instability, unrelated-note mutation, child-order drift, or visible metadata pollution occurred.
-- [x] Live direct readback found no persistent duplicate root, section, chunk, repair artifact, or card; Test 14 Run B's duplicate claim was the `VER-003` substring false negative.
+- [x] Latest live direct readback found no persistent duplicate root, repair artifact, or card. Test 14 created no job because the source-plan gate failed, so it made no duplicate import artifact.
 - [ ] No verifier or standard envelope made a false success claim; every final claim is traceable to exact live readback or the appropriate evidence class.
 - [x] Benchmark/fixture defects, connector/deployment drift, SDK limitations, and agent-only mistakes are reported separately from confirmed plugin defects.
 - [x] This roadmap supplement and task handoff include before/after behavior, command results, operation/Rem IDs, report provenance, and an explicit deployed-live versus local-candidate proof boundary.

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { mapSdkError } from '../src/bridge/handlers/scope';
 import { normalizeArgs } from '../src/bridge/handlers/args';
 import { readChildren, readRemTree, searchRems } from '../src/remnote/read';
-import { updateRemMarkdown } from '../src/remnote/write/basicWrites';
+import { moveRem, updateRemMarkdown } from '../src/remnote/write/basicWrites';
 import { RemnoteWriteError } from '../src/remnote/write/writeErrors';
 import { failureToToolResult } from '../server/src/tools/tool-context';
 import { GET_CHILDREN_INPUT_SCHEMA } from '../server/src/tools/schemas';
@@ -138,6 +138,30 @@ describe('Phase 6 bounded reads and error taxonomy', () => {
     })).rejects.toMatchObject({
       code: 'STALE_STATE_CONFLICT',
       details: { remId: 'target', expectedPlainText: 'Stale', actualPlainText: 'Current' },
+    });
+  });
+
+  test('stale guarded move has dedicated conflict code and parent evidence', async () => {
+    const fake = new FakePlugin();
+    const actualParent = fake.addRem('actual-parent', 'Actual parent');
+    const newParent = fake.addRem('new-parent', 'New parent');
+    const target = fake.addRem('move-target', 'Move target');
+    await target.setParent(actualParent);
+
+    await expect(moveRem(fake.asPlugin(), {
+      remId: target._id,
+      newParentId: newParent._id,
+      index: 0,
+      dryRun: false,
+      idempotencyKey: 'stale-move-conflict',
+      expectedParentId: 'stale-parent',
+    })).rejects.toMatchObject({
+      code: 'STALE_STATE_CONFLICT',
+      details: {
+        remId: target._id,
+        expectedParentId: 'stale-parent',
+        actualParentId: actualParent._id,
+      },
     });
   });
 

@@ -124,18 +124,29 @@ describe('bulk import planner', () => {
     expect(plan.sections[0].chunks[0].sourceText).not.toContain('## 1.1');
   });
 
-  test('preserves chapter intro text before the first H2 section', () => {
+  test('groups the chapter preamble into the first H2 logical chunk', () => {
     const source = [
       '# Tiny Bulk Import Test',
       '',
-      'Alpha source sentence.',
+      'Intro paragraph one.',
       '',
-      '## Section A',
+      'Intro paragraph two.',
+      '',
+      '## 1.1 Section A',
       '',
       '- Bullet A',
+      '',
+      '## 1.2 Section B',
+      '',
       '- Bullet B',
       '',
-      'Formula: $E=mc^2$',
+      '## 1.3 Section C',
+      '',
+      '- Bullet C',
+      '',
+      '## 1.4 Section D',
+      '',
+      '- Bullet D',
     ].join('\n');
 
     const plan = planNoteImport({
@@ -145,13 +156,23 @@ describe('bulk import planner', () => {
       chapterTitle: 'Tiny Bulk Import Test',
       options: { maxCharsPerChunk: 500, maxRemsPerChunk: 30 },
     });
-    const plannedChunkSource = plan.chunks.map((chunk) => chunk.sourceText).join('\n');
-
-    expect(plannedChunkSource).toContain('Alpha source sentence.');
-    expect(plan.sections[0].bodySourceText).toContain('Alpha source sentence.');
-    expect(plan.sections[1].bodySourceText).toContain('Bullet A');
-    expect(plan.sections[1].bodySourceText).toContain('Bullet B');
-    expect(plan.sections[1].bodySourceText).toContain('Formula: $E=mc^2$');
+    expect(plan.logicalChunkCount).toBe(4);
+    expect(plan.nativeChunkCount).toBe(4);
+    expect(plan.sections.map((section) => section.title)).toEqual([
+      '1.1 Section A',
+      '1.2 Section B',
+      '1.3 Section C',
+      '1.4 Section D',
+    ]);
+    expect(plan.sections[0].sourceText).toContain('# Tiny Bulk Import Test');
+    expect(plan.sections[0].sourceText).toContain('Intro paragraph one.');
+    expect(plan.sections[0].sourceText).toContain('## 1.1 Section A');
+    expect(plan.sections[0].bodySourceText).toContain('Intro paragraph one.');
+    expect(plan.sections[0].bodySourceText).toContain('Intro paragraph two.');
+    expect(plan.sections[0].bodySourceText).toContain('Bullet A');
+    expect(plan.sections[0].bodySourceText).not.toContain('# Tiny Bulk Import Test');
+    expect(plan.sections[0].bodySourceText).not.toContain('## 1.1 Section A');
+    expect(plan.sections.some((section) => section.sectionKey === 'chapter-introduction')).toBe(false);
   });
 
   test('keeps sibling bullets and following formula as siblings in tiny import chunks', () => {
@@ -177,6 +198,25 @@ describe('bulk import planner', () => {
     expect(bulletB?.children ?? []).toEqual([]);
   });
 
+  test('preserveBlankLines false disables implicit empty section spacers', () => {
+    const plan = parseMarkdownImportPlan([
+      '# No Spacer Note',
+      '',
+      '## Section A',
+      '',
+      'Alpha.',
+      '',
+      '## Section B',
+      '',
+      'Beta.',
+    ].join('\n'), {
+      remnoteLayout: { preserveBlankLines: false },
+    });
+
+    expect(plan.tree.children?.map((child) => child.text)).toEqual(['Section A', 'Section B']);
+    expect(plan.stats.nodeCount).toBe(5);
+  });
+
   test('keeps loose nested bullets under their source parent across blank lines', () => {
     const plan = parseMarkdownImportPlan([
       '# Loose List Import',
@@ -196,6 +236,21 @@ describe('bulk import planner', () => {
       'Sibling bullet',
     ]);
     expect(parent?.children?.map((child) => child.text)).toEqual(['Nested bullet']);
+  });
+
+  test('marks Markdown list items as visible RemNote bullets', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Summary note',
+      '',
+      '## Summary',
+      '',
+      '- First point',
+      '- Second point',
+    ].join('\n'));
+    const summary = plan.tree.children?.find((child) => child.text === 'Summary');
+
+    expect(summary?.children).toHaveLength(2);
+    expect(summary?.children?.map((child) => child.style?.hideBullet)).toEqual([false, false]);
   });
 
   test('plans generic H2 sections for small synthetic bulk import without wrapper duplication', () => {
@@ -718,7 +773,7 @@ describe('bulk import final verification', () => {
       expect.objectContaining({
         chunkId: sectionChunk?.chunkId,
         semanticText: 'Bullet B',
-        sourceSpan: { startLine: 2, endLine: 2 },
+        sourceSpan: { startLine: 3, endLine: 3 },
         expectedParentRemId: 'section-a-rem',
         actualParentRemId: 'bullet-a-rem',
         remId: 'bullet-b-rem',
