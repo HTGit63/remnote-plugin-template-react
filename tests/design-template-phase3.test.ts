@@ -6,6 +6,8 @@ import {
   defaultNoteDesignRules,
   exportNoteDesignTemplate,
   importNoteDesignTemplate,
+  deleteNoteDesignTemplate,
+  listNoteDesignTemplates,
   previewNoteDesignPlan,
   saveNoteDesignTemplate,
 } from '../src/remnote/templates/designTemplates';
@@ -441,5 +443,26 @@ describe('Phase 3 design-template identity and compiler', () => {
       overwrite: true,
       expectedVersion: initial.template.version + 1,
     })).rejects.toMatchObject({ code: 'STALE_STATE_CONFLICT' });
+  });
+
+  test('deletes one saved template without disturbing the others', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const first = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'delete-first',
+      name: 'Delete first',
+      rules: roleRules(),
+    });
+    await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'keep-second',
+      name: 'Keep second',
+      rules: roleRules(),
+    });
+
+    const deleted = await deleteNoteDesignTemplate(fake.asPlugin(), first.template.templateId);
+    const listed = await listNoteDesignTemplates(fake.asPlugin(), { includeRules: false });
+
+    expect(deleted).toEqual({ status: 'deleted', templateId: 'delete-first', templateCount: 1 });
+    expect(listed.templates).toEqual([expect.objectContaining({ templateId: 'keep-second' })]);
   });
 });

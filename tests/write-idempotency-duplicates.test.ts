@@ -184,6 +184,33 @@ describe('write idempotency and duplicate protection', () => {
     expect(childTexts).toEqual(['4.1 First extension', '4.2 Second extension']);
   });
 
+  test('structured Markdown append skips duplicate direct children across different idempotency keys', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('structured-append-dedupe-target', 'Advanced');
+    const input = {
+      targetRemId: target._id,
+      markdownText: ['### Stable extension', '', 'Stable body.'].join('\n'),
+      duplicatePolicy: 'skip' as const,
+      remnoteLayout: { preserveBlankLines: false },
+    };
+
+    await appendMarkdownAsRemTree(fake.asPlugin(), {
+      ...input,
+      safetyOptions: { idempotencyKey: 'idem:append-dedupe:first' },
+    });
+    const second = await appendMarkdownAsRemTree(fake.asPlugin(), {
+      ...input,
+      safetyOptions: { idempotencyKey: 'idem:append-dedupe:second' },
+    });
+
+    const childTexts = await Promise.all(
+      target.children.map((childId) => fake.richText.toString(fake.rems.get(childId)?.text ?? []))
+    );
+    expect(childTexts).toEqual(['Stable extension']);
+    expect(second.status).toBe('skipped');
+    expect(second.skippedRemIds).toHaveLength(1);
+  });
+
   test('markdown readback rejects formulas flattened into plain text', async () => {
     const fake = new FakePlugin();
     fake.flattenMathToPlainText = true;

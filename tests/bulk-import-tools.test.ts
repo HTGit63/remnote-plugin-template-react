@@ -1087,4 +1087,28 @@ describe('bulk import MCP tools', () => {
     const after = text(await h.handlers.get_note_import_job_status({ jobId }));
     expect(after.job.chunks[0].status).toBe('written_not_verified');
   });
+
+  test('completed jobs never recommend resume when final readback disagrees', async () => {
+    const h = makeHarness({
+      writeResponses: [
+        success('write-1', { createdRemIds: ['chunk-1'], updatedRemIds: [], verification: { passed: true } }),
+        success('write-2', { createdRemIds: ['chunk-2'], updatedRemIds: [], verification: { passed: true } }),
+      ],
+    });
+    const { jobId } = await h.createJob('bulk-job:completed-readback-mismatch');
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 10, dryRun: false });
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    const verify = text(await h.handlers.verify_note_import_job({
+      jobId,
+      actualTextByChunkId: Object.fromEntries(
+        status.job.chunks.map((item: any) => [item.chunkId, 'The live artifact contains different text.'])
+      ),
+    }));
+
+    expect(status.job.status).toBe('completed');
+    expect(verify.status).toBe('FAIL');
+    expect(verify.recommendedAction).not.toContain('resume_note_import_job');
+    expect(verify.recommendedAction).toMatch(/inspect|repair|reconcile/i);
+  });
 });

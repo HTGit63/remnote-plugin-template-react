@@ -490,7 +490,7 @@ export async function appendMarkdownAsRemTree(
     ...args,
     targetRemId: args.targetRemId,
     mode: 'append_children_to_target',
-    duplicatePolicy: 'create_new',
+    duplicatePolicy: args.duplicatePolicy ?? 'skip',
     safetyOptions: {
       dryRun: args.safetyOptions?.dryRun ?? false,
       verifyAfterWrite: args.safetyOptions?.verifyAfterWrite ?? true,
@@ -831,12 +831,54 @@ export async function createOrReplaceNoteFromMarkdown(
       if (!normalized.targetRemId) {
         throw new RemnoteWriteError('INVALID_ARGS', `${normalized.mode} mode requires targetRemId.`);
       }
+      let appendNodes = normalized.mode === 'append_children_to_target' ? fragmentNodes ?? [] : [writeTree];
+      if (normalized.duplicatePolicy === 'skip') {
+        const uniqueNodes: StyledRemTreeNode[] = [];
+        const duplicateIds: string[] = [];
+        for (const node of appendNodes) {
+          const duplicate = await findDirectChildByPlainText(
+            plugin,
+            normalized.targetRemId,
+            node.text ?? node.title ?? node.latex ?? ''
+          );
+          if (duplicate) {
+            duplicateIds.push(duplicate._id);
+          } else {
+            uniqueNodes.push(node);
+          }
+        }
+        appendNodes = uniqueNodes;
+        skippedRemIds = duplicateIds.length ? duplicateIds : undefined;
+        if (appendNodes.length === 0 && skippedRemIds?.length) {
+          const performance = buildWritePerformanceReport({
+            phaseDurationsMs: {
+              planning: planningDurationMs,
+              singleWriteExecution: Date.now() - writeStartedAt,
+              verification: 0,
+              total: Date.now() - startedAt,
+            },
+            primaryToolCallCount: 1,
+            sdkOperationCount: 0,
+            fallbackUsed: false,
+          });
+          const result: CreateOrReplaceNoteFromMarkdownResult = {
+            ...baseResult,
+            rootRemId: normalized.targetRemId,
+            skippedRemIds,
+            status: 'skipped',
+            performance,
+            durationMs: Date.now() - startedAt,
+          };
+          rememberMarkdownImportResult(idempotencyKey, result);
+          return result;
+        }
+      }
       batchResult = fallback.used && normalized.mode === 'append_to_target'
         ? await createRootThenAppendSectionChunks(normalized.targetRemId)
         : await applyStructuredNoteBatch(plugin, {
             target: { mode: 'rem_id', remId: normalized.targetRemId },
             operation: 'append_children',
-            note: { children: normalized.mode === 'append_children_to_target' ? fragmentNodes ?? [] : [writeTree] },
+            note: { children: appendNodes },
             dryRun: false,
             idempotencyKey,
             rollbackOnFailure: normalized.safetyOptions.rollbackOnFailure,

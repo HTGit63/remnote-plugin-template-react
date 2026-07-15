@@ -619,6 +619,26 @@ describe('bulk import planner', () => {
     ]));
   });
 
+  test('converts thematic breaks into hidden spacer Rems without visible Markdown pollution', () => {
+    const plan = parseMarkdownImportPlan([
+      '# Divided Note',
+      '',
+      'First section.',
+      '',
+      '---',
+      '',
+      'Second section.',
+    ].join('\n'));
+    const output = markdownImportOutputTextFromTree(plan.tree);
+    const divider = plan.tree.children?.find((child) => child.clientNodeId?.startsWith('thematic-break-'));
+
+    expect(output.split('\n').map((line) => line.trim())).not.toContain('---');
+    expect(divider).toMatchObject({ text: ' ', style: { hideBullet: true } });
+    expect(plan.representationWarnings).toEqual(expect.arrayContaining([
+      expect.stringMatching(/thematic break.*spacer/i),
+    ]));
+  });
+
   test('consumes first-line title so one-line chunk does not duplicate itself', () => {
     const plan = parseMarkdownImportPlan('Formula: A=Z+N.');
 

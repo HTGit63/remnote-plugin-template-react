@@ -339,6 +339,7 @@ export function normalizeArgs<TTool extends BridgeToolName>(
       return {
         targetRemId: requiredRemId(args, 'targetRemId'),
         markdownText: requiredMarkdownText(args),
+        duplicatePolicy: getStringField(args, 'duplicatePolicy') as AppendMarkdownAsRemTreeArgs['duplicatePolicy'],
         headingMapping: isPlainObject(raw.headingMapping)
           ? (raw.headingMapping as AppendMarkdownAsRemTreeArgs['headingMapping'])
           : undefined,

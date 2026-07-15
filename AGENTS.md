@@ -12,17 +12,34 @@ This repository provides a TypeScript RemNote plugin, an MCP server, ChatGPT/Cod
 
 - Audited branch: `fix/remnote-mcp-mass-note-creation-stability`.
 - Report-era audited commit: `ff5e6d1ebf12dfc41c0e037cff99bfe690def240` (`graphify update and 18 stage task complete`).
-- Latest 2026-07-14 live-campaign deployed commit: `81eef931bf598fcb46d89c8a44f1f4d4a7034320` on the same branch. The post-campaign fixes described below are a local candidate and have **not** been deployed or live-retested.
-- Historical benchmark reports reviewed: **23 Markdown files**, covering Tests **01–15**. The report directory now also contains the new cross-test campaign report `remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
-- Report dates: 2026-07-12 and 2026-07-13.
+- Latest verified deployed commit: `a65ce2cf5f9cda94a6bb818d35def5d0ea1e4065` on the same branch. The 2026-07-15 release-readiness and native-widget changes described below are a local candidate and have **not** been deployed or live-retested.
+- Benchmark reports reviewed: **24 Markdown files**, covering Tests **01–15**, including the cross-test campaign report `remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
+- Report dates: 2026-07-12 through 2026-07-14. The external 2026-07-15 Second-Eye Release Readiness Audit was checked separately against repository code and tests.
 - Latest live connection on 2026-07-14: hosted endpoint connected; initial sync complete; one active plugin session; SDK `0.0.46`; focused Rem `Plugin Test` (`OjLcSppWfIH0cpPoh`). The campaign was self-scoped to `New test` (`SMPeZUPMV64bHl7JI`) and created one run root, `Post-Deploy Benchmark 01–15 — 2026-07-14 — 81eef93` (`3QR2MpAEihc3YMXkJ`). `Old test` (`8RmenkVwDXr88CQYy`) was not mutated.
 - Live proof boundary: the latest Tests 01–15 evidence applies to deployed `81eef93`, not to the local post-campaign edits. Per deployment constraints, no edited code was live-retested in the same campaign. A push/deploy and targeted rerun are required before release.
 - The connection remained healthy for approximately 55 minutes with no reported reconnect attempt, late response, or pending-request leak. This is an in-run stability observation, not weak-network recovery proof. The installed connector still rejected `get_children.startIndex`; treat that as deployment/connector-catalog drift until refreshed after deployment.
 - Live access was `developer` with workspace/full-KB reach, broader than the default `mass_note_writer` profile. Every write used explicit IDs below `New test`; no scope violation, unauthorized write, blind retry, persistent duplicate, or late disconnect occurred during the campaign.
+- 2026-07-15 deployed-commit connection proof: bridge and plugin status both passed at `a65ce2c`; read-only health under `New test` passed 34 tools with zero failures (`health-mrmbuiph`), and safe-write health passed 54 tools with zero failures (`health-mrmbv47n`). The disposable sandbox root was `7DjhM3o9tQQQ4dIfx`. This proves the deployed baseline only, not the local candidate.
 
 ### Benchmark outcome
 
 The benchmark is not a blanket failure. Simple creation, structured notes, guarded factual correction, hierarchy surgery, core math creation, and multi-family card creation are strong. The latest campaign found locally reproducible defects in reconnect timing, Test 14 logical planning, blank-line/spacer handling, structured append, stale-parent classification, answer/summary design roles, dry-run envelopes, and native whole-Rem highlight enablement. Those code paths now have red/green regressions, but the deployed `81eef93` Test 14 run stopped safely before job creation and therefore did not re-prove persistent execution/resume behavior at that commit. Formula glyph font color and native heading mutation remain SDK limitations.
+
+### 2026-07-15 second-eye closure supplement
+
+The Second-Eye audit's seven code/release claims were re-traced rather than accepted from prose. All seven were confirmed in the `a65ce2c` source and addressed in the local candidate. Deployment evidence remains a separate gate.
+
+| Audit gap | Repository classification | Local candidate evidence | Remaining proof |
+| --- | --- | --- | --- |
+| GAP-01 completed-job verifier recommended resume | Confirmed `VER-003` contract defect. | State-aware recommendations never advise replay of completed/non-runnable work; `tests/bulk-import-tools.test.ts`. | Deployed completed-job mismatch probe. |
+| GAP-02 cross-key structured append duplicates | Confirmed `IMP-005` idempotency defect. | `duplicatePolicy: skip` is schema-visible and compares direct child semantic text across different keys; `tests/write-idempotency-duplicates.test.ts`. | Deployed Test 08 repeat with different keys. |
+| GAP-03 design-aware update bypass | Confirmed `DES-002` path defect. | `updateNoteWithDesign` compiles through saved/default rules, writes the compiled tree, records materialization evidence, and saves an exact applied manifest; `tests/design-template-preview.test.ts`. | Deployed Tests 11–12. |
+| GAP-04 exact verifier contamination | Confirmed `VER-001` evidence-mixing defect. | Applied-manifest verification is authoritative and no longer invokes generic preset assumptions; `tests/verifier-evidence-phase4.test.ts`. | Deployed Tests 11–12. |
+| GAP-05 stale Graphify outputs | Confirmed release-evidence defect. | Graphify refreshed to 4,567 nodes / 10,418 edges and a new architecture review was opened at `/tmp/architecture-review-remnote-mcp-2026-07-15.html`. | Review generated diff before merge. |
+| GAP-06 no CI | Confirmed release-engineering defect. | `.github/workflows/ci.yml` runs types, 261-test suite, SDK validation/build, server build/security/schema/idempotency/health, PostgreSQL durability, and the full server fault smoke. | Independent GitHub run after push and required branch protection. |
+| GAP-07 thematic break pollution | Confirmed Markdown representation defect. | CommonMark thematic breaks become hidden-bullet spacer Rems with an explicit supported-fallback warning; `tests/bulk-import.test.ts`. | Deployed Test 05 visual/readback control. |
+
+Local release evidence at this candidate: **28 test files / 261 tests passed**, TypeScript, SDK validation, plugin build, server build, security/schema/idempotency/health routing, full server fault smoke, and PostgreSQL restart/CAS durability passed. The new widget removes the setup wall, presents Connection, Writing Access, and Design Style first, moves operator diagnostics under Advanced Details, adds the `Structured Science` preset and custom-style deletion, repairs health/copy fallbacks, and uses `public/logo.svg` for both the toolbar/tab and panel brand surfaces. Native RemNote visual acceptance remains post-deploy.
 
 ### 2026-07-14 deployed live-campaign supplement
 
@@ -36,7 +53,7 @@ This campaign supplements the 23 historical report files; it does not rewrite th
 | Phase 4 / Tests 11–15 | Test 11 self-manifest verification passed incomplete semantics; Test 12 dry-run outer `ok` contradicted its valid plan. Test 13 card verification passed cleanly. | Exact role targets, visible summary rules, and dry-run envelope truth have focused regressions. | Rerun Tests 11, 12, 13, the Test 14 verifier, and Test 15 controls. |
 | Phase 5 / Tests 03, 05–07, 12 | Formula creation stayed reliable. Whole-formula-Rem highlight failed on deployed code; native headings remained safely unsupported. | Native whole-Rem highlight is the supported formula emphasis path; style correctness now verifies it. Formula glyph font color is explicitly unsupported. | Rerun whole-Rem highlight and targeted Tests 03, 05, 06, 07, 12; never claim formula glyph color. |
 | Phase 6 / Tests 01, 02, 09, 10 | One session stayed healthy; symbol search was non-exhaustive; stale text conflict passed; stale parent used generic `INVALID_ARGS`; connector continuation schema drift remained. | Heartbeat timeout, reconnect timer/socket races, registration failure, stale-event handling, and stale-parent conflict are regression-tested. | Weak-network soak, connector refresh, `startIndex` call, and targeted read/error reruns. |
-| Phase 7 / Test 15 | 154 Rems, exactly 11 sections, 12/12 cards, and ID-preserving formula repair passed; design limitations remained. | 26 test files / 249 tests, types, SDK validation, plugin/server builds, style/source/schema/idempotency/performance gates pass. Socket-binding smokes are sandbox-blocked and PostgreSQL proof is blocked without `DATABASE_URL`. | Deploy, run targeted phases, then an independent Test 15 and connection soak. |
+| Phase 7 / Test 15 | 154 Rems, exactly 11 sections, 12/12 cards, and ID-preserving formula repair passed; design limitations remained. | 28 test files / 261 tests, types, SDK validation, plugin/server builds, full server fault smoke, security/schema/idempotency/health routing, PostgreSQL restart/CAS durability, Graphify refresh, and CI definition pass locally. | Push, require independent CI, deploy, run targeted phases, then an independent Test 15 and connection soak. |
 
 ### Report inventory
 
@@ -135,7 +152,7 @@ Prompt reproductions inside reports are context, not observed evidence. The find
 
 ## 4. Consolidated issue register
 
-Priority counts: **P0: 4**, **P1: 12**, **P2: 4**, **P3: 2**. Total: **22 consolidated issues**. Historical live closure at `466b808` is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `81eef93`; “local candidate” means automated proof that awaits deployment.
+Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consolidated issues**. Historical live closure is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `a65ce2c`; “local candidate” means automated proof that awaits deployment.
 
 | Issue ID | Priority | Subsystem | Evidence | Root-cause status | Planned phase |
 | --- | --- | --- | --- | --- | --- |
@@ -160,6 +177,8 @@ Priority counts: **P0: 4**, **P1: 12**, **P2: 4**, **P3: 2**. Total: **22 consol
 | `ERR-001` | P2 | Schemas / error taxonomy | Tests 09–10 found stale-state and structural validation returned `INVALID_ARGS`, `plugin_permission`, and irrelevant permission guidance; some calls used `text` where schema expected `title`. | Local fix complete: conflict code, layers/actions, aliases, and envelope tests pass. | 6 |
 | `OBS-001` | P3 | Envelopes / observability / performance | Live design repair returned applied operations but zero outer updated IDs and no attempted verification; verifier tools omitted standard verification evidence. | Local candidate lifts updated IDs, typed verification method/pass state, checked role IDs, and rejects inner verification failure at the standard envelope. | 6 |
 | `CONN-001` | P1 | Bridge / connection lifecycle | Weak internet caused repeated disconnects; code closed after a single missed-pong cycle and client timers/socket callbacks could race or stack. | Server now honors the configured pong timeout; client coalesces timers, ignores stale socket events, closes failed registration, and resets backoff only after `server_hello`. Six unit regressions pass; weak-network live soak pending. | 6 |
+| `REL-001` | P1 | Release engineering / CI | Second-Eye GAP-06 found no independent workflow for the candidate; local-only evidence could not gate a public release. | CI now installs plugin/server dependencies, runs typed/build/security/schema/idempotency/health gates, and proves persistent storage against PostgreSQL. Independent GitHub status is pending push. | 7 |
+| `UX-001` | P2 | Native RemNote widget | The default view was a setup/diagnostic wall; health/copy controls failed on constrained browser surfaces; template use/delete and both logo surfaces were unclear or stale. | Default information architecture, clipboard fallback, independent health probes, featured/custom template lifecycle, accessibility CSS, and both logo surfaces are locally implemented and tested. Native visual proof is pending deployment. | 7 |
 | `ARCH-001` | P3 | Architecture / maintainability | Import registration, design tools, and verification files combine orchestration, persistence mutation, normalization, and policy. Defects cross these seams. | Bounded state/compiler/verifier seams and dependency/migration tests pass; no broad rewrite performed. | 7 |
 
 ## 5. Dependency-ordered remediation phases
@@ -168,7 +187,7 @@ The phases are ordered by data safety. A later phase may add characterization te
 
 ### Phase 1 — Make resumable import state truthful and crash-safe
 
-**Implementation status (2026-07-14): `LOCAL_STATE_MACHINE_COMPLETE / CURRENT DEPLOYMENT RERUN REQUIRED`.** Historical live work exercised state transitions, but the latest deployed `81eef93` exact Test 14 stopped at the pre-job planning gate because five logical sections were returned instead of four. The planner defect is fixed and exact-fixture planning passes locally; current-commit persistent execution, reconnect, reverification, and replay behavior still require two post-deploy runs. Memory persistence passes locally; PostgreSQL proof is blocked until `DATABASE_URL` is available.
+**Implementation status (2026-07-15): `LOCAL_STATE_AND_POSTGRES_COMPLETE / DEPLOYED TWO-RUN GATE OPEN`.** State transitions, exact planning, completed-job guidance, memory persistence, PostgreSQL provider restart, and stale-writer/CAS behavior pass locally. Two persistent Test 14 runs on the deployed local candidate remain mandatory.
 
 #### Objective
 
@@ -234,8 +253,8 @@ Guarantee that persisted job state, mutation identity, live RemNote state, and r
 - Commands: `npm test -- tests/bulk-import-tools.test.ts tests/bulk-import-access.test.ts`, `npm run server:test:bulk-storage`, `npm run server:test:idempotency`, `npm run server:build`.
 - Attach command output, fault-injection matrix, serialized before/after states, and exact operation/attempt IDs.
 - Rerun Test 14 twice consecutively; include before/after behavior and prove no regression in Tests 08, 09, 10, and 13 safety invariants.
-- [x] Local command gate passed: focused Phase 1 tests, idempotency certification, server build, and the 249-test repository suite. Network-binding server smoke is environment-blocked; PostgreSQL durability remains externally blocked without `DATABASE_URL`.
-- [ ] Re-prove persistence against a real temporary PostgreSQL instance at the final candidate revision, including stale-writer rejection and provider-restart reload. Current memory proof passes; `DATABASE_URL` is unavailable in this run.
+- [x] Local command gate passed: focused Phase 1 tests, idempotency certification, server build, full server fault smoke, PostgreSQL durability/restart/CAS proof, and the 261-test repository suite.
+- [x] Re-prove persistence against a real temporary PostgreSQL instance at the final candidate revision, including stale-writer rejection and provider-restart reload. A disposable PostgreSQL 16 instance passed persistent reload, revision 2 retention, and stale-writer rejection on 2026-07-15.
 - [ ] Complete two deployed live Test 14 state-machine executions at the final candidate revision with no verifier mutation, lost IDs, unsafe resume, replay, hierarchy corruption, or persistent duplicate. Deployed `81eef93` stopped before job creation.
 
 #### Definition of done
@@ -244,7 +263,7 @@ Phase 1 may be checked complete only when `IMP-001`–`IMP-004` are closed by au
 
 ### Phase 2 — Preserve import hierarchy and semantic source fidelity
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed `81eef93` preserved Test 05 semantics but exposed Test 07 spacer and Test 08 structured-append defects; exact Test 14 failed its logical-section planning gate before write. Planner, blank-line, visible-bullet, and append fixes pass locally. Authorized connector attachment handoff remains unavailable.
+**Implementation status (2026-07-15): `LOCAL_CANDIDATE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Planning, blank-line behavior, visible bullets, cross-key structured append skipping, semantic manifests, and thematic-break fallback pass locally. Authorized connector attachment handoff and deployed Tests 05/08/14 remain open.
 
 #### Objective
 
@@ -307,7 +326,7 @@ Turn logical source sections into stable RemNote hierarchy through supported fil
 - Commands: `npm test -- tests/bulk-import.test.ts tests/source-file-loader.test.ts tests/bulk-import-tools.test.ts tests/style-presets.test.ts`, `npm run server:test:source-fidelity`, `npm run validate`.
 - Attach source/semantic manifests, tree before/after samples, exact connector-envelope fixtures, and Test 05/Test 14 rerun reports.
 - Prove no regression in Test 06 formulas and Test 08 safe extension.
-- [x] Local command gate passed: focused hierarchy/loader/write tests, exact Test 14 planning proof, source-fidelity and Markdown-importer certifications, SDK validation, formula/style control, and Test 08 append regressions within the 249-test suite.
+- [x] Local command gate passed: focused hierarchy/loader/write tests, exact Test 14 planning proof, source-fidelity and Markdown-importer certifications, SDK validation, thematic-break and cross-key append regressions, formula/style control, and the 261-test suite.
 - [ ] Deploy the local candidate, rerun Test 05, rerun the `VER-003` Test 14 final verifier, and prove one authorized connector attachment/file handoff. Earlier `466b808` direct-text hierarchy evidence is historical; deployed `81eef93` stopped at the planner gate.
 
 #### Definition of done
@@ -316,7 +335,7 @@ Phase 2 is complete only when `IMP-005`, `FILE-001`, and `MD-001` meet the obser
 
 ### Phase 3 — Compile saved design rules into one deterministic note plan
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed `81eef93` confirmed explicit source identity, one target root, and seven sections, but over-applied answer emphasis, hid summary bullets, and could not apply whole-formula-Rem highlight. Answer-result classification, numbered-summary visible-bullet transfer, and native whole-Rem highlight pass locally; two independent deployed runs remain required.
+**Implementation status (2026-07-15): `LOCAL DESIGN PIPELINE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Explicit source identity, role transfer, one-root creation, saved-rule compilation, design-aware existing-note updates, exact materialization evidence, and applied-manifest storage pass locally. Two independent deployed Test 11 runs and Test 12 remain required.
 
 #### Objective
 
@@ -388,7 +407,7 @@ Phase 3 is complete only when `DES-001`–`DES-003` pass analyzer identity, seri
 
 ### Phase 4 — Make verifiers read-only, typed, and evidence-specific
 
-**Implementation status (2026-07-14): `LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Latest live metadata proved all 14 Test 13 cards functional and duplicate-free, while Test 11 self-manifest verification could not prove omitted semantic requirements and Test 12 returned a contradictory dry-run envelope. Exact role targeting and dry-run envelope truth pass locally.
+**Implementation status (2026-07-15): `LOCAL EVIDENCE VERIFIERS COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Exact applied manifests no longer inherit generic preset assumptions, import guidance is state-safe, card direct-metadata controls remain green, and dry-run envelope truth passes locally. Deployed Tests 11–14 remain required.
 
 #### Objective
 
@@ -452,7 +471,7 @@ Choose the correct verification mode for each claim and prevent heuristic warnin
 - Commands: `npm test -- tests/card-verifier.test.ts tests/verification-status.test.ts tests/tool-status-matrix.test.ts tests/design-template-preview.test.ts`, `npm run server:test:tool-schemas`, `npm run test:style-correctness`.
 - Attach mutation-spy output, exact-versus-heuristic fixtures, property readbacks, and Test 11/12/13 reruns.
 - Prove Test 13 remains 14/14 functional and duplicate-free twice.
-- [x] Local command gate passed: Phase 4 verifier/design/card regressions, schema certification, style correctness, and the 249-test repository suite.
+- [x] Local command gate passed: Phase 4 exact-manifest/import-guidance/design/card regressions, schema certification, style correctness, and the 261-test repository suite.
 - [ ] Deploy the local candidate and rerun Tests 11, 12, 13, the Test 14 final verifier, and the Test 15 card/design controls with zero false findings.
 
 #### Definition of done
@@ -461,7 +480,7 @@ Phase 4 is complete only when `VER-001` and `VER-002` close with read-only invar
 
 ### Phase 5 — Preserve rich text, math, headings, and Markdown style on repair
 
-**Implementation status (2026-07-14): `LIVE_DIAGNOSED / LOCAL_CANDIDATE / DEPLOYMENT RERUN REQUIRED`.** Deployed probes proved heading mutation is safely unsupported without pollution and reproduced whole-formula-Rem highlight being gated off. Native whole-Rem highlight, node-aware ranges, raw math-style serialization/readback, quote handling, and heading-loss evidence pass locally. Formula glyph font color is an explicit SDK limitation.
+**Implementation status (2026-07-15): `LIVE BASELINE DIAGNOSED / LOCAL CANDIDATE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Whole-Rem formula-block highlighting remains the supported emphasis path; math glyph font color and unsafe native heading mutation remain explicit SDK limitations. Node-aware ranges, rich preservation, quote handling, and honest unsupported results pass locally.
 
 #### Objective
 
@@ -528,7 +547,7 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - Commands: `npm run test:style-correctness`, `npm test -- tests/style-presets.test.ts tests/write-idempotency-duplicates.test.ts tests/agents-staged-repair-simulation.test.ts`, `npm run check-types`, `npm run build`.
 - Attach raw rich-text before/after, exact Rem IDs, property readback, unsupported-capability results, and targeted benchmark reruns.
 - Prove Test 06 core rich-math creation remains at its prior reliable baseline.
-- [x] Local command gate passed: rich-repair, native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and 249-test repository suites.
+- [x] Local command gate passed: rich-repair, native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and 261-test repository suites.
 - [ ] Deploy the local candidate and rerun mixed-rich/math readback plus targeted Tests 03, 05, 06, 07, and 12. Heading must remain truthful unsupported unless the deployed SDK proves a safe native mutation.
 
 #### Definition of done
@@ -537,7 +556,7 @@ Phase 5 is complete only when `RICH-001`, `HEAD-001`, and `MD-002` meet operatio
 
 ### Phase 6 — Make reads, schemas, errors, scope, and reconnection actionable
 
-**Implementation status (2026-07-14): `LOCALLY COMPLETE / LIVE CATALOG_AND_SOAK REQUIRED`.** The latest one-session connection stayed healthy for approximately 55 minutes, but this does not prove weak-network recovery. Symbol-heavy search remained non-exhaustive, stale text conflict passed, stale parent used generic `INVALID_ARGS`, and the connector omitted source-implemented `startIndex`. Heartbeat timeout, socket/timer races, failed registration, stale close events, and stale-parent conflict pass locally.
+**Implementation status (2026-07-15): `LOCAL AND DEPLOYED BASELINE HEALTHY / WEAK-NETWORK SOAK REQUIRED`.** Deployed `a65ce2c` passed 34 read-only and 54 safe-write health checks with zero failures. Local reconnect races, 90-second heartbeat tolerance, read-before-retry, security, schema, and full fault smoke pass. Connector catalog refresh, `startIndex` proof, and a genuine weak-network soak remain open.
 
 #### Objective
 
@@ -607,7 +626,7 @@ Return bounded data with usable continuation, stable schemas, correct error laye
 - Commands: `npm test -- tests/read-tools.test.ts tests/tool-status-matrix.test.ts tests/timeout-budgets.test.ts tests/http-body-limit.test.ts`, `npm run server:test:tool-schemas`, `npm run server:test:boundaries`, `npm run server:test:connector-compat-routing`, `npm run server:test:codex-routing`, `npm run server:smoke`.
 - Attach continuation examples, error matrix, reconnect timeline, live connection diagnostics, and targeted benchmark reports.
 - Prove no regression in guarded correction, hierarchy surgery, scope, approval, or idempotency.
-- [x] Local unit gate passed: read/error/retry/reconnect regressions, Area 1 schemas, source fidelity, idempotency, style schema, structured depth, performance, and the 249-test repository suite. Hosted/socket-binding routing, security, and server smoke cannot bind `127.0.0.1` in this sandbox and require an external run.
+- [x] Local unit gate passed: read/error/retry/reconnect regressions, Area 1/3 schemas, source fidelity, idempotency, style schema, structured depth, performance, security, health routing, full server fault smoke, and the 261-test repository suite.
 - [x] Targeted deployed controls for Tests 01, 02, 09, and 10 completed: connection, tree/direct-ID reads, stale-text conflict, hierarchy operations, and scope passed; symbol search returned a bounded false negative, stale parent used `INVALID_ARGS`, and connector continuation drift remained. Local fixes cover stale parent/reconnect; refresh the connector and rerun search/continuation after deployment.
 
 #### Definition of done
@@ -616,7 +635,7 @@ Phase 6 is complete only when `READ-001`, `ERR-001`, and `OBS-001` meet read/sch
 
 ### Phase 7 — Lock architectural seams and pass the release benchmark
 
-**Implementation status (2026-07-14): `LOCAL_ARCHITECTURE_COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** State, compiler, verifier, migration, compatibility, performance, and architecture unit gates pass. The fresh standalone review is `/tmp/remnote-mcp-architecture-review-2026-07-14.html`. PostgreSQL and socket-binding smokes are externally blocked in this environment. Release remains open because edited code has not been deployed and cannot reuse deployed `81eef93` evidence as post-fix proof.
+**Implementation status (2026-07-15): `LOCAL RELEASE CANDIDATE COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** State, compiler, verifier, migration, compatibility, UX, CI definition, Graphify, PostgreSQL, security, full server smoke, 28 files / 261 tests, types, validation, and builds pass. The standalone review is `/tmp/architecture-review-remnote-mcp-2026-07-15.html`. Release remains open because the edited candidate has not been pushed/deployed and cannot reuse `a65ce2c` as post-fix proof.
 
 #### Objective
 
@@ -634,6 +653,7 @@ Reduce change coupling only around proven defects, then establish an honest rele
 - Design seam: `src/remnote/templates/designTemplates.ts`, `src/remnote/write/designedNoteTools.ts`, design registration/UI state.
 - Verification seam: `src/remnote/write/verification.ts`, card/design/import verifiers, `server/src/tools/tool-context.ts`.
 - Test/release scripts in root and `server/package.json`, smoke/audit entrypoints under `server/src/`, and `server/src/area3-certification.ts`.
+- Native widget/release seam: `src/widgets/bridge-status.tsx`, `src/widgets/bridge-panel/runtime-actions.ts`, `src/widgets/bridge-panel/design-styles.ts`, `src/index.css`, `public/logo.svg`, `.github/workflows/ci.yml`, and `PRODUCT.md`.
 
 #### Investigation tasks
 
@@ -648,6 +668,9 @@ Reduce change coupling only around proven defects, then establish an honest rele
 - [x] Preserve public tool names and compatible schemas unless a versioned migration is required.
 - [x] Preserve existing pathways; no dead duplicate path was removed without live supported-caller evidence.
 - [x] Run final dependency-graph inspection only after behavior and schemas are final; restore generated outputs that indexed untracked benchmark fixtures, and do not let docs imply live proof that was not run.
+- [x] Add a least-privilege CI workflow with real PostgreSQL durability, security, schemas, idempotency, health routing, types, tests, validation, and builds; keep independent GitHub status as a post-push gate.
+- [x] Replace the native widget setup/diagnostic wall with Connection, Writing Access, and Design Style; put diagnostics and dangerous controls under Advanced Details.
+- [x] Add the `Structured Science` recommended preset, current-style capture, custom-style deletion, resilient clipboard/health actions, and the supplied logo on both native brand surfaces.
 
 #### Regression tests
 
@@ -668,8 +691,10 @@ Reduce change coupling only around proven defects, then establish an honest rele
 
 - Commands: `npm test`, `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, `npm run server:smoke` plus all relevant `server:test:*` gates from prior phases.
 - Attach complete outputs, dependency diff, migration fixtures, before/after benchmark behavior, and a no-regression matrix.
-- [x] Locally runnable release gate passed: 26 test files/249 tests, types, SDK validation, plugin/server builds, style and simulated workflows, source fidelity, Area 1 schemas, idempotency, structured depth, and performance. Socket-binding smokes are sandbox-blocked and PostgreSQL is blocked without `DATABASE_URL`; neither is claimed as passed.
-- [x] Dependency graph refreshed locally on 2026-07-14; architecture tests lock the import/compiler/verifier seams and conservative job/template migrations; the final standalone review was generated and opened from `/tmp/remnote-mcp-architecture-review-2026-07-14.html`.
+- [x] Updated 2026-07-15 local gate passed: 28 test files/261 tests, types, SDK validation, plugin/server builds, security, tool schemas, idempotency, health routing, full fault smoke, and PostgreSQL restart/CAS durability.
+- [x] Dependency graph refreshed locally on 2026-07-15 to 4,567 nodes / 10,418 edges; architecture tests lock the import/compiler/verifier seams and conservative migrations; the standalone review was generated and opened from `/tmp/architecture-review-remnote-mcp-2026-07-15.html`.
+- [x] Native widget source/build acceptance passed: setup text is absent, the supplied logo is copied byte-for-byte to `dist/logo.svg`, accessibility styles retain 44px controls/focus/reduced motion, and focused runtime-action/template tests pass. Standalone browser rendering is not valid outside the RemNote SDK host and is not claimed as native visual proof.
+- [ ] After push, require the GitHub CI workflow to pass at the candidate SHA and enable branch protection for that workflow before public release.
 - [ ] After push/deploy, rerun the targeted Phase 2–5 failures, Test 14 final verification, Tests 11–13, and an independent Test 15. Pre-edit live evidence cannot close this candidate's release gate.
 
 #### Definition of done
@@ -781,21 +806,21 @@ Protect these evidence-backed capabilities. Change them only when a failing char
 - Do not fake heading success with visible metadata children or plain text.
 - Do not add broad workspace scans to compensate for bounded reads/search.
 - Do not treat benchmark fixture defects, agent schema mistakes, or connection failures as plugin logic defects.
-- Do not perform broad architecture cleanup, UI redesign, documentation rewrite, or dependency migration unrelated to the consolidated issues.
+- Do not perform broad architecture cleanup, documentation rewrite, or dependency migration unrelated to the consolidated issues. The bounded native operator-panel redesign in `UX-001` is explicitly in scope; unrelated product UI is not.
 
 ## 10. Final release gate
 
 Release is allowed only when all conditions below have current evidence at the candidate commit and deployed plugin version.
 
-- [ ] No Priority 0 issue remains open at the deployed candidate; local state-machine/memory tests pass, but current-commit PostgreSQL and two-run live Test 14 proof remain outstanding.
+- [ ] No Priority 0 issue remains open at the deployed candidate; local state-machine and PostgreSQL restart/CAS tests pass, but two-run deployed Test 14 proof remains outstanding.
 - [ ] Every Priority 1 acceptance criterion is met; unsupported SDK features are explicit and cannot produce false success.
-- [ ] The complete local gate passes at the candidate revision. Current evidence: `npm test` (26 files / 249 tests), types, SDK validation, plugin/server builds, style/source/schema/idempotency/performance gates pass; socket-binding server gates and PostgreSQL remain externally blocked.
+- [x] The complete local gate passes at the candidate revision: `npm test` (28 files / 261 tests), types, SDK validation, plugin/server builds, full server fault smoke, security/schema/idempotency/health routing, and PostgreSQL restart/CAS durability pass.
 - [ ] Test 14 passes twice consecutively with persistent storage, no verifier mutation, no replay, no lost IDs, no state/artifact disagreement, no hierarchy corruption, and no persistent duplicates.
 - [ ] Test 11 design learn/save/apply workflows pass in the required independent runs with one target root and complete supported-rule accounting.
 - [ ] Test 12 diagnosis/repair passes without style loss or generic-verifier false claims.
 - [ ] Test 13 remains functional, 14/14 correct, duplicate-free, and free of aggregate false card defects in main and repeat runs.
 - [ ] Test 15 passes the required independent run set, including a new Run 03, within the benchmark repeatability threshold.
-- [x] Connection, branch, deployed commit `81eef93`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. The post-fix candidate commit must be added after commit/deployment.
+- [x] Connection, branch, deployed commit `a65ce2c`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. Read-only and safe-write health passed with zero failures. The post-fix candidate commit must be added after commit/deployment.
 - [x] No scope violation, unauthorized write, secret disclosure, blind retry, or ambiguous-session write occurred in the 2026-07-14 campaign or local gates.
 - [ ] No silent content loss, Rem-ID instability, unrelated-note mutation, child-order drift, or visible metadata pollution occurred.
 - [x] Latest live direct readback found no persistent duplicate root, repair artifact, or card. Test 14 created no job because the source-plan gate failed, so it made no duplicate import artifact.

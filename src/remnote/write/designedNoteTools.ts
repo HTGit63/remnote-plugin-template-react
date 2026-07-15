@@ -40,6 +40,7 @@ import {
 import { compileNoteDesignPlan } from '../templates/designPlanCompiler';
 import { createBasicFlashcard, createClozeCard } from './cardWrites';
 import { createOrReplaceNoteFromMarkdown } from './markdownImportExecutor';
+import { applyStructuredNoteBatch } from './structuredBatch';
 import { findRequiredRem, getRemPlainString, getRemRichText } from './remnoteSdkHelpers';
 import { applyStylePlan } from './formattingWrites';
 import { createPolishedNoteTree } from './treeWrites';
@@ -192,7 +193,11 @@ async function collectDesignMaterializationEvidence(
   plugin: RNPlugin,
   compiled: ReturnType<typeof compileNoteDesignPlan>,
   rules: NoteDesignRules,
-  polishedTreeResult: Awaited<ReturnType<typeof createPolishedNoteTree>>,
+  polishedTreeResult: {
+    rootRemId?: string;
+    rootCreatedRemId?: string;
+    idMap?: Record<string, string>;
+  },
   dryRun: boolean
 ): Promise<CreateDesignedNoteTreeResult['materializationEvidence']> {
   const rootRemId = polishedTreeResult.rootRemId ?? polishedTreeResult.rootCreatedRemId;
@@ -551,6 +556,7 @@ export async function updateNoteWithDesign(
   const dryRun = args.dryRun ?? true;
   requireApproval('update_note_with_design', dryRun, args.approved);
   const content = args.markdownText ?? (typeof args.content === 'string' ? args.content : undefined);
+  const structuredContent = args.content && typeof args.content !== 'string' ? args.content : undefined;
   const plan = [
     `Mode: ${args.mode}.`,
     `Target: ${args.targetRemId}.`,
@@ -560,6 +566,19 @@ export async function updateNoteWithDesign(
   if (args.styleOperations?.length) {
     await assertDesignOperationsInsideRoot(plugin, args.targetRemId, args.styleOperations);
   }
+
+  const target = await findRequiredRem(plugin, args.targetRemId, 'Target');
+  const targetTitle = (await getRemPlainString(plugin, target)).trim() || 'Designed note';
+  const compiled = content || structuredContent
+    ? compileNoteDesignPlan({
+        title: targetTitle,
+        content: content ?? structuredContent ?? '',
+        rules: template?.rules ?? defaultNoteDesignRules(),
+        templateId: template?.templateId,
+        templateVersion: template?.version,
+        writingMode: structuredContent ? 'styled_tree' : 'markdown',
+      })
+    : undefined;
 
   if (dryRun) {
     return {
@@ -571,6 +590,8 @@ export async function updateNoteWithDesign(
       mode: args.mode,
       templateId: template?.templateId,
       plan,
+      templateVersion: template?.version,
+      compiledManifest: compiled?.manifest,
     };
   }
 
@@ -595,36 +616,65 @@ export async function updateNoteWithDesign(
     };
   }
 
-  if (!content) {
+  if (!compiled) {
     throw new RemnoteWriteError(
       'INVALID_ARGS',
       'Real update_note_with_design requires content, markdownText, or styleOperations.'
     );
   }
 
-  const mode = args.mode === 'append_sections' ? 'append_to_target' : 'replace_target_children';
-  const result = await createOrReplaceNoteFromMarkdown(plugin, {
-    targetRemId: args.targetRemId,
-    markdownText: content,
-    mode,
-    duplicatePolicy: 'create_new',
-    safetyOptions: {
-      dryRun: false,
-      verifyAfterWrite: args.verifyAfterWrite ?? true,
-      rollbackOnFailure: true,
-      idempotencyKey: args.idempotencyKey,
-    },
+  const operation = args.mode === 'append_sections' ? 'append_children' : 'replace_children';
+  const result = await applyStructuredNoteBatch(plugin, {
+    target: { mode: 'rem_id', remId: args.targetRemId },
+    operation,
+    note: { children: compiled.tree.children ?? [] },
+    dryRun: false,
+    verifyAfterWrite: args.verifyAfterWrite ?? true,
+    rollbackOnFailure: true,
+    idempotencyKey: args.idempotencyKey,
   });
+  const evidenceResult = {
+    ...result,
+    rootRemId: args.targetRemId,
+  };
+  const materializationEvidence = await collectDesignMaterializationEvidence(
+    plugin,
+    compiled,
+    template?.rules ?? defaultNoteDesignRules(),
+    evidenceResult,
+    false
+  );
+  await saveAppliedDesignVerificationManifest(plugin, {
+    schemaVersion: 1,
+    rootRemId: args.targetRemId,
+    templateId: template?.templateId,
+    templateVersion: template?.version,
+    rules: template?.rules ?? defaultNoteDesignRules(),
+    compiledManifest: compiled.manifest,
+    materializationEvidence,
+    recordedAt: new Date().toISOString(),
+  });
+  const failedRules = materializationEvidence.filter((evidence) => evidence.status === 'failed');
   return {
-    status: mode === 'append_to_target' ? 'appended' : 'replaced',
-    ok: result.ok,
+    status: failedRules.length
+      ? 'success_with_design_warning'
+      : operation === 'append_children'
+        ? 'appended'
+        : 'replaced',
+    ok: result.status === 'applied' || result.status === 'already_applied' || result.status === 'success_with_performance_warning',
     dryRun,
     approved: true,
     targetRemId: args.targetRemId,
     mode: args.mode,
     templateId: template?.templateId,
+    templateVersion: template?.version,
     plan,
     result,
+    compiledManifest: compiled.manifest,
+    materializationEvidence,
+    warnings: failedRules.length
+      ? failedRules.map((evidence) => `Design rule ${evidence.ruleId} failed live readback.`)
+      : undefined,
   };
 }
 
@@ -642,7 +692,7 @@ export async function verifyNoteAgainstDesign(
   const baseVerification = await verifyNoteDesign(plugin, {
     rootRemId: args.rootRemId,
     expectedStyleMap,
-    ...(rules?.stylePreset ? { stylePreset: rules.stylePreset } : {}),
+    ...(!appliedManifest && rules?.stylePreset ? { stylePreset: rules.stylePreset } : {}),
   });
   const appliedMismatches = await verifyAppliedDesignRules(plugin, appliedManifest);
   const mismatches = [...baseVerification.mismatches, ...appliedMismatches];

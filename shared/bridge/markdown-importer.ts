@@ -870,6 +870,11 @@ function bulletMatch(line: string): { indent: number; marker: string; text: stri
   };
 }
 
+function isThematicBreak(line: string): boolean {
+  const compact = line.trim().replace(/\s+/g, '');
+  return /^(?:-{3,}|\*{3,}|_{3,})$/.test(compact);
+}
+
 function selectRootTitle(markdown: string, lines: string[], mapping: Required<MarkdownImportHeadingMapping>): {
   title: string;
   skipFirstHeading: boolean;
@@ -1034,6 +1039,7 @@ export function parseMarkdownImportPlan(
   let tableCount = 0;
   let bulletCount = 0;
   let calloutCount = 0;
+  let thematicBreakCount = 0;
   let skippedRootHeading = false;
   let activeBulletParent: StyledRemTreeNode | undefined;
   let activeBulletStack: Array<{ indent: number; node: StyledRemTreeNode }> | undefined;
@@ -1205,6 +1211,18 @@ export function parseMarkdownImportPlan(
       continue;
     }
 
+    if (isThematicBreak(line)) {
+      resetActiveBulletStack();
+      flushParagraph();
+      pushChild(currentParent(), {
+        clientNodeId: `thematic-break-${thematicBreakCount += 1}`,
+        type: 'rem',
+        text: ' ',
+        style: { hideBullet: true },
+      });
+      continue;
+    }
+
     const blockquote = blockquoteMatch(line);
     if (blockquote !== null) {
       resetActiveBulletStack();
@@ -1332,6 +1350,9 @@ export function parseMarkdownImportPlan(
         : []),
       ...(/^\s*\d+[.)]\s+/m.test(markdown)
         ? ['Ordered-list item order is preserved, but native numeric markers are unavailable.']
+        : []),
+      ...(thematicBreakCount > 0
+        ? ['Markdown thematic breaks are represented as hidden spacer Rems; native horizontal rules are unavailable.']
         : []),
     ],
   };

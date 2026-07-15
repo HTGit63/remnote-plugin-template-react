@@ -7,9 +7,11 @@ import {
   type BridgeCommandIntentKind,
 } from './bridge-panel/command-intents';
 import { DEFAULT_BRIDGE_SERVER_URL } from '../bridge/status';
+import { copyTextToClipboard } from './bridge-panel/runtime-actions';
 
-const BRIDGE_TAB_ICON =
-  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='10' fill='%23f8f2e6'/%3E%3Cpath d='M13 13h13c5 0 9 4 9 9s-4 9-9 9h-5v7h-8V13Z' fill='%2328655a'/%3E%3Cpath d='M21 20h5c1.6 0 3 1.4 3 3s-1.4 3-3 3h-5v-6Z' fill='%23f8f2e6'/%3E%3Cpath d='M34 14l4 4-4 4-4-4 4-4Z' fill='%23d35a3f'/%3E%3Cpath d='M35 30l3 3-3 3-3-3 3-3Z' fill='%23d9a441'/%3E%3C/svg%3E";
+function bridgeLogoUrl(plugin: ReactRNPlugin): string {
+  return new URL('logo.svg', plugin.rootURL ?? window.location.href).toString();
+}
 
 function companionMcpUrl(serverUrl: string): string {
   const url = new URL(serverUrl);
@@ -24,6 +26,7 @@ function companionMcpUrl(serverUrl: string): string {
 }
 
 async function onActivate(plugin: ReactRNPlugin) {
+  const bridgeTabIcon = bridgeLogoUrl(plugin);
   const openBridgeStatus = async () => {
     await plugin.window.openWidgetInRightSidebar('bridge-status');
   };
@@ -36,7 +39,7 @@ async function onActivate(plugin: ReactRNPlugin) {
   const copyMcpUrl = async () => {
     const configuredUrl = await plugin.settings.getSetting<string>('bridge-server-url');
     const mcpUrl = companionMcpUrl(configuredUrl?.trim() || DEFAULT_BRIDGE_SERVER_URL);
-    await navigator.clipboard.writeText(mcpUrl);
+    await copyTextToClipboard(mcpUrl);
     await plugin.app.toast('RemnoteMCP URL copied.');
   };
 
@@ -115,16 +118,16 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.app.registerWidget('bridge-status', WidgetLocation.RightSidebar, {
     dimensions: { height: 'auto', width: '100%' },
     widgetTabTitle: 'RemnoteMCP',
-    widgetTabIcon: BRIDGE_TAB_ICON,
+    widgetTabIcon: bridgeTabIcon,
     dontOpenByDefaultInTabLocation: false,
   });
 
   await plugin.app.registerCommand({
     id: 'remnotemcp.open',
     name: 'Open RemnoteMCP',
-    description: 'Open the RemnoteMCP setup and approval panel.',
+    description: 'Open RemnoteMCP connection, writing access, and design controls.',
     keywords: 'remnotemcp mcp chatgpt vivy bridge notes',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: openBridgeStatus,
   });
 
@@ -133,7 +136,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Run RemnoteMCP Health Check',
     description: 'Open RemnoteMCP and run a quick bridge health check.',
     keywords: 'remnotemcp health check diagnostics',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: () => sendPanelIntent('run_health_check'),
   });
 
@@ -142,7 +145,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Save Focused Note as Design Template',
     description: 'Analyze the focused Rem and save its visible note style as a reusable local template.',
     keywords: 'remnotemcp template design save focused note style',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: () => sendPanelIntent('save_focused_template'),
   });
 
@@ -151,7 +154,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Use Focused Rem as Approved Root',
     description: 'Set the focused Rem as the approved root for scoped note writing.',
     keywords: 'remnotemcp approved root focused scope',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: () => sendPanelIntent('use_focused_as_approved_root'),
   });
 
@@ -160,7 +163,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Copy MCP URL',
     description: 'Copy the companion MCP endpoint for ChatGPT connector setup.',
     keywords: 'remnotemcp copy mcp url endpoint chatgpt',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: async () => {
       try {
         await copyMcpUrl();
@@ -175,7 +178,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Copy Diagnostics',
     description: 'Copy a redacted RemnoteMCP diagnostic bundle.',
     keywords: 'remnotemcp copy diagnostics debug bundle',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: () => sendPanelIntent('copy_diagnostics'),
   });
 
@@ -184,7 +187,7 @@ async function onActivate(plugin: ReactRNPlugin) {
     name: 'Open RemnoteMCP Settings',
     description: 'Open RemnoteMCP and show access/settings controls.',
     keywords: 'remnotemcp settings access scope writing mode',
-    icon: BRIDGE_TAB_ICON,
+    icon: bridgeTabIcon,
     action: () => sendPanelIntent('open_settings'),
   });
 

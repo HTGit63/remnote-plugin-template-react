@@ -67,9 +67,18 @@ import {
 } from '../remnote/permissions';
 import { getCurrentSelection, getFocusedRemStatus } from '../remnote/read';
 import {
+  deleteNoteDesignTemplate,
   listNoteDesignTemplates,
   saveNoteDesignTemplate,
 } from '../remnote/templates/designTemplates';
+import {
+  ensureFeaturedDesignTemplate,
+  FEATURED_DESIGN_TEMPLATE,
+} from './bridge-panel/design-styles';
+import {
+  collectBridgePanelHealth,
+  copyTextToClipboard,
+} from './bridge-panel/runtime-actions';
 
 const statusToneClass: Record<string, string> = {
   connected: 'bridge-pill bridge-pill-success',
@@ -556,17 +565,29 @@ export function BridgeStatusWidget() {
 
   const loadTemplates = useCallback(async () => {
     try {
+      await ensureFeaturedDesignTemplate(plugin);
       const result = await listNoteDesignTemplates(plugin, { includeRules: false });
       const templates = result.templates.filter(
         (template): template is NoteDesignTemplateSummary =>
           typeof (template as NoteDesignTemplateSummary).templateId === 'string' &&
           typeof (template as NoteDesignTemplateSummary).name === 'string'
-      );
+      ).sort((left, right) => {
+        if (left.templateId === FEATURED_DESIGN_TEMPLATE.templateId) return -1;
+        if (right.templateId === FEATURED_DESIGN_TEMPLATE.templateId) return 1;
+        return left.name.localeCompare(right.name);
+      });
       setSavedTemplates(templates);
       if (templates.length === 0) {
         setTemplateStatus('No saved templates yet.');
       } else if (!selectedTemplateId) {
-        setTemplateStatus(`${templates.length} saved template${templates.length === 1 ? '' : 's'} available.`);
+        const featured = templates.find((template) => template.templateId === FEATURED_DESIGN_TEMPLATE.templateId);
+        if (featured) {
+          setSelectedTemplateId(featured.templateId);
+          await plugin.storage.setLocal('bridge-selected-template-id', featured.templateId);
+          setTemplateStatus(`${featured.name} selected.`);
+        } else {
+          setTemplateStatus(`${templates.length} saved template${templates.length === 1 ? '' : 's'} available.`);
+        }
       }
     } catch (error: unknown) {
       setTemplateStatus(error instanceof Error ? error.message : String(error));
@@ -901,12 +922,15 @@ export function BridgeStatusWidget() {
     await plugin.app.toast('Approved root set to focused Rem.');
   };
 
-  const handleTemplateChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const nextTemplateId = event.target.value;
+  const selectTemplate = async (nextTemplateId: string) => {
     setSelectedTemplateId(nextTemplateId);
     await plugin.storage.setLocal('bridge-selected-template-id', nextTemplateId);
     const template = savedTemplates.find((item) => item.templateId === nextTemplateId);
     setTemplateStatus(template ? `${template.name} selected.` : 'No template selected.');
+  };
+
+  const handleTemplateChange = async (event: React.ChangeEvent<HTMLSelectElement>) => {
+    await selectTemplate(event.target.value);
   };
 
   const handleSaveFocusedTemplate = async () => {
@@ -942,9 +966,37 @@ export function BridgeStatusWidget() {
     }
   };
 
+  const handleDeleteSelectedTemplate = async () => {
+    if (!selectedTemplateId || selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId) {
+      setTemplateStatus('Choose a custom style to delete.');
+      return;
+    }
+    setActiveOperation('Deleting saved style');
+    try {
+      const selected = savedTemplates.find((template) => template.templateId === selectedTemplateId);
+      const result = await deleteNoteDesignTemplate(plugin, selectedTemplateId);
+      if (result.status === 'not_found') {
+        setTemplateStatus('That saved style no longer exists.');
+      } else {
+        setSelectedTemplateId(FEATURED_DESIGN_TEMPLATE.templateId);
+        await plugin.storage.setLocal('bridge-selected-template-id', FEATURED_DESIGN_TEMPLATE.templateId);
+        setTemplateStatus(`${selected?.name ?? 'Custom style'} deleted. Structured Science selected.`);
+        await loadTemplates();
+        await plugin.app.toast('Saved style deleted.');
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTemplateStatus(message);
+      setLastOperationError(message);
+      await plugin.app.toast('Could not delete saved style.');
+    } finally {
+      setActiveOperation(null);
+    }
+  };
+
   const handleCopyMcpUrl = async () => {
     try {
-      await navigator.clipboard.writeText(companionHttpUrl(serverUrl, '/mcp'));
+      await copyTextToClipboard(companionHttpUrl(serverUrl, '/mcp'));
       setDebugCopyStatus('MCP URL copied.');
       await plugin.app.toast('MCP URL copied.');
     } catch {
@@ -1089,37 +1141,40 @@ export function BridgeStatusWidget() {
     setLastOperationError(null);
     setActiveOperation(`Running ${level} health check`);
     try {
-      const healthResponse = await fetch(companionHttpUrl(serverUrl, '/health'), {
-        headers: { accept: 'application/json' },
+      const collected = await collectBridgePanelHealth({
+        loadPublicHealth: async () => {
+          const response = await fetch(companionHttpUrl(serverUrl, '/health'), {
+            headers: { accept: 'application/json' },
+          });
+          const payload = await response.json() as Record<string, unknown>;
+          if (!response.ok) throw new Error(String(payload.error ?? `${response.status} health response`));
+          return payload;
+        },
+        loadDiagnostics: async () => {
+          if (effectiveHostedSession?.sessionSecret && !chatGptPairingDisabled) {
+            return runHostedPluginHealthCheck(serverUrl, effectiveHostedSession, {
+              level,
+              parentId: focusedRemStatus?.remId,
+              targetRemId: focusedRemStatus?.remId,
+            });
+          }
+          const headers: Record<string, string> = { accept: 'application/json' };
+          if (bridgeToken) headers.authorization = `Bearer ${bridgeToken}`;
+          const response = await fetch(companionHttpUrl(serverUrl, '/diagnostics'), { headers });
+          const payload = await response.json() as Record<string, unknown>;
+          if (!response.ok) throw new Error(String(payload.error ?? `${response.status} diagnostics response`));
+          return payload;
+        },
       });
-      const health = await healthResponse.json();
-      setLastHealthCheck(health);
-
-      if (effectiveHostedSession?.sessionSecret && !chatGptPairingDisabled) {
-        const report = await runHostedPluginHealthCheck(serverUrl, effectiveHostedSession, {
-          level,
-          parentId: focusedRemStatus?.remId,
-          targetRemId: focusedRemStatus?.remId,
-        });
-        setLastServerDiagnostics(report);
-      } else {
-        const headers: Record<string, string> = { accept: 'application/json' };
-        if (bridgeToken) {
-          headers.authorization = `Bearer ${bridgeToken}`;
-        }
-        const diagnosticsResponse = await fetch(companionHttpUrl(serverUrl, '/diagnostics'), { headers });
-        if (diagnosticsResponse.ok) {
-          setLastServerDiagnostics(await diagnosticsResponse.json());
-        }
-      }
-      if (!healthResponse.ok || health?.ok === false) {
-        const message =
-          typeof health?.error === 'string'
-            ? health.error
-            : `${level} health check returned an error.`;
-        setLastOperationError(message);
-      }
-      await plugin.app.toast(healthResponse.ok ? `${level} health checked.` : `${level} health failed.`);
+      setLastHealthCheck({
+        ok: collected.ok,
+        publicHealth: collected.health,
+        diagnosticsAvailable: Boolean(collected.diagnostics),
+        warnings: collected.warnings,
+      });
+      if (collected.diagnostics) setLastServerDiagnostics(collected.diagnostics);
+      setLastOperationError(collected.ok ? null : collected.warnings.join(' ') || `${level} health check failed.`);
+      await plugin.app.toast(collected.ok ? `${level} health checked.` : `${level} health failed.`);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       setLastHealthCheck({
@@ -1179,7 +1234,7 @@ export function BridgeStatusWidget() {
     };
 
     try {
-      await navigator.clipboard.writeText(JSON.stringify(redactClientDiagnosticValue(diagnostics), null, 2));
+      await copyTextToClipboard(JSON.stringify(redactClientDiagnosticValue(diagnostics), null, 2));
       setDebugCopyStatus('Diagnostics JSON copied.');
       await plugin.app.toast('Bridge diagnostics copied.');
     } catch {
@@ -1213,7 +1268,7 @@ export function BridgeStatusWidget() {
       };
 
     try {
-      await navigator.clipboard.writeText(JSON.stringify(bundle, null, 2));
+      await copyTextToClipboard(JSON.stringify(bundle, null, 2));
       setDebugCopyStatus('Developer diagnostic bundle copied.');
       await plugin.app.toast('Developer diagnostic bundle copied.');
     } catch {
@@ -1224,7 +1279,7 @@ export function BridgeStatusWidget() {
 
   const handleCopyRecentRequestLogs = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(lastRequests.slice(0, 10), null, 2));
+      await copyTextToClipboard(JSON.stringify(lastRequests.slice(0, 10), null, 2));
       setDebugCopyStatus('Recent request logs copied.');
       await plugin.app.toast('Recent request logs copied.');
     } catch {
@@ -1235,7 +1290,7 @@ export function BridgeStatusWidget() {
 
   const handleCopyFailedRequest = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(lastFailedRequest ?? null, null, 2));
+      await copyTextToClipboard(JSON.stringify(lastFailedRequest ?? null, null, 2));
       setDebugCopyStatus('Failed request report copied.');
       await plugin.app.toast('Failed request report copied.');
     } catch {
@@ -1246,7 +1301,7 @@ export function BridgeStatusWidget() {
 
   const handleCopyToolVerificationMatrix = async () => {
     try {
-      await navigator.clipboard.writeText(JSON.stringify(verificationMatrix, null, 2));
+      await copyTextToClipboard(JSON.stringify(verificationMatrix, null, 2));
       setDebugCopyStatus('Tool verification matrix copied.');
       await plugin.app.toast('Tool verification matrix copied.');
     } catch {
@@ -1330,7 +1385,7 @@ export function BridgeStatusWidget() {
   if (activity.kind === 'connected' && !ready) {
     activity = {
       kind: 'blocked',
-      title: 'Setup Blocked',
+      title: 'Connection Blocked',
       copy: !initialSyncReady
         ? bridgeStatus.initialSyncWarning ?? 'RemNote initial sync is not complete.'
         : 'Choose an approved root Rem before using this scope.',
@@ -1460,61 +1515,33 @@ export function BridgeStatusWidget() {
       <div className="plugin-body">
         <div className="bridge-stack">
 
-        <BridgeTaskBanner
-          variant={taskVariant}
-          title={activity.title}
-          copy={activity.copy}
-          onChangeAccess={() => setAccessOpen((open) => !open)}
-          actionLabel={accessOpen ? 'Hide Access' : 'Change Access'}
-        />
-
-        <section className="bridge-panel bridge-setup-panel">
+        <section className="bridge-panel bridge-connection-panel" aria-label="Connection status">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
-              <h3>Setup</h3>
-              <p>Connect, choose scope, pick a template, then approve writes when needed.</p>
+              <h3>Connection</h3>
+              <p>{bridgeNextAction}</p>
             </div>
-            <span className={elevatedAccess ? 'bridge-pill bridge-pill-danger' : ready ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-warning'}>
-              {elevatedAccess ? 'Elevated' : ready ? 'Ready' : 'Needs check'}
+            <span className={statusToneClass[uiConnectionState] ?? statusToneClass.disconnected}>
+              {statusLabel}
             </span>
           </div>
-          <div className="bridge-step-list">
-            <div className="bridge-step">
-              <span className={ready ? 'bridge-step-dot bridge-step-dot--success' : 'bridge-step-dot bridge-step-dot--warning'} />
+          <div className="bridge-connection-grid">
+            <div className="bridge-connection-row">
+              <span aria-hidden="true" className={uiConnectionState === 'connected' ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
               <div>
-                <strong>Connection</strong>
-                <p>{bridgeNextAction}</p>
+                <strong>RemnoteMCP server</strong>
+                <p>{uiConnectionState === 'connected' ? 'Online and receiving plugin heartbeats.' : 'Waiting for a stable server connection.'}</p>
               </div>
+              <span>{uiConnectionState === 'connected' ? 'Connected' : 'Offline'}</span>
             </div>
-            <div className="bridge-step">
-              <span className={permissionScope === 'workspace_allowed' ? 'bridge-step-dot bridge-step-dot--warning' : 'bridge-step-dot bridge-step-dot--success'} />
+            <div className="bridge-connection-row">
+              <span aria-hidden="true" className={chatGptPairingConnected ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
               <div>
-                <strong>Writing mode</strong>
-                <p>{getPermissionScopeLabel(permissionScope)} + {getPermissionModeLabel(permissionMode)}</p>
+                <strong>ChatGPT</strong>
+                <p>{chatGptPairingConnected ? 'Authenticated connector session is active.' : 'Pair ChatGPT to enable tool calls.'}</p>
               </div>
+              <span>{chatGptPairingConnected ? 'Connected' : 'Not paired'}</span>
             </div>
-            <div className="bridge-step">
-              <span className={selectedTemplateId ? 'bridge-step-dot bridge-step-dot--success' : 'bridge-step-dot'} />
-              <div>
-                <strong>Template</strong>
-                <p>{selectedTemplateId ? templateStatus : 'Optional. Save focused note style when ready.'}</p>
-              </div>
-            </div>
-            <div className="bridge-step">
-              <span className={pendingRequest ? 'bridge-step-dot bridge-step-dot--warning' : 'bridge-step-dot bridge-step-dot--success'} />
-              <div>
-                <strong>Approval</strong>
-                <p>{pendingRequest ? `Waiting for ${formatToolName(pendingRequest.tool)}.` : 'No request waiting.'}</p>
-              </div>
-            </div>
-          </div>
-          <div className="bridge-actions">
-            <button type="button" className="bridge-button bridge-button-approve" onClick={handleUseRecommendedNoteMode}>
-              Use Recommended Mode
-            </button>
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={() => handleHealthCheck('quick')}>
-              Health Check
-            </button>
           </div>
         </section>
 
@@ -1685,15 +1712,29 @@ export function BridgeStatusWidget() {
         <section className="bridge-panel bridge-template-panel">
           <div className="bridge-section-head">
             <div className="bridge-heading-copy">
-              <h3>Design Template</h3>
-              <p>Reuse a saved note style for high-level note tools.</p>
+              <h3>Design Style</h3>
+              <p>Choose how new high-level notes are structured and formatted.</p>
             </div>
             <span className="bridge-pill bridge-pill-muted">{savedTemplates.length} saved</span>
           </div>
+          <div className={['bridge-featured-style', selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'bridge-featured-style--selected' : ''].filter(Boolean).join(' ')}>
+            <div>
+              <span className="bridge-eyebrow">Recommended preset</span>
+              <strong>{FEATURED_DESIGN_TEMPLATE.name}</strong>
+              <p>{FEATURED_DESIGN_TEMPLATE.description}</p>
+            </div>
+            <button
+              type="button"
+              className="bridge-button bridge-button-approve"
+              disabled={selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId}
+              onClick={() => void selectTemplate(FEATURED_DESIGN_TEMPLATE.templateId)}
+            >
+              {selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'Active' : 'Use preset'}
+            </button>
+          </div>
           <label className="bridge-field">
-            Template
+            Saved styles
             <select value={selectedTemplateId} onChange={handleTemplateChange}>
-              <option value="">No template</option>
               {savedTemplates.map((template) => (
                 <option key={template.templateId} value={template.templateId}>
                   {template.name}
@@ -1701,67 +1742,57 @@ export function BridgeStatusWidget() {
               ))}
             </select>
           </label>
+          <p className="bridge-field-help bridge-template-description">
+            {savedTemplates.find((template) => template.templateId === selectedTemplateId)?.description ?? 'Select a style to see its description.'}
+          </p>
           <div className="bridge-actions">
             <button type="button" className="bridge-button bridge-button-secondary" onClick={handleSaveFocusedTemplate}>
-              Save Focused Style
+              Use Current Style
             </button>
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={loadTemplates}>
-              Refresh Templates
-            </button>
-          </div>
-          <div className="bridge-footnote">{templateStatus}</div>
-        </section>
-
-        {pendingSection}
-
-        <section className="bridge-panel bridge-result-panel">
-          <div className="bridge-section-head">
-            <div className="bridge-heading-copy">
-              <h3>Last Result</h3>
-              <p>{latestResultCopy}</p>
-            </div>
-            <span
-              className={
-                latestResultOk === null
-                  ? 'bridge-pill bridge-pill-muted'
-                  : latestResultOk
-                    ? 'bridge-pill bridge-pill-success'
-                    : 'bridge-pill bridge-pill-danger'
-              }
+            <button
+              type="button"
+              className="bridge-button bridge-button-reject"
+              disabled={!selectedTemplateId || selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId || Boolean(activeOperation)}
+              onClick={() => void handleDeleteSelectedTemplate()}
             >
-              {latestResultOk === null ? 'No result yet' : latestResultOk ? 'Latest passed' : 'Latest failed'}
-            </span>
+              Delete Style
+            </button>
           </div>
-          <dl className="bridge-detail-list">
-            <DetailRow
-              label="Current Plugin Result"
-              value={lastPluginResult ? `${formatToolName(lastPluginResult.tool)}: ${lastPluginResult.message}` : 'No current-session result yet'}
-            />
-            <DetailRow
-              label="Last Health"
-              value={lastHealthCheck ? (lastHealthCheck.ok === false ? 'Failed' : 'Checked') : 'Not checked yet'}
-            />
-            <DetailRow
-              label="Last Tool Success"
-              value={lastSuccessfulRequest ? `${lastSuccessfulRequest.tool ?? 'request'} ${lastSuccessfulRequest.durationMs ?? ''}ms` : 'No diagnostics fetch yet'}
-            />
-            <DetailRow
-              label="Last Tool Failure"
-              value={lastFailedRequest ? `${lastFailedRequest.tool ?? 'request'} ${lastFailedRequest.errorCode ?? ''}` : 'No failed request in fetched diagnostics'}
-            />
-          </dl>
+          <div className="bridge-footnote" role="status" aria-live="polite">{templateStatus}</div>
         </section>
+
+        {pendingRequest ? pendingSection : null}
 
         <section className="bridge-panel">
           <button
             type="button"
             className="bridge-button bridge-button-secondary bridge-button-full"
+            aria-expanded={advancedOpen}
+            aria-controls="bridge-advanced-details"
             onClick={() => setAdvancedOpen((open) => !open)}
           >
             {advancedOpen ? 'Hide Advanced Details' : 'Advanced Details'}
           </button>
           {advancedOpen && (
-            <div className="bridge-advanced">
+            <div className="bridge-advanced" id="bridge-advanced-details">
+              <BridgeTaskBanner
+                variant={taskVariant}
+                title={activity.title}
+                copy={activity.copy}
+                onChangeAccess={() => setAccessOpen((open) => !open)}
+                actionLabel={accessOpen ? 'Hide Access' : 'Change Access'}
+              />
+              <section className="bridge-advanced-block bridge-result-panel">
+                <div className="bridge-section-head">
+                  <div className="bridge-heading-copy">
+                    <h3>Last Result</h3>
+                    <p>{latestResultCopy}</p>
+                  </div>
+                  <span className={latestResultOk === null ? 'bridge-pill bridge-pill-muted' : latestResultOk ? 'bridge-pill bridge-pill-success' : 'bridge-pill bridge-pill-danger'}>
+                    {latestResultOk === null ? 'No result yet' : latestResultOk ? 'Passed' : 'Failed'}
+                  </span>
+                </div>
+              </section>
               <section className="bridge-advanced-block">
                 <div className="bridge-section-head">
                   <div className="bridge-heading-copy">
@@ -2042,15 +2073,26 @@ export function BridgeStatusWidget() {
               <button type="button" onClick={handleCopyToolVerificationMatrix} className="bridge-button bridge-button-secondary bridge-button-full">
                 Copy Tool Verification Matrix
               </button>
-              <div className="bridge-footnote">{debugCopyStatus}</div>
+              <div className="bridge-inline-actions">
+                <button type="button" onClick={() => void loadTemplates()} className="bridge-button bridge-button-secondary">
+                  Refresh Styles
+                </button>
+                <button type="button" onClick={() => setBridgeEnabled(true)} disabled={bridgeEnabled} className="bridge-button bridge-button-secondary">
+                  Connect
+                </button>
+                <button type="button" onClick={handleDisconnect} className="bridge-button bridge-button-reject">
+                  Disconnect
+                </button>
+              </div>
+              <div className="bridge-footnote" role="status" aria-live="polite">{debugCopyStatus}</div>
             </div>
           )}
         </section>
       </div>
       </div>
 
-      <footer className="approval-footer">
-        {pendingRequest ? (
+      {pendingRequest ? (
+        <footer className="approval-footer">
           <div className="bridge-actions" role="group" aria-label="Bridge approval actions">
             <button
               type="button"
@@ -2067,22 +2109,8 @@ export function BridgeStatusWidget() {
               Reject
             </button>
           </div>
-        ) : (
-          <div className="bridge-actions">
-            <button
-              type="button"
-              onClick={() => setBridgeEnabled(true)}
-              disabled={bridgeEnabled}
-              className="bridge-button bridge-button-secondary"
-            >
-              Connect
-            </button>
-            <button type="button" onClick={handleDisconnect} className="bridge-button bridge-button-reject">
-              Disconnect
-            </button>
-          </div>
-        )}
-      </footer>
+        </footer>
+      ) : null}
     </div>
   );
 }

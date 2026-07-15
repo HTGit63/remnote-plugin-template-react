@@ -885,6 +885,7 @@ export async function applyStructuredNoteBatch(
   const updatedRemIds: string[] = [];
   const deletedRemIds: string[] = [];
   const movedRemIds: string[] = [];
+  const idMap: Record<string, string> = {};
   const stagedRemIds: string[] = [];
   const backupRemIds: string[] = [];
   let verificationDurationMs = 0;
@@ -932,6 +933,7 @@ export async function applyStructuredNoteBatch(
         { skipTransaction: true }
       );
       createdRemIds.push(...created.createdRemIds);
+      Object.assign(idMap, created.idMap ?? {});
       rootIds.push(created.rootCreatedRemId);
     }
     return rootIds;
@@ -1051,6 +1053,7 @@ export async function applyStructuredNoteBatch(
           { skipTransaction: true }
         );
         createdRemIds.push(...created.createdRemIds);
+        Object.assign(idMap, created.idMap ?? {});
         rootCreatedRemId = created.rootCreatedRemId;
         rootInsertIndex = created.rootInsertIndex;
         rootInsertPosition = created.rootInsertPosition;
@@ -1122,6 +1125,7 @@ export async function applyStructuredNoteBatch(
         deletedRemIds: Array.from(new Set(deletedRemIds)),
         movedRemIds,
         rootCreatedRemId,
+        idMap,
         rootInsertIndex,
         rootInsertPosition,
         dryRun: false,

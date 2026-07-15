@@ -1735,6 +1735,20 @@ export function registerBulkImportTools({
           ...reports.flatMap((report) => report.warnings),
           ...finalReport.warnings,
         ]));
+        const reconciliationRequired = updatedJob.chunks.some((chunk) =>
+          chunk.reconciliationStatus === 'required' || chunk.status === 'needs_manual_review'
+        );
+        const hasRunnableChunk = updatedJob.chunks.some((chunk) => chunk.status === 'pending');
+        const verificationFailed = failed.length > 0 || finalFailed;
+        const recommendedAction = verificationFailed
+          ? reconciliationRequired
+            ? 'inspect exact live Rem IDs, then call reconcile_note_import_job_chunk; do not replay an ambiguous chunk'
+            : hasRunnableChunk && updatedJob.status !== 'completed'
+              ? 'resume_note_import_job for the first pending chunk only'
+              : 'inspect the exact live Rem IDs and repair the existing artifact; do not resume or replay completed chunks'
+          : notVerifiable.length > 0
+            ? 'perform exact live readback using Rem IDs before claiming source fidelity'
+            : 'no action required; retain the verification evidence';
         return toolResult('Note import verification report generated.', {
           ok: failed.length === 0 && !finalFailed,
           status: failed.length > 0 || finalFailed ? 'FAIL' : notVerifiable.length > 0 ? 'PARTIAL' : 'PASS',
@@ -1761,7 +1775,7 @@ export function registerBulkImportTools({
           limitation: notVerifiable.length > 0 || liveReadbackFailed
             ? `Live/readback verification unavailable for some chunks.${liveReadbackFailed ? ` ${liveReadbackFailed}` : ''}`
             : undefined,
-          recommendedAction: failed.length > 0 || finalFailed ? 'resume_note_import_job' : 'manual live readback check if needed',
+          recommendedAction,
         });
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

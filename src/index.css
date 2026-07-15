@@ -8,8 +8,8 @@
   --bridge-text: #f1f2ff;
   --bridge-border: #4a4862;
   --bridge-soft-border: rgba(186, 190, 220, 0.16);
-  --bridge-green: #61d394;
-  --bridge-green-soft: rgba(97, 211, 148, 0.14);
+  --bridge-green: #59bd6b;
+  --bridge-green-soft: rgba(89, 189, 107, 0.14);
   --bridge-amber: #e8b558;
   --bridge-amber-soft: rgba(232, 181, 88, 0.16);
   --bridge-red: #ff7777;
@@ -104,21 +104,16 @@
   height: 40px;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  border: 1px solid rgba(139, 124, 246, 0.42);
+  border: 1px solid rgba(89, 189, 107, 0.36);
   border-radius: 8px;
-  background: #f5f2e8;
-  color: #1b1a2a;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 1;
+  background: rgba(89, 189, 107, 0.08);
 }
 
 .bridge-mark-glyph {
-  width: 20px;
-  height: 20px;
-  color: #1b1a2a;
-  fill: currentColor;
+  display: block;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
 }
 
 .bridge-hero-copy {
@@ -384,6 +379,68 @@
   background: var(--bridge-blue-soft);
 }
 
+.bridge-connection-panel {
+  border-color: rgba(89, 189, 107, 0.24);
+}
+
+.bridge-connection-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.bridge-connection-row {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid var(--bridge-soft-border);
+  border-radius: 8px;
+  background: rgba(34, 33, 54, 0.56);
+  padding: 9px 10px;
+}
+
+.bridge-connection-row strong {
+  display: block;
+  color: var(--bridge-text);
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.bridge-connection-row p {
+  margin: 2px 0 0;
+  color: var(--bridge-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.bridge-connection-row > span:last-child {
+  color: var(--bridge-muted);
+  font-size: 11.5px;
+  font-weight: 720;
+  white-space: nowrap;
+}
+
+.bridge-status-dot {
+  width: 9px;
+  height: 9px;
+  border: 1px solid var(--bridge-border);
+  border-radius: 50%;
+  background: var(--bridge-panel-strong);
+}
+
+.bridge-status-dot--success {
+  border-color: var(--bridge-green);
+  background: var(--bridge-green);
+  box-shadow: 0 0 0 3px var(--bridge-green-soft);
+}
+
+.bridge-status-dot--warning {
+  border-color: var(--bridge-amber);
+  background: var(--bridge-amber);
+  box-shadow: 0 0 0 3px var(--bridge-amber-soft);
+}
+
 .bridge-auth-boundary {
   border-color: rgba(34, 199, 216, 0.36);
   background: rgba(34, 199, 216, 0.08);
@@ -542,6 +599,53 @@
   line-height: 1.45;
 }
 
+.bridge-featured-style {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  border: 1px solid rgba(89, 189, 107, 0.28);
+  border-radius: 8px;
+  background: rgba(89, 189, 107, 0.07);
+  padding: 11px;
+}
+
+.bridge-featured-style--selected {
+  border-color: rgba(89, 189, 107, 0.58);
+  background: rgba(89, 189, 107, 0.12);
+}
+
+.bridge-featured-style strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--bridge-text);
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+.bridge-featured-style p {
+  margin: 4px 0 0;
+  color: var(--bridge-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.bridge-eyebrow {
+  display: block;
+  color: #8ee09c;
+  font-size: 10.5px;
+  font-weight: 780;
+  letter-spacing: 0.06em;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.bridge-template-description {
+  min-height: 18px;
+  margin: 8px 0 10px;
+}
+
 .bridge-detail-row {
   border: 1px solid var(--bridge-soft-border);
   background: rgba(27, 26, 42, 0.82);
@@ -697,13 +801,13 @@
 }
 
 .bridge-button-approve {
-  border: 1px solid rgba(139, 124, 246, 0.72);
-  background: var(--bridge-violet);
+  border: 1px solid rgba(89, 189, 107, 0.72);
+  background: #349846;
   color: #ffffff;
 }
 
 .bridge-button-approve:not(:disabled):hover {
-  background: #9b8cff;
+  background: #3eaa52;
 }
 
 .bridge-button-danger {
@@ -828,6 +932,7 @@
 
   .bridge-hero,
   .bridge-task-banner,
+  .bridge-featured-style,
   .bridge-profile-summary,
   .bridge-mode-grid,
   .bridge-metrics,
@@ -852,6 +957,18 @@
   .bridge-pill {
     max-width: 100%;
     justify-self: start;
+  }
+
+  .bridge-featured-style .bridge-button {
+    width: 100%;
+  }
+
+  .bridge-connection-row {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+
+  .bridge-connection-row > span:last-child {
+    grid-column: 2;
   }
 }
 

@@ -451,6 +451,7 @@ export interface CreateNoteFromMarkdownTreeArgs extends NoteStylePresetFields {
 export interface AppendMarkdownAsRemTreeArgs extends NoteStylePresetFields {
   targetRemId: string;
   markdownText: string;
+  duplicatePolicy?: Extract<MarkdownDuplicatePolicy, 'skip' | 'create_new'>;
   headingMapping?: MarkdownImportHeadingMapping;
   remnoteLayout?: MarkdownImportRemnoteLayout;
   mathOptions?: MarkdownMathOptions;

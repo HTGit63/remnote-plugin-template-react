@@ -562,6 +562,7 @@ export const APPEND_MARKDOWN_AS_REM_TREE_INPUT_SCHEMA = z.object({
   ...CONNECTOR_SAFE_NOTE_STYLE_PRESET_FIELDS_SCHEMA,
   targetRemId: REM_ID_SCHEMA.describe('Existing Rem ID that receives the parsed Markdown tree as children.'),
   markdownText: LONG_MARKDOWN_SCHEMA.describe('Full source Markdown to append as clean child Rem hierarchy.'),
+  duplicatePolicy: z.enum(['skip', 'create_new']).optional().describe('skip reuses matching direct children; create_new always appends.'),
   headingMapping: MARKDOWN_HEADING_MAPPING_SCHEMA.optional(),
   remnoteLayout: MARKDOWN_REMNOTE_LAYOUT_SCHEMA.optional(),
   mathOptions: MARKDOWN_MATH_OPTIONS_SCHEMA.optional(),

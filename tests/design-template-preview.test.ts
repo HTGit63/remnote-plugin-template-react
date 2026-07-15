@@ -162,6 +162,47 @@ describe('design template preview defaults', () => {
     });
   });
 
+  test('content updates compile and apply the selected reusable template', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const target = fake.addRem('designed-update-target', 'Designed target');
+    const rules = defaultNoteDesignRules('clean_academic');
+    rules.headingPattern.rootHeadingLevel = 'normal';
+    rules.headingPattern.sectionHeadingLevel = 'normal';
+    rules.roleRules = {
+      keyIdea: { prefixStyle: { bold: true, highlight: 'yellow' } },
+    };
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'designed-update-template',
+      name: 'Designed update template',
+      rules,
+    });
+
+    const result = await updateNoteWithDesign(fake.asPlugin(), {
+      targetRemId: target._id,
+      mode: 'replace_children',
+      templateId: saved.template.templateId,
+      content: '## Key Ideas\n\n- Key idea: Compiler rules must survive updates.',
+      dryRun: false,
+      approved: true,
+      verifyAfterWrite: true,
+      idempotencyKey: 'idem:designed-content-update',
+    });
+
+    let keyIdea = undefined;
+    for (const rem of fake.rems.values()) {
+      if ((await fake.richText.toString(rem.text)) === 'Key idea: Compiler rules must survive updates.') {
+        keyIdea = rem;
+        break;
+      }
+    }
+    expect(result.status).toBe('replaced');
+    expect(result.compiledManifest).toBeDefined();
+    expect(keyIdea?.text).toEqual(expect.arrayContaining([
+      expect.objectContaining({ text: 'Key idea:', b: true, h: 3 }),
+    ]));
+  });
+
   test('dry-run repair succeeds as a plan while preserving failing before-state evidence', async () => {
     const fake = new FakePlugin();
     installLocalStorage(fake);

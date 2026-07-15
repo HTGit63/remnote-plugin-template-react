@@ -961,6 +961,23 @@ export async function getNoteDesignTemplate(
   return store.templates.find((template) => template.templateId === templateId);
 }
 
+export async function deleteNoteDesignTemplate(
+  plugin: RNPlugin,
+  templateId: string
+): Promise<{ status: 'deleted' | 'not_found'; templateId: string; templateCount: number }> {
+  const normalizedId = templateId.trim();
+  if (!normalizedId) {
+    throw new RemnoteWriteError('INVALID_ARGS', 'Template ID is required.');
+  }
+  const store = await readTemplateStore(plugin);
+  const nextTemplates = store.templates.filter((template) => template.templateId !== normalizedId);
+  if (nextTemplates.length === store.templates.length) {
+    return { status: 'not_found', templateId: normalizedId, templateCount: store.templates.length };
+  }
+  await writeTemplateStore(plugin, { ...store, templates: nextTemplates });
+  return { status: 'deleted', templateId: normalizedId, templateCount: nextTemplates.length };
+}
+
 async function resolveRulesForPreview(
   plugin: RNPlugin,
   args: PreviewNoteDesignPlanArgs

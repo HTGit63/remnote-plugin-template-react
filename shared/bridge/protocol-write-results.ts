@@ -363,6 +363,7 @@ export interface ApplyStructuredNoteBatchResult {
   deletedRemIds?: string[];
   movedRemIds?: string[];
   rootCreatedRemId?: string;
+  idMap?: Record<string, string>;
   rootInsertIndex?: number;
   rootInsertPosition?: 'start' | 'end';
   dryRun: boolean;
@@ -639,7 +640,7 @@ export interface CreateDesignedNoteTreeResult {
 }
 
 export interface UpdateNoteWithDesignResult {
-  status: 'dry_run' | 'appended' | 'replaced' | 'repaired';
+  status: 'dry_run' | 'appended' | 'replaced' | 'repaired' | 'success_with_design_warning';
   ok: boolean;
   dryRun: boolean;
   approved: boolean;
@@ -647,7 +648,11 @@ export interface UpdateNoteWithDesignResult {
   mode: string;
   templateId?: string;
   plan: string[];
-  result?: CreateOrReplaceNoteFromMarkdownResult | ApplyStylePlanResult;
+  result?: CreateOrReplaceNoteFromMarkdownResult | ApplyStylePlanResult | ApplyStructuredNoteBatchResult;
+  templateVersion?: number;
+  compiledManifest?: CompiledNoteDesignManifest;
+  materializationEvidence?: CreateDesignedNoteTreeResult['materializationEvidence'];
+  warnings?: string[];
 }
 
 export interface VerifyNoteAgainstDesignResult {

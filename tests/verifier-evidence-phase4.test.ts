@@ -187,6 +187,51 @@ describe('Phase 4 verifier evidence routing', () => {
     expect(JSON.stringify(Array.from(fake.rems.entries()).map(([id, rem]) => [id, rem.text, rem.children]))).toBe(beforeTree);
   });
 
+  test('exact applied-manifest verification does not add generic preset assumptions', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const parent = fake.addRem('exact-design-parent', 'Exact design parent');
+    const rules: NoteDesignRules = {
+      ...defaultNoteDesignRules('clean_academic'),
+      headingPattern: {
+        rootHeadingLevel: 'normal',
+        sectionHeadingLevel: 'normal',
+        headingCounts: {},
+        directChildHeadingCounts: {},
+      },
+      spacingPattern: {
+        spacerCount: 0,
+        spacerTexts: [],
+        blankRemCount: 0,
+        siblingSpacerLikely: false,
+      },
+      roleRules: {
+        keyIdea: { prefixStyle: { bold: true, highlight: 'yellow' } },
+      },
+    };
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'exact-no-generic-preset',
+      name: 'Exact no generic preset',
+      rules,
+    });
+    const created = await createDesignedNoteTree(fake.asPlugin(), {
+      parentId: parent._id,
+      title: 'Exact target',
+      content: '## Section\n\n- Key idea: Exact metadata is sufficient.',
+      templateId: saved.template.templateId,
+      idempotencyKey: 'phase4-exact-no-generic',
+    });
+
+    const result = await verifyNoteAgainstDesign(fake.asPlugin(), {
+      rootRemId: created.rootRemId as string,
+      templateId: saved.template.templateId,
+    });
+
+    expect(result.evidenceMode).toBe('exact_manifest');
+    expect(result.ok).toBe(true);
+    expect(result.mismatches).toEqual([]);
+  });
+
   test('inner failure cannot retain outer success envelope', () => {
     const result = successToToolResult({
       id: 'phase4-envelope',
