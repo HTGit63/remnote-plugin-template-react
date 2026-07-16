@@ -87,10 +87,90 @@ import { buildRichTextFromSpans, createRemWithRichText, findRequiredRem, getColo
 import { existingRemHeadingStyleEnabled, nativeRemHighlightEnabled } from './runtimeFlags';
 import {
   captureStyleMutationSnapshot,
+  type StyleMutationSnapshot,
   verifyStyleOnlyMutation,
   withRichReplacementProof,
   withStyleMutationProof,
 } from './styleMutationInvariant';
+
+async function nativeHighlightMetadataChildIds(
+  plugin: RNPlugin,
+  before: StyleMutationSnapshot,
+  after: StyleMutationSnapshot,
+  expectedColor: string
+): Promise<string[]> {
+  const createdChildIds = after.childIds.filter((id) => !before.childIds.includes(id));
+  const expected = expectedColor.trim().toLowerCase();
+  const metadataIds: string[] = [];
+
+  for (const childId of createdChildIds) {
+    const child = await plugin.rem.findOne(childId);
+    if (!child) {
+      continue;
+    }
+    const [front, back] = await Promise.all([
+      plugin.richText.toString(child.text ?? []),
+      plugin.richText.toString(child.backText ?? []),
+    ]);
+    if (front.trim().toLowerCase() === 'color' && back.trim().toLowerCase() === expected) {
+      metadataIds.push(childId);
+    }
+  }
+
+  return metadataIds;
+}
+
+async function withNativeHighlightMutationProof(
+  plugin: RNPlugin,
+  rem: Rem,
+  result: FormatRemResult,
+  before: StyleMutationSnapshot,
+  after: StyleMutationSnapshot,
+  expectedColor: string
+): Promise<FormatRemResult> {
+  const readback = await runSdkOperation('rem.getHighlightColor', () => rem.getHighlightColor());
+  if (readback?.trim().toLowerCase() !== expectedColor.trim().toLowerCase()) {
+    throw new RemnoteWriteError(
+      'PARTIAL_FAILURE',
+      'Whole-Rem highlight did not round-trip through direct SDK property readback.',
+      {
+        remId: rem._id,
+        expectedHighlightColor: expectedColor,
+        actualHighlightColor: readback,
+        failedStage: 'native_highlight_property_readback',
+        rollbackStatus: 'not_attempted',
+      }
+    );
+  }
+
+  const metadataChildIds = await nativeHighlightMetadataChildIds(
+    plugin,
+    before,
+    after,
+    expectedColor
+  );
+  const metadataSet = new Set(metadataChildIds);
+  const normalizedAfter: StyleMutationSnapshot = {
+    ...after,
+    childIds: after.childIds.filter((id) => !metadataSet.has(id)),
+    childOrder: after.childOrder.filter((id) => !metadataSet.has(id)),
+  };
+  const proof = verifyStyleOnlyMutation(rem._id, result.status, before, normalizedAfter);
+
+  return {
+    ...result,
+    verification: {
+      ...(result.verification ?? {}),
+      ...proof,
+      nativeHighlightReadback: readback,
+      sdkMetadataChildIds: metadataChildIds,
+      sdkMetadataChildCount: metadataChildIds.length,
+      afterChildIdsIncludingSdkMetadata: [...after.childIds],
+      noChildrenCreated: metadataChildIds.length === 0,
+      noUnexpectedChildrenCreated: true,
+    },
+  };
+}
 
 function assertExistingRemHeadingStyleEnabled(operation: string): void {
   if (existingRemHeadingStyleEnabled()) {
@@ -251,7 +331,14 @@ export async function setRemHighlightColor(
       rem.setHighlightColor(format as never)
     );
     const after = await captureStyleMutationSnapshot(plugin, rem);
-    return withStyleMutationProof({ remId: rem._id, status: 'highlight_set', ok: true }, before, after);
+    return withNativeHighlightMutationProof(
+      plugin,
+      rem,
+      { remId: rem._id, status: 'highlight_set', ok: true },
+      before,
+      after,
+      format
+    );
   }
 
   if (richTextContainsNonTextNodes(getRemRichText(rem))) {

@@ -8,10 +8,7 @@ import {
 } from './bridge-panel/command-intents';
 import { DEFAULT_BRIDGE_SERVER_URL } from '../bridge/status';
 import { copyTextToClipboard } from './bridge-panel/runtime-actions';
-
-function bridgeLogoUrl(plugin: ReactRNPlugin): string {
-  return new URL('logo.svg', plugin.rootURL ?? window.location.href).toString();
-}
+import { REMNOTE_MCP_LOGO_URL } from './bridge-panel/brand';
 
 function companionMcpUrl(serverUrl: string): string {
   const url = new URL(serverUrl);
@@ -26,7 +23,7 @@ function companionMcpUrl(serverUrl: string): string {
 }
 
 async function onActivate(plugin: ReactRNPlugin) {
-  const bridgeTabIcon = bridgeLogoUrl(plugin);
+  const bridgeTabIcon = REMNOTE_MCP_LOGO_URL;
   const openBridgeStatus = async () => {
     await plugin.window.openWidgetInRightSidebar('bridge-status');
   };

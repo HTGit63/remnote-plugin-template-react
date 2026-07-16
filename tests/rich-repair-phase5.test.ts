@@ -175,6 +175,47 @@ describe('Phase 5 rich repair invariants', () => {
     expect(JSON.stringify(target.text)).toBe(before);
   });
 
+  test('whole-Rem highlight accepts only the SDK Color property Rem as native metadata', async () => {
+    const fake = new FakePlugin();
+    fake.materializeHighlightAsPropertyChild = true;
+    const target = fake.addRem('native-highlight-property-target', 'Formula block');
+
+    const result = await setRemHighlightColor(fake.asPlugin(), {
+      remId: target._id,
+      color: 'yellow',
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: 'highlight_set',
+      verification: {
+        nativeHighlightReadback: 'Yellow',
+        sdkMetadataChildCount: 1,
+        onlyExpectedStyleChanged: true,
+      },
+    });
+    expect(target.children).toHaveLength(1);
+  });
+
+  test('whole-Rem highlight still rejects unrelated children beside SDK metadata', async () => {
+    const fake = new FakePlugin();
+    fake.materializeHighlightAsPropertyChild = true;
+    fake.materializeUnexpectedHighlightChild = true;
+    const target = fake.addRem('native-highlight-unexpected-child-target', 'Formula block');
+
+    await expect(setRemHighlightColor(fake.asPlugin(), {
+      remId: target._id,
+      color: 'yellow',
+    })).rejects.toMatchObject({
+      code: 'PARTIAL_FAILURE',
+      details: expect.objectContaining({
+        partialExecution: expect.objectContaining({
+          failedStage: 'style_child_pollution_check',
+        }),
+      }),
+    });
+  });
+
   test('math conversion preserves target style fields and untouched rich nodes', async () => {
     const fake = new FakePlugin();
     const target = fake.addRem('math-conversion-target', 'placeholder');

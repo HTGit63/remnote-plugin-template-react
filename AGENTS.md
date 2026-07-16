@@ -12,14 +12,14 @@ This repository provides a TypeScript RemNote plugin, an MCP server, ChatGPT/Cod
 
 - Audited branch: `fix/remnote-mcp-mass-note-creation-stability`.
 - Report-era audited commit: `ff5e6d1ebf12dfc41c0e037cff99bfe690def240` (`graphify update and 18 stage task complete`).
-- Latest verified deployed commit: `a65ce2cf5f9cda94a6bb818d35def5d0ea1e4065` on the same branch. The 2026-07-15 release-readiness and native-widget changes described below are a local candidate and have **not** been deployed or live-retested.
+- Latest verified deployed commit: `76c6e2d0aa232f042c5b87d24d5729b8b7d87e51` on the same branch. The 2026-07-16 native-sidebar refinement and SDK highlight-metadata verifier fix described below are a newer local candidate and have **not** been deployed or live-retested.
 - Benchmark reports reviewed: **24 Markdown files**, covering Tests **01–15**, including the cross-test campaign report `remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
 - Report dates: 2026-07-12 through 2026-07-14. The external 2026-07-15 Second-Eye Release Readiness Audit was checked separately against repository code and tests.
 - Latest live connection on 2026-07-14: hosted endpoint connected; initial sync complete; one active plugin session; SDK `0.0.46`; focused Rem `Plugin Test` (`OjLcSppWfIH0cpPoh`). The campaign was self-scoped to `New test` (`SMPeZUPMV64bHl7JI`) and created one run root, `Post-Deploy Benchmark 01–15 — 2026-07-14 — 81eef93` (`3QR2MpAEihc3YMXkJ`). `Old test` (`8RmenkVwDXr88CQYy`) was not mutated.
 - Live proof boundary: the latest Tests 01–15 evidence applies to deployed `81eef93`, not to the local post-campaign edits. Per deployment constraints, no edited code was live-retested in the same campaign. A push/deploy and targeted rerun are required before release.
 - The connection remained healthy for approximately 55 minutes with no reported reconnect attempt, late response, or pending-request leak. This is an in-run stability observation, not weak-network recovery proof. The installed connector still rejected `get_children.startIndex`; treat that as deployment/connector-catalog drift until refreshed after deployment.
 - Live access was `developer` with workspace/full-KB reach, broader than the default `mass_note_writer` profile. Every write used explicit IDs below `New test`; no scope violation, unauthorized write, blind retry, persistent duplicate, or late disconnect occurred during the campaign.
-- 2026-07-15 deployed-commit connection proof: bridge and plugin status both passed at `a65ce2c`; read-only health under `New test` passed 34 tools with zero failures (`health-mrmbuiph`), and safe-write health passed 54 tools with zero failures (`health-mrmbv47n`). The disposable sandbox root was `7DjhM3o9tQQQ4dIfx`. This proves the deployed baseline only, not the local candidate.
+- 2026-07-16 deployed-commit connection proof: bridge status, plugin status, and ping passed at exact SHA `76c6e2d`; one active plugin session was connected and initial sync was complete. Read-only health under `New test` passed 34 tools with zero failures (`health-mrnf4kan`), and safe-write health passed 54 tools with zero failures (`health-mrnf5c4s`). Mutation health (`health-mrnf7aev`) passed 77 checks, returned the two expected heading `SDK_UNSUPPORTED` results, and exposed one false partial failure in native whole-Rem highlighting. This proves the deployed baseline and reproduces the defect; it does not prove the newer local fix.
 
 ### Benchmark outcome
 
@@ -39,7 +39,7 @@ The Second-Eye audit's seven code/release claims were re-traced rather than acce
 | GAP-06 no CI | Confirmed release-engineering defect. | `.github/workflows/ci.yml` runs types, 261-test suite, SDK validation/build, server build/security/schema/idempotency/health, PostgreSQL durability, and the full server fault smoke. | Independent GitHub run after push and required branch protection. |
 | GAP-07 thematic break pollution | Confirmed Markdown representation defect. | CommonMark thematic breaks become hidden-bullet spacer Rems with an explicit supported-fallback warning; `tests/bulk-import.test.ts`. | Deployed Test 05 visual/readback control. |
 
-Local release evidence at this candidate: **28 test files / 261 tests passed**, TypeScript, SDK validation, plugin build, server build, security/schema/idempotency/health routing, full server fault smoke, and PostgreSQL restart/CAS durability passed. The new widget removes the setup wall, presents Connection, Writing Access, and Design Style first, moves operator diagnostics under Advanced Details, adds the `Structured Science` preset and custom-style deletion, repairs health/copy fallbacks, and uses `public/logo.svg` for both the toolbar/tab and panel brand surfaces. Native RemNote visual acceptance remains post-deploy.
+Local release evidence at this candidate: **29 test files / 265 tests passed**, TypeScript, SDK validation, plugin build, server build, security/schema/idempotency/health routing, full server fault smoke, style correctness, and production dependency audits passed. The widget now matches the selected calm native-sidebar direction: Connection, Writing Access, and Design Style are one daily-use action list; diagnostics remain under Advanced settings; the real `public/logo.svg` is bundled as a data URL for both toolbar/tab and panel brand surfaces. Native RemNote visual acceptance remains post-deploy and is recorded as blocked in `design-qa.md` until the exact commit is pushed and rendered in RemNote.
 
 ### 2026-07-14 deployed live-campaign supplement
 
@@ -152,7 +152,7 @@ Prompt reproductions inside reports are context, not observed evidence. The find
 
 ## 4. Consolidated issue register
 
-Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consolidated issues**. Historical live closure is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `a65ce2c`; “local candidate” means automated proof that awaits deployment.
+Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consolidated issues**. Historical live closure is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `76c6e2d`; “local candidate” means automated proof that awaits deployment.
 
 | Issue ID | Priority | Subsystem | Evidence | Root-cause status | Planned phase |
 | --- | --- | --- | --- | --- | --- |
@@ -170,7 +170,7 @@ Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consol
 | `VER-001` | P1 | Design verifier | Tests 11–12 show H1/H3/default assumptions conflicting with saved rules. `verifyNoteAgainstDesign` and named-preset verification do not consume one complete stored-rule manifest. | Local fix complete: target-specific applied manifest drives read-only exact verification. Live Tests 11–12 pending. | 4 |
 | `VER-002` | P1 | Card verifier / preview | Historical Test 13 runs exposed MCQ and organizational-heading false findings. | Latest `81eef93` Test 13 passed all 14 cards and aggregate direct-metadata verification; retain as a protected regression control. | 4 |
 | `VER-003` | P1 | Import final verifier | Live Test 14 Run B had one exact North/East/South/West tree and matching hashes, but substring duplicate detection counted `North paragraph` and similar content as duplicate section titles, failed all repeats, and recommended resume on a completed job. | Root cause confirmed in substring counting. Local candidate compares exact semantic units and forbids replay guidance for completed jobs; deployment rerun pending. | 4 |
-| `RICH-001` | P1 | Rich text / formula styling | Live mixed-rich readback measured plain length 18 versus SDK length 14; styling text after math rejected valid plain offsets. Rich replacement dropped math styles while claiming a match. | Root cause confirmed in offset-domain mixing and raw math serialization. Local candidate maps each rich node and preserves/reads math styles; deployment probe pending. | 5 |
+| `RICH-001` | P1 | Rich text / formula styling | Live mixed-rich readback measured plain length 18 versus SDK length 14; styling text after math rejected valid plain offsets. On deployed `76c6e2d`, native whole-Rem highlight succeeded but its SDK-created `Color` property child triggered the generic child-pollution invariant. | Offset-domain and raw-math causes were already fixed. The newer local candidate verifies native highlight by direct property readback, accepts only the exact matching SDK `Color` metadata child, and still rejects every unrelated child; deployment probe pending. | 5 |
 | `HEAD-001` | P2 | Heading/property mutation | Tests 03–07 and 15 show created headings read as normal, while existing mutation is disabled because SDK font size can create visible `Size` children. | Safe capability-off fallback, direct readback, no-op rejection, and clear-reset guard pass locally; live SDK probe pending. | 5 |
 | `MD-002` | P2 | Markdown representation | Live Test 05 preserved content/math/hierarchy, but ordinary quotes gained `Callout:`, inline code styling and native headings were lost without warning, and ordered/link fallbacks were incomplete. | Root causes confirmed. Local candidate preserves exact quote text with quote style and declares heading/inline-code/link/ordered-list limits in preview, manifest, result, and readback counts. | 5 |
 | `READ-001` | P2 | Tree reads / search | Latest tree reads passed, symbol-heavy search produced a bounded false negative for content available by ID, and the installed connector descriptor lacked the source-implemented `startIndex` input. | Direct-ID fallback and non-exhaustive labeling exist; connector refresh and post-refresh continuation/search proof remain. | 6 |
@@ -178,7 +178,7 @@ Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consol
 | `OBS-001` | P3 | Envelopes / observability / performance | Live design repair returned applied operations but zero outer updated IDs and no attempted verification; verifier tools omitted standard verification evidence. | Local candidate lifts updated IDs, typed verification method/pass state, checked role IDs, and rejects inner verification failure at the standard envelope. | 6 |
 | `CONN-001` | P1 | Bridge / connection lifecycle | Weak internet caused repeated disconnects; code closed after a single missed-pong cycle and client timers/socket callbacks could race or stack. | Server now honors the configured pong timeout; client coalesces timers, ignores stale socket events, closes failed registration, and resets backoff only after `server_hello`. Six unit regressions pass; weak-network live soak pending. | 6 |
 | `REL-001` | P1 | Release engineering / CI | Second-Eye GAP-06 found no independent workflow for the candidate; local-only evidence could not gate a public release. | CI now installs plugin/server dependencies, runs typed/build/security/schema/idempotency/health gates, and proves persistent storage against PostgreSQL. Independent GitHub status is pending push. | 7 |
-| `UX-001` | P2 | Native RemNote widget | The default view was a setup/diagnostic wall; health/copy controls failed on constrained browser surfaces; template use/delete and both logo surfaces were unclear or stale. | Default information architecture, clipboard fallback, independent health probes, featured/custom template lifecycle, accessibility CSS, and both logo surfaces are locally implemented and tested. Native visual proof is pending deployment. | 7 |
+| `UX-001` | P2 | Native RemNote widget | The default view was a setup/diagnostic wall; health/copy controls failed on constrained browser surfaces; the deployed screenshots showed a placeholder logo and excessive card chrome. | The selected native-sidebar hierarchy, clipboard/health fallbacks, template lifecycle, bundled logo route, Lucide controls, accessibility CSS, and narrow-sidebar rules are locally implemented and source-tested. `design-qa.md` remains blocked until post-deploy native visual proof. | 7 |
 | `ARCH-001` | P3 | Architecture / maintainability | Import registration, design tools, and verification files combine orchestration, persistence mutation, normalization, and policy. Defects cross these seams. | Bounded state/compiler/verifier seams and dependency/migration tests pass; no broad rewrite performed. | 7 |
 
 ## 5. Dependency-ordered remediation phases
@@ -480,7 +480,7 @@ Phase 4 is complete only when `VER-001` and `VER-002` close with read-only invar
 
 ### Phase 5 — Preserve rich text, math, headings, and Markdown style on repair
 
-**Implementation status (2026-07-15): `LIVE BASELINE DIAGNOSED / LOCAL CANDIDATE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Whole-Rem formula-block highlighting remains the supported emphasis path; math glyph font color and unsafe native heading mutation remain explicit SDK limitations. Node-aware ranges, rich preservation, quote handling, and honest unsupported results pass locally.
+**Implementation status (2026-07-16): `LIVE DEFECT REPRODUCED / LOCAL REGRESSION FIXED / DEPLOYMENT RERUN REQUIRED`.** Whole-Rem formula-block highlighting is supported and succeeded live; its SDK-native `Color` property child was misclassified as arbitrary pollution on deployed `76c6e2d`. The local candidate now uses direct highlight readback and a narrowly typed metadata exception. Math glyph font color and unsafe native heading mutation remain explicit SDK limitations.
 
 #### Objective
 
@@ -491,6 +491,7 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - Test 07: full rich replacement succeeded but was reported partial because plain text changed under a style-only invariant.
 - Test 12: raw formula became a math node but lost blue emphasis.
 - Test 15: whole-Rem highlight failed on a math block range; answer-highlight writer/verifier disagreed.
+- Deployed mutation health `health-mrnf7aev`: `set_rem_highlight_color` changed the native property successfully but returned `PARTIAL_FAILURE` because the SDK created child `3qTP1rhayedd8QsXa` with exact property readback `Color` → `Yellow`.
 - Tests 03–07 and 15: heading mutation unsupported or read back as normal; visible `Size` pollution is the safety concern.
 - Test 05: emphasis and representation loss.
 - Relevant issues: `RICH-001`, `HEAD-001`, `MD-002`.
@@ -520,6 +521,7 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - [x] Build targeted repairs by transforming the existing rich array and preserving every untouched node/style field.
 - [x] Resolve style ranges against rich-node boundaries; never apply plain-text offsets blindly across math or other non-text nodes.
 - [x] Support whole-node math styling only when the SDK exposes a safe property; otherwise return `SDK_UNSUPPORTED` with an exact fallback.
+- [x] Verify native whole-Rem highlight through `getHighlightColor`; allow only an exact newly created `Color` property whose value matches the requested color, while preserving failure for any unrelated child.
 - [x] Preserve existing emphasis/color/highlight when converting only the requested formula span.
 - [x] Gate heading capability behind explicit live-validation opt-in, verify enabled mutations by direct property readback, and reject visible metadata pollution/no-op claims.
 - [x] Extend Markdown inline parsing to produce supported bold/italic/link/quote/list semantics instead of discarding markers; declare fallback limits for tables/numbering.
@@ -539,6 +541,7 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - Formula conversion changes only the designated formula span and preserves existing emphasis/color outside and on supported portions of that span.
 - Full rich replacement that matches the requested rich content cannot be reported as a style-only partial failure.
 - Heading mutation either round-trips the native property without visible metadata children or returns a truthful unsupported result before mutation.
+- Native whole-Rem highlight may materialize the SDK's exact matching `Color` property child without a false partial failure; any other created child still fails the style-only invariant.
 - `Size`, `H1`, `H2`, `H3`, and `normal` never appear as generated metadata child Rems.
 - Supported Markdown emphasis becomes rich style metadata; unsupported presentation is explicit and does not claim exact visual fidelity.
 
@@ -547,7 +550,8 @@ Make targeted style/property operations preserve Rem identity and all unrelated 
 - Commands: `npm run test:style-correctness`, `npm test -- tests/style-presets.test.ts tests/write-idempotency-duplicates.test.ts tests/agents-staged-repair-simulation.test.ts`, `npm run check-types`, `npm run build`.
 - Attach raw rich-text before/after, exact Rem IDs, property readback, unsupported-capability results, and targeted benchmark reruns.
 - Prove Test 06 core rich-math creation remains at its prior reliable baseline.
-- [x] Local command gate passed: rich-repair, native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and 261-test repository suites.
+- [x] Local command gate passed: rich-repair (including exact SDK metadata acceptance and unrelated-child rejection), native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and the 29-file / 265-test repository suite.
+- [x] Deployed `76c6e2d` live mutation health reproduced the exact native-highlight false failure without scope escape; local red/green regression now covers the observed `Color` → `Yellow` property representation.
 - [ ] Deploy the local candidate and rerun mixed-rich/math readback plus targeted Tests 03, 05, 06, 07, and 12. Heading must remain truthful unsupported unless the deployed SDK proves a safe native mutation.
 
 #### Definition of done
@@ -556,7 +560,7 @@ Phase 5 is complete only when `RICH-001`, `HEAD-001`, and `MD-002` meet operatio
 
 ### Phase 6 — Make reads, schemas, errors, scope, and reconnection actionable
 
-**Implementation status (2026-07-15): `LOCAL AND DEPLOYED BASELINE HEALTHY / WEAK-NETWORK SOAK REQUIRED`.** Deployed `a65ce2c` passed 34 read-only and 54 safe-write health checks with zero failures. Local reconnect races, 90-second heartbeat tolerance, read-before-retry, security, schema, and full fault smoke pass. Connector catalog refresh, `startIndex` proof, and a genuine weak-network soak remain open.
+**Implementation status (2026-07-16): `DEPLOYED 76C6E2D BASELINE HEALTHY / WEAK-NETWORK SOAK REQUIRED`.** Deployed `76c6e2d` passed 34 read-only and 54 safe-write health checks with zero failures and one active session. Local reconnect races, 90-second heartbeat tolerance, read-before-retry, security, schema, and full fault smoke pass. Connector catalog refresh, `startIndex` proof, and a genuine weak-network soak remain open.
 
 #### Objective
 
@@ -635,7 +639,7 @@ Phase 6 is complete only when `READ-001`, `ERR-001`, and `OBS-001` meet read/sch
 
 ### Phase 7 — Lock architectural seams and pass the release benchmark
 
-**Implementation status (2026-07-15): `LOCAL RELEASE CANDIDATE COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** State, compiler, verifier, migration, compatibility, UX, CI definition, Graphify, PostgreSQL, security, full server smoke, 28 files / 261 tests, types, validation, and builds pass. The standalone review is `/tmp/architecture-review-remnote-mcp-2026-07-15.html`. Release remains open because the edited candidate has not been pushed/deployed and cannot reuse `a65ce2c` as post-fix proof.
+**Implementation status (2026-07-16): `NEW LOCAL CANDIDATE COMPLETE / POST-DEPLOY RELEASE GATE OPEN`.** Deployed `76c6e2d` passed connection, read-only, and safe-write baseline health. The newer native-sidebar and SDK highlight-metadata changes pass 29 files / 265 tests, types, validation, builds, security, schemas, idempotency, health routing, style correctness, full server smoke, and production dependency audits. Release remains open because these newer edits are not deployed and native visual QA is blocked.
 
 #### Objective
 
@@ -691,9 +695,9 @@ Reduce change coupling only around proven defects, then establish an honest rele
 
 - Commands: `npm test`, `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, `npm run server:smoke` plus all relevant `server:test:*` gates from prior phases.
 - Attach complete outputs, dependency diff, migration fixtures, before/after benchmark behavior, and a no-regression matrix.
-- [x] Updated 2026-07-15 local gate passed: 28 test files/261 tests, types, SDK validation, plugin/server builds, security, tool schemas, idempotency, health routing, full fault smoke, and PostgreSQL restart/CAS durability.
+- [x] Updated 2026-07-16 local gate passed: 29 test files/265 tests, types, SDK validation, plugin/server builds, security, tool schemas, idempotency, health routing, style correctness, full fault smoke, and zero production dependency vulnerabilities in root/server audits. The prior candidate's PostgreSQL restart/CAS durability proof remains unchanged because no persistence code changed.
 - [x] Dependency graph refreshed locally on 2026-07-15 to 4,567 nodes / 10,418 edges; architecture tests lock the import/compiler/verifier seams and conservative migrations; the standalone review was generated and opened from `/tmp/architecture-review-remnote-mcp-2026-07-15.html`.
-- [x] Native widget source/build acceptance passed: setup text is absent, the supplied logo is copied byte-for-byte to `dist/logo.svg`, accessibility styles retain 44px controls/focus/reduced motion, and focused runtime-action/template tests pass. Standalone browser rendering is not valid outside the RemNote SDK host and is not claimed as native visual proof.
+- [x] Native widget source/build acceptance passed: the selected three-row daily-use hierarchy is present, the supplied logo is compiled into both brand surfaces instead of a relative URL, individual Lucide icon modules build, and accessibility styles retain 44px controls/focus/reduced motion. `design-qa.md` truthfully records native visual comparison as blocked rather than treating standalone source/build proof as a screenshot.
 - [ ] After push, require the GitHub CI workflow to pass at the candidate SHA and enable branch protection for that workflow before public release.
 - [ ] After push/deploy, rerun the targeted Phase 2–5 failures, Test 14 final verification, Tests 11–13, and an independent Test 15. Pre-edit live evidence cannot close this candidate's release gate.
 
@@ -814,13 +818,13 @@ Release is allowed only when all conditions below have current evidence at the c
 
 - [ ] No Priority 0 issue remains open at the deployed candidate; local state-machine and PostgreSQL restart/CAS tests pass, but two-run deployed Test 14 proof remains outstanding.
 - [ ] Every Priority 1 acceptance criterion is met; unsupported SDK features are explicit and cannot produce false success.
-- [x] The complete local gate passes at the candidate revision: `npm test` (28 files / 261 tests), types, SDK validation, plugin/server builds, full server fault smoke, security/schema/idempotency/health routing, and PostgreSQL restart/CAS durability pass.
+- [x] The complete local gate passes at the candidate revision: `npm test` (29 files / 265 tests), types, SDK validation, plugin/server builds, full server fault smoke, style correctness, security/schema/idempotency/health routing, and production dependency audits pass; prior PostgreSQL restart/CAS proof remains applicable because persistence code did not change.
 - [ ] Test 14 passes twice consecutively with persistent storage, no verifier mutation, no replay, no lost IDs, no state/artifact disagreement, no hierarchy corruption, and no persistent duplicates.
 - [ ] Test 11 design learn/save/apply workflows pass in the required independent runs with one target root and complete supported-rule accounting.
 - [ ] Test 12 diagnosis/repair passes without style loss or generic-verifier false claims.
 - [ ] Test 13 remains functional, 14/14 correct, duplicate-free, and free of aggregate false card defects in main and repeat runs.
 - [ ] Test 15 passes the required independent run set, including a new Run 03, within the benchmark repeatability threshold.
-- [x] Connection, branch, deployed commit `a65ce2c`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. Read-only and safe-write health passed with zero failures. The post-fix candidate commit must be added after commit/deployment.
+- [x] Connection, branch, deployed commit `76c6e2d`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. Read-only and safe-write health passed with zero failures. The post-fix candidate commit must be added after commit/deployment.
 - [x] No scope violation, unauthorized write, secret disclosure, blind retry, or ambiguous-session write occurred in the 2026-07-14 campaign or local gates.
 - [ ] No silent content loss, Rem-ID instability, unrelated-note mutation, child-order drift, or visible metadata pollution occurred.
 - [x] Latest live direct readback found no persistent duplicate root, repair artifact, or card. Test 14 created no job because the source-plan gate failed, so it made no duplicate import artifact.

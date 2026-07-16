@@ -92,6 +92,27 @@ export class FakeRem {
   }
   async setHighlightColor(color: string) {
     this.highlightColor = color;
+    if (this.plugin.materializeHighlightAsPropertyChild) {
+      let existing: FakeRem | undefined;
+      for (const child of await this.getChildrenRem()) {
+        if ((await this.plugin.richText.toString(child.text)) === 'Color') {
+          existing = child as unknown as FakeRem;
+          break;
+        }
+      }
+      if (!existing) {
+        const property = this.plugin.addRem(`highlight-color-${this.plugin.createRemCount + 1}`, 'Color');
+        property.backText = [{ i: 'm', text: color }] as never;
+        await property.setParent(this, this.children.length);
+      }
+    }
+    if (this.plugin.materializeUnexpectedHighlightChild) {
+      const unexpected = this.plugin.addRem(
+        `highlight-unexpected-${this.plugin.createRemCount + 1}`,
+        'Unexpected highlight side effect'
+      );
+      await unexpected.setParent(this, this.children.length);
+    }
   }
   async getHighlightColor() {
     return this.highlightColor;
@@ -161,6 +182,8 @@ export class FakePlugin {
   failSetTextIncludes?: string;
   failRemoveIds = new Set<string>();
   flattenMathToPlainText = false;
+  materializeHighlightAsPropertyChild = false;
+  materializeUnexpectedHighlightChild = false;
   polluteFontSizeAsChildren = false;
   fontSizeCalls: Array<{ remId: string; level: 'H1' | 'H2' | 'H3' | undefined }> = [];
   private nextId = 1;

@@ -1,5 +1,6 @@
 import React from 'react';
 import type { BridgeStatusSnapshot } from '../../bridge/status';
+import { REMNOTE_MCP_LOGO_URL } from '../bridge-panel/brand';
 
 export function BridgeWidgetHeader({
   status,
@@ -15,19 +16,51 @@ export function BridgeWidgetHeader({
   return (
     <header className="bridge-hero plugin-header">
       <div className="bridge-mark" aria-hidden="true">
-        <img className="bridge-mark-glyph" src="logo.svg" alt="" />
+        <img className="bridge-mark-glyph" src={REMNOTE_MCP_LOGO_URL} alt="" />
       </div>
       <div className="bridge-hero-copy">
         <h2 className="bridge-title">RemNote MCP</h2>
         <p className="bridge-subtitle">
-          {nextAction}
-          {status.activeToolTier || status.toolTier || status.toolProfile
-            ? ` Tool tier: ${status.activeToolTier ?? status.toolTier ?? status.toolProfile}.`
-            : ''}
+          {status.state === 'connected' ? 'ChatGPT can work in this note.' : nextAction}
         </p>
       </div>
       <span className={statusClassName}>{statusLabel}</span>
     </header>
+  );
+}
+
+export function BridgePrimaryAction({
+  icon,
+  title,
+  description,
+  trailing,
+  expanded,
+  controls,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  trailing?: React.ReactNode;
+  expanded: boolean;
+  controls: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="bridge-primary-action"
+      aria-expanded={expanded}
+      aria-controls={controls}
+      onClick={onClick}
+    >
+      <span className="bridge-primary-action__icon" aria-hidden="true">{icon}</span>
+      <span className="bridge-primary-action__copy">
+        <strong>{title}</strong>
+        <span>{description}</span>
+      </span>
+      {trailing ? <span className="bridge-primary-action__trailing">{trailing}</span> : null}
+    </button>
   );
 }
 

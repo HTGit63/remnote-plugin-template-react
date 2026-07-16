@@ -1,4 +1,10 @@
 import { renderWidget, usePlugin, useTrackerPlugin as useTracker } from '@remnote/plugin-sdk';
+import ChevronRight from 'lucide-react/dist/esm/icons/chevron-right.mjs';
+import ExternalLink from 'lucide-react/dist/esm/icons/external-link.mjs';
+import FileText from 'lucide-react/dist/esm/icons/file-text.mjs';
+import PenLine from 'lucide-react/dist/esm/icons/pen-line.mjs';
+import Settings from 'lucide-react/dist/esm/icons/settings.mjs';
+import ShieldCheck from 'lucide-react/dist/esm/icons/shield-check.mjs';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import '../style.css';
 import '../index.css';
@@ -42,6 +48,7 @@ import {
 } from '../bridge/pairing';
 import {
   BridgeTaskBanner,
+  BridgePrimaryAction,
   BridgeWidgetHeader,
   ToolProfileSummary,
 } from './components/BridgeWidgetPieces';
@@ -79,6 +86,7 @@ import {
   collectBridgePanelHealth,
   copyTextToClipboard,
 } from './bridge-panel/runtime-actions';
+import { REMNOTE_MCP_LOGO_URL } from './bridge-panel/brand';
 
 const statusToneClass: Record<string, string> = {
   connected: 'bridge-pill bridge-pill-success',
@@ -361,7 +369,9 @@ export function BridgeStatusWidget() {
   const [lastApprovalEvent, setLastApprovalEvent] = useState('No approval activity yet.');
   const [bridgeStatus, setBridgeStatus] = useState(INITIAL_BRIDGE_STATUS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [connectionOpen, setConnectionOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
+  const [designOpen, setDesignOpen] = useState(false);
   const [bridgeEnabled, setBridgeEnabled] = useState(true);
   const [runtimePermissionMode, setRuntimePermissionMode] = useState<PermissionMode | null>(null);
   const [runtimePermissionScope, setRuntimePermissionScope] = useState<PermissionScope | null>(null);
@@ -1513,265 +1523,201 @@ export function BridgeStatusWidget() {
       />
 
       <div className="plugin-body">
-        <div className="bridge-stack">
-
-        <section className="bridge-panel bridge-connection-panel" aria-label="Connection status">
-          <div className="bridge-section-head">
-            <div className="bridge-heading-copy">
-              <h3>Connection</h3>
-              <p>{bridgeNextAction}</p>
-            </div>
-            <span className={statusToneClass[uiConnectionState] ?? statusToneClass.disconnected}>
-              {statusLabel}
-            </span>
-          </div>
-          <div className="bridge-connection-grid">
-            <div className="bridge-connection-row">
-              <span aria-hidden="true" className={uiConnectionState === 'connected' ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
-              <div>
-                <strong>RemnoteMCP server</strong>
-                <p>{uiConnectionState === 'connected' ? 'Online and receiving plugin heartbeats.' : 'Waiting for a stable server connection.'}</p>
-              </div>
-              <span>{uiConnectionState === 'connected' ? 'Connected' : 'Offline'}</span>
-            </div>
-            <div className="bridge-connection-row">
-              <span aria-hidden="true" className={chatGptPairingConnected ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
-              <div>
-                <strong>ChatGPT</strong>
-                <p>{chatGptPairingConnected ? 'Authenticated connector session is active.' : 'Pair ChatGPT to enable tool calls.'}</p>
-              </div>
-              <span>{chatGptPairingConnected ? 'Connected' : 'Not paired'}</span>
-            </div>
-          </div>
-        </section>
-
-        {!chatGptPairingDisabled && !chatGptPairingConnected && (
-          <section className="bridge-panel bridge-panel--notice" aria-busy={Boolean(activeOperation)}>
-            <div className="bridge-section-head">
-              <div className="bridge-heading-copy">
-                <h3>{effectiveHostedSession ? 'Paired Session Offline' : 'ChatGPT Pairing'}</h3>
-                <p>
-                  {effectiveHostedSession
-                    ? 'The saved pairing exists, but the plugin connection is not currently confirmed.'
-                    : 'Enter the hosted pairing code from ChatGPT. RemNote approval is required before access.'}
-                </p>
-              </div>
-              <span className="bridge-pill bridge-pill-warning">Not connected</span>
-            </div>
-            {!effectiveHostedSession && <div className="bridge-access-editor">
-              <label className="bridge-field">
-                Pairing code
-                <input
-                  className="bridge-text-input"
-                  value={chatGptPairingCode}
-                  onChange={(event) => {
-                    setChatGptPairingCode(event.target.value);
-                    setChatGptPairingPreview(null);
-                  }}
-                  placeholder="482-913"
-                  autoComplete="off"
-                />
-              </label>
-              <label className="bridge-field">
-                Local label
-                <input
-                  className="bridge-text-input"
-                  value={localConnectionLabel}
-                  onChange={(event) => setLocalConnectionLabel(event.target.value)}
-                  placeholder="My ChatGPT"
-                  autoComplete="off"
-                />
-              </label>
-            </div>}
-            {effectiveHostedSession && (
-              <dl className="bridge-detail-list">
-                <DetailRow label="Connection" value={effectiveHostedSession.connectedLabel ?? 'Saved ChatGPT pairing'} />
-                <DetailRow label="Session Expires" value={new Date(effectiveHostedSession.expiresAt).toLocaleString()} />
-              </dl>
-            )}
-            {chatGptPairingPreview && (
-              <dl className="bridge-detail-list bridge-detail-list--spaced">
-                <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
-                <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
-                <DetailRow
-                  label="Requested Scopes"
-                  value={chatGptPairingPreview.requestedScopes.join(', ') || 'No extra scopes requested'}
-                />
-                <DetailRow label="RemNote Access" value={chatGptPairingPreview.accessScope.replace(/-/g, ' ')} />
-                <DetailRow label="Write Approval" value={chatGptPairingPreview.trustedWriteMode.replace(/-/g, ' ')} />
-                <DetailRow label="Tool Tier" value={chatGptPairingPreview.toolTier ?? 'note_writer'} />
-              </dl>
-            )}
-            <div
-              className={lastOperationError ? 'bridge-event bridge-event--danger' : 'bridge-event'}
-              role={lastOperationError ? 'alert' : 'status'}
-            >
-              {pairingEvent}
-            </div>
-            {!effectiveHostedSession ? <div className="bridge-actions">
-              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>
-                Check Code
-              </button>
-              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>
-                Approve
-              </button>
-              <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>
-                Deny
-              </button>
-            </div> : (
-              <div className="bridge-actions">
-                <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={() => void handleHealthCheck('quick')}>
-                  Check Connection
-                </button>
-                <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={() => void handleClearPairing()}>
-                  Clear Pairing
-                </button>
-              </div>
-            )}
+        <main className="bridge-home">
+          <section className="bridge-ready" aria-labelledby="bridge-ready-title">
+            <img className="bridge-ready__logo" src={REMNOTE_MCP_LOGO_URL} alt="" />
+            <h1 id="bridge-ready-title">Ready for your notes</h1>
+            <p>ChatGPT can read and write within the scope you choose.</p>
           </section>
-        )}
 
-        <section className="bridge-panel bridge-access-panel">
-          <div className="bridge-section-head">
-            <div className="bridge-heading-copy">
-              <h3>Writing Access</h3>
-              <p>Default keeps ChatGPT inside focused Rem and descendants.</p>
-            </div>
-            <span
-              className={
-                permissionMode === 'danger_zone' || permissionMode === 'full_control_delete_approval'
-                  ? 'bridge-pill bridge-pill-danger'
-                  : 'bridge-pill bridge-pill-accent'
-              }
-            >
-              {getPermissionModeLabel(permissionMode)}
-            </span>
-          </div>
-          {accessOpen ? (
-            <>
-              <div className="bridge-access-editor bridge-access-editor--always">
-                <label className="bridge-field">
-                  Access scope
-                  <select value={permissionScope} onChange={handleScopeChange}>
-                    {permissionScopeOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {getPermissionScopeLabel(option.value)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="bridge-field">
-                  Standard write mode
-                  <select value={permissionMode} onChange={handleModeChange}>
-                    {!STANDARD_PERMISSION_MODE_OPTIONS.some((option) => option.value === permissionMode) && (
-                      <option value={permissionMode} disabled>
-                        {getPermissionModeLabel(permissionMode)} — manage in Danger Zone
-                      </option>
-                    )}
-                    {STANDARD_PERMISSION_MODE_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <p className="bridge-field-help">
-                {permissionScopeOptions.find((option) => option.value === permissionScope)?.description}
-              </p>
-              <dl className="bridge-detail-list">
-                <DetailRow
-                  label="Focused Rem"
-                  value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'}
-                />
-                <DetailRow
-                  label="Approved Root"
-                  value={approvedRootRemId ?? (permissionScope === 'approved_document_or_folder' ? 'Missing approved root Rem ID' : 'Only needed for Approved Root scope')}
-                  mono={Boolean(approvedRootRemId)}
-                />
-              </dl>
-              <div className="bridge-actions">
-                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>
-                  Use Focused as Root
-                </button>
-                <button type="button" className="bridge-button bridge-button-secondary" onClick={handleCopyMcpUrl}>
-                  Copy MCP URL
-                </button>
-              </div>
-            </>
-          ) : (
-            <div className="bridge-access-summary">
-              <p>{getPermissionScopeLabel(permissionScope)}. Standard controls are collapsed.</p>
-              <button type="button" className="bridge-button bridge-button-secondary bridge-button-full" onClick={() => setAccessOpen(true)}>
-                Show Access Controls
-              </button>
-            </div>
-          )}
-        </section>
+          <section className="bridge-primary-actions" aria-label="RemnoteMCP controls">
+            <div className="bridge-primary-action-group">
+              <BridgePrimaryAction
+                icon={<ShieldCheck size={25} strokeWidth={1.8} />}
+                title="Connection"
+                description={uiConnectionState === 'connected' ? 'ChatGPT and RemNote are connected' : bridgeNextAction}
+                trailing={<ChevronRight size={18} />}
+                expanded={connectionOpen}
+                controls="bridge-connection-details"
+                onClick={() => {
+                  setConnectionOpen((open) => !open);
+                  setAccessOpen(false);
+                  setDesignOpen(false);
+                }}
+              />
+              {connectionOpen && (
+                <div className="bridge-action-detail" id="bridge-connection-details">
+                  <div className="bridge-connection-grid">
+                    <div className="bridge-connection-row">
+                      <span aria-hidden="true" className={uiConnectionState === 'connected' ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
+                      <div>
+                        <strong>RemnoteMCP server</strong>
+                        <p>{uiConnectionState === 'connected' ? 'Online and receiving plugin heartbeats.' : 'Waiting for a stable server connection.'}</p>
+                      </div>
+                      <span>{uiConnectionState === 'connected' ? 'Connected' : 'Offline'}</span>
+                    </div>
+                    <div className="bridge-connection-row">
+                      <span aria-hidden="true" className={chatGptPairingConnected ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
+                      <div>
+                        <strong>ChatGPT</strong>
+                        <p>{chatGptPairingConnected ? 'Authenticated connector session is active.' : 'Pair ChatGPT to enable tool calls.'}</p>
+                      </div>
+                      <span>{chatGptPairingConnected ? 'Connected' : 'Not paired'}</span>
+                    </div>
+                  </div>
 
-        <section className="bridge-panel bridge-template-panel">
-          <div className="bridge-section-head">
-            <div className="bridge-heading-copy">
-              <h3>Design Style</h3>
-              <p>Choose how new high-level notes are structured and formatted.</p>
+                  {!chatGptPairingDisabled && !chatGptPairingConnected && (
+                    <div className="bridge-pairing" aria-busy={Boolean(activeOperation)}>
+                      <div className="bridge-section-head">
+                        <div className="bridge-heading-copy">
+                          <h3>{effectiveHostedSession ? 'Paired session offline' : 'Pair ChatGPT'}</h3>
+                          <p>{effectiveHostedSession ? 'The saved pairing exists, but the plugin connection is not currently confirmed.' : 'Enter the hosted pairing code from ChatGPT.'}</p>
+                        </div>
+                      </div>
+                      {!effectiveHostedSession && <div className="bridge-access-editor">
+                        <label className="bridge-field">
+                          Pairing code
+                          <input className="bridge-text-input" value={chatGptPairingCode} onChange={(event) => { setChatGptPairingCode(event.target.value); setChatGptPairingPreview(null); }} placeholder="482-913" autoComplete="off" />
+                        </label>
+                        <label className="bridge-field">
+                          Local label
+                          <input className="bridge-text-input" value={localConnectionLabel} onChange={(event) => setLocalConnectionLabel(event.target.value)} placeholder="My ChatGPT" autoComplete="off" />
+                        </label>
+                      </div>}
+                      {effectiveHostedSession && (
+                        <dl className="bridge-detail-list">
+                          <DetailRow label="Connection" value={effectiveHostedSession.connectedLabel ?? 'Saved ChatGPT pairing'} />
+                          <DetailRow label="Session Expires" value={new Date(effectiveHostedSession.expiresAt).toLocaleString()} />
+                        </dl>
+                      )}
+                      {chatGptPairingPreview && (
+                        <dl className="bridge-detail-list bridge-detail-list--spaced">
+                          <DetailRow label="Pending Request" value={chatGptPairingPreview.connectionLabel} />
+                          <DetailRow label="Expires" value={new Date(chatGptPairingPreview.expiresAt).toLocaleTimeString()} />
+                          <DetailRow label="Requested Scopes" value={chatGptPairingPreview.requestedScopes.join(', ') || 'No extra scopes requested'} />
+                          <DetailRow label="RemNote Access" value={chatGptPairingPreview.accessScope.replace(/-/g, ' ')} />
+                          <DetailRow label="Write Approval" value={chatGptPairingPreview.trustedWriteMode.replace(/-/g, ' ')} />
+                          <DetailRow label="Tool Tier" value={chatGptPairingPreview.toolTier ?? 'note_writer'} />
+                        </dl>
+                      )}
+                      <div className={lastOperationError ? 'bridge-event bridge-event--danger' : 'bridge-event'} role={lastOperationError ? 'alert' : 'status'}>{pairingEvent}</div>
+                      {!effectiveHostedSession ? <div className="bridge-actions">
+                        <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={handleLookupChatGptPairing}>Check Code</button>
+                        <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-approve" onClick={handleApproveChatGptPairing}>Approve</button>
+                        <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={handleDenyChatGptPairing}>Deny</button>
+                      </div> : <div className="bridge-actions">
+                        <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={() => void handleHealthCheck('quick')}>Check Connection</button>
+                        <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={() => void handleClearPairing()}>Clear Pairing</button>
+                      </div>}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            <span className="bridge-pill bridge-pill-muted">{savedTemplates.length} saved</span>
-          </div>
-          <div className={['bridge-featured-style', selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'bridge-featured-style--selected' : ''].filter(Boolean).join(' ')}>
-            <div>
-              <span className="bridge-eyebrow">Recommended preset</span>
-              <strong>{FEATURED_DESIGN_TEMPLATE.name}</strong>
-              <p>{FEATURED_DESIGN_TEMPLATE.description}</p>
+
+            <div className="bridge-primary-action-group">
+              <BridgePrimaryAction
+                icon={<PenLine size={25} strokeWidth={1.8} />}
+                title="Writing access"
+                description={getPermissionScopeLabel(permissionScope)}
+                trailing={<><span>Change</span><ChevronRight size={18} /></>}
+                expanded={accessOpen}
+                controls="bridge-access-details"
+                onClick={() => {
+                  setAccessOpen((open) => !open);
+                  setConnectionOpen(false);
+                  setDesignOpen(false);
+                }}
+              />
+              {accessOpen && (
+                <div className="bridge-action-detail" id="bridge-access-details">
+                  <div className="bridge-access-editor bridge-access-editor--always">
+                    <label className="bridge-field">
+                      Access scope
+                      <select value={permissionScope} onChange={handleScopeChange}>
+                        {permissionScopeOptions.map((option) => <option key={option.value} value={option.value}>{getPermissionScopeLabel(option.value)}</option>)}
+                      </select>
+                    </label>
+                    <label className="bridge-field">
+                      Standard write mode
+                      <select value={permissionMode} onChange={handleModeChange}>
+                        {!STANDARD_PERMISSION_MODE_OPTIONS.some((option) => option.value === permissionMode) && <option value={permissionMode} disabled>{getPermissionModeLabel(permissionMode)} — manage in Danger Zone</option>}
+                        {STANDARD_PERMISSION_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  <p className="bridge-field-help">{permissionScopeOptions.find((option) => option.value === permissionScope)?.description}</p>
+                  <dl className="bridge-detail-list">
+                    <DetailRow label="Focused Rem" value={focusedRemStatus?.found ? focusedRemStatus.label : focusedRemStatus?.label ?? 'Checking...'} />
+                    <DetailRow label="Approved Root" value={approvedRootRemId ?? (permissionScope === 'approved_document_or_folder' ? 'Missing approved root Rem ID' : 'Only needed for Approved Root scope')} mono={Boolean(approvedRootRemId)} />
+                  </dl>
+                  <div className="bridge-actions">
+                    <button type="button" className="bridge-button bridge-button-secondary" onClick={handleUseFocusedAsApprovedRoot}>Use Focused as Root</button>
+                    <button type="button" className="bridge-button bridge-button-secondary" onClick={handleCopyMcpUrl}>Copy MCP URL</button>
+                  </div>
+                </div>
+              )}
             </div>
-            <button
-              type="button"
-              className="bridge-button bridge-button-approve"
-              disabled={selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId}
-              onClick={() => void selectTemplate(FEATURED_DESIGN_TEMPLATE.templateId)}
-            >
-              {selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'Active' : 'Use preset'}
-            </button>
-          </div>
-          <label className="bridge-field">
-            Saved styles
-            <select value={selectedTemplateId} onChange={handleTemplateChange}>
-              {savedTemplates.map((template) => (
-                <option key={template.templateId} value={template.templateId}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <p className="bridge-field-help bridge-template-description">
-            {savedTemplates.find((template) => template.templateId === selectedTemplateId)?.description ?? 'Select a style to see its description.'}
-          </p>
-          <div className="bridge-actions">
-            <button type="button" className="bridge-button bridge-button-secondary" onClick={handleSaveFocusedTemplate}>
-              Use Current Style
-            </button>
-            <button
-              type="button"
-              className="bridge-button bridge-button-reject"
-              disabled={!selectedTemplateId || selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId || Boolean(activeOperation)}
-              onClick={() => void handleDeleteSelectedTemplate()}
-            >
-              Delete Style
-            </button>
-          </div>
-          <div className="bridge-footnote" role="status" aria-live="polite">{templateStatus}</div>
-        </section>
+
+            <div className="bridge-primary-action-group">
+              <BridgePrimaryAction
+                icon={<FileText size={25} strokeWidth={1.8} />}
+                title="Design style"
+                description={savedTemplates.find((template) => template.templateId === selectedTemplateId)?.name ?? FEATURED_DESIGN_TEMPLATE.name}
+                trailing={<><span>Choose</span><ChevronRight size={18} /></>}
+                expanded={designOpen}
+                controls="bridge-design-details"
+                onClick={() => {
+                  setDesignOpen((open) => !open);
+                  setConnectionOpen(false);
+                  setAccessOpen(false);
+                }}
+              />
+              {designOpen && (
+                <div className="bridge-action-detail" id="bridge-design-details">
+                  <div className={['bridge-featured-style', selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'bridge-featured-style--selected' : ''].filter(Boolean).join(' ')}>
+                    <div>
+                      <span className="bridge-eyebrow">Recommended preset</span>
+                      <strong>{FEATURED_DESIGN_TEMPLATE.name}</strong>
+                      <p>{FEATURED_DESIGN_TEMPLATE.description}</p>
+                    </div>
+                    <button type="button" className="bridge-button bridge-button-approve" disabled={selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId} onClick={() => void selectTemplate(FEATURED_DESIGN_TEMPLATE.templateId)}>{selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId ? 'Active' : 'Use preset'}</button>
+                  </div>
+                  <label className="bridge-field">
+                    Saved styles
+                    <select value={selectedTemplateId} onChange={handleTemplateChange}>
+                      {savedTemplates.map((template) => <option key={template.templateId} value={template.templateId}>{template.name}</option>)}
+                    </select>
+                  </label>
+                  <p className="bridge-field-help bridge-template-description">{savedTemplates.find((template) => template.templateId === selectedTemplateId)?.description ?? 'Select a style to see its description.'}</p>
+                  <div className="bridge-actions">
+                    <button type="button" className="bridge-button bridge-button-secondary" onClick={handleSaveFocusedTemplate}>Use Current Style</button>
+                    <button type="button" className="bridge-button bridge-button-reject" disabled={!selectedTemplateId || selectedTemplateId === FEATURED_DESIGN_TEMPLATE.templateId || Boolean(activeOperation)} onClick={() => void handleDeleteSelectedTemplate()}>Delete Style</button>
+                  </div>
+                  <div className="bridge-footnote" role="status" aria-live="polite">{templateStatus}</div>
+                </div>
+              )}
+            </div>
+          </section>
+
+          <a className="bridge-chatgpt-link" href="https://chatgpt.com/" target="_blank" rel="noreferrer">
+            <ExternalLink size={18} aria-hidden="true" />
+            <span>Open ChatGPT</span>
+          </a>
 
         {pendingRequest ? pendingSection : null}
 
-        <section className="bridge-panel">
+        <section className="bridge-advanced-shell">
           <button
             type="button"
-            className="bridge-button bridge-button-secondary bridge-button-full"
+            className="bridge-advanced-trigger"
             aria-expanded={advancedOpen}
             aria-controls="bridge-advanced-details"
             onClick={() => setAdvancedOpen((open) => !open)}
           >
-            {advancedOpen ? 'Hide Advanced Details' : 'Advanced Details'}
+            <Settings size={20} aria-hidden="true" />
+            <span>{advancedOpen ? 'Hide advanced settings' : 'Advanced settings'}</span>
+            <ChevronRight className={advancedOpen ? 'bridge-chevron bridge-chevron--open' : 'bridge-chevron'} size={18} aria-hidden="true" />
           </button>
           {advancedOpen && (
             <div className="bridge-advanced" id="bridge-advanced-details">
@@ -2088,7 +2034,11 @@ export function BridgeStatusWidget() {
             </div>
           )}
         </section>
-      </div>
+          <div className="bridge-live-status" role="status">
+            <span className={uiConnectionState === 'connected' ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} aria-hidden="true" />
+            <span>{statusLabel} · {uiConnectionState === 'connected' ? 'Live now' : bridgeNextAction}</span>
+          </div>
+        </main>
       </div>
 
       {pendingRequest ? (

@@ -44,6 +44,10 @@ const config = {
   module: {
     rules: [
       {
+        test: /\.svg$/i,
+        type: 'asset/inline',
+      },
+      {
         test: /\.(ts|tsx|jsx|js)?$/,
         loader: 'esbuild-loader',
         options: {
