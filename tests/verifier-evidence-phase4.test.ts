@@ -267,4 +267,95 @@ describe('Phase 4 verifier evidence routing', () => {
       standard: { status: 'FAIL' },
     });
   });
+
+  test('partial execution keeps structured evidence visible to the MCP client', () => {
+    const result = successToToolResult({
+      id: 'phase4-partial-envelope',
+      ok: true,
+      result: {
+        ok: false,
+        status: 'partial',
+        applied: [{ remId: 'styled-rem', property: 'bold' }],
+        unsupported: [{ remId: 'heading-rem', property: 'headingLevel' }],
+        warnings: ['One requested mutation is unsupported.'],
+      },
+    } as never, 'Style plan processed.');
+
+    expect(result.isError).toBeUndefined();
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      status: 'PARTIAL',
+      result: {
+        applied: [{ remId: 'styled-rem', property: 'bold' }],
+        unsupported: [{ remId: 'heading-rem', property: 'headingLevel' }],
+      },
+      standard: { status: 'PARTIAL' },
+    });
+  });
+
+  test('dry-run results never claim mutation evidence', () => {
+    const result = successToToolResult({
+      id: 'phase4-dry-run-envelope',
+      ok: true,
+      result: {
+        status: 'dry_run',
+        dryRun: true,
+        updatedRemId: 'preview-only-rem',
+      },
+    } as never, 'Update preview processed.');
+
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      status: 'PASS',
+      updatedRemIds: [],
+      counts: { updated: 0 },
+      standard: {
+        updatedRemIds: [],
+        counts: { updated: 0 },
+      },
+    });
+  });
+
+  test('real move reports the moved Rem as updated evidence', () => {
+    const result = successToToolResult({
+      id: 'phase4-move-envelope',
+      ok: true,
+      result: {
+        status: 'moved',
+        movedRemId: 'moved-rem',
+        beforeParentId: 'old-parent',
+        afterParentId: 'new-parent',
+      },
+    } as never, 'Move processed.');
+
+    expect(result.structuredContent).toMatchObject({
+      updatedRemIds: ['moved-rem'],
+      counts: { updated: 1 },
+      standard: {
+        updatedRemIds: ['moved-rem'],
+        counts: { updated: 1 },
+      },
+    });
+  });
+
+  test('real reorder reports only children whose indexes changed', () => {
+    const result = successToToolResult({
+      id: 'phase4-reorder-envelope',
+      ok: true,
+      result: {
+        status: 'reordered',
+        beforeOrder: ['stable', 'second', 'third', 'fourth'],
+        afterOrder: ['stable', 'third', 'second', 'fourth'],
+      },
+    } as never, 'Reorder processed.');
+
+    expect(result.structuredContent).toMatchObject({
+      updatedRemIds: ['third', 'second'],
+      counts: { updated: 2 },
+      standard: {
+        updatedRemIds: ['third', 'second'],
+        counts: { updated: 2 },
+      },
+    });
+  });
 });

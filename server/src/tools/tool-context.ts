@@ -372,6 +372,7 @@ function standardResponse(input: {
     rawStatus === 'already_applied' ? 'already_applied' : undefined
   );
   const idempotencyReplay = idempotencyResult === 'already_applied';
+  const dryRun = result?.dryRun === true || rawStatus === 'dry_run';
   const lifecycleDurations = phaseDurationsFromLifecycle(input.lifecycle);
   const resultDurations = {
     ...numberRecord(result?.phaseDurations),
@@ -399,17 +400,22 @@ function standardResponse(input: {
     ...stringArray(result?.rollbackRemovedRemIds),
     ...[firstString(result?.createdRemId, result?.rootCreatedRemId)].filter((value): value is string => Boolean(value)),
   ]));
+  const beforeOrder = stringArray(result?.beforeOrder);
+  const afterOrder = stringArray(result?.afterOrder);
+  const reorderedRemIds = afterOrder.filter((remId, index) => beforeOrder[index] !== remId);
   const updated = Array.from(new Set([
     ...stringArray(result?.updatedRemIds),
-    ...[firstString(result?.updatedRemId)].filter((value): value is string => Boolean(value)),
+    ...reorderedRemIds,
+    ...[firstString(result?.updatedRemId, result?.movedRemId)].filter((value): value is string => Boolean(value)),
   ]));
   const deleted = Array.from(new Set([
     ...stringArray(result?.deletedRemIds),
     ...[firstString(result?.deletedRemId)].filter((value): value is string => Boolean(value)),
   ]));
-  const mutationCreated = idempotencyReplay ? [] : created;
-  const mutationUpdated = idempotencyReplay ? [] : updated;
-  const mutationDeleted = idempotencyReplay ? [] : deleted;
+  const suppressMutationEvidence = idempotencyReplay || dryRun;
+  const mutationCreated = suppressMutationEvidence ? [] : created;
+  const mutationUpdated = suppressMutationEvidence ? [] : updated;
+  const mutationDeleted = suppressMutationEvidence ? [] : deleted;
   const counts = {
     created: mutationCreated.length,
     updated: mutationUpdated.length,
@@ -533,7 +539,15 @@ export function internalErrorToToolResult(error: unknown): McpToolResult {
   });
 }
 
-export function successToToolResult(response: BridgeResponse, message: string): McpToolResult {
+export interface BridgeToolResultOptions {
+  semanticFailureIsError?: boolean;
+}
+
+export function successToToolResult(
+  response: BridgeResponse,
+  message: string,
+  options: BridgeToolResultOptions = {},
+): McpToolResult {
   if (!response.ok) {
     return failureToToolResult(response);
   }
@@ -545,8 +559,9 @@ export function successToToolResult(response: BridgeResponse, message: string): 
     result: response.result,
     lifecycle: response.lifecycle,
   });
+  const semanticFailureIsError = options.semanticFailureIsError ?? true;
   return {
-    ...(standard.ok ? {} : { isError: true }),
+    ...(standard.ok || standard.status === 'PARTIAL' || !semanticFailureIsError ? {} : { isError: true }),
     content: [
       {
         type: 'text',
@@ -565,9 +580,10 @@ export function successToToolResult(response: BridgeResponse, message: string): 
 export async function bridgeToolResult(
   call: () => Promise<BridgeResponse>,
   successMessage: string,
+  options: BridgeToolResultOptions = {},
 ): Promise<McpToolResult> {
   try {
-    return successToToolResult(await call(), successMessage);
+    return successToToolResult(await call(), successMessage, options);
   } catch (error) {
     return internalErrorToToolResult(error);
   }

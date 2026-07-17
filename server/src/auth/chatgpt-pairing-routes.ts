@@ -30,6 +30,12 @@ const FAILED_APPROVE_LIMIT = 8;
 const FAILED_APPROVE_WINDOW_MS = 10 * 60 * 1000;
 
 const failedApproveAttempts = new Map<string, { count: number; resetAt: number }>();
+const ALLOWED_PAIRING_SCOPES = new Set([
+  'bridge:read',
+  'bridge:write',
+  'bridge:trusted_write',
+  'bridge:delete',
+]);
 
 export interface ChatGptPairingRouteDeps {
   config: CompanionServerConfig;
@@ -111,11 +117,49 @@ function normalizeRequestedToolTier(value: unknown, fallback: CompanionServerCon
   return typeof value === 'string' ? normalizeToolProfile(value) : fallback;
 }
 
-function clientIp(req: IncomingMessage): string {
-  const forwarded = req.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim()) {
-    return forwarded.split(',')[0].trim();
+function boundedString(
+  value: unknown,
+  field: string,
+  maxLength: number
+): { ok: true; value?: string } | { ok: false; error: string } {
+  if (value === undefined || value === null) {
+    return { ok: true };
   }
+  if (typeof value !== 'string' || value.length > maxLength) {
+    return { ok: false, error: `${field} must be a string no longer than ${maxLength} characters.` };
+  }
+  return { ok: true, value };
+}
+
+function validatePairingCreateBody(body: Record<string, unknown> | undefined): string | null {
+  for (const [field, maxLength] of [
+    ['oauthState', 512],
+    ['codeChallenge', 128],
+    ['clientId', 256],
+    ['clientName', 120],
+    ['chatgptDisplayName', 120],
+    ['localConnectionLabel', 80],
+    ['redirectUri', 2048],
+    ['resource', 2048],
+  ] as const) {
+    const result = boundedString(body?.[field], field, maxLength);
+    if (!result.ok) return result.error;
+  }
+
+  if (body?.requestedScopes !== undefined) {
+    if (!Array.isArray(body.requestedScopes) || body.requestedScopes.length > ALLOWED_PAIRING_SCOPES.size) {
+      return `requestedScopes must contain at most ${ALLOWED_PAIRING_SCOPES.size} supported scopes.`;
+    }
+    if (body.requestedScopes.some((scope) => typeof scope !== 'string' || !ALLOWED_PAIRING_SCOPES.has(scope))) {
+      return 'requestedScopes contains an unsupported scope.';
+    }
+  }
+  return null;
+}
+
+function clientIp(req: IncomingMessage): string {
+  // Never trust forwarding headers without an explicit trusted-proxy boundary.
+  // The socket peer is stable and cannot be changed by a direct client header.
   return req.socket.remoteAddress ?? 'unknown';
 }
 
@@ -325,6 +369,11 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
 
   if (url.pathname === '/pairing/create' && req.method === 'POST') {
     const body = (await readJsonBody(req, config.maxBodyBytes)) as Record<string, unknown> | undefined;
+    const validationError = validatePairingCreateBody(body);
+    if (validationError) {
+      writeJson(res, 400, { error: validationError });
+      return true;
+    }
     if (body?.codeChallengeMethod && body.codeChallengeMethod !== 'S256') {
       writeJson(res, 400, { error: 'Only S256 PKCE is supported.' });
       return true;
@@ -346,7 +395,9 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       status: 'pending',
       createdAt: now.toISOString(),
       expiresAt,
-      requestedScopes: Array.isArray(body?.requestedScopes) ? body.requestedScopes.filter((s): s is string => typeof s === 'string') : ['bridge:read', 'bridge:write'],
+      requestedScopes: Array.isArray(body?.requestedScopes)
+        ? [...new Set(body.requestedScopes as string[])]
+        : ['bridge:read', 'bridge:write'],
       approvedScopes: [],
       accessScope: 'focused-rem-only',
       trustedWriteMode: 'ask-every-write',

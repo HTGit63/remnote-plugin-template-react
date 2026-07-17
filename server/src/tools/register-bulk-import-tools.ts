@@ -837,7 +837,11 @@ export function registerBulkImportTools({
       limits: {
         maxMarkdownChars: Math.max(1000, chunk.charCount + 100),
         maxDepth: 8,
-        maxNodes: Math.max(10, chunk.estimatedRemCount + 5),
+        maxNodes: Math.max(
+          10,
+          chunk.estimatedRemCount + 5,
+          chunk.sourceManifest.units.length + 12
+        ),
       },
       isBulkImportStep: true,
     };

@@ -390,6 +390,7 @@ export interface ApplyStructuredNoteBatchResult {
 
 export interface ApplyStylePlanResult {
   status: 'applied' | 'partial' | 'failed' | 'dry_run' | 'already_applied';
+  updatedRemIds: string[];
   operations: Array<{
     index: number;
     remId: string;

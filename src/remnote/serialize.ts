@@ -64,6 +64,41 @@ export async function getRemPlainText(plugin: RNPlugin, rem: Rem): Promise<{
   };
 }
 
+async function stylePropertyValue(plugin: RNPlugin, rem: Rem): Promise<string | undefined> {
+  const { backText } = await getRemPlainText(plugin, rem);
+  if (backText) {
+    return backText.trim();
+  }
+  const children = await rem.getChildrenRem().catch(() => []);
+  if (children.length !== 1) {
+    return undefined;
+  }
+  const value = await getRemPlainText(plugin, children[0]);
+  return value.frontText.trim() || undefined;
+}
+
+async function isNativeStylePropertyRem(plugin: RNPlugin, parent: Rem, child: Rem): Promise<boolean> {
+  const { frontText } = await getRemPlainText(plugin, child);
+  if (frontText === 'Size') {
+    const actual = (await parent.getFontSize().catch(() => undefined)) ?? 'normal';
+    return (await stylePropertyValue(plugin, child)) === actual;
+  }
+  if (frontText === 'Color') {
+    const actual = String(await parent.getHighlightColor().catch(() => '') || '').toLowerCase();
+    const value = (await stylePropertyValue(plugin, child))?.toLowerCase();
+    return Boolean(actual && value === actual);
+  }
+  return false;
+}
+
+export async function getContentChildren(plugin: RNPlugin, parent: Rem): Promise<Rem[]> {
+  const children = await parent.getChildrenRem();
+  const metadataFlags = await Promise.all(
+    children.map((child) => isNativeStylePropertyRem(plugin, parent, child))
+  );
+  return children.filter((_child, index) => !metadataFlags[index]);
+}
+
 export async function buildRemBreadcrumbs(plugin: RNPlugin, rem: Rem): Promise<string[]> {
   const breadcrumbs: string[] = [];
   const seen = new Set<string>();
@@ -103,7 +138,8 @@ export async function serializeRem(
   const front = truncateText(frontText, maxChars);
   const back = truncateText(backText, maxChars);
   const plain = truncateText(plainText, maxChars);
-  const hasChildren = (rem.children?.length ?? 0) > 0;
+  const contentChildren = await getContentChildren(plugin, rem);
+  const hasChildren = contentChildren.length > 0;
   const breadcrumbs = await buildRemBreadcrumbs(plugin, rem);
   const children: SerializedRem[] = [];
   const truncationReasons = new Set<TreeTruncationReason>();
@@ -115,9 +151,8 @@ export async function serializeRem(
 
   if (depth > 0 && hasChildren && !state.seenRemIds.has(rem._id)) {
     state.seenRemIds.add(rem._id);
-    const childRems = await rem.getChildrenRem();
-    const limitedChildren = childRems.slice(0, maxChildren);
-    if (childRems.length > limitedChildren.length) {
+    const limitedChildren = contentChildren.slice(0, maxChildren);
+    if (contentChildren.length > limitedChildren.length) {
       truncationReasons.add('child_limit');
       nextChildIndex = limitedChildren.length;
     }

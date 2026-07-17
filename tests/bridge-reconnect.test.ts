@@ -54,6 +54,40 @@ afterEach(() => {
 });
 
 describe('bridge reconnect resilience', () => {
+  test('network restoration replaces a socket stuck connecting without manual reconnect', () => {
+    vi.stubGlobal('WebSocket', TestWebSocket);
+    const listeners = new Map<string, Set<EventListenerOrEventListenerObject>>();
+    vi.stubGlobal('addEventListener', vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+      const handlers = listeners.get(type) ?? new Set<EventListenerOrEventListenerObject>();
+      handlers.add(listener);
+      listeners.set(type, handlers);
+    }));
+    vi.stubGlobal('removeEventListener', vi.fn((type: string, listener: EventListenerOrEventListenerObject) => {
+      listeners.get(type)?.delete(listener);
+    }));
+    const emitOnline = () => {
+      const event = new Event('online');
+      for (const listener of listeners.get('online') ?? []) {
+        if (typeof listener === 'function') listener(event);
+        else listener.handleEvent(event);
+      }
+    };
+    const client = new BrowserBridgeClient(clientOptions());
+
+    client.connect();
+    const stuckSocket = TestWebSocket.instances[0];
+    expect(stuckSocket.readyState).toBe(TestWebSocket.CONNECTING);
+
+    emitOnline();
+
+    expect(stuckSocket.readyState).toBe(TestWebSocket.CLOSED);
+    expect(TestWebSocket.instances).toHaveLength(2);
+    expect(TestWebSocket.instances[1].readyState).toBe(TestWebSocket.CONNECTING);
+
+    client.disconnect();
+    expect(listeners.get('online')).toHaveProperty('size', 0);
+  });
+
   test('hosted heartbeat tolerates missed pongs until configured timeout', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-14T16:00:00.000Z'));

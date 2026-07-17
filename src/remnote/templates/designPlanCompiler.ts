@@ -282,6 +282,11 @@ function formulaLike(node: StyledRemTreeNode): boolean {
   return text.length <= 240 && /[=≈⇌→]/.test(text) && !/[.!?]\s/.test(text);
 }
 
+function explicitFormulaNode(node: StyledRemTreeNode): boolean {
+  return node.type === 'mathBlock' || node.type === 'inlineMath' ||
+    Boolean(node.richText?.some((span) => span.type === 'mathBlock' || span.type === 'inlineMath'));
+}
+
 function rolesForNode(
   node: StyledRemTreeNode,
   depth: number,
@@ -297,7 +302,16 @@ function rolesForNode(
   if (depth === 1 && !isSpacer(node)) roles.push('section');
   if (/^key\s+idea\s*:/i.test(text)) roles.push('keyIdea');
   if (/^warning(?:\s+treatment)?(?:\s*:|$)/i.test(text)) roles.push('warning');
-  if (formulaLike(node) && !insideAnswer) roles.push('formula');
+  const insideDedicatedFormulaSection = ancestorTexts.some((value) =>
+    /^(?:(?:\d+(?:\.\d+)*[.)]?)\s+)?(?:key|main)\s+formula$/.test(value) ||
+    /^formula treatment$/.test(value)
+  );
+  if (
+    !insideAnswer &&
+    (explicitFormulaNode(node) || (insideDedicatedFormulaSection && !(node.children?.length) && formulaLike(node)))
+  ) {
+    roles.push('formula');
+  }
 
   const insideWorkedExample = ancestorTexts.some((value) => /worked\s+example/.test(value));
   if (insideWorkedExample && /^(problem|given|formula|substitution|answer)$/.test(lower)) {

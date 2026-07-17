@@ -26,6 +26,7 @@ import type {
 } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError, runSdkOperation } from '../write/writeErrors';
 import { findRequiredRem, getRemPlainString, getRemRichText } from '../write/remnoteSdkHelpers';
+import { getContentChildren } from '../serialize';
 import { compileNoteDesignPlan } from './designPlanCompiler';
 
 const DESIGN_TEMPLATE_STORAGE_KEY = 'bridge-note-design-templates-v1';
@@ -380,7 +381,7 @@ async function collectDesignRecords(
     }
     seen.add(rem._id);
     const children = depth < maxDepth
-      ? await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem()).catch(() => [])
+      ? await runSdkOperation('rem.getChildrenRem', () => getContentChildren(plugin, rem)).catch(() => [])
       : [];
     records.push({
       rem,

@@ -2,9 +2,27 @@ import { describe, expect, test, vi } from 'vitest';
 import {
   collectBridgePanelHealth,
   copyTextToClipboard,
+  disconnectBridgeRuntimeSafely,
 } from '../src/widgets/bridge-panel/runtime-actions';
 
 describe('bridge panel runtime actions', () => {
+  test('disconnects locally even when remote revocation is offline', async () => {
+    const disableLocal = vi.fn(async () => undefined);
+    const clearLocal = vi.fn(async () => undefined);
+    const result = await disconnectBridgeRuntimeSafely({
+      disableLocal,
+      revokeRemote: vi.fn(async () => { throw new Error('network offline'); }),
+      clearLocal,
+    });
+
+    expect(disableLocal).toHaveBeenCalledTimes(1);
+    expect(clearLocal).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({
+      remoteRevocationConfirmed: false,
+      warning: 'network offline',
+    });
+  });
+
   test('clipboard copy falls back when the async Clipboard API is blocked', async () => {
     const legacyCopy = vi.fn(() => true);
     const method = await copyTextToClipboard('safe diagnostics', {

@@ -9,25 +9,30 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import '../style.css';
 import '../index.css';
 import {
-  type ApprovalResolution,
   type BridgeToolProfile,
   type BridgeToolName,
-  type BridgeResponse,
   type NoteDesignTemplateSummary,
   type PendingApprovalRequest,
   type PermissionMode,
   type PermissionScope,
   BRIDGE_TOOL_ANNOTATIONS,
   BRIDGE_TOOL_NAMES,
-  WRITE_APPROVAL_TIMEOUT_MS,
 } from '../bridge/protocol';
 import {
   DEFAULT_BRIDGE_SERVER_URL,
   INITIAL_BRIDGE_STATUS,
   getBridgeNextAction,
   getBridgeStatusLabel,
+  type BridgeStatusSnapshot,
 } from '../bridge/status';
-import { BrowserBridgeClient } from '../bridge/client';
+import {
+  BRIDGE_RUNTIME_APPROVAL_REQUEST_KEY,
+  BRIDGE_RUNTIME_ENABLED_KEY,
+  BRIDGE_RUNTIME_STATUS_KEY,
+  requestBridgeRuntimeReconnect,
+  resolveBridgeRuntimeApproval,
+  setBridgeRuntimeEnabled,
+} from '../bridge/runtime-channel';
 import {
   clearHostedPairingSession,
   approveChatGptPairing,
@@ -85,6 +90,7 @@ import {
 import {
   collectBridgePanelHealth,
   copyTextToClipboard,
+  disconnectBridgeRuntimeSafely,
 } from './bridge-panel/runtime-actions';
 import { REMNOTE_MCP_LOGO_URL } from './bridge-panel/brand';
 
@@ -365,14 +371,11 @@ function StatusMetric({
 
 export function BridgeStatusWidget() {
   const plugin = usePlugin();
-  const [pendingRequest, setPendingRequest] = useState<PendingApprovalRequest | null>(null);
   const [lastApprovalEvent, setLastApprovalEvent] = useState('No approval activity yet.');
-  const [bridgeStatus, setBridgeStatus] = useState(INITIAL_BRIDGE_STATUS);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [designOpen, setDesignOpen] = useState(false);
-  const [bridgeEnabled, setBridgeEnabled] = useState(true);
   const [runtimePermissionMode, setRuntimePermissionMode] = useState<PermissionMode | null>(null);
   const [runtimePermissionScope, setRuntimePermissionScope] = useState<PermissionScope | null>(null);
   const [runtimeApprovedRootRemId, setRuntimeApprovedRootRemId] = useState<string | null>(null);
@@ -390,13 +393,6 @@ export function BridgeStatusWidget() {
   const [localConnectionLabel, setLocalConnectionLabel] = useState('');
   const [chatGptPairingPreview, setChatGptPairingPreview] = useState<ChatGptPairingPreview | null>(null);
   const handledIntentIdsRef = useRef<Set<string>>(new Set());
-  const approvalResolverRef = useRef<((resolution: ApprovalResolution) => void) | undefined>();
-  const approvalTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>();
-  const pendingRequestRef = useRef<PendingApprovalRequest | null>(null);
-  const permissionModeRef = useRef<PermissionMode>('read_create_modify');
-  const permissionScopeRef = useRef<PermissionScope>('focused_rem_and_descendants');
-  const approvedRootRemIdRef = useRef<string | null>(null);
-  const clientRef = useRef<BrowserBridgeClient | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [activeOperation, setActiveOperation] = useState<string | null>(null);
   const [lastOperationError, setLastOperationError] = useState<string | null>(null);
@@ -457,9 +453,28 @@ export function BridgeStatusWidget() {
       return configuredToken?.trim() || '';
     }) ?? '';
 
+  const bridgeStatus =
+    useTracker(async (reactivePlugin) => {
+      return await reactivePlugin.storage.getSession<BridgeStatusSnapshot>(
+        BRIDGE_RUNTIME_STATUS_KEY
+      );
+    }) ?? { ...INITIAL_BRIDGE_STATUS, serverUrl };
+
+  const bridgeEnabled =
+    useTracker(async (reactivePlugin) => {
+      return await reactivePlugin.storage.getLocal<boolean>(BRIDGE_RUNTIME_ENABLED_KEY);
+    }) !== false;
+
   const commandIntent = useTracker(async (reactivePlugin) => {
     return await reactivePlugin.storage.getSession<BridgeCommandIntent>(BRIDGE_COMMAND_INTENT_STORAGE_KEY);
   });
+
+  const pendingRequest =
+    useTracker(async (reactivePlugin) => {
+      return await reactivePlugin.storage.getSession<PendingApprovalRequest>(
+        BRIDGE_RUNTIME_APPROVAL_REQUEST_KEY
+      );
+    }) ?? null;
 
   const configuredPermissionMode = normalizePermissionMode(
     useTracker(async (reactivePlugin) => {
@@ -605,22 +620,6 @@ export function BridgeStatusWidget() {
   }, [plugin, selectedTemplateId]);
 
   useEffect(() => {
-    permissionModeRef.current = permissionMode;
-  }, [permissionMode]);
-
-  useEffect(() => {
-    permissionScopeRef.current = permissionScope;
-  }, [permissionScope]);
-
-  useEffect(() => {
-    approvedRootRemIdRef.current = approvedRootRemId;
-  }, [approvedRootRemId]);
-
-  useEffect(() => {
-    pendingRequestRef.current = pendingRequest;
-  }, [pendingRequest]);
-
-  useEffect(() => {
     void loadTemplates();
   }, [loadTemplates]);
 
@@ -659,161 +658,6 @@ export function BridgeStatusWidget() {
     setDeleteConfirmText('');
   }, [pendingRequest?.id]);
 
-  const clearApprovalTimeout = () => {
-    if (approvalTimeoutRef.current) {
-      clearTimeout(approvalTimeoutRef.current);
-      approvalTimeoutRef.current = undefined;
-    }
-  };
-
-  const resolveApproval = useCallback(
-    async (resolution: ApprovalResolution) => {
-      if (!pendingRequest || !approvalResolverRef.current) {
-        return;
-      }
-
-      clearApprovalTimeout();
-      approvalResolverRef.current(resolution);
-      approvalResolverRef.current = undefined;
-      const approved = resolution === 'APPROVED';
-      setLastApprovalEvent(
-        `${approved ? 'Approved' : 'Rejected'} ${pendingRequest.tool} request ${pendingRequest.id}.`
-      );
-      setPendingRequest(null);
-      await plugin.app.toast(approved ? 'Bridge request approved.' : 'Bridge request rejected.');
-    },
-    [pendingRequest, plugin]
-  );
-
-  const requestApproval = useCallback((request: PendingApprovalRequest): Promise<ApprovalResolution> => {
-    if (approvalResolverRef.current) {
-      setLastApprovalEvent(`Rejected ${request.tool} request ${request.id}: approval already pending.`);
-      return Promise.resolve('APPROVAL_PENDING');
-    }
-
-    setPendingRequest(request);
-    setLastApprovalEvent(`Awaiting approval for ${request.tool} request ${request.id}.`);
-
-    return new Promise<ApprovalResolution>((resolve) => {
-      const deadlineMs = new Date(request.timeoutDeadline).getTime();
-      const timeoutMs = Number.isFinite(deadlineMs)
-        ? Math.max(0, deadlineMs - Date.now())
-        : WRITE_APPROVAL_TIMEOUT_MS;
-      approvalResolverRef.current = resolve;
-      approvalTimeoutRef.current = setTimeout(() => {
-        approvalResolverRef.current = undefined;
-        approvalTimeoutRef.current = undefined;
-        setPendingRequest(null);
-        setLastApprovalEvent(`Approval timed out for ${request.tool} request ${request.id}.`);
-        resolve('APPROVAL_TIMEOUT');
-      }, timeoutMs);
-    });
-  }, []);
-
-  const cancelApproval = useCallback((requestId: string, message: string) => {
-    const currentRequest = pendingRequestRef.current;
-    if (!currentRequest || currentRequest.id !== requestId || !approvalResolverRef.current) {
-      return;
-    }
-
-    clearApprovalTimeout();
-    approvalResolverRef.current('REQUEST_CANCELLED');
-    approvalResolverRef.current = undefined;
-    setPendingRequest(null);
-    setLastApprovalEvent(`Cancelled ${currentRequest.tool} request ${requestId}: ${message}`);
-  }, []);
-
-  const handleRequestStarted = useCallback((request: { tool: BridgeToolName }) => {
-    setLastOperationError(null);
-    setActiveOperation(`Running ${formatToolName(request.tool)}`);
-  }, []);
-
-  const handleRequestCompleted = useCallback(
-    (request: { tool: BridgeToolName }, response: BridgeResponse) => {
-      const message = response.ok
-        ? `${formatToolName(request.tool)} completed.`
-        : response.error.message;
-      setActiveOperation(null);
-      setLastPluginResult({ tool: request.tool, ok: response.ok, message });
-      setLastOperationError(response.ok ? null : message);
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!bridgeEnabled) {
-      setBridgeStatus({
-        ...INITIAL_BRIDGE_STATUS,
-        serverUrl,
-        lastEvent: 'Bridge disconnected from this panel.',
-      });
-      return undefined;
-    }
-
-    if (chatGptPairingDisabled && isHostedBridgeUrl(serverUrl)) {
-      clientRef.current?.disconnect();
-      clientRef.current = null;
-      setBridgeStatus({
-        ...INITIAL_BRIDGE_STATUS,
-        serverUrl,
-        state: 'disconnected',
-        lastEvent: LOCAL_PAIRING_DISABLED_MESSAGE,
-      });
-      return undefined;
-    }
-
-    if (isHostedBridgeUrl(serverUrl) && !effectiveHostedSession?.sessionSecret) {
-      clientRef.current?.disconnect();
-      clientRef.current = null;
-      setBridgeStatus({
-        ...INITIAL_BRIDGE_STATUS,
-        serverUrl,
-        state: 'not_paired',
-        lastEvent: 'Waiting for ChatGPT pairing approval before opening the hosted WebSocket.',
-      });
-      return undefined;
-    }
-
-    const client = new BrowserBridgeClient({
-      plugin,
-      serverUrl,
-      token: bridgeToken,
-      hostedSession: effectiveHostedSession,
-      getPermissionMode: () => permissionModeRef.current,
-      getPermissionScope: () => permissionScopeRef.current,
-      getApprovedRootRemId: () => approvedRootRemIdRef.current,
-      requestApproval,
-      cancelApproval,
-      onStatus: setBridgeStatus,
-      onRequestStarted: handleRequestStarted,
-      onRequestCompleted: handleRequestCompleted,
-    });
-
-    clientRef.current = client;
-    client.connect();
-    return () => {
-      client.disconnect();
-      clientRef.current = null;
-      clearApprovalTimeout();
-      if (approvalResolverRef.current) {
-        approvalResolverRef.current('APPROVAL_REJECTED');
-        approvalResolverRef.current = undefined;
-      }
-      setPendingRequest(null);
-    };
-  }, [
-    plugin,
-    serverUrl,
-    bridgeToken,
-    effectiveHostedSession?.sessionSecret,
-    requestApproval,
-    cancelApproval,
-    handleRequestStarted,
-    handleRequestCompleted,
-    bridgeEnabled,
-    chatGptPairingDisabled,
-  ]);
-
   const handleApprove = async () => {
     if (!pendingRequest) {
       return;
@@ -824,7 +668,9 @@ export function BridgeStatusWidget() {
       return;
     }
 
-    await resolveApproval('APPROVED');
+    await resolveBridgeRuntimeApproval(plugin, pendingRequest.id, 'APPROVED');
+    setLastApprovalEvent(`Approved ${pendingRequest.tool} request ${pendingRequest.id}.`);
+    await plugin.app.toast('Bridge request approved.');
   };
 
   const handleReject = async () => {
@@ -832,7 +678,9 @@ export function BridgeStatusWidget() {
       return;
     }
 
-    await resolveApproval('APPROVAL_REJECTED');
+    await resolveBridgeRuntimeApproval(plugin, pendingRequest.id, 'APPROVAL_REJECTED');
+    setLastApprovalEvent(`Rejected ${pendingRequest.tool} request ${pendingRequest.id}.`);
+    await plugin.app.toast('Bridge request rejected.');
   };
 
   const pushHostedToolConfig = async (
@@ -1083,6 +931,8 @@ export function BridgeStatusWidget() {
       await plugin.storage.setLocal('bridge-permission-mode', nextSessionMode);
       await plugin.storage.setLocal(TOOL_TIER_STORAGE_KEY, normalizeBridgeToolTier(session.toolTier));
       await plugin.storage.setLocal('bridge-tool-access-tier', normalizeBridgeToolTier(session.toolTier));
+      await setBridgeRuntimeEnabled(plugin, true);
+      await requestBridgeRuntimeReconnect(plugin);
       setPairingEvent(`Connected to ${session.connectedLabel || 'ChatGPT session'}.`);
       setChatGptPairingCode('');
       setChatGptPairingPreview(null);
@@ -1199,14 +1049,55 @@ export function BridgeStatusWidget() {
   };
 
   const handleDisconnect = async () => {
-    if (hostedSession) {
-      await disconnectChatGptPairing(serverUrl, hostedSession);
-      await clearHostedPairingSession(plugin);
-      setHostedSession(null);
-      setPairingEvent('Disconnected. Open ChatGPT and reconnect the MCP connector, or enter a new pairing code.');
+    setActiveOperation('Disconnecting ChatGPT Remote');
+    setLastOperationError(null);
+    try {
+      const result = await disconnectBridgeRuntimeSafely({
+        disableLocal: () => setBridgeRuntimeEnabled(plugin, false),
+        revokeRemote: async () => {
+          if (effectiveHostedSession) {
+            await disconnectChatGptPairing(serverUrl, effectiveHostedSession);
+          }
+        },
+        clearLocal: async () => {
+          if (effectiveHostedSession) {
+            await clearHostedPairingSession(plugin);
+            setHostedSession(null);
+          }
+        },
+      });
+      const warning = result.warning
+        ? `Disconnected locally. Remote revocation could not be confirmed: ${result.warning}`
+        : null;
+      setLastOperationError(warning);
+      setPairingEvent(warning ?? 'Disconnected. Open ChatGPT and reconnect the MCP connector, or enter a new pairing code.');
+      await plugin.app.toast(warning ? 'Disconnected locally; remote revocation needs a retry.' : 'ChatGPT Remote disconnected.');
+    } catch (error: unknown) {
+      const message = getFriendlyPairingError(error);
+      setLastOperationError(message);
+      await plugin.app.toast('ChatGPT Remote disconnect failed.');
+    } finally {
+      setActiveOperation(null);
     }
-    setBridgeEnabled(false);
-    clientRef.current?.disconnect();
+  };
+
+  const handleConnect = async () => {
+    setActiveOperation('Connecting ChatGPT Remote');
+    setLastOperationError(null);
+    try {
+      await setBridgeRuntimeEnabled(plugin, true);
+      await requestBridgeRuntimeReconnect(plugin);
+      setPairingEvent(effectiveHostedSession
+        ? 'Connection enabled. Waiting for the authenticated ChatGPT Remote session.'
+        : 'Connection enabled. Enter the pairing code from ChatGPT Remote to continue.');
+      await plugin.app.toast('ChatGPT Remote connection enabled.');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLastOperationError(message);
+      await plugin.app.toast('ChatGPT Remote connection failed.');
+    } finally {
+      setActiveOperation(null);
+    }
   };
 
   const handleCopyDiagnostics = async () => {
@@ -1559,11 +1450,17 @@ export function BridgeStatusWidget() {
                     <div className="bridge-connection-row">
                       <span aria-hidden="true" className={chatGptPairingConnected ? 'bridge-status-dot bridge-status-dot--success' : 'bridge-status-dot bridge-status-dot--warning'} />
                       <div>
-                        <strong>ChatGPT</strong>
+                        <strong>ChatGPT Remote</strong>
                         <p>{chatGptPairingConnected ? 'Authenticated connector session is active.' : 'Pair ChatGPT to enable tool calls.'}</p>
                       </div>
                       <span>{chatGptPairingConnected ? 'Connected' : 'Not paired'}</span>
                     </div>
+                  </div>
+
+                  <div className="bridge-remote-controls" role="group" aria-label="ChatGPT Remote connection controls">
+                    <button type="button" disabled={Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={() => void handleHealthCheck('quick')}>Ping</button>
+                    <button type="button" disabled={chatGptPairingConnected || Boolean(activeOperation)} className="bridge-button bridge-button-secondary" onClick={() => void handleConnect()}>Connect</button>
+                    <button type="button" disabled={(!bridgeEnabled && !effectiveHostedSession) || Boolean(activeOperation)} className="bridge-button bridge-button-reject" onClick={() => void handleDisconnect()}>Disconnect</button>
                   </div>
 
                   {!chatGptPairingDisabled && !chatGptPairingConnected && (
@@ -2022,12 +1919,6 @@ export function BridgeStatusWidget() {
               <div className="bridge-inline-actions">
                 <button type="button" onClick={() => void loadTemplates()} className="bridge-button bridge-button-secondary">
                   Refresh Styles
-                </button>
-                <button type="button" onClick={() => setBridgeEnabled(true)} disabled={bridgeEnabled} className="bridge-button bridge-button-secondary">
-                  Connect
-                </button>
-                <button type="button" onClick={handleDisconnect} className="bridge-button bridge-button-reject">
-                  Disconnect
                 </button>
               </div>
               <div className="bridge-footnote" role="status" aria-live="polite">{debugCopyStatus}</div>

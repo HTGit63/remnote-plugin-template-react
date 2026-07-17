@@ -95,6 +95,18 @@ try {
     requestedScopes: ['bridge:read', 'bridge:write'],
   });
   assertStatus(created.response.status, 201, 'Pairing creation');
+
+  const oversizedPairing = await postJson(`${baseUrl}/pairing/create`, {
+    clientName: 'x'.repeat(121),
+    requestedScopes: ['bridge:read', 'bridge:write'],
+  });
+  assertStatus(oversizedPairing.response.status, 400, 'Oversized pairing metadata');
+
+  const unknownScopePairing = await postJson(`${baseUrl}/pairing/create`, {
+    clientName: 'Security auth regression',
+    requestedScopes: ['bridge:read', 'bridge:admin'],
+  });
+  assertStatus(unknownScopePairing.response.status, 400, 'Unknown pairing scope');
   const approved = await postJson(`${baseUrl}/pairing/approve`, {
     pairingCode: created.json.pairingCode,
     pluginInstanceId: 'security-auth-plugin',
@@ -145,6 +157,21 @@ try {
   });
   assertStatus(malformed.status, 400, 'Malformed pairing JSON');
   await malformed.text();
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const failedGuess = await postJson(`${baseUrl}/pairing/approve`, {
+      pairingCode: `000-${String(attempt).padStart(3, '0')}`,
+    }, {
+      'x-forwarded-for': `198.51.100.${attempt + 1}`,
+    });
+    assertStatus(failedGuess.response.status, 404, `Failed pairing guess ${attempt + 1}`);
+  }
+  const spoofedNinthGuess = await postJson(`${baseUrl}/pairing/approve`, {
+    pairingCode: '000-999',
+  }, {
+    'x-forwarded-for': '203.0.113.99',
+  });
+  assertStatus(spoofedNinthGuess.response.status, 429, 'Spoofed forwarded-IP pairing throttle bypass');
 
   const health = await getJson(`${baseUrl}/health`);
   assertStatus(health.response.status, 200, 'Health after malformed early-route request');

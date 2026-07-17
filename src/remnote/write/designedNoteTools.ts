@@ -27,7 +27,7 @@ import type {
   VerifyNoteAgainstDesignArgs,
   VerifyNoteAgainstDesignResult,
 } from '../../../shared/bridge/protocol';
-import { getRemPlainText } from '../serialize';
+import { getContentChildren, getRemPlainText } from '../serialize';
 import {
   defaultNoteDesignRules,
   getNoteDesignTemplate,
@@ -378,8 +378,8 @@ async function safeRemType(rem: Rem): Promise<RemType | undefined> {
   }
 }
 
-async function getCardItemChildren(rem: Rem): Promise<Rem[]> {
-  const children = await runSdkOperation('rem.getChildrenRem', () => rem.getChildrenRem()).catch(() => []);
+async function getCardItemChildren(plugin: RNPlugin, rem: Rem): Promise<Rem[]> {
+  const children = await runSdkOperation('rem.getChildrenRem', () => getContentChildren(plugin, rem)).catch(() => []);
   const cardItems: Rem[] = [];
   for (const child of children) {
     if (await safeIsCardItem(child)) {
@@ -1107,7 +1107,7 @@ export async function verifyCardSet(
   const advisoryFindings: NonNullable<CardWorkflowResult['advisoryFindings']> = [];
   const expectedCards = args.expectedCards ?? [];
   const initialChildrenRead = await withVerifierTimeout(
-    runSdkOperation('rem.getChildrenRem', () => root.getChildrenRem()).catch(() => []),
+    runSdkOperation('rem.getChildrenRem', () => getContentChildren(plugin, root)).catch(() => []),
     timeoutMs
   );
   if (!initialChildrenRead.ok) {
@@ -1182,8 +1182,17 @@ export async function verifyCardSet(
     if (depth > 0) {
       const text = await getRemPlainText(plugin, child).catch(() => ({ frontText: '', backText: '', plainText: '' }));
       const practiceEnabled = await safePracticeEnabled(child);
-      const cardItemChildren = await getCardItemChildren(child);
+      const cardItemChildren = await getCardItemChildren(plugin, child);
       const remType = await safeRemType(child);
+      const descriptorChildren: Rem[] = [];
+      if (exactRemTypeName(remType) === 'concept') {
+        const directChildren = await runSdkOperation('rem.getChildrenRem', () => getContentChildren(plugin, child)).catch(() => []);
+        for (const directChild of directChildren) {
+          if (exactRemTypeName(await safeRemType(directChild)) === 'descriptor') {
+            descriptorChildren.push(directChild);
+          }
+        }
+      }
       if (text.backText) {
         cards.push({
           front: text.frontText || child._id,
@@ -1192,6 +1201,34 @@ export async function verifyCardSet(
           evidenceMethod: 'live_property_readback',
           cardType: cardTypeFromBackText(text.backText, remType, cardItemChildren.length),
         });
+      } else if (descriptorChildren.length > 0) {
+        const descriptorTexts: string[] = [];
+        for (const descriptor of descriptorChildren) {
+          const descriptorText = await getRemPlainText(plugin, descriptor)
+            .catch(() => ({ frontText: '', backText: '', plainText: '' }));
+          const value = (descriptorText.frontText || descriptorText.plainText).trim();
+          if (value) {
+            descriptorTexts.push(value);
+          }
+          seen.add(descriptor._id);
+        }
+        if (descriptorTexts.length > 0) {
+          cards.push({
+            front: text.frontText || child._id,
+            back: descriptorTexts.join('\n'),
+            sourceRemId: child._id,
+            evidenceMethod: 'live_property_readback',
+            cardType: 'concept',
+          });
+        } else {
+          const reason = 'Concept has descriptor children, but their text could not be read.';
+          issues.push(`Rem ${child._id} has descriptor children with no readable text.`);
+          malformedCards.push({
+            remId: child._id,
+            ...(text.frontText ? { front: text.frontText } : {}),
+            reason,
+          });
+        }
       } else if (practiceEnabled && cardItemChildren.length > 0) {
         const itemTexts: string[] = [];
         for (const cardItem of cardItemChildren) {
@@ -1249,7 +1286,7 @@ export async function verifyCardSet(
 
     if (depth < maxDepth) {
       const childRead = await withVerifierTimeout(
-        runSdkOperation('rem.getChildrenRem', () => child.getChildrenRem()).catch(() => []),
+        runSdkOperation('rem.getChildrenRem', () => getContentChildren(plugin, child)).catch(() => []),
         Math.max(100, timeoutMs - (Date.now() - startedAt))
       );
       if (!childRead.ok) {

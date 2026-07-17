@@ -206,7 +206,11 @@ export function registerDesignedNoteTools({ registerTool, callPlugin }: ToolRegi
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('verify_note_against_design'),
     },
-    async (args) => bridgeToolResult(() => callPlugin('verify_note_against_design', args as never), 'Verified note against design.')
+    async (args) => bridgeToolResult(
+      () => callPlugin('verify_note_against_design', args as never),
+      'Verified note against design.',
+      { semanticFailureIsError: false }
+    )
   );
 
   registerTool(
@@ -306,7 +310,11 @@ export function registerHighLevelCardWorkflowTools({ registerTool, callPlugin }:
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('verify_card_set'),
     },
-    async (args) => bridgeToolResult(() => callPlugin('verify_card_set', args), 'Verified card set.')
+    async (args) => bridgeToolResult(
+      () => callPlugin('verify_card_set', args),
+      'Verified card set.',
+      { semanticFailureIsError: false }
+    )
   );
 
   registerTool(

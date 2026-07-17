@@ -96,6 +96,55 @@ const DESIGNED_MARKDOWN = `# Designed Lesson
   - Forward and reverse rates are equal.`;
 
 describe('Phase 3 design-template identity and compiler', () => {
+  test('limits learned formula emphasis to the dedicated key-formula leaf', async () => {
+    const fake = new FakePlugin();
+    installLocalStorage(fake);
+    const parent = fake.addRem('formula-boundary-parent', 'Formula boundary parent');
+    const saved = await saveNoteDesignTemplate(fake.asPlugin(), {
+      templateId: 'formula-boundary-template',
+      name: 'Formula boundary template',
+      rules: roleRules(),
+    });
+
+    const preview = await previewNoteDesignPlan(fake.asPlugin(), {
+      templateId: saved.template.templateId,
+      parentId: parent._id,
+      title: 'Formula boundary target',
+      content: `## 3. Key Formula
+- For aA+bB⇌cC+dD, the concentration equilibrium constant is:
+  - Kc=[C]^c[D]^d/([A]^a[B]^b)
+
+## 4. Worked Example
+- Given
+  - [N₂]=0.50 M
+- Formula
+  - Kc=[NH₃]²/([N₂][H₂]³)`,
+      mode: 'create',
+    });
+
+    expect(preview.compiledManifest.ruleResults).toEqual(expect.arrayContaining([
+      expect.objectContaining({ ruleId: 'role.formula', matchedNodeCount: 1 }),
+    ]));
+    const tree = preview.compiledTree as StyledRemTreeNode;
+    const nodes: StyledRemTreeNode[] = [];
+    const visit = (node: StyledRemTreeNode) => {
+      nodes.push(node);
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+    const byText = (text: string) => nodes.find((node) => node.text === text);
+    expect(byText('Kc=[C]^c[D]^d/([A]^a[B]^b)')?.richText).toEqual(expect.arrayContaining([
+      expect.objectContaining({ styles: expect.objectContaining({ highlight: 'blue' }) }),
+    ]));
+    for (const text of [
+      'For aA+bB⇌cC+dD, the concentration equilibrium constant is:',
+      '[N₂]=0.50 M',
+      'Kc=[NH₃]²/([N₂][H₂]³)',
+    ]) {
+      expect(byText(text)?.richText).toBeUndefined();
+    }
+  });
+
   test('applies answer emphasis to the result, not the worked-example Answer label', async () => {
     const fake = new FakePlugin();
     installLocalStorage(fake);

@@ -44,6 +44,28 @@ describe('structured batch idempotency', () => {
 });
 
 describe('direct styled tree rollback', () => {
+  test('styled tree creation applies native headings without counting style metadata as content nodes', async () => {
+    const fake = new FakePlugin();
+    fake.polluteFontSizeAsChildren = true;
+    const parent = fake.addRem('parent', 'Parent');
+
+    const result = await createStyledRemTree(fake.asPlugin(), {
+      parentId: parent._id,
+      tree: {
+        text: 'Styled root',
+        style: { headingLevel: 'H1' },
+        children: [{ text: 'Styled section', style: { headingLevel: 'H3' } }],
+      },
+      idempotencyKey: 'styled-tree-native-heading-materialization',
+    });
+
+    expect(result.createdNodeCount).toBe(2);
+    expect(fake.fontSizeCalls).toEqual([
+      { remId: result.rootCreatedRemId, level: 'H1' },
+      { remId: result.createdRemIds[1], level: 'H3' },
+    ]);
+  });
+
   test('partial create failure rolls back only created Rems', async () => {
     const fake = new FakePlugin();
     fake.addRem('parent', 'Parent');

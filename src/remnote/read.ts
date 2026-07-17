@@ -25,7 +25,7 @@ import type {
   SearchRemsResult,
   SerializedRem,
 } from '../../shared/bridge/protocol';
-import { buildRemBreadcrumbs, getRemPlainText, serializeRem } from './serialize';
+import { buildRemBreadcrumbs, getContentChildren, getRemPlainText, serializeRem } from './serialize';
 
 const MAX_RICH_ARRAY_ITEMS = 200;
 const MAX_RICH_STRING_CHARS = 2000;
@@ -166,7 +166,7 @@ export async function readChildren(
   }
 
   const maxChildren = clampLimit(args.maxChildren, DEFAULT_CHILD_LIMIT, MAX_CHILD_LIMIT);
-  const children = await parent.getChildrenRem();
+  const children = await getContentChildren(plugin, parent);
   const startIndex = Math.max(0, Math.min(Math.floor(args.startIndex ?? 0), children.length));
   const limitedChildren = children.slice(startIndex, startIndex + maxChildren);
   const summaries: RemChildSummary[] = [];

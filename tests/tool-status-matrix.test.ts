@@ -183,6 +183,33 @@ describe('tool status matrix policy', () => {
 
     expect(output.structuredContent?.status).toBe('FAIL');
     expect(output.structuredContent?.standard).toMatchObject({ status: 'FAIL' });
+    expect(output.isError).toBe(true);
+  });
+
+  test('diagnostic semantic mismatches preserve structured evidence without becoming MCP execution errors', async () => {
+    const output = await bridgeToolResult(
+      async () => ({
+        id: 'op-diagnostic-mismatch',
+        ok: true,
+        result: {
+          toolName: 'verify_card_set',
+          status: 'verified',
+          ok: false,
+          issues: ['Missing expected concept card Half-life.'],
+          missingCards: [{ front: 'Half-life', cardType: 'concept' }],
+        },
+        lifecycle: [],
+      }),
+      'Verified card set.',
+      { semanticFailureIsError: false }
+    ) as McpToolResult;
+
+    expect(output.isError).toBeUndefined();
+    expect(output.structuredContent?.status).toBe('FAIL');
+    expect(output.structuredContent?.result).toMatchObject({
+      ok: false,
+      issues: ['Missing expected concept card Half-life.'],
+    });
   });
 
   test('unknown write state is retryable but platform-blocked, never a generic success/fail', () => {

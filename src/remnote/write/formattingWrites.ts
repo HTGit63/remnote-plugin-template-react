@@ -696,6 +696,7 @@ async function applyOneStyleOperation(
   plugin: RNPlugin,
   operation: ApplyStylePlanArgs['operations'][number]
 ): Promise<unknown> {
+  preflightStyleOperation(operation);
   const operationValue =
     operation.value ??
     operation.headingLevel ??
@@ -823,6 +824,58 @@ async function applyOneStyleOperation(
   }
 }
 
+function preflightStyleOperation(
+  operation: ApplyStylePlanArgs['operations'][number]
+): void {
+  const operationValue =
+    operation.value ??
+    operation.headingLevel ??
+    operation.highlightColor ??
+    operation.color;
+
+  switch (operation.type) {
+    case 'heading':
+      if (operation.value && operation.headingLevel && headingLevelFromString(operation.value) !== operation.headingLevel) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'heading operation value conflicts with headingLevel.', {
+          value: operation.value,
+          headingLevel: operation.headingLevel,
+        });
+      }
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'heading operation requires headingLevel.');
+      }
+      headingLevelFromString(operationValue);
+      assertExistingRemHeadingStyleEnabled('apply_style_plan');
+      return;
+    case 'whole_rem_highlight':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'whole_rem_highlight operation requires highlightColor.');
+      }
+      remColorNameFromString(operationValue);
+      return;
+    case 'text_color_span':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'text_color_span operation requires color.');
+      }
+      return;
+    case 'text_highlight_span':
+      if (!operationValue) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'text_highlight_span operation requires highlightColor.');
+      }
+      return;
+    case 'bold_span':
+    case 'italic_span':
+      return;
+    case 'math_conversion':
+      if (!operation.latex?.trim()) {
+        throw new RemnoteWriteError('INVALID_ARGS', 'math_conversion requires latex.');
+      }
+      return;
+    default:
+      throw new RemnoteWriteError('INVALID_ARGS', `Unsupported style operation "${operation.type}".`);
+  }
+}
+
 export async function applyStylePlan(
   plugin: RNPlugin,
   args: ApplyStylePlanArgs
@@ -840,18 +893,43 @@ export async function applyStylePlan(
   }
 
   if (args.dryRun) {
+    const operations: ApplyStylePlanResult['operations'] = [];
+    for (let index = 0; index < args.operations.length; index += 1) {
+      const operation = args.operations[index];
+      try {
+        preflightStyleOperation(operation);
+        operations.push({
+          index,
+          remId: operation.remId,
+          type: operation.type,
+          status: 'applied',
+          result: {
+            dryRun: true,
+            value: operation.value,
+          },
+        });
+      } catch (error: unknown) {
+        const mapped = mapFormattingError(error);
+        operations.push({
+          index,
+          remId: operation.remId,
+          type: operation.type,
+          status: mapped.code === 'SDK_UNSUPPORTED' ? 'unsupported' : 'failed',
+          error: {
+            code: mapped.code,
+            message: mapped.message,
+            details: mapped.details,
+          },
+        });
+        if (!continueOnError) {
+          break;
+        }
+      }
+    }
     return {
       status: 'dry_run',
-      operations: args.operations.map((operation, index) => ({
-        index,
-        remId: operation.remId,
-        type: operation.type,
-        status: 'applied',
-        result: {
-          dryRun: true,
-          value: operation.value,
-        },
-      })),
+      updatedRemIds: [],
+      operations,
       continueOnError,
       verifyAfterWrite: args.verifyAfterWrite ?? false,
       dryRun: true,
@@ -895,6 +973,11 @@ export async function applyStylePlan(
   const unsupported = operations.some((operation) => operation.status === 'unsupported');
   const result: ApplyStylePlanResult = {
     status: failed ? 'failed' : unsupported ? 'partial' : 'applied',
+    updatedRemIds: Array.from(new Set(
+      operations
+        .filter((operation) => operation.status === 'applied')
+        .map((operation) => operation.remId)
+    )),
     operations,
     continueOnError,
     verifyAfterWrite: args.verifyAfterWrite ?? false,

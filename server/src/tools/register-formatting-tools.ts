@@ -262,7 +262,8 @@ export function registerStyleVerificationTools({ registerTool, callPlugin }: Too
           expectations,
           expectedStyles,
         }),
-        'Verify note design request processed.'
+        'Verify note design request processed.',
+        { semanticFailureIsError: false }
       )
   );
 

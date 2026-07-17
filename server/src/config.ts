@@ -123,6 +123,9 @@ export const DEFAULT_TIMEOUT_BUDGETS: BridgeTimeoutBudgets = {
 };
 const DEFAULT_MAX_BODY_BYTES = 128 * 1024;
 const DEFAULT_MAX_BRIDGE_MESSAGE_BYTES = 2 * 1024 * 1024;
+const MAX_BODY_BYTES = 2 * 1024 * 1024;
+const MAX_BRIDGE_MESSAGE_BYTES = 8 * 1024 * 1024;
+const MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SOURCE_FILE_REMOTE_TIMEOUT_MS = 15_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
@@ -502,16 +505,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
       : env.DATABASE_URL
         ? 'postgres'
         : 'memory';
-  const maxBodyBytes = numberFromEnv(env.REMNOTE_BRIDGE_MAX_BODY_BYTES, DEFAULT_MAX_BODY_BYTES);
-  const maxBridgeMessageBytes = numberFromEnv(
+  const maxBodyBytes = boundedNumberFromEnv(
+    env.REMNOTE_BRIDGE_MAX_BODY_BYTES,
+    DEFAULT_MAX_BODY_BYTES,
+    1024,
+    MAX_BODY_BYTES
+  );
+  const maxBridgeMessageBytes = boundedNumberFromEnv(
     env.REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES,
-    DEFAULT_MAX_BRIDGE_MESSAGE_BYTES
+    DEFAULT_MAX_BRIDGE_MESSAGE_BYTES,
+    1024,
+    MAX_BRIDGE_MESSAGE_BYTES
   );
   const requestedSourceFileMaxBytes = boundedNumberFromEnv(
     env.REMNOTE_MCP_SOURCE_FILE_MAX_BYTES,
     DEFAULT_MAX_BRIDGE_MESSAGE_BYTES,
     1024,
-    64 * 1024 * 1024
+    MAX_SOURCE_FILE_BYTES
   );
   const sourceFileAllowRoots = sourceFileAllowRootsFromEnv(env.REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS);
 

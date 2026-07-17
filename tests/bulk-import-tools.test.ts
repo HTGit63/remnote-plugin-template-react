@@ -96,7 +96,13 @@ function makeHarness(options: {
   const toolConfigs: Record<string, Record<string, any>> = {};
   const childMap = new Map<string, Array<{ remId: string; title: string; frontText: string; plainText: string; children: any[] }>>();
   const createCalls: Array<{ parentId: string | null; markdown: string; idempotencyKey?: string }> = [];
-  const writeCalls: Array<{ parentRemId: string; idempotencyKey?: string; markdownText: string; mode?: string }> = [];
+  const writeCalls: Array<{
+    parentRemId: string;
+    idempotencyKey?: string;
+    markdownText: string;
+    mode?: string;
+    limits?: { maxNodes?: number };
+  }> = [];
   const idempotency = new Map<string, string>();
   let idCounter = 0;
   const nextId = () => `fake-rem-${++idCounter}`;
@@ -165,6 +171,7 @@ function makeHarness(options: {
         idempotencyKey: input.safetyOptions?.idempotencyKey,
         markdownText: input.markdownText,
         mode: input.mode,
+        limits: input.limits,
       });
       const queued = writeResponses.shift();
       if (queued && !queued.ok) {
@@ -665,6 +672,59 @@ describe('bulk import MCP tools', () => {
       readbackPassed: true,
       readbackStatus: 'passed',
     });
+  });
+
+  test('table chunks reserve enough node budget for expanded row and cell Rems', async () => {
+    const h = makeHarness();
+    const sourceText = [
+      '# Chapter One',
+      '',
+      '## 1.3 Standing Waves and Resonance',
+      '',
+      '### 1.3.1 Standing-Wave Structure',
+      '',
+      '- A standing wave forms from two waves.',
+      '- A node is a point of zero displacement.',
+      '- An antinode is a point of maximum displacement.',
+      '- Adjacent nodes are separated by λ/2.',
+      '- A node and the nearest antinode are separated by λ/4.',
+      '- Energy is not transported continuously.',
+      '- The allowed patterns depend on boundary conditions.',
+      '',
+      '### 1.3.2 Strings and Air Columns',
+      '',
+      '- For a string fixed at both ends, λ_n=2L/n.',
+      '- The corresponding frequencies are f_n=nv/(2L).',
+      '- For an open pipe, f_n=nv/(2L).',
+      '- For a pipe closed at one end, only odd harmonics occur.',
+      '- For a closed pipe, f_n=nv/(4L).',
+      '- Increasing tension increases wave speed.',
+      '- For linear density μ under tension F, v=√(F/μ).',
+      '',
+      '### 1.3.3 Resonance Table',
+      '',
+      '| System | Fundamental wavelength | Fundamental frequency |',
+      '|---|---|---|',
+      '| String fixed at both ends | 2L | v/(2L) |',
+      '| Open pipe | 2L | v/(2L) |',
+      '| Pipe closed at one end | 4L | v/(4L) |',
+      '',
+      '- Resonance occurs at a natural frequency.',
+      '- Energy transfer is especially effective.',
+      '- Damping limits real amplitude.',
+    ].join('\n');
+    const plan = text(await h.handlers.plan_note_import({
+      sourceText,
+      targetRootId: 'Plugin Test',
+      options: { maxCharsPerChunk: 4000, maxRemsPerChunk: 35 },
+    }));
+    const jobId = 'bulk-job:table-node-budget';
+    await h.handlers.start_note_import_job({ planId: plan.planId, jobId });
+
+    await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false });
+
+    expect(h.writeCalls).toHaveLength(1);
+    expect(h.writeCalls[0].limits?.maxNodes).toBeGreaterThanOrEqual(40);
   });
 
   test('maxChars refusal leaves an unattempted chunk pending', async () => {

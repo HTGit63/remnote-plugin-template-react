@@ -126,6 +126,61 @@ describe('verifyCardSet', () => {
     ]);
   });
 
+  test('recognizes a concept with descriptor children as one functional concept card', async () => {
+    const fake = new FakePlugin();
+    const root = fake.addRem('concept-pair-root', 'Concept pair root');
+    const concept = fake.addRem('concept-pair-front', 'Half-life');
+    const descriptor = fake.addRem(
+      'concept-pair-back',
+      'Time required for the number of undecayed nuclei to fall to one half of its initial value.'
+    );
+    await concept.setParent(root);
+    await descriptor.setParent(concept);
+    await concept.setType('concept');
+    await descriptor.setType('descriptor');
+
+    const result = await verifyCardSet(fake.asPlugin(), {
+      rootRemId: root._id,
+      expectedCards: [{
+        front: 'Half-life',
+        back: 'Time required for the number of undecayed nuclei to fall to one half of its initial value.',
+        cardType: 'concept',
+      }],
+      maxDepth: 3,
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.cards).toEqual([
+      expect.objectContaining({
+        sourceRemId: concept._id,
+        cardType: 'concept',
+        front: 'Half-life',
+        back: 'Time required for the number of undecayed nuclei to fall to one half of its initial value.',
+      }),
+    ]);
+    expect(result.malformedCards).toBeUndefined();
+    expect(result.missingCards).toBeUndefined();
+  });
+
+  test('ignores verified native Size property records while scanning for cards', async () => {
+    const fake = new FakePlugin();
+    fake.polluteFontSizeAsChildren = true;
+    const root = fake.addRem('card-property-root', 'Review Cards');
+    await root.setFontSize('H3');
+
+    const result = await verifyCardSet(fake.asPlugin(), {
+      rootRemId: root._id,
+      maxDepth: 2,
+      timeoutMs: 1000,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.cardCount).toBe(0);
+    expect(result.cards).toEqual([]);
+    expect(result.inspectedNodeCount).toBe(0);
+  });
+
   test('reports duplicate semantic cards with source Rem IDs', async () => {
     const fake = new FakePlugin();
     const root = fake.addRem('duplicate-root', 'Duplicate root');

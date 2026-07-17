@@ -56,6 +56,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 0 16px 20px;
 }
 
@@ -385,6 +386,12 @@
 
 .bridge-connection-grid {
   display: grid;
+  gap: 8px;
+}
+
+.bridge-remote-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -861,6 +868,11 @@
   padding: 10px;
 }
 
+.bridge-advanced {
+  grid-template-columns: minmax(0, 1fr);
+  overflow-anchor: none;
+}
+
 .bridge-field {
   display: grid;
   gap: 6px;
@@ -940,6 +952,7 @@
   .bridge-two-col,
   .bridge-three-col,
   .bridge-danger-summary,
+  .bridge-remote-controls,
   .bridge-actions {
     grid-template-columns: 1fr;
   }

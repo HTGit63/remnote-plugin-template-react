@@ -44,6 +44,7 @@ export class BrowserBridgeClient {
   private stopped = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectDelayMs = INITIAL_RECONNECT_MS;
+  private connectivityEventsAttached = false;
   private cancelledRequestIds = new Set<string>();
   private pluginRuntimeInfo: BridgePluginRuntimeInfo | undefined;
   private serverInfo: Pick<
@@ -89,11 +90,13 @@ export class BrowserBridgeClient {
 
   connect() {
     this.stopped = false;
+    this.attachConnectivityEvents();
     this.openSocket();
   }
 
   disconnect() {
     this.stopped = true;
+    this.detachConnectivityEvents();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
@@ -102,6 +105,38 @@ export class BrowserBridgeClient {
     this.ws?.close();
     this.ws = undefined;
     this.updateStatus('disconnected', 'Bridge client stopped.');
+  }
+
+  private readonly handleBrowserOnline = () => {
+    if (this.stopped || this.ws?.readyState === WebSocket.OPEN) {
+      return;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
+    this.reconnectDelayMs = INITIAL_RECONNECT_MS;
+    const staleSocket = this.ws;
+    this.ws = undefined;
+    staleSocket?.close();
+    this.updateStatus('reconnecting', 'Network restored. Reconnecting bridge immediately.');
+    this.openSocket();
+  };
+
+  private attachConnectivityEvents() {
+    if (this.connectivityEventsAttached || typeof globalThis.addEventListener !== 'function') {
+      return;
+    }
+    globalThis.addEventListener('online', this.handleBrowserOnline);
+    this.connectivityEventsAttached = true;
+  }
+
+  private detachConnectivityEvents() {
+    if (!this.connectivityEventsAttached || typeof globalThis.removeEventListener !== 'function') {
+      return;
+    }
+    globalThis.removeEventListener('online', this.handleBrowserOnline);
+    this.connectivityEventsAttached = false;
   }
 
   private updateStatus(

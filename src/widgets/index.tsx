@@ -9,6 +9,7 @@ import {
 import { DEFAULT_BRIDGE_SERVER_URL } from '../bridge/status';
 import { copyTextToClipboard } from './bridge-panel/runtime-actions';
 import { REMNOTE_MCP_LOGO_URL } from './bridge-panel/brand';
+import { startPluginBridgeRuntime, stopPluginBridgeRuntime } from '../bridge/plugin-runtime';
 
 function companionMcpUrl(serverUrl: string): string {
   const url = new URL(serverUrl);
@@ -119,6 +120,8 @@ async function onActivate(plugin: ReactRNPlugin) {
     dontOpenByDefaultInTabLocation: false,
   });
 
+  await startPluginBridgeRuntime(plugin, openBridgeStatus);
+
   await plugin.app.registerCommand({
     id: 'remnotemcp.open',
     name: 'Open RemnoteMCP',
@@ -195,6 +198,8 @@ async function onActivate(plugin: ReactRNPlugin) {
   }
 }
 
-async function onDeactivate(_: ReactRNPlugin) {}
+async function onDeactivate(_: ReactRNPlugin) {
+  stopPluginBridgeRuntime();
+}
 
 declareIndexPlugin(onActivate, onDeactivate);

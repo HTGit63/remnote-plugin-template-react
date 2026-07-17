@@ -289,6 +289,53 @@ describe('Phase 5 rich repair invariants', () => {
     expect(target.children).toEqual([]);
   });
 
+  test('style-plan dry run reports disabled existing-Rem headings as unsupported', async () => {
+    const fake = new FakePlugin();
+    const target = fake.addRem('heading-dry-run-target', 'Heading');
+
+    const result = await applyStylePlan(fake.asPlugin(), {
+      operations: [
+        { remId: target._id, type: 'heading', headingLevel: 'H2' },
+        { remId: target._id, type: 'bold_span', text: 'Heading' },
+      ],
+      dryRun: true,
+      continueOnError: true,
+      idempotencyKey: 'phase5-heading-dry-run-preflight',
+    });
+
+    expect(result.status).toBe('dry_run');
+    expect(result.operations).toEqual([
+      expect.objectContaining({
+        status: 'unsupported',
+        error: expect.objectContaining({
+          code: 'SDK_UNSUPPORTED',
+          details: expect.objectContaining({ failedStage: 'heading_style_preflight' }),
+        }),
+      }),
+      expect.objectContaining({ status: 'applied', result: expect.objectContaining({ dryRun: true }) }),
+    ]);
+    expect(target.fontSize).toBeUndefined();
+    expect(target.text).toEqual([{ i: 'm', text: 'Heading' }]);
+  });
+
+  test('style plan returns unique updated Rem IDs for successful mutations', async () => {
+    const fake = new FakePlugin();
+    const first = fake.addRem('style-evidence-first', 'Alpha beta');
+    const second = fake.addRem('style-evidence-second', 'Gamma');
+
+    const result = await applyStylePlan(fake.asPlugin(), {
+      operations: [
+        { remId: first._id, type: 'bold_span', text: 'Alpha' },
+        { remId: first._id, type: 'italic_span', text: 'beta' },
+        { remId: second._id, type: 'bold_span', text: 'Gamma' },
+      ],
+      idempotencyKey: 'phase5-style-plan-mutation-evidence',
+    });
+
+    expect(result.status).toBe('applied');
+    expect(result.updatedRemIds).toEqual([first._id, second._id]);
+  });
+
   test('heading no-op SDK response cannot claim success', async () => {
     const fake = new FakePlugin();
     const target = fake.addRem('heading-noop-target', 'Heading');

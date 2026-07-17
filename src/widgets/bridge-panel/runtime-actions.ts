@@ -57,6 +57,25 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export async function disconnectBridgeRuntimeSafely(options: {
+  disableLocal: () => Promise<void>;
+  revokeRemote: () => Promise<void>;
+  clearLocal: () => Promise<void>;
+}): Promise<{ remoteRevocationConfirmed: boolean; warning: string | null }> {
+  await options.disableLocal();
+  let warning: string | null = null;
+  try {
+    await options.revokeRemote();
+  } catch (error: unknown) {
+    warning = errorMessage(error);
+  }
+  await options.clearLocal();
+  return {
+    remoteRevocationConfirmed: warning === null,
+    warning,
+  };
+}
+
 export async function collectBridgePanelHealth(options: {
   loadPublicHealth: () => Promise<Record<string, unknown>>;
   loadDiagnostics: () => Promise<Record<string, unknown>>;

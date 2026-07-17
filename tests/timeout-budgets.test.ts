@@ -63,6 +63,19 @@ describe('bridge timeout budgets', () => {
     expect(config.maxSourceFileBytes).toBe(1024);
   });
 
+  test('hard-caps request, WebSocket, and source-file sizes even when env values are unsafe', () => {
+    const config = loadConfig({
+      REMNOTE_BRIDGE_TOKEN: 'token',
+      REMNOTE_BRIDGE_MAX_BODY_BYTES: String(512 * 1024 * 1024),
+      REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES: String(512 * 1024 * 1024),
+      REMNOTE_MCP_SOURCE_FILE_MAX_BYTES: String(512 * 1024 * 1024),
+    });
+
+    expect(config.maxBodyBytes).toBe(2 * 1024 * 1024);
+    expect(config.maxBridgeMessageBytes).toBe(8 * 1024 * 1024);
+    expect(config.maxSourceFileBytes).toBe(2 * 1024 * 1024);
+  });
+
   test('rejects relative source-root env overrides', () => {
     expect(() => loadConfig({
       REMNOTE_BRIDGE_TOKEN: 'token',
