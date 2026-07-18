@@ -460,7 +460,7 @@ export function renderDashboard(data: DashboardViewData): string {
   <header>
     <div class="brand-container">
       <div class="logo-glow"></div>
-      <h1>RemNote ChatGPT Bridge <span>Companion</span></h1>
+      <h1>RemNote MCP <span>Companion</span></h1>
     </div>
     <div class="header-badge">STABLE v0.1.0</div>
   </header>
@@ -681,7 +681,7 @@ export function renderDashboard(data: DashboardViewData): string {
   </main>
 
   <footer>
-    <p>&copy; 2026 RemNote ChatGPT Bridge. Built with &hearts; for maximum developer reliability and safety.</p>
+    <p>&copy; 2026 RemNote MCP. Built with &hearts; for maximum developer reliability and safety.</p>
   </footer>
 </body>
 </html>`;

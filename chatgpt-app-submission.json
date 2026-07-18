@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "app_info": {
-    "display_name": "RemNote ChatGPT Bridge",
+    "display_name": "RemNote MCP",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote ChatGPT Bridge lets ChatGPT inspect and safely update a running private RemNote workspace through an OAuth-protected companion server. The submitted default mass_note_writer profile exposes exactly 19 focused tools: bridge/plugin status, bounded Rem reads and search, one idempotent Markdown importer, and resumable bulk-import planning, execution, verification, and cancellation. Higher note, design, card, formatting, diagnostic, and delete profiles are deployment options and are not part of this submission worksheet. File-backed tools accept ChatGPT-authorized temporary file references; local paths remain limited to authenticated local/Codex callers and configured roots. This tool-only app is intended for private Developer Mode until hosted HTTPS, real ChatGPT plus RemNote sandbox proof, privacy/support URLs, organization verification, and plugin review are complete.",
+    "description": "RemNote MCP lets ChatGPT inspect and safely update a running private RemNote workspace through an OAuth-protected companion server. The submitted default mass_note_writer profile exposes exactly 20 focused tools: bridge/plugin status, bounded Rem reads and search, one idempotent Markdown importer, and resumable bulk-import planning, execution, reconciliation, verification, and cancellation. Higher note, design, card, formatting, diagnostic, and delete profiles are deployment options and are not part of this submission worksheet. File-backed tools accept ChatGPT-authorized temporary file references; local paths remain limited to authenticated local/Codex callers and configured roots. This tool-only app is intended for private Developer Mode until hosted HTTPS, real ChatGPT plus RemNote sandbox proof, privacy/support URLs, organization verification, and plugin review are complete.",
     "category": "PRODUCTIVITY"
   },
   "tools": {

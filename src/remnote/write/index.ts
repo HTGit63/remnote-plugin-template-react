@@ -4,6 +4,7 @@ export * from './deleteWrites';
 export * from './designedNoteTools';
 export * from './formattingWrites';
 export * from './markdownImportExecutor';
+export * from './mediaWrites';
 export * from './remnoteSdkHelpers';
 export * from './structuredBatch';
 export * from './tableWrites';

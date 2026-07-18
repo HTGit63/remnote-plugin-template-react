@@ -306,6 +306,35 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         position: 'end',
         idempotencyKey: idempotencyKey(tool),
       };
+    case 'insert_image_from_url':
+      return {
+        parentId,
+        url: 'https://example.test/area3-image.png',
+        position: 'end',
+        label: 'Area 3 image',
+        width: 640,
+        height: 480,
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'insert_audio_from_url':
+      return {
+        parentId,
+        url: 'https://example.test/area3-audio.mp3',
+        position: 'end',
+        label: 'Area 3 audio',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'insert_video_from_url':
+      return {
+        parentId,
+        url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        position: 'end',
+        label: 'Area 3 video',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
     case 'update_rem':
     case 'replace_rem':
       return {
@@ -813,7 +842,10 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
           tool: request.tool,
           dryRun: 'dryRun' in request.args ? Boolean(request.args.dryRun) : undefined,
           idempotencyKey: 'idempotencyKey' in request.args ? request.args.idempotencyKey : undefined,
-          createdRemId: request.tool.startsWith('create_') ? `created-${request.tool}` : undefined,
+          createdRemId:
+            request.tool.startsWith('create_') || request.tool.startsWith('insert_')
+              ? `created-${request.tool}`
+              : undefined,
           createdRemIds: [`created-${request.tool}-root`, `created-${request.tool}-child`],
           updatedRemIds: undefined,
           status: 'area3_certified',
@@ -823,6 +855,9 @@ function bridgeResponse(request: BridgeRequest): BridgeResponse {
     case 'create_rem':
     case 'create_document':
     case 'append_to_rem':
+    case 'insert_image_from_url':
+    case 'insert_audio_from_url':
+    case 'insert_video_from_url':
     case 'create_rem_tree':
     case 'update_rem':
     case 'replace_rem':

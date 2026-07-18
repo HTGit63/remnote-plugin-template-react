@@ -16,6 +16,38 @@ export const DELETE_CONFIRM_SCHEMA = z.literal('DELETE');
 export const IDEMPOTENCY_KEY_SCHEMA = z.string().trim().min(1).max(128);
 export const DRY_RUN_SCHEMA = z.boolean().default(false);
 export const MAX_TREE_NODE_COUNT_SCHEMA = z.number().int().min(1).max(1000).default(200);
+export const MEDIA_URL_SCHEMA = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .url()
+  .refine((value) => {
+    try {
+      const protocol = new URL(value).protocol;
+      return protocol === 'http:' || protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }, 'Media URL must use http or https.')
+  .transform((value) => new URL(value).toString());
+export const MEDIA_LABEL_SCHEMA = z.string().trim().min(1).max(500);
+export const MEDIA_DIMENSION_SCHEMA = z.number().int().min(1).max(4096);
+const SHARED_MEDIA_INPUT_FIELDS = {
+  parentId: REM_ID_SCHEMA.describe('Parent Rem that receives a dedicated media child Rem.'),
+  url: MEDIA_URL_SCHEMA.describe('Stable HTTP(S) media URL.'),
+  position: POSITION_SCHEMA.describe('Insert the dedicated media child at the start or end.'),
+  label: MEDIA_LABEL_SCHEMA.optional().describe('Optional plain-text label rendered after the media.'),
+  idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.optional().describe('Prevents duplicate media children.'),
+  verifyAfterWrite: z.boolean().default(true).describe('Read back and verify the media representation.'),
+};
+export const INSERT_IMAGE_FROM_URL_INPUT_SCHEMA = z.object({
+  ...SHARED_MEDIA_INPUT_FIELDS,
+  width: MEDIA_DIMENSION_SCHEMA.optional().describe('Optional image width in pixels, 1-4096.'),
+  height: MEDIA_DIMENSION_SCHEMA.optional().describe('Optional image height in pixels, 1-4096.'),
+}).strict();
+export const INSERT_AUDIO_FROM_URL_INPUT_SCHEMA = z.object(SHARED_MEDIA_INPUT_FIELDS).strict();
+export const INSERT_VIDEO_FROM_URL_INPUT_SCHEMA = z.object(SHARED_MEDIA_INPUT_FIELDS).strict();
 export const COLOR_SCHEMA = z.enum([
   'red',
   'orange',

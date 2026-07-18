@@ -17,6 +17,7 @@ import type {
   StyledRemTreeNodeType,
   StylingPlanOperation,
   ExpectedCardPlan,
+  MediaKind,
 } from './protocol-write-args.js';
 import type { BridgeErrorCode } from './protocol-core.js';
 import type { WritePerformanceBudgetMs, WritePerformanceReport } from './performance.js';
@@ -113,6 +114,26 @@ export interface AppendToRemResult {
   position?: 'start' | 'end';
   status: 'appended' | 'already_applied';
   idempotencyKey?: string;
+}
+
+export interface InsertMediaFromUrlResult {
+  createdRemId: string;
+  parentId: string;
+  mediaKind: MediaKind;
+  url: string;
+  position: 'start' | 'end';
+  insertIndex: number;
+  status: 'inserted' | 'already_applied';
+  idempotencyKey: string;
+  label?: string;
+  width?: number;
+  height?: number;
+  verification?: {
+    attempted: boolean;
+    createdRemFound: boolean;
+    mediaKindMatched: boolean;
+    urlMatched: boolean;
+  };
 }
 
 export interface UpdateRemResult {

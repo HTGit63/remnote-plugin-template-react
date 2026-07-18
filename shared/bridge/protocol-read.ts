@@ -84,11 +84,14 @@ export type RemnoteSdkCapabilityName =
   | 'plugin.queue.getCurrentCard'
   | 'plugin.queue.getNumRemainingCards'
   | 'plugin.queue.getCurrentStreak'
-  | 'plugin.queue.inLookbackMode';
+  | 'plugin.queue.inLookbackMode'
+  | 'plugin.richText.image'
+  | 'plugin.richText.audio'
+  | 'plugin.richText.video';
 
 export interface RemnoteSdkCapabilityDetail {
   supported: boolean;
-  namespace: 'app' | 'rem' | 'reader' | 'queue';
+  namespace: 'app' | 'rem' | 'reader' | 'queue' | 'richText';
   api: string;
 }
 

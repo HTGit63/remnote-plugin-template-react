@@ -36,6 +36,9 @@ const READ_TOOLS: ReadonlySet<BridgeToolName> = new Set([
 const SAFE_WRITE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'create_rem',
   'append_to_rem',
+  'insert_image_from_url',
+  'insert_audio_from_url',
+  'insert_video_from_url',
   'create_document',
   'create_folder',
   'update_rem',
@@ -83,6 +86,9 @@ const DANGEROUS_TOOLS: ReadonlySet<BridgeToolName> = new Set([
 const CREATE_TOOLS: ReadonlySet<BridgeToolName> = new Set([
   'create_rem',
   'append_to_rem',
+  'insert_image_from_url',
+  'insert_audio_from_url',
+  'insert_video_from_url',
   'create_document',
   'create_folder',
   'create_rem_tree',

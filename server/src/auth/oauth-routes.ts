@@ -203,7 +203,7 @@ async function ensureDefaultClient(storage: StorageProvider, redirectUri: string
 
   await storage.upsertMcpClient({
     clientId: DEFAULT_CLIENT_ID,
-    clientName: 'RemNote ChatGPT Bridge private client',
+    clientName: 'RemNote MCP private client',
     redirectUris: [redirectUri],
     createdAt: new Date().toISOString(),
   });

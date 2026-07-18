@@ -1,866 +1,2265 @@
-# RemNote MCP Remediation Roadmap
-
-This file is the binding engineering plan for this repository. It replaces the historical stage roadmap. Future agents must use repository truth, live readback, and the evidence rules below; a checked box, function name, successful mutation response, commit message, or simulated test is never sufficient proof by itself.
-
-## 1. Mission and current baseline
-
-### Mission
-
-This repository provides a TypeScript RemNote plugin, an MCP server, ChatGPT/Codex connection and authorization paths, structured RemNote read/write tools, Markdown and rich-text import, card workflows, reusable design templates, and resumable bulk imports. The remediation mission is to make the benchmarked workflows safe, deterministic, observable, and truthful without rewriting capabilities that already work.
-
-### Repository and live baseline
-
-- Audited branch: `fix/remnote-mcp-mass-note-creation-stability`.
-- Report-era audited commit: `ff5e6d1ebf12dfc41c0e037cff99bfe690def240` (`graphify update and 18 stage task complete`).
-- Latest verified deployed commit: `76c6e2d0aa232f042c5b87d24d5729b8b7d87e51` on the same branch. The 2026-07-17 final local v0.1 candidate adds persistent/online/manual reconnect, explicit ChatGPT Remote controls, stable Advanced layout, Test 03/12 verifier truth fixes, the Test 14 manifest-derived chunk budget, and pairing/input-abuse hardening. It has **not** been pushed, deployed, or live-retested.
-- Benchmark reports reviewed: **24 Markdown files**, covering Tests **01–15**, including the cross-test campaign report `remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
-- Report dates: 2026-07-12 through 2026-07-14. The external 2026-07-15 Second-Eye Release Readiness Audit was checked separately against repository code and tests.
-- Latest live connection on 2026-07-14: hosted endpoint connected; initial sync complete; one active plugin session; SDK `0.0.46`; focused Rem `Plugin Test` (`OjLcSppWfIH0cpPoh`). The campaign was self-scoped to `New test` (`SMPeZUPMV64bHl7JI`) and created one run root, `Post-Deploy Benchmark 01–15 — 2026-07-14 — 81eef93` (`3QR2MpAEihc3YMXkJ`). `Old test` (`8RmenkVwDXr88CQYy`) was not mutated.
-- Live proof boundary: the latest Tests 01–15 evidence applies to deployed `81eef93`, not to the local post-campaign edits. Per deployment constraints, no edited code was live-retested in the same campaign. A push/deploy and targeted rerun are required before release.
-- The connection remained healthy for approximately 55 minutes with no reported reconnect attempt, late response, or pending-request leak. This is an in-run stability observation, not weak-network recovery proof. The installed connector still rejected `get_children.startIndex`; treat that as deployment/connector-catalog drift until refreshed after deployment.
-- Live access was `developer` with workspace/full-KB reach, broader than the default `mass_note_writer` profile. Every write used explicit IDs below `New test`; no scope violation, unauthorized write, blind retry, persistent duplicate, or late disconnect occurred during the campaign.
-- 2026-07-16 deployed-commit connection proof: bridge status, plugin status, and ping passed at exact SHA `76c6e2d`; one active plugin session was connected and initial sync was complete. Read-only health under `New test` passed 34 tools with zero failures (`health-mrnf4kan`), and safe-write health passed 54 tools with zero failures (`health-mrnf5c4s`). Mutation health (`health-mrnf7aev`) passed 77 checks, returned the two expected heading `SDK_UNSUPPORTED` results, and exposed one false partial failure in native whole-Rem highlighting. This proves the deployed baseline and reproduces the defect; it does not prove the newer local fix.
-
-### 2026-07-16/17 fresh Tests 01–15 campaign — completed with an explicit Test 14 blocker
-
-This campaign uses the exact prompts embedded in `remnote report`, including required repeat and recovery runs. It is discovery evidence against deployed `76c6e2d`, not release proof for the newer local candidate. Historical per-prompt stop rules are superseded only by the user's explicit instruction to continue through all Tests 01–15 in one campaign; scope, recovery limits, readback, idempotency, and report requirements remain binding.
-
-| Test | Fresh result | Evidence boundary |
-| --- | --- | --- |
-| 01 | `PASS_WITH_WARNINGS` | Connected, exact deployed SHA and approved root confirmed; read-only only. Report: `remnote-mcp-test-01-connection-scope-report-2026-07-16.md`. |
-| 02 | `PASS_WITH_WARNINGS` | The user-supplied Test-02-only target `Nuclear Phyiscs` (`W4gpxhuH1uhVGGuvF`) was live-read by direct ID, breadcrumb, rich state, 11 direct children, seven Chapter One children, and bounded tree. The Chapter One tree reader reproduced its known failure; direct-child fallback succeeded. Zero mutations; the ID was not reused by later tests. |
-| 03 | `PARTIAL` | One root (`r4TB6bKKCKy8gnnHZ`) was created under approved root `OjLcSppWfIH0cpPoh`; content and five cards passed, while unsafe existing-Rem headings were correctly unsupported. The deployed dry-run falsely predicted heading support and its successful span batch omitted outer updated IDs. Report: `remnote-mcp-test-03-tool-choice-judgment-report-2026-07-16.md`. |
-| 04 | `PASS_WITH_WARNINGS` | Connected rerun created root `Tte2RmAIX3VhMPfGY` and 83-Rem lesson `BhHw2LOQ51BHL9euC`; 6/6 direct sections, representative formulas, hierarchy, and zero-card invariant passed. Native heading/list metadata remained unavailable. |
-| 05 | `PASS_WITH_WARNINGS` | Root `UuPPkuSH1iMX0PJIM`; 137-Rem import `MBjqpCgoxNRG5iIaJ`; required formulas, 25-cell table, exact code lines, hierarchy, and zero-card invariant passed. Representation-only fallbacks remain. |
-| 06 | `PASS_WITH_WARNINGS` | Root `qdZjGXEM4Ccf9tN7B`; 60-Rem note `pquseu5MirT57jTom`; all 32 rich formula occurrences passed with 100% mathematical preservation. Native heading metadata remained unavailable. |
-| 07 | `PASS_WITH_WARNINGS` | Root `LmBldceWhnSWxbteK`; exact 21-Rem fixture `nJXx47X0QnZCBXIwI`; all supported spans, whole-Rem highlight, concept/descriptor types, bullet states, rich replacement, hierarchy, formula, and text invariants passed direct readback. Existing-Rem headings remain honestly unsupported. |
-| 08 | `PASS` | Root `QiYWjNVfpQNrnGKBi`; exact 20-Rem baseline lesson `6OG1NIWsLLQ3B8XXn`; all originals preserved and exact 34-Rem extension added once under `4. Advanced Topics`. No movement, replacement, reorder, delete, card, or repair. |
-| 09 main | `PASS_WITH_WARNINGS` | Root `UdzAb1oWxLcakeg9o`; exact 16-Rem lesson `CgatNoAshzz6FgCD8`; stale compare-and-set rejected safely, mandatory reread proved zero mutation, and valid guarded update corrected only target `aqW2hEBlzH528EOGJ` in place. |
-| 09 repeat | `PASS_WITH_WARNINGS` | Independent root `s2DpJ6uQL8lc5SDMV`; exact 16-Rem lesson `1abQIRX0MOjXJQ85o`; stale guard rejected; target `BphAWl3Jg9PuGIC0x` alone changed in place after reread. |
-| 09 recovery | `RECOVERY_PASS_WITH_WARNINGS` | All five allegations against the main-run artifact were false or already correct. Direct-child fallback closed one tree-reader omission; zero mutations. |
-| 10 | `PASS_WITH_WARNINGS` | Root `WDrbu99HPFzgFC3Nd`; exact 27-Rem fixture `DTfnMH2DPzLYKHdLZ`; four unsafe probes rejected, two guarded moves and three reorders applied, and all IDs/texts were preserved. |
-| 11 run 01 | `PASS_WITH_WARNINGS` | Root `ULl5YjWeiwqjNBvh9`; reference `7bFwrcOFLe6x7IwYh`; exactly one saved Run 01 template; chemistry target `NbVoUlg1EQdrJaHnU`; exact hierarchy, core role styles, card pairs, and unchanged-reference reads passed. Deployed formula classification over-highlighted six extra values/explanations, and deployed verifiers misread native property records and Concept -> Descriptor hierarchy. |
-| 11 run 02 | `PASS_WITH_WARNINGS` | Resumed without recreating the root/reference. Reference `pwRROIyjk0yeUqHhx`, target `hbrZT0NrzKFTHGfs9`, and template `design-test-11-clean-science-lesson-design-2026-07-17-run-02` completed. Direct role/style/card readback passed; generic verification retained known native `Size` and deployed classifier warnings. |
-| 12 | `PARTIAL / PASS_WITH_LIMITATION` | Root `EcLKxRJzkvTEXQWCH`; 42 original IDs plus one required spacer. Three of four confirmed defects were repaired in place; existing-Rem heading mutation remained `SDK_UNSUPPORTED`. Final supported compliance was 11/12 (91.7%); zero delete/source/template mutation. |
-| 13 | `PASS_WITH_WARNINGS` | Run 01 exposed operator fixture deviations, then exact Run 02 root `GMNfzaCUSFYIaFPMP` produced 14/14 functional cards with aggregate verifier `PASS`, unchanged sources, and one M06. Recovery classified the control allegations read-only and performed zero mutations. |
-| 14 run 01/02 | `BLOCKED_JOB_STATE` | Both exact four-chunk plans verified chunks 1–2, then chunk 3 reproducibly failed before content mutation because the deployed wrapper enforced `maxNodes=30` for an actual 40-node table chunk. Section-root-only partials were preserved and no blind retry occurred. Local TDD raises the per-chunk budget from exact manifests; deployment/reload proof remains open. |
-| 15 run 01/02/03 | `PASS_WITH_WARNINGS` | Three independent 160-node modules, 11 ordered academic sections, 12 requested functional cards per run, and three guarded same-ID `U=CV²` defect/repair lifecycles passed. Recovery classified all eight allegations as false/already-correct with zero mutation. The deployed SDK still materializes native `Size` records that aggregate counts expose as a thirteenth descriptor. |
-
-The two Test 03 defects were reproduced locally with failing tests before repair. `apply_style_plan` dry-run now shares the live static safety preflight, and successful plans return unique `updatedRemIds` for the standard MCP envelope. The campaign then exposed connection ownership and network-restoration defects: transport now lives in a persistent index-plugin runtime, a browser `online` event replaces a socket stuck in `CONNECTING`, the visible Connect action forces a fresh transport generation, and Disconnect shuts down locally even when remote revocation cannot be reached. Test 07's legitimate `PARTIAL` envelope remains structured while true `FAIL` remains an MCP error. Tests 09–10 retain dry-run and move/reorder ID regressions. Test 11/12 filters verified native `Size`/`Color` property records, narrows principal-formula classification, recognizes direct Concept -> Descriptor pairs, preserves diagnostic semantic results, and reports unsafe existing-Rem heading mutation as `SDK_UNSUPPORTED`. Test 14 added a red/green regression that sizes each native chunk from its exact planned Rem count instead of the too-small deployed table budget. Pairing creation now rejects oversized metadata and unknown scopes, failed-code throttling cannot be bypassed with spoofed forwarding headers, and HTTP/WebSocket/source-file sizes have non-overridable hard ceilings. Fresh final evidence: 32 test files / 292 tests, TypeScript, SDK validation, plugin/server builds, style correctness, schemas, security, boundaries, routing, idempotency, performance, and full fault smoke pass. The memory bulk-storage smoke passes; fresh PostgreSQL proof is blocked because `DATABASE_URL` is absent. None of the reconnect/Test 14/security/UI fixes are deployed, so their live proof remains open. Installed npm `10.9.8` audits remain blocked by the registry's unavailable quick-audit request; the earlier zero-vulnerability audit is historical only, and dependency manifests/lockfiles were not changed. Current source/security evidence is in `security_best_practices_report.md`.
-
-### Benchmark outcome
-
-The benchmark is not a blanket failure. Simple creation, structured notes, guarded factual correction, hierarchy surgery, core math creation, and multi-family card creation are strong. The latest campaign found locally reproducible defects in reconnect timing, Test 14 logical planning, blank-line/spacer handling, structured append, stale-parent classification, answer/summary design roles, dry-run envelopes, and native whole-Rem highlight enablement. Those code paths now have red/green regressions, but the deployed `81eef93` Test 14 run stopped safely before job creation and therefore did not re-prove persistent execution/resume behavior at that commit. Formula glyph font color and native heading mutation remain SDK limitations.
-
-### 2026-07-15 second-eye closure supplement
-
-The Second-Eye audit's seven code/release claims were re-traced rather than accepted from prose. All seven were confirmed in the `a65ce2c` source and addressed in the local candidate. Deployment evidence remains a separate gate.
-
-| Audit gap | Repository classification | Local candidate evidence | Remaining proof |
-| --- | --- | --- | --- |
-| GAP-01 completed-job verifier recommended resume | Confirmed `VER-003` contract defect. | State-aware recommendations never advise replay of completed/non-runnable work; `tests/bulk-import-tools.test.ts`. | Deployed completed-job mismatch probe. |
-| GAP-02 cross-key structured append duplicates | Confirmed `IMP-005` idempotency defect. | `duplicatePolicy: skip` is schema-visible and compares direct child semantic text across different keys; `tests/write-idempotency-duplicates.test.ts`. | Deployed Test 08 repeat with different keys. |
-| GAP-03 design-aware update bypass | Confirmed `DES-002` path defect. | `updateNoteWithDesign` compiles through saved/default rules, writes the compiled tree, records materialization evidence, and saves an exact applied manifest; `tests/design-template-preview.test.ts`. | Deployed Tests 11–12. |
-| GAP-04 exact verifier contamination | Confirmed `VER-001` evidence-mixing defect. | Applied-manifest verification is authoritative and no longer invokes generic preset assumptions; `tests/verifier-evidence-phase4.test.ts`. | Deployed Tests 11–12. |
-| GAP-05 stale Graphify outputs | Confirmed release-evidence defect. | Graphify refreshed to 4,567 nodes / 10,418 edges and a new architecture review was opened at `/tmp/architecture-review-remnote-mcp-2026-07-15.html`. | Review generated diff before merge. |
-| GAP-06 no CI | Confirmed release-engineering defect. | `.github/workflows/ci.yml` runs types, 261-test suite, SDK validation/build, server build/security/schema/idempotency/health, PostgreSQL durability, and the full server fault smoke. | Independent GitHub run after push and required branch protection. |
-| GAP-07 thematic break pollution | Confirmed Markdown representation defect. | CommonMark thematic breaks become hidden-bullet spacer Rems with an explicit supported-fallback warning; `tests/bulk-import.test.ts`. | Deployed Test 05 visual/readback control. |
-
-Local release evidence at this candidate: **29 test files / 265 tests passed**, TypeScript, SDK validation, plugin build, server build, security/schema/idempotency/health routing, full server fault smoke, style correctness, and production dependency audits passed. The widget now matches the selected calm native-sidebar direction: Connection, Writing Access, and Design Style are one daily-use action list; diagnostics remain under Advanced settings; the real `public/logo.svg` is bundled as a data URL for both toolbar/tab and panel brand surfaces. Native RemNote visual acceptance remains post-deploy and is recorded as blocked in `design-qa.md` until the exact commit is pushed and rendered in RemNote.
-
-### 2026-07-14 deployed live-campaign supplement
-
-This campaign supplements the 23 historical report files; it does not rewrite their historical verdicts. Tests used disposable descendants of `3QR2MpAEihc3YMXkJ` only. Full evidence is in `remnote report/remnote-mcp-tests-01-15-post-deploy-verification-report-2026-07-14.md`.
-
-| Roadmap area | Deployed `81eef93` live result | Local candidate response | Post-deploy proof still required |
-| --- | --- | --- | --- |
-| Phase 1 / Test 14 | Exact source validation passed, but planning returned five logical sections instead of the required four, so no persistent job was created. | H1/preamble now belongs to the first H2 logical section. The exact 6,149-character fixture produces four logical and four native chunks locally with the benchmark limits. | Run two persistent Test 14 jobs after deployment, including pause/resume, reconnect, read-only reverification, and completed replay prevention. |
-| Phase 2 / Tests 05, 07, 08, 14 | Test 05 semantic content was strong; Test 07 created unwanted spacers; Test 08 structured append created a wrapper/duplicate; Test 14 stopped before write. | Blank-line false defaults, visible list bullets, structured append routing, and logical planning are regression-tested. | Rerun Tests 05, 07, 08, and exact Test 14; prove authorized connector attachment/file handoff separately. |
-| Phase 3 / Test 11 | Explicit target analysis and one-root creation passed, but answer treatment over-applied, summary bullets hid, and formula whole-Rem highlight was gated off. | Answer results are distinct from labels; numbered summary children transfer visible-bullet treatment; native whole-Rem highlight is enabled by default. | Two independent Test 11 runs in both writing modes with exact role/property readback. |
-| Phase 4 / Tests 11–15 | Test 11 self-manifest verification passed incomplete semantics; Test 12 dry-run outer `ok` contradicted its valid plan. Test 13 card verification passed cleanly. | Exact role targets, visible summary rules, and dry-run envelope truth have focused regressions. | Rerun Tests 11, 12, 13, the Test 14 verifier, and Test 15 controls. |
-| Phase 5 / Tests 03, 05–07, 12 | Formula creation stayed reliable. Whole-formula-Rem highlight failed on deployed code; native headings remained safely unsupported. | Native whole-Rem highlight is the supported formula emphasis path; style correctness now verifies it. Formula glyph font color is explicitly unsupported. | Rerun whole-Rem highlight and targeted Tests 03, 05, 06, 07, 12; never claim formula glyph color. |
-| Phase 6 / Tests 01, 02, 09, 10 | One session stayed healthy; symbol search was non-exhaustive; stale text conflict passed; stale parent used generic `INVALID_ARGS`; connector continuation schema drift remained. | Heartbeat timeout, reconnect timer/socket races, registration failure, stale-event handling, and stale-parent conflict are regression-tested. | Weak-network soak, connector refresh, `startIndex` call, and targeted read/error reruns. |
-| Phase 7 / Test 15 | 154 Rems, exactly 11 sections, 12/12 cards, and ID-preserving formula repair passed; design limitations remained. | 28 test files / 261 tests, types, SDK validation, plugin/server builds, full server fault smoke, security/schema/idempotency/health routing, PostgreSQL restart/CAS durability, Graphify refresh, and CI definition pass locally. | Push, require independent CI, deploy, run targeted phases, then an independent Test 15 and connection soak. |
-
-### Report inventory
-
-Scores are `Agent / Plugin / Artifact / final weighted`. `—` means that report type did not assign the component score. Filename run labels are preserved, while the run classification follows the report's own evidence.
-
-| Test | Report filename | Run classification and date | Verdict | Scores | Recommendation or decisive warning |
-| --- | --- | --- | --- | --- | --- |
-| 01 | `remnote-mcp-test-01-connection-scope-report-2026-07-12.md` | Main, 2026-07-12 | `PASS_WITH_WARNINGS` | — / — / — / 94 | Connected and safe in-run; scope was broad and retrieval was bounded/fuzzy. |
-| 02 | `remnote-mcp-test-02-information-retrieval-report-2026-07-12-run-02.md` | Corrected-target Run 02 | `PASS_WITH_WARNINGS` | 92 / 76 / 85 / 83.85 | Repair tree/search/verifier reliability; original target was a fixture defect. |
-| 03 | `remnote-mcp-test-03-tool-choice-judgment-report-2026-07-12.md` | Main | `PARTIAL` | 93 / 84 / 91 / 88.90 | Heading mutation remained unsupported; otherwise tool choice and isolation were strong. |
-| 04 | `remnote-mcp-test-04-clean-structured-note-report-2026-07-12.md` | Main | `PASS_WITH_WARNINGS` | 96 / 92 / 95 / 94.15 | Structured creation passed; heading metadata read back as normal. |
-| 05 | `remnote-mcp-test-05-exact-markdown-fidelity-report-2026-07-12.md` | Main | `PASS_WITH_WARNINGS` | 97 / 93 / 94 / 94.65 | Fix remaining Markdown representation; source-manifest/hash mismatch was a fixture defect. |
-| 06 | `remnote-mcp-test-06-scientific-formula-rich-text-fidelity-report-2026-07-12.md` | Main | `PASS_WITH_WARNINGS` | 99 / 97 / 99 / 98.20 | Formula creation was excellent; late disconnect occurred after proof. |
-| 07 | `remnote-mcp-test-07-precision-styling-report-2026-07-12-run-02.md` | Report filename Run 02; RemNote Run 01 | `PASS_WITH_WARNINGS` | 98 / 90 / 95 / 94.05 | Fix rich replacement false failure and unsupported heading mutation. |
-| 08 | `remnote-mcp-test-08-safe-extension-report-2026-07-12-run-02.md` | Report filename Run 02; RemNote Run 01 | `PASS_WITH_WARNINGS` | 98 / 97 / 100 / 98.10 | Preserve this safe-extension path; nested preview and verifier warnings remain. |
-| 09 | `remnote-mcp-test-09-safe-factual-correction-report-2026-07-12.md` | Main Run 01 | `PASS_WITH_WARNINGS` | 100 / 98 / 100 / 99.20 | Preserve guarded correction; use a conflict error, not generic `INVALID_ARGS`. |
-| 09 | `remnote-mcp-test-09-safe-factual-correction-repeat-report-2026-07-12.md` | Independent repeat | `PASS_WITH_WARNINGS` | 99 / 98 / 100 / 98.85 | Highly repeatable; one agent schema mistake and the same error-taxonomy weakness. |
-| 09 | `remnote-mcp-test-09-recovery-challenge-report-2026-07-12.md` | Recovery of existing artifact | `RECOVERY_PASS` | — / — / — / 100 | Five allegations were false/already correct; zero mutation was correct. |
-| 10 | `remnote-mcp-test-10-hierarchy-surgery-report-2026-07-12-run-02.md` | Report filename Run 02; RemNote Run 01 | `PASS_WITH_WARNINGS` | 98 / 98 / 100 / 98.50 | Preserve hierarchy surgery; improve symbol search and error attribution. |
-| 11 | `remnote-mcp-test-11-learn-reuse-design-report-2026-07-13.md` | Main Run 01 | `PARTIAL` | 83 / 56 / 64 / 67.50 | Repair designed-note creation and reusable rule transfer. |
-| 11 | `remnote-mcp-test-11-learn-reuse-design-report-2026-07-13-run-02.md` | Amended/recovery continuation of Run 01, not independent Run 02 | `PARTIAL` | 86 / 52 / 64 / 66.90 | UI template selection failed to propagate; no recovery mutation. |
-| 11 | `remnote-mcp-test-11-learn-reuse-design-report-2026-07-12-run-02.md` | Filename Run 02; report identifies Run 03 | `PARTIAL` | 91 / 68 / 79 / 78.80 | Analyzer used the wrong source; template materialization and verifier defaults failed. |
-| 12 | `remnote-mcp-test-12-design-diagnosis-repair-report-2026-07-13.md` | Main | `PARTIAL` | 98 / 75 / 90 / 75.00 adjusted | Formula conversion succeeded but lost emphasis; generic design verifier was wrong. |
-| 13 | `remnote-mcp-test-13-flashcard-lifecycle-report-2026-07-13.md` | Main Run 01 | `PASS_WITH_WARNINGS` | 99 / 91 / 99 / 95.80 | Fourteen functional cards passed; aggregate verifier overclassified non-cards. |
-| 13 | `remnote-mcp-test-13-flashcard-lifecycle-repeat-report-2026-07-13.md` | Independent Run 02 | `PASS_WITH_WARNINGS` | 96 / 91 / 99 / 94.80 | `HIGHLY_REPEATABLE`; preserve creators, repair verifier/preview fidelity. |
-| 13 | `remnote-mcp-test-13-recovery-challenge-report-2026-07-13.md` | Recovery of Run 01 | `RECOVERY_PASS` | — / — / — / 100 | Six allegations were false/already correct; direct metadata proved state. |
-| 14 | `remnote-mcp-test-14-resumable-long-import-report-2026-07-13-run-02.md` | Adapted RemNote Run 01; local report Run 02 | `BLOCKED_JOB_STATE` | 92 / 42 / 29 / 50.00 adjusted | Repair chunk ID tracking and normalization before repeating Test 14. |
-| 14 | `remnote-mcp-test-14-resumable-long-import-report-2026-07-13-run-03.md` | RemNote Run 02; third local report | `BLOCKED_JOB_STATE` | 88 / 31 / 21 / 48.40 | `REPAIR_IMPORT_VERIFICATION`; verifier corrupted untouched chunk state. |
-| 15 | `remnote-mcp-test-15-recovery-challenge-report-2026-07-13-run-02.md` | Recovery of existing Run 01 | `RECOVERY_PASS` | — / — / — / 100 | Eight allegations were false; zero mutation preserved the correct artifact. |
-| 15 | `remnote-mcp-test-15-complete-course-capstone-run-02-report-2026-07-13.md` | Independent Run 02 | `PASS_WITH_WARNINGS` | 97 / 81 / 92 / 89.35 | `READY_FOR_CAPSTONE_RUN_03`; heading, rich styling, and verifier warnings remain. |
-
-### Coverage gaps
-
-Do not invent missing evidence. The directory lacks a Test 02 Run 01 report; a Test 04 recovery report; Test 05 recovery/repeat reports; base-named reports for Tests 07, 08, and 10; an independent Test 11 Run 02 core report; the initial/base Test 14 report; the main Test 15 Run 01 report; and an independent Test 15 Run 03 report. Some are expected only because other reports or embedded benchmark controls refer to them. Their absence does not invalidate the files that are present.
-
-### Safety invariants
-
-- Operate only on explicit Rem IDs or an explicitly approved root; never infer a broad target from focus when a target argument exists.
-- Preserve Rem IDs, parentage, sibling order, unrelated notes, and existing rich/card metadata unless the operation explicitly changes them.
-- Never treat registry presence, a successful tool envelope, local simulation, or report prose as live final-state proof.
-- Writes require stable idempotency identities. Unknown outcomes require read-before-retry; never blind retry.
-- Verification is read-only unless the tool name and contract explicitly say `repair` or `reconcile` and require approval.
-- Never convert a pending chunk into a failed/partial chunk unless that exact chunk was attempted or explicitly reconciled.
-- Never report `PASS` while an inner result, persisted state, or required live readback says partial, failed, unknown, or unsupported.
-- Preserve local-bearer versus hosted-OAuth boundaries, pairing/session truth, CSRF and same-origin protections, and least privilege.
-
-## 2. Previous AGENTS.md closure audit
-
-The historical roadmap contained 19 stages with duplicated goal matrices and detailed stage checklists. Every stage goal was mapped to implementation, tests, and benchmark evidence. The table gives the closure status; completed historical tasks are not repeated below.
-
-| Previous phase or task | Status | Repository evidence | Carry forward? |
-| --- | --- | --- | --- |
-| Stage 0 — Evidence refresh and graph map | `COMPLETE` | `graphify-out/graph.json`, `graphify-out/graph.html`, and `graphify-out/GRAPH_REPORT.md` exist at the audited commit. | No; refresh only when architecture changes materially. |
-| Stage 1 — Tool registry and descriptor truth | `PARTIALLY_COMPLETE` | `server/src/tool-registry.ts`, `server/src/tool-policy.ts`, and `tests/tool-status-matrix.test.ts` exist; the earlier `466b808` catalog differed from source (73 public, 70 app-callable), and the latest connector still rejected `startIndex`. | Yes: retain truth labels and refresh connector descriptors in Phase 6. |
-| Stage 2 — Auth, pairing, and session routing | `PARTIALLY_COMPLETE` | Hosted bridge, pairing stores, `server/src/bridge/session-router.ts`, and connection smokes exist; Test 06 saw a late disconnect and only a one-session live case was rechecked. | Yes: reconnection and unknown-outcome handling in Phases 1 and 6. |
-| Stage 3 — Scope, approval, and destructive safety | `PARTIALLY_COMPLETE` | Scope handlers, access tests, guarded delete/update, and zero observed scope violations are real; the audited live profile remained workspace/full-KB developer access. | Yes: preserve and re-prove least privilege in Phase 6. |
-| Stage 4 — Tool-by-tool correctness matrix | `PARTIALLY_COMPLETE` | Registry/matrix infrastructure exists, but Tests 02, 03, 07, 11–15 prove live behavior gaps and verifier misclassification. | Yes: phase-specific matrices and live proof. |
-| Stage 5 — Workflow compatibility and retry safety | `PARTIALLY_COMPLETE` | Idempotency records, retry classifications, timeout budgets, and duplicate tests exist; Test 14 proves unsafe resume/reconciliation behavior remains. | Yes: Phases 1 and 6. |
-| Stage 6 — Bulk import source fidelity | `PARTIALLY_COMPLETE` | `shared/bridge/bulk-import.ts`, Markdown parser tests, source hashes, and source-fidelity tests exist; Test 14 still found hierarchy, bullet, title, and normalization failures. | Yes: Phase 2. |
-| Stage 7 — Bulk resume and persistent durability | `NOT_COMPLETE` | Postgres JSON persistence and job tests exist, but both Test 14 runs ended `BLOCKED_JOB_STATE`; verification mutated state and write IDs were lost. | Yes: highest-priority Phase 1. |
-| Stage 8 — File-backed and connector-scale imports | `NOT_COMPLETE` | `server/src/bulk-import/source-file-loader.ts` and loader tests exist; live connector-backed ingestion failed in Test 14. | Yes: Phase 2. |
-| Stage 9 — Markdown, formula, and rich-text fidelity | `PARTIALLY_COMPLETE` | Parser/rich-text helpers and regression tests cover many cases; Tests 05, 07, 12, 14, and 15 show emphasis loss, range failures, and semantic mismatch. | Yes: Phases 2 and 5. |
-| Stage 10 — Card tools | `PARTIALLY_COMPLETE` | Card creators and idempotency are strong: Test 13 produced 14/14 correct cards twice and Test 15 cards passed. Aggregate verifier and preview semantics remain wrong. | Yes, narrowly: Phase 4 only. |
-| Stage 11 — Style, design, and UI-facing note quality | `PARTIALLY_COMPLETE` | Template storage/preview exists; all three Test 11 evidence sets and Test 12 prove wrong target selection, incomplete rule transfer, wrapper duplication, and verifier mismatch. | Yes: Phase 3. |
-| Stage 12 — ChatGPT end-to-end workflow | `PARTIALLY_COMPLETE` | Contracts and hosted smokes exist; benchmark runs succeeded broadly, but current connector exposure, file handoff, and live proof counts remain incomplete. | Yes: targeted gates in Phases 2, 6, and 7. |
-| Stage 13 — Codex end-to-end workflow | `PARTIALLY_COMPLETE` | Codex pairing/routing smokes exist; no evidence closes all live write and reconnect cases at the audited commit. | Yes: targeted gates in Phases 6 and 7. |
-| Stage 14 — Plugin UI polish | `PARTIALLY_COMPLETE` | Local source/build tests cover the calm three-decision layout, stable Advanced flow, and explicit Ping/Connect/Disconnect controls. Native RemNote visual acceptance still needs the deployed candidate. | Yes: post-deploy native visual check only. |
-| Stage 15 — Security audit | `PARTIALLY_COMPLETE` | `security_best_practices_report.md` records the current source/regression audit and three repaired abuse seams; security, auth, routing, and boundary gates pass. Dependency advisory lookup and deployed edge/TLS verification remain open. | Yes: post-deploy/runtime and dependency-advisory proof only; do not weaken protections. |
-| Stage 16 — Performance and soak audit | `NOT_COMPLETE` | Budgets and timing fields exist; reports still show long verifier calls and no complete reconnect/soak proof. | Yes: targeted fault/soak tests in Phases 1, 4, and 6. |
-| Stage 17 — Broad architecture cleanup | `OBSOLETE` | A standalone cleanup stage would risk rewriting reliable subsystems. Current defects identify narrower seams: import state, design compilation, verification, and error mapping. | Replace with localized architectural work inside Phases 1–6. |
-| Stage 18 — Final release audit | `NOT_COMPLETE` | Deployed Test 14 remains blocked, native heading mutation remains an explicit SDK limitation, and the final local candidate lacks push/deploy/live/CI proof. | Yes: Phase 7 release gate. |
-
-Closure count: **1 complete, 13 partially complete, 4 not complete, and 1 obsolete**.
-
-## 3. Benchmark evidence summary
-
-Prompt reproductions inside reports are context, not observed evidence. The findings below come from executive summaries, operation logs, final artifact readback, recovery classifications, scoring caps, and final verdicts. When sections conflicted, live ID/property readback and the final evidence classification won.
-
-| Test | Runs reviewed | Final outcome | Main plugin finding | Roadmap impact |
-| --- | --- | --- | --- | --- |
-| 01 | Main | Passed with warning | Connection and scope controls worked; broad profile and bounded/fuzzy retrieval remain warnings. | Phase 6; preserve connection truth and least privilege. |
-| 02 | Corrected Run 02 | Passed with warning | `get_rem_tree` produced SDK errors, search missed readable content, bounded scan lacked continuation, and generic card verification overclassified. Original target was a benchmark fixture defect. | Phases 4 and 6. |
-| 03 | Main | Partial | Existing-Rem heading mutation was safely blocked; generic card verifier warned on non-cards; temporary disconnect recovered. | Phases 4–6. |
-| 04 | Main | Passed with warning | Structured note creation was reliable; headings read as `normal`; bounded tree reads required branches. | Phase 5; structured creation is a protected non-goal. |
-| 05 | Main | Passed with warning | Content was recovered, but code fences, emphasis, blockquotes, numbering, table representation, and heading metadata degraded. Manifest/hash discrepancy was a fixture defect. | Phases 2 and 5. |
-| 06 | Main | Passed with warning | Rich math creation and content preservation were excellent; heading metadata was weak; late disconnect was a connection failure after artifact proof. | Preserve math creation; Phases 5 and 6. |
-| 07 | RemNote Run 01 | Passed with warning | Full rich replacement succeeded but the style-only plain-text invariant reported partial failure; heading mutation remained blocked. | Phase 5. |
-| 08 | RemNote Run 01 | Passed with warning | Safe extension preserved the source perfectly; nested preview rules and generic verifier remained limited. | Protect extension; Phases 3 and 4 only. |
-| 09 | Main, repeat, recovery | Passed twice; recovery 100 | Guarded correction and ID preservation were highly reliable. Stale guard used generic `INVALID_ARGS` and wrong permission-layer guidance. Recovery correctly changed nothing. | Protect mutation path; improve errors in Phase 6. |
-| 10 | RemNote Run 01 | Passed with warning | Hierarchy surgery was strong. Symbol-heavy search missed content; validation errors were attributed to permission. | Protect surgery; Phase 6. |
-| 11 | Run 01, amended Run 01, reported Run 03 | Partial in all evidence sets | Analyzer source identity, UI selection propagation, template materialization, wrapper creation, card/design transfer, and verifier rules failed. Content/reference isolation remained strong. | Phase 3, then Phase 4. |
-| 12 | Main | Partial | ID-based readback proved many states; generic template verifier used wrong defaults; formula repair lost existing emphasis; card metadata was correct despite aggregate warnings. | Phases 4 and 5. |
-| 13 | Main, repeat, recovery | Passed twice; recovery 100 | All 14 cards were functional and duplicate-free twice. Verifier misclassified organizational headings, literal cloze text, descriptor representation, and MCQ serialization. | Narrow Phase 4; do not redesign creators. |
-| 14 | Adapted Run 01 and RemNote Run 02 | Blocked job state twice | Mutation IDs were lost, verification changed untouched chunks, resume retargeted unsafe chunks, state disagreed with live artifacts, hierarchy was corrupted, and connector file paths failed. | P0 Phase 1, then Phase 2. |
-| 15 | Run 01 recovery and independent Run 02 | Recovery 100; Run 02 passed with warning | Full course and cards were sound. Heading mutation, whole-math highlighting, formula answer styling, and aggregate verification remained weak. | Phases 4–7; Run 03 required. |
-
-## 4. Consolidated issue register
-
-Priority counts: **P0: 4**, **P1: 13**, **P2: 5**, **P3: 2**. Total: **24 consolidated issues**. Historical live closure is retained as evidence but does not replace final-candidate proof. “Latest live” means deployed `76c6e2d`; “local candidate” means automated proof that awaits deployment.
-
-| Issue ID | Priority | Subsystem | Evidence | Root-cause status | Planned phase |
-| --- | --- | --- | --- | --- | --- |
-| `IMP-001` | P0 | Resumable import / verifier | Test 14 Run 02 changed 11 untouched pending chunks to failed/verification-needed. `verify_note_import_job` updated chunk state and persisted it. | Implementation and older live jobs support closure; latest `81eef93` stopped before a job. Final-candidate two-run proof remains required. | 1 |
-| `IMP-002` | P0 | Import outcomes / mutation identity | Test 14 adapted run found live chunk content with no durable created/updated IDs. | Implementation and older live jobs retained IDs; latest `81eef93` stopped before a job. Final-candidate proof remains required. | 1 |
-| `IMP-003` | P0 | Resume cursor / replay safety | Historical Test 14 reports showed resume selecting an unsafe attempted chunk. | Deterministic selection/replay tests and older live readback pass; latest deployment did not reach resume. | 1 |
-| `IMP-004` | P0 | Persistence / reconnect / atomicity | Historical Test 14 state disagreed with live artifacts and lacked revision/CAS semantics. | Revision/CAS, migration, memory, and reconnect unit proof pass. Current PostgreSQL and final-deployment restart proof remain outstanding. | 1 |
-| `IMP-005` | P1 | Import parser / hierarchy / chunk model | Test 14 found microchunking, duplicate titles, visible prefixes, hierarchy corruption, and latest `81eef93` planned an H1/preamble introduction as a fifth logical section. | Local candidate produces four exact logical/native chunks for the 6,149-character fixture and explicitly preserves visible bullets; deployment rerun pending. | 2 |
-| `IMP-006` | P1 | Import planner / logical sections | Latest Test 14 required four H2 logical chunks but received a synthetic introduction plus four H2 sections, so the safety gate blocked before job creation. | Root cause confirmed in `splitSections`; local candidate attaches H1/preamble to the first H2 section. | 2 |
-| `FILE-001` | P1 | File/connector ingestion | Test 14 could not use connector-backed file routes; local loader and alias tests pass. | Local adapters and actionable pre-job errors are complete; connector-host handoff still needs live validation. | 2 |
-| `MD-001` | P1 | Semantic fidelity / manifests | Test 14 compared rendered RemNote text against raw Markdown and rejected links, bold, and math despite readable content. `normalizeForSourceFidelity` is plain-text and destructive. | Local semantic/source manifest, hierarchy, and normalization fixes pass; live rendered readback pending. | 2 |
-| `DES-001` | P1 | Design analysis identity | Test 11 reported analysis of the focused/wrong Rem instead of the supplied sample. Current resolver honors `rootRemId ?? sampleRemId`, so schema/call/UI propagation remains suspect. | Local fix complete: explicit identity is required and echoed; ambiguous/focus fallback is rejected. Live Test 11 pending. | 3 |
-| `DES-002` | P1 | Template materialization | Latest Test 11 over-applied answer emphasis to label and result, hid summary bullets, and failed whole-formula-Rem highlight. | Root cause confirmed in compiler roles, reusable bullet capture, and runtime highlight flag. Focused local regressions pass; deployment rerun pending. | 3 |
-| `DES-003` | P1 | Design UI / root construction | Historical Test 11 created a redundant child H1 when content began with a different H1. | Latest `81eef93` one-root creation passed; UI/direct parity still needs a post-candidate live run. | 3 |
-| `VER-001` | P1 | Design verifier | Tests 11–12 show H1/H3/default assumptions conflicting with saved rules. `verifyNoteAgainstDesign` and named-preset verification do not consume one complete stored-rule manifest. | Local fix complete: target-specific applied manifest drives read-only exact verification. Live Tests 11–12 pending. | 4 |
-| `VER-002` | P1 | Card verifier / preview | Historical Test 13 runs exposed MCQ and organizational-heading false findings. | Latest `81eef93` Test 13 passed all 14 cards and aggregate direct-metadata verification; retain as a protected regression control. | 4 |
-| `VER-003` | P1 | Import final verifier | Live Test 14 Run B had one exact North/East/South/West tree and matching hashes, but substring duplicate detection counted `North paragraph` and similar content as duplicate section titles, failed all repeats, and recommended resume on a completed job. | Root cause confirmed in substring counting. Local candidate compares exact semantic units and forbids replay guidance for completed jobs; deployment rerun pending. | 4 |
-| `RICH-001` | P1 | Rich text / formula styling | Live mixed-rich readback measured plain length 18 versus SDK length 14; styling text after math rejected valid plain offsets. On deployed `76c6e2d`, native whole-Rem highlight succeeded but its SDK-created `Color` property child triggered the generic child-pollution invariant. | Offset-domain and raw-math causes were already fixed. The newer local candidate verifies native highlight by direct property readback, accepts only the exact matching SDK `Color` metadata child, and still rejects every unrelated child; deployment probe pending. | 5 |
-| `HEAD-001` | P2 | Heading/property mutation | Tests 03–07 and 15 show created headings read as normal, while existing mutation is disabled because SDK font size can create visible `Size` children. | Safe capability-off fallback, direct readback, no-op rejection, and clear-reset guard pass locally; live SDK probe pending. | 5 |
-| `MD-002` | P2 | Markdown representation | Live Test 05 preserved content/math/hierarchy, but ordinary quotes gained `Callout:`, inline code styling and native headings were lost without warning, and ordered/link fallbacks were incomplete. | Root causes confirmed. Local candidate preserves exact quote text with quote style and declares heading/inline-code/link/ordered-list limits in preview, manifest, result, and readback counts. | 5 |
-| `READ-001` | P2 | Tree reads / search | Latest tree reads passed, symbol-heavy search produced a bounded false negative for content available by ID, and the installed connector descriptor lacked the source-implemented `startIndex` input. | Direct-ID fallback and non-exhaustive labeling exist; connector refresh and post-refresh continuation/search proof remain. | 6 |
-| `ERR-001` | P2 | Schemas / error taxonomy | Tests 09–10 found stale-state and structural validation returned `INVALID_ARGS`, `plugin_permission`, and irrelevant permission guidance; some calls used `text` where schema expected `title`. | Local fix complete: conflict code, layers/actions, aliases, and envelope tests pass. | 6 |
-| `OBS-001` | P3 | Envelopes / observability / performance | Live design repair returned applied operations but zero outer updated IDs and no attempted verification; verifier tools omitted standard verification evidence. | Local candidate lifts updated IDs, typed verification method/pass state, checked role IDs, and rejects inner verification failure at the standard envelope. | 6 |
-| `CONN-001` | P1 | Bridge / connection lifecycle | Weak internet caused repeated disconnects; client timers/socket callbacks could race, and the hosted WebSocket was incorrectly owned by the disposable RightSidebar widget, so closing/replacing the sidebar intentionally stopped the transport. | Server honors configured pong timeout; client coalesces timers, ignores stale sockets, closes failed registration, and resets backoff only after `server_hello`. The transport now belongs to a persistent index-plugin runtime; sidebar detach cannot stop it, explicit approval crosses a request-ID-bound storage seam, and 11 lifecycle/channel regressions pass within the 32-file / 292-test suite. Weak-network and sidebar-close deployed live soak remain pending. | 6 |
-| `REL-001` | P1 | Release engineering / CI | Second-Eye GAP-06 found no independent workflow for the candidate; local-only evidence could not gate a public release. | CI now installs plugin/server dependencies, runs typed/build/security/schema/idempotency/health gates, and proves persistent storage against PostgreSQL. Independent GitHub status is pending push. | 7 |
-| `UX-001` | P2 | Native RemNote widget | The default view was a setup/diagnostic wall; health/copy controls failed on constrained browser surfaces; the deployed screenshots showed a placeholder logo and excessive card chrome. | The selected native-sidebar hierarchy, clipboard/health fallbacks, template lifecycle, bundled logo route, Lucide controls, accessibility CSS, and narrow-sidebar rules are locally implemented and source-tested. `design-qa.md` remains blocked until post-deploy native visual proof. | 7 |
-| `ARCH-001` | P3 | Architecture / maintainability | Import registration, design tools, and verification files combine orchestration, persistence mutation, normalization, and policy. Defects cross these seams. | Bounded state/compiler/verifier seams and dependency/migration tests pass; no broad rewrite performed. | 7 |
-
-## 5. Dependency-ordered remediation phases
-
-The phases are ordered by data safety. A later phase may add characterization tests early, but it must not bypass an unmet dependency or broaden a reliable subsystem rewrite.
-
-### Phase 1 — Make resumable import state truthful and crash-safe
-
-**Implementation status (2026-07-15): `LOCAL_STATE_AND_POSTGRES_COMPLETE / DEPLOYED TWO-RUN GATE OPEN`.** State transitions, exact planning, completed-job guidance, memory persistence, PostgreSQL provider restart, and stale-writer/CAS behavior pass locally. Two persistent Test 14 runs on the deployed local candidate remain mandatory.
-
-#### Objective
-
-Guarantee that persisted job state, mutation identity, live RemNote state, and resume selection cannot silently disagree or cause replay.
-
-#### Evidence
-
-- `remnote-mcp-test-14-resumable-long-import-report-2026-07-13-run-02.md`: chunk 6 content existed and hash-matched, but mutation IDs were absent and resume targeted it again.
-- `remnote-mcp-test-14-resumable-long-import-report-2026-07-13-run-03.md`: verification changed 11 untouched pending chunks and resume targeted the attempted Maths chunk.
-- Relevant issues: `IMP-001`–`IMP-004`.
-
-#### Current code areas
-
-- `shared/bridge/bulk-import.ts`: chunk/job types, transition rules, runnable classification, progress summaries, hashes.
-- `server/src/bulk-import/job-store.ts`: in-memory mutation, `nextRunnableChunk`, status refresh, checkpoints.
-- `server/src/tools/register-bulk-import-tools.ts`: `runOneChunk`, verify/resume/cancel handlers, result-ID extraction, persistence calls.
-- `server/src/storage/types.ts`, `memory-store.ts`, `postgres-store.ts`: whole-job persistence and durability labels.
-- `server/src/bridge-hub.ts`, `server/src/bridge/bridge-hub-retry.ts`, `server/src/bridge/bridge-hub-evidence.ts`, `server/src/tools/tool-context.ts`: execution acknowledgement, unknown-outcome evidence, and retry classifications.
-- `tests/bulk-import-tools.test.ts`, `tests/bulk-import-access.test.ts`, `tests/bridge-retry-safety.test.ts`, `server/src/bulk-import-storage-smoke.ts`, `server/src/area3-certification.ts`.
-
-#### Investigation tasks
-
-- [x] Record the exact bridge response shapes for success, timeout, disconnect, partial execution, and post-write verification failure; identify every location where created/updated IDs can exist.
-- [x] Define a transition table with separate facts for attempt state, write outcome, observed Rem IDs, verification state, and reconciliation state. Pending, attempted-unknown, written-unverified, verified, failed-before-write, and manual-review must not collapse into one field.
-- [x] Define resume policy separately from reconciliation and explicit replay. Determine which states may advance, which require ID/readback reconciliation, and which require user-approved retry.
-- [x] Reproduce server termination before and after plugin acknowledgement, before persistence, and during persistence for both memory and Postgres providers.
-- [x] Decide whether revision/CAS, row locking, an append-only attempt journal, or another transactional seam best fits the existing storage abstraction. Do not prescribe a database rewrite without the interleaving evidence.
-- [x] Specify migration and backward-compatibility behavior for existing serialized job JSON.
-
-#### Implementation tasks
-
-- [x] Make `verify_note_import_job` a read-only report. If state must be reconciled, expose an explicitly named, approved reconciliation operation with its own schema and audit event.
-- [x] Persist an attempt record before dispatch and persist every returned/observed mutation ID even when post-write verification fails or the outer response is partial.
-- [x] Make unknown outcomes first-class and non-retryable until ID-based/readback reconciliation completes.
-- [x] Replace broad first-runnable selection with a deterministic selector that never chooses verified/completed chunks and never silently replays an attempted-unknown chunk.
-- [x] Add stable job revision, attempt ID, operation ID, expected parent, source/semantic hash, and reconciliation provenance to durable records where the investigation proves they are needed.
-- [x] Make job/chunk transitions atomic at the storage seam and reject stale writers with expected/actual revision details.
-- [x] Preserve chunk IDs, idempotency keys, root/section Rem IDs, and completed-chunk state across restart and reconnect.
-- [x] Add a safe migration/read path for old jobs; never reinterpret an ambiguous old state as verified.
-
-#### Regression tests
-
-- Unit: exhaustive allowed/forbidden transition table and deterministic next-action selection.
-- Integration: partial response containing IDs, timeout before/after acknowledgement, verification failure after successful write, and explicit reconciliation.
-- Persistence: restart between every write-state boundary using memory and Postgres providers.
-- Property/invariant: repeated verify calls do not change serialized job bytes; completed chunks are never selected; untouched chunks remain pending.
-- Fault injection: disconnect, process exit, stale concurrent writer, duplicated response, and lost acknowledgement.
-- End to end: Test 14 twice consecutively with fresh jobs and no cleanup-driven concealment.
-
-#### Acceptance criteria
-
-- A pending chunk cannot transition to failed, partial, or verification-needed unless that exact chunk was attempted or an explicit reconciliation operation classified it.
-- Reverification cannot mutate job progress, cursor, IDs, status, or timestamps.
-- A response that contains mutation IDs persists those IDs before any subsequent verification classification.
-- An unknown write outcome blocks blind retry and returns a read-before-retry action with job, chunk, attempt, operation, and expected-parent identity.
-- Resume selects the first truly incomplete safe chunk and never a verified, completed, or attempted-unknown chunk.
-- A hash- and ID-reconciled live chunk can close without replay; a hash-only ambiguous match cannot silently claim identity.
-- Restart/reconnect produces the same next action and progress summary as the pre-restart state.
-- Concurrent stale updates return a dedicated conflict result with expected and actual revision.
-
-#### Required evidence before completion
-
-- Commands: `npm test -- tests/bulk-import-tools.test.ts tests/bulk-import-access.test.ts`, `npm run server:test:bulk-storage`, `npm run server:test:idempotency`, `npm run server:build`.
-- Attach command output, fault-injection matrix, serialized before/after states, and exact operation/attempt IDs.
-- Rerun Test 14 twice consecutively; include before/after behavior and prove no regression in Tests 08, 09, 10, and 13 safety invariants.
-- [x] Local command gate passed: focused Phase 1 tests, idempotency certification, server build, full server fault smoke, PostgreSQL durability/restart/CAS proof, and the 261-test repository suite.
-- [x] Re-prove persistence against a real temporary PostgreSQL instance at the final candidate revision, including stale-writer rejection and provider-restart reload. A disposable PostgreSQL 16 instance passed persistent reload, revision 2 retention, and stale-writer rejection on 2026-07-15.
-- [ ] Complete two deployed live Test 14 state-machine executions at the final candidate revision with no verifier mutation, lost IDs, unsafe resume, replay, hierarchy corruption, or persistent duplicate. Deployed `81eef93` stopped before job creation.
-
-#### Definition of done
-
-Phase 1 may be checked complete only when `IMP-001`–`IMP-004` are closed by automated state/persistence/fault tests and two consecutive live Test 14 runs complete without replay, lost IDs, verifier mutation, duplicate roots, or state/artifact disagreement.
-
-### Phase 2 — Preserve import hierarchy and semantic source fidelity
-
-**Implementation status (2026-07-15): `LOCAL_CANDIDATE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Planning, blank-line behavior, visible bullets, cross-key structured append skipping, semantic manifests, and thematic-break fallback pass locally. Authorized connector attachment handoff and deployed Tests 05/08/14 remain open.
-
-#### Objective
-
-Turn logical source sections into stable RemNote hierarchy through supported file/connector routes, while comparing source and rendered output with explicit semantic rules.
-
-#### Evidence
-
-- Both Test 14 reports: excessive native chunks, duplicate `1.1` titles, bullet pollution, hierarchy inversion, raw-Markdown mismatch, and connector ingestion failure.
-- Test 05: code, emphasis, blockquote, list, and table representation limits.
-- Relevant issues: `IMP-005`, `FILE-001`, `MD-001`.
-
-#### Current code areas
-
-- `shared/bridge/bulk-import.ts`: source normalization, section/chunk planning, hierarchy verifier, raw hashes.
-- `shared/bridge/markdown-importer.ts`: heading/bullet stacks, fragment plans, code/table/callout nodes, inline math, emphasis spans, and source snippets.
-- `shared/bridge/protocol-write-args.ts`, `src/bridge/handlers/args.ts`, `src/remnote/write/markdownImportExecutor.ts`: fragment append schema, bridge parsing, sibling materialization, and source-fidelity verification.
-- `server/src/bulk-import/source-file-loader.ts`, `server/src/tools/register-bulk-import-tools.ts`: file aliases, connector handoff, policy.
-- `tests/bulk-import.test.ts`, `tests/source-file-loader.test.ts`, `tests/bulk-import-tools.test.ts`, `tests/style-presets.test.ts`.
-
-#### Investigation tasks
-
-- [x] Trace one failing Test 14 section from raw source to logical section, native chunk, Markdown plan, created Rem IDs, and final tree; locate where each parent changes.
-- [x] Distinguish logical checkpoints from transport/native write chunks. Determine the minimum native split required by current size/depth limits.
-- [x] Reproduce connector file references from each supported client shape and identify whether failure occurs in schema conversion, MCP attachment handoff, local policy, loader, or deployment.
-- [x] Define a source manifest containing source hash, semantic hash, normalized units, hierarchy relationships, formatting expectations, and supported-loss declarations.
-- [x] Classify code fences, tables, numbering, blockquotes, links, emphasis, and math as native representation, supported fallback, or unsupported SDK capability.
-
-#### Implementation tasks
-
-- [x] Preserve section roots exactly once and keep same-level headings/list items as siblings across native chunk boundaries.
-- [x] Prevent chunk payloads from recreating a section title already represented by the section root.
-- [x] Remove Markdown bullet markers from visible content when `plain_child_rems` is selected while retaining the intended hierarchy and ordered-list metadata/fallback.
-- [x] Bound native splitting without turning every paragraph into a resumable logical checkpoint.
-- [x] Normalize supported links, emphasis, inline/block math, Unicode, whitespace, and list markers into semantic comparison units; retain raw source hash separately.
-- [x] Emit exact missing/extra unit, expected parent, actual parent, source span, chunk ID, and Rem ID evidence on failure.
-- [x] Make every documented connector/local file shape enter one normalized source adapter or return a precise unsupported-source error before job creation.
-- [x] Keep benchmark/source fixture discrepancies classified separately from plugin defects.
-
-#### Regression tests
-
-- Pure parser: nested headings/lists split at every boundary, duplicate-title prevention, bullet stripping, code/table/callout plans.
-- Schema: every supported file alias/client envelope and every conflict/unsupported case.
-- Semantic manifest: links, bold, italic, inline math, block math, Unicode, spacing, ordered lists, code, and tables.
-- Integration: logical-to-native chunk mapping with stable parent IDs and no title duplication.
-- Property: parsing then splitting preserves source order and parent relationships for generated trees within limits.
-- End to end: Tests 05 and 14; Test 06 as math-regression control.
-
-#### Acceptance criteria
-
-- Six logical batches do not become dozens of independently resumable microchunks unless an explicit limit requires it and the mapping is reported.
-- Section titles appear once; same-level source items remain siblings; all expected parents are manifest-addressable.
-- No created Rem displays a raw leading Markdown bullet unless literal source content requires it.
-- Raw source hash, semantic hash, and rendered readback hash are distinct fields with documented normalization.
-- A semantic match does not fail only because RemNote rendered a link, emphasis, or math node differently from Markdown syntax.
-- Unsupported formatting produces a precise declared limitation, not silent loss or false exact-fidelity success.
-- Connector input either loads identically to direct text or fails before job creation with the failing adapter and actionable next step.
-
-#### Required evidence before completion
-
-- Commands: `npm test -- tests/bulk-import.test.ts tests/source-file-loader.test.ts tests/bulk-import-tools.test.ts tests/style-presets.test.ts`, `npm run server:test:source-fidelity`, `npm run validate`.
-- Attach source/semantic manifests, tree before/after samples, exact connector-envelope fixtures, and Test 05/Test 14 rerun reports.
-- Prove no regression in Test 06 formulas and Test 08 safe extension.
-- [x] Local command gate passed: focused hierarchy/loader/write tests, exact Test 14 planning proof, source-fidelity and Markdown-importer certifications, SDK validation, thematic-break and cross-key append regressions, formula/style control, and the 261-test suite.
-- [ ] Deploy the local candidate, rerun Test 05, rerun the `VER-003` Test 14 final verifier, and prove one authorized connector attachment/file handoff. Earlier `466b808` direct-text hierarchy evidence is historical; deployed `81eef93` stopped at the planner gate.
-
-#### Definition of done
-
-Phase 2 is complete only when `IMP-005`, `FILE-001`, and `MD-001` meet the observable criteria, Test 05 passes its supported-fidelity contract, and the Phase 1-safe Test 14 path preserves hierarchy and semantic content through connector and direct-text inputs.
-
-### Phase 3 — Compile saved design rules into one deterministic note plan
-
-**Implementation status (2026-07-15): `LOCAL DESIGN PIPELINE COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Explicit source identity, role transfer, one-root creation, saved-rule compilation, design-aware existing-note updates, exact materialization evidence, and applied-manifest storage pass locally. Two independent deployed Test 11 runs and Test 12 remain required.
-
-#### Objective
-
-Analyze the requested source, save reusable content-independent rules, and create exactly one target root whose supported design properties match those rules.
-
-#### Evidence
-
-- All three Test 11 reports: wrong analysis source, 33–46% transfer, duplicate wrappers, missing styles/card patterns, and UI selection propagation failure.
-- Test 12: creation content was sound but generic verification and design repair were incomplete.
-- Relevant issues: `DES-001`–`DES-003`.
-
-#### Current code areas
-
-- `src/remnote/templates/designTemplates.ts`: target resolution, rule analysis, validation, local template storage/versioning.
-- `src/remnote/templates/designPlanCompiler.ts`: deterministic role-to-rule compiler shared by preview and creation.
-- `src/remnote/write/designedNoteTools.ts`: Markdown/styled-tree creation, rule subset mapping, verification and repair entry points.
-- `shared/bridge/protocol-write-args.ts`: `NoteDesignRules`, design schemas, writing modes.
-- `server/src/tools/register-design-tools.ts`, `src/bridge/handlers/args.ts`: public schemas and argument aliases.
-- `src/widgets/bridge-status.tsx`: selected-template state and UI-to-tool propagation.
-- `tests/design-template-phase3.test.ts`, `tests/design-template-preview.test.ts`, `tests/bridge-ui-state.test.ts`, `src/remnote/write/style-correctness-regression.ts`.
-
-#### Investigation tasks
-
-- [x] Reproduce `rootRemId`, `sampleRemId`, focus, selection, and UI-selected-template combinations with operation logs; locate the first identity divergence.
-- [x] Enumerate every stored rule and classify it as currently analyzable, serializable, materializable, verifiable, preview-only, or SDK-unsupported.
-- [x] Trace both Markdown and styled-tree modes to explain duplicate wrapper formation and differences in supported rule transfer.
-- [x] Identify content-specific samples leaking into reusable rules; define reusable selectors/roles for title, section, warning, answer, formula, phrase highlight, concept, descriptor, and spacer.
-- [x] Determine how UI selection should bind to an explicit template ID without hidden focus fallback.
-
-#### Implementation tasks
-
-- [x] Require the analyzer result to echo the exact requested source Rem ID and fail on ambiguous/missing identity instead of falling back silently.
-- [x] Introduce one design-plan compiler seam from validated stored rules plus content roles to a deterministic preview/create manifest used by both writing modes.
-- [x] Compile every supported stored rule: title/section roles, colors, highlights, spacing, formula treatment, answer/warning treatment, phrase highlights, concept/descriptor/card patterns, and bullet behavior.
-- [x] Mark unsupported rules explicitly in preview and result; never count them as transferred.
-- [x] Create one target root and prevent content/title wrappers from duplicating it.
-- [x] Make UI template selection produce the same explicit template ID and plan as a direct MCP call.
-- [x] Keep storage versioned and reject unsafe operations/content-specific destructive rules.
-
-#### Regression tests
-
-- Unit: target resolver precedence and ambiguity; rule classification; content-independent selector extraction.
-- Serialization: save/list/get/export/import round trip for every rule field and version conflict.
-- Integration: analyze A → save → preview → create B in both modes, asserting one root and each supported property.
-- Property: template serialization/compilation is deterministic and does not embed source Rem IDs except provenance.
-- UI contract: selected template reaches the same compiler manifest as explicit API selection.
-- End to end: Test 11 independent runs after implementation.
-
-#### Acceptance criteria
-
-- Supplying a source Rem ID can never analyze the focused or selected Rem instead; result and operation log echo the requested ID.
-- Applying a saved design creates exactly one target root and one intended title.
-- Preview and creation use the same compiled rule manifest and report identical supported/unsupported rule sets.
-- Every supported stored rule is either evidenced on an exact target Rem/property or reported as failed; no silent partial transfer.
-- Reusable rules contain roles/patterns, not reference-note-specific phrases or IDs except provenance.
-- UI and direct MCP selection produce the same template ID, version, and compiled plan.
-
-#### Required evidence before completion
-
-- Commands: `npm test -- tests/design-template-preview.test.ts tests/bridge-ui-state.test.ts tests/style-presets.test.ts`, `npm run test:style-correctness`, `npm run check-types`, `npm run build`.
-- Attach template JSON before/after, compiled manifests, exact root/child IDs, property readback, and independent Test 11 reruns.
-- Prove reference/source notes remain unchanged and Test 08 extension still passes.
-- [x] Local command gate passed: focused design/UI/style tests, answer/summary materialization readback, style correctness, type checking, schema certification, and source-isolation controls. Network-binding server smoke is environment-blocked.
-- [ ] Deploy the local candidate and complete two independent Test 11 runs with warning, answer, math, root-wrapper, UI/direct parity, and exact property readback.
-
-#### Definition of done
-
-Phase 3 is complete only when `DES-001`–`DES-003` pass analyzer identity, serialization, UI propagation, single-root, and full supported-rule materialization criteria in both writing modes and in the required Test 11 reruns.
-
-### Phase 4 — Make verifiers read-only, typed, and evidence-specific
-
-**Implementation status (2026-07-15): `LOCAL EVIDENCE VERIFIERS COMPLETE / DEPLOYMENT RERUN REQUIRED`.** Exact applied manifests no longer inherit generic preset assumptions, import guidance is state-safe, card direct-metadata controls remain green, and dry-run envelope truth passes locally. Deployed Tests 11–14 remain required.
-
-#### Objective
-
-Choose the correct verification mode for each claim and prevent heuristic warnings from masquerading as exact property failures or triggering unsafe repair.
-
-#### Evidence
-
-- Tests 02, 03, 07, 08, 12, 13, and 15: aggregate card false positives.
-- Tests 11–12: design verifier ignored stored rules and imposed default H1/H3 structure.
-- Test 14: verifier mutation is addressed in Phase 1; this phase generalizes the read-only contract.
-- Relevant issues: `VER-001`, `VER-002`.
-
-#### Current code areas
-
-- `src/remnote/write/verification.ts`: expected-style verification with explicit evidence output.
-- `src/remnote/templates/designVerificationManifest.ts`, `src/remnote/write/designedNoteTools.ts`: applied-manifest readback, `verifyNoteAgainstDesign`, metadata-based `verifyCardSet`, and explicit repair entry points.
-- `src/remnote/read.ts`: direct rich/property/card metadata readback.
-- `server/src/tools/tool-context.ts`: outer/inner result normalization and verification summaries.
-- `tests/verifier-evidence-phase4.test.ts`, `tests/card-verifier.test.ts`, `tests/verification-status.test.ts`, `tests/tool-status-matrix.test.ts`.
-
-#### Investigation tasks
-
-- [x] Inventory every verifier claim and assign one evidence class: generic heuristic, exact manifest, ID-based, semantic, or live property/rich-text readback.
-- [x] Trace RemNote card APIs for ordinary headings, organizational card-family headings, concepts/descriptors, MCQ card items, list answers, and functional cloze metadata.
-- [x] Define precedence when heuristic and exact metadata disagree; exact live metadata must win for property claims.
-- [x] Identify every verifier with side effects, mutable cache writes, or repair suggestions that cannot be traced to exact Rem IDs.
-
-#### Implementation tasks
-
-- [x] Keep generic heuristic verification explicitly advisory and never let it claim exact card/design/property failure.
-- [x] Use exact creation/design manifests when the system created the artifact and report every finding with expected role, Rem ID, property, actual value, and evidence method.
-- [x] Use ID-based verification for identity, parentage, order, duplicate detection, and targeted repair controls.
-- [x] Use semantic verification for normalized content/fidelity only; do not infer functional SDK metadata from text syntax.
-- [x] Use live property/rich-text readback as the source of truth for headings, colors, math nodes, card state, cloze metadata, concept/descriptor type, and MCQ/list serialization.
-- [x] Make design verification consume the exact compiled/stored manifest from Phase 3, not hard-coded H1/H3 defaults.
-- [x] Exclude non-card headings and spacers unless live card metadata says otherwise; literal `{{...}}` is not a functional cloze by itself.
-- [x] Validate MCQ/list/concept/descriptor forms against their actual storage representation and return actionable schema errors.
-- [x] Make verifier operations byte-for-byte read-only for persistent job/template/idempotency state.
-
-#### Regression tests
-
-- Unit: every evidence-class router and heuristic/advisory label.
-- Card metadata: all card families plus organizational headings, spacers, literal braces, malformed practice Rems, and MCQ/list serialization.
-- Design serialization: stored manifest drives verification without defaults.
-- Invariant: verifier calls cannot invoke mutation/storage-save methods and repeated calls are state-identical.
-- Integration: exact ID/property findings include traceable Rem IDs and no contradictory success fields.
-- End to end: Tests 11, 12, 13; Test 15 card section.
-
-#### Acceptance criteria
-
-- Non-card headings and spacers are excluded from card-verifier defects when live metadata says `hasCards=false`.
-- Literal cloze syntax is advisory text evidence only; functional cloze requires live metadata.
-- Correct MCQ, list, concept, and descriptor storage passes without manual adjudication.
-- Design verification evaluates the applied template version and compiled manifest, including supported non-heading rules.
-- Every exact failure identifies the Rem ID, expected/actual property, evidence method, and safe next step.
-- A verifier cannot change import progress, template state, card state, Rem content, or idempotency records.
-- Outer `ok/status`, standard status, inner result, warnings, and `isError` cannot contradict one another; structured output satisfies the registered output schema.
-
-#### Required evidence before completion
-
-- Commands: `npm test -- tests/card-verifier.test.ts tests/verification-status.test.ts tests/tool-status-matrix.test.ts tests/design-template-preview.test.ts`, `npm run server:test:tool-schemas`, `npm run test:style-correctness`.
-- Attach mutation-spy output, exact-versus-heuristic fixtures, property readbacks, and Test 11/12/13 reruns.
-- Prove Test 13 remains 14/14 functional and duplicate-free twice.
-- [x] Local command gate passed: Phase 4 exact-manifest/import-guidance/design/card regressions, schema certification, style correctness, and the 261-test repository suite.
-- [ ] Deploy the local candidate and rerun Tests 11, 12, 13, the Test 14 final verifier, and the Test 15 card/design controls with zero false findings.
-
-#### Definition of done
-
-Phase 4 is complete only when `VER-001` and `VER-002` close with read-only invariants, typed evidence routing, exact design-manifest verification, and zero false card defects in the Test 13 and Test 15 controls.
-
-### Phase 5 — Preserve rich text, math, headings, and Markdown style on repair
-
-**Implementation status (2026-07-16): `LIVE DEFECT REPRODUCED / LOCAL REGRESSION FIXED / DEPLOYMENT RERUN REQUIRED`.** Whole-Rem formula-block highlighting is supported and succeeded live; its SDK-native `Color` property child was misclassified as arbitrary pollution on deployed `76c6e2d`. The local candidate now uses direct highlight readback and a narrowly typed metadata exception. Math glyph font color and unsafe native heading mutation remain explicit SDK limitations.
-
-#### Objective
-
-Make targeted style/property operations preserve Rem identity and all unrelated rich nodes/styles, while exposing SDK limits honestly.
-
-#### Evidence
-
-- Test 07: full rich replacement succeeded but was reported partial because plain text changed under a style-only invariant.
-- Test 12: raw formula became a math node but lost blue emphasis.
-- Test 15: whole-Rem highlight failed on a math block range; answer-highlight writer/verifier disagreed.
-- Deployed mutation health `health-mrnf7aev`: `set_rem_highlight_color` changed the native property successfully but returned `PARTIAL_FAILURE` because the SDK created child `3qTP1rhayedd8QsXa` with exact property readback `Color` → `Yellow`.
-- Tests 03–07 and 15: heading mutation unsupported or read back as normal; visible `Size` pollution is the safety concern.
-- Test 05: emphasis and representation loss.
-- Relevant issues: `RICH-001`, `HEAD-001`, `MD-002`.
-
-#### Current code areas
-
-- `src/remnote/write/basicWrites.ts`: `updateRemRich` uses rich-replacement proof with exact requested readback.
-- `src/remnote/write/formattingWrites.ts`: heading/clear guards, whole-Rem highlight safety, style plans, and metadata-preserving formula conversion.
-- `src/remnote/richTextFormatting.ts`: rich-node-aware range resolution and targeted math-node replacement.
-- `src/remnote/write/styleMutationInvariant.ts`: operation-specific style-only and rich-replacement identity/structure invariants.
-- `src/remnote/write/remnoteSdkHelpers.ts`, `src/remnote/read.ts`: rich node construction and normalized readback.
-- `shared/bridge/markdown-importer.ts`: rich emphasis/link/quote/list semantics and documented table/numbering fallbacks.
-- `tests/rich-repair-phase5.test.ts`, `src/remnote/write/style-correctness-regression.ts`, `tests/style-presets.test.ts`, `tests/write-idempotency-duplicates.test.ts`.
-
-#### Investigation tasks
-
-- [x] Separate operation invariants: style-only, rich replacement, text replacement, math conversion, and property mutation require different allowed deltas.
-- [x] Measure installed-SDK rich-text behavior on the disposable mixed text/math fixture: plain length `18`, SDK length `14`, math width `2`; direct card metadata was read separately and unsupported property mutations were rejected before write. Reference/card-item interior range mutation is not exposed as a supported operation.
-- [x] Probe heading mutation and Markdown heading creation on disposable Rems: mutation returned `SDK_UNSUPPORTED` before write, created Markdown headings read `normal`, and no `Size`/heading metadata children, ID change, text change, or order drift occurred.
-- [x] Define a supported fallback if native heading mutation is unsafe; do not encode heading metadata as visible child text.
-- [x] Trace formula conversion from raw text to rich node and identify how adjacent/existing emphasis should be merged.
-- [x] Determine which Markdown emphasis, quote, numbering, and table semantics can be represented natively versus documented fallback.
-
-#### Implementation tasks
-
-- [x] Apply the correct invariant per operation; a requested full rich replacement may change plain text but must preserve ID, parent, order, and unspecified children.
-- [x] Build targeted repairs by transforming the existing rich array and preserving every untouched node/style field.
-- [x] Resolve style ranges against rich-node boundaries; never apply plain-text offsets blindly across math or other non-text nodes.
-- [x] Support whole-node math styling only when the SDK exposes a safe property; otherwise return `SDK_UNSUPPORTED` with an exact fallback.
-- [x] Verify native whole-Rem highlight through `getHighlightColor`; allow only an exact newly created `Color` property whose value matches the requested color, while preserving failure for any unrelated child.
-- [x] Preserve existing emphasis/color/highlight when converting only the requested formula span.
-- [x] Gate heading capability behind explicit live-validation opt-in, verify enabled mutations by direct property readback, and reject visible metadata pollution/no-op claims.
-- [x] Extend Markdown inline parsing to produce supported bold/italic/link/quote/list semantics instead of discarding markers; declare fallback limits for tables/numbering.
-
-#### Regression tests
-
-- Rich round trip: mixed text, styled text, inline math, block math, references, cloze metadata, and unchanged Rem ID.
-- Invariant: style-only cannot change plain text; full replacement can change requested text but not unrelated identity/structure.
-- Heading property: create/mutate/readback with visible-child pollution checks and capability-off fallback.
-- Markdown parser: bold/italic/link/code/blockquote/ordered list/table fixtures and semantic output.
-- Fault: SDK range rejection leaves original rich content intact and reports no false success.
-- End to end: Tests 03, 05, 06, 07, 12, and the relevant Test 15 style checks.
-
-#### Acceptance criteria
-
-- Styling a math Rem preserves the math node, formula content, existing Rem ID, parent, sibling order, and unrelated styles.
-- Formula conversion changes only the designated formula span and preserves existing emphasis/color outside and on supported portions of that span.
-- Full rich replacement that matches the requested rich content cannot be reported as a style-only partial failure.
-- Heading mutation either round-trips the native property without visible metadata children or returns a truthful unsupported result before mutation.
-- Native whole-Rem highlight may materialize the SDK's exact matching `Color` property child without a false partial failure; any other created child still fails the style-only invariant.
-- `Size`, `H1`, `H2`, `H3`, and `normal` never appear as generated metadata child Rems.
-- Supported Markdown emphasis becomes rich style metadata; unsupported presentation is explicit and does not claim exact visual fidelity.
-
-#### Required evidence before completion
-
-- Commands: `npm run test:style-correctness`, `npm test -- tests/style-presets.test.ts tests/write-idempotency-duplicates.test.ts tests/agents-staged-repair-simulation.test.ts`, `npm run check-types`, `npm run build`.
-- Attach raw rich-text before/after, exact Rem IDs, property readback, unsupported-capability results, and targeted benchmark reruns.
-- Prove Test 06 core rich-math creation remains at its prior reliable baseline.
-- [x] Local command gate passed: rich-repair (including exact SDK metadata acceptance and unrelated-child rejection), native whole-Rem highlight, style, Markdown, idempotency, simulated workflow, type, build, and the 29-file / 265-test repository suite.
-- [x] Deployed `76c6e2d` live mutation health reproduced the exact native-highlight false failure without scope escape; local red/green regression now covers the observed `Color` → `Yellow` property representation.
-- [ ] Deploy the local candidate and rerun mixed-rich/math readback plus targeted Tests 03, 05, 06, 07, and 12. Heading must remain truthful unsupported unless the deployed SDK proves a safe native mutation.
-
-#### Definition of done
-
-Phase 5 is complete only when `RICH-001`, `HEAD-001`, and `MD-002` meet operation-specific invariants in automated and live disposable tests, with no visible metadata pollution or regression in Test 06.
-
-### Phase 6 — Make reads, schemas, errors, scope, and reconnection actionable
-
-**Implementation status (2026-07-16): `DEPLOYED 76C6E2D BASELINE HEALTHY / WEAK-NETWORK SOAK REQUIRED`.** Deployed `76c6e2d` passed 34 read-only and 54 safe-write health checks with zero failures and one active session. Local reconnect races, 90-second heartbeat tolerance, read-before-retry, security, schema, and full fault smoke pass. Connector catalog refresh, `startIndex` proof, and a genuine weak-network soak remain open.
-
-#### Objective
-
-Return bounded data with usable continuation, stable schemas, correct error layers, operation identity, and safe reconnect guidance under least privilege.
-
-#### Evidence
-
-- Tests 01, 02, 04, 08, and 10: truncation, SDK tree errors, exact search/uniqueness difficulty, and symbol false negatives.
-- Tests 09–10: generic `INVALID_ARGS`, `plugin_permission`, and irrelevant permission advice for state/structure conflicts.
-- Tests 03 and 06: transient/late disconnects.
-- Live 2026-07-13 snapshot: connected one-session path, broader-than-default developer/full-KB profile, and limited connector/live-proof counts.
-- Relevant issues: `READ-001`, `ERR-001`, `OBS-001`.
-
-#### Current code areas
-
-- `src/remnote/read.ts`, `src/remnote/serialize.ts`: depth/child/node limits, search, rich/card property readback.
-- `server/src/tools/register-read-tools.ts`, `server/src/tools/schemas.ts`: public schemas and aliases.
-- `src/bridge/handlers/scope.ts`, `src/remnote/write/writeErrors.ts`, `shared/bridge/protocol-core.ts`: error taxonomy and layer mapping.
-- `server/src/tools/tool-context.ts`: standard envelope, output schema, status, operation ID, retry classification.
-- `server/src/bridge/session-router.ts`, `server/src/bridge-hub.ts`, `server/src/bridge/bridge-hub-retry.ts`: active sessions and reconnect behavior.
-- Auth, CSRF, same-origin, body-limit, tool-policy, and scope tests under `server/src` and `tests/`.
-
-#### Investigation tasks
-
-- [x] Reproduce bounded `get_rem_tree` and child reads live: current deployed traversal succeeded and reported truncation/limits; the only reproduced continuation failure was the installed connector schema omitting `startIndex`, not an SDK traversal error.
-- [x] Evaluate continuation designs based on child indexes/IDs and exact-title lookup without performing an unbounded workspace scan.
-- [x] Characterize symbol-heavy SDK search live: an exact symbol-heavy fixture was returned successfully, and direct ID readback confirmed it; bounded/non-exhaustive labeling remains preserved.
-- [x] Inventory schema aliases (`text`, `title`, root/parent IDs) and remove only those that create ambiguity; preserve documented compatibility.
-- [x] Define error layers for validation, stale conflict, scope, permission, SDK, connection, persistence, and internal failure.
-- [x] Fault-test disconnect before dispatch, after dispatch, after acknowledgement, and during result delivery with one and multiple sessions.
-- [x] Verify current security controls rather than assuming edge protections: body limits, auth/OAuth, session expiry/revocation, CSRF/same-origin, explicit CORS/proxy behavior, secret-safe logs, and least privilege.
-
-#### Implementation tasks
-
-- [x] Add continuation metadata/token or an exact branch-read workflow for every truncating tree/children result; include applied limits and remaining-state truth.
-- [x] Return search coverage metadata and a direct-read/exact-title fallback; distinguish no match from non-exhaustive/no supported search.
-- [x] Add dedicated stale/conflict error codes with expected/actual values; reserve `INVALID_ARGS` for input validation.
-- [x] Map validation to `validation`, stale state to `conflict`, scope to `plugin_scope`, permission to `plugin_permission`, SDK to `sdk`, persistence to `persistence`, and connectivity to `connection`.
-- [x] Make recommended actions specific to the actual layer and never recommend wider permission for an unrelated validation failure.
-- [x] Keep one canonical public argument name per field and test supported compatibility aliases at the boundary.
-- [x] Ensure every tool result has one operation ID, consistent outer/inner status, traceable target IDs, limits, evidence method, and retry classification.
-- [x] On reconnect, restore principal/session/idempotency/job identity before accepting a retry; reject ambiguous multiple-session routing.
-- [x] Keep default profiles least-privileged and require explicit elevation; never weaken OAuth, bearer, CSRF, same-origin, or scope checks to make a benchmark pass.
-
-#### Regression tests
-
-- Read: pagination/continuation, exact branch reads, truncation at every limit, symbol/title queries, SDK error mapping.
-- Schema: canonical names, accepted legacy aliases, rejected ambiguity, registered output schema versus `structuredContent`.
-- Error: table-driven code/layer/action cases including stale guarded update with expected/actual text.
-- Reconnect: before/after dispatch, unknown result, multiple sessions, expired/revoked pairing, state restoration.
-- Security: existing auth/scope/CSRF/body-limit/boundary suites plus safe logging assertions.
-- End to end: Tests 01, 02, 09, and 10; connection controls in Tests 03, 06, and 15.
-
-#### Acceptance criteria
-
-- Every truncated read identifies the applied depth/child/node limits and a deterministic continuation/branch action.
-- Search never returns an unqualified “not found” when results are bounded or SDK coverage is non-exhaustive.
-- Stale guarded updates return a dedicated conflict error with expected and actual text.
-- Validation, permission, scope, SDK, persistence, and connection errors report the correct layer and action.
-- A tool cannot expose `ok: true`/`PASS` while its inner result says failed, partial, blocked, or verification failed.
-- Unknown write outcome after disconnect returns read-before-retry guidance and retains the original operation/idempotency identity.
-- Multiple active sessions never route a write ambiguously.
-- Default public access remains least-privileged; no scope violation or secret disclosure occurs in tests/logs.
-
-#### Required evidence before completion
-
-- Commands: `npm test -- tests/read-tools.test.ts tests/tool-status-matrix.test.ts tests/timeout-budgets.test.ts tests/http-body-limit.test.ts`, `npm run server:test:tool-schemas`, `npm run server:test:boundaries`, `npm run server:test:connector-compat-routing`, `npm run server:test:codex-routing`, `npm run server:smoke`.
-- Attach continuation examples, error matrix, reconnect timeline, live connection diagnostics, and targeted benchmark reports.
-- Prove no regression in guarded correction, hierarchy surgery, scope, approval, or idempotency.
-- [x] Local unit gate passed: read/error/retry/reconnect regressions, Area 1/3 schemas, source fidelity, idempotency, style schema, structured depth, performance, security, health routing, full server fault smoke, and the 261-test repository suite.
-- [x] Targeted deployed controls for Tests 01, 02, 09, and 10 completed: connection, tree/direct-ID reads, stale-text conflict, hierarchy operations, and scope passed; symbol search returned a bounded false negative, stale parent used `INVALID_ARGS`, and connector continuation drift remained. Local fixes cover stale parent/reconnect; refresh the connector and rerun search/continuation after deployment.
-
-#### Definition of done
-
-Phase 6 is complete only when `READ-001`, `ERR-001`, and `OBS-001` meet read/schema/error/reconnect/security criteria in local suites and targeted live tests without widening access or hiding unsupported behavior.
-
-### Phase 7 — Lock architectural seams and pass the release benchmark
-
-**Implementation status (2026-07-17): `FINAL LOCAL V0.1 CANDIDATE GREEN / POST-DEPLOY RELEASE GATE OPEN`.** Against deployed `76c6e2d`, Test 11 Run 02 resumed from its exact safe checkpoint and completed; Test 12 completed all supported repairs; Test 13 produced an exact 14/14 independent Run 02 and a no-mutation recovery; Test 14 ran twice and stopped safely at the same chunk-3 `actualNodeCount=40` versus `maxNodes=30` wrapper defect; Test 15 completed three independent modules/card decks and three controlled same-ID repair lifecycles, followed by a no-mutation recovery audit. The local candidate adds persistent transport ownership, automatic online recovery, explicit manual transport recycling, fail-closed local disconnect, stable Connection/Advanced UI, manifest-derived Test 14 budgets, and pairing/input-abuse hardening. Fresh gates pass: 32 files / 292 tests, types, SDK validation, plugin/server builds, style correctness, schemas, security, boundaries, routing, idempotency, performance, diagnostics, and full fault smoke. Memory bulk-storage proof passes; PostgreSQL is not freshly proved because `DATABASE_URL` is absent. Release remains open because these fixes are not pushed/deployed/reloaded, Test 14 has no completed persistent live run at this candidate, native visual QA is blocked, dependency advisory lookup is unavailable, and independent CI has not run.
-
-#### Objective
-
-Reduce change coupling only around proven defects, then establish an honest release result across the required benchmark runs.
-
-#### Evidence
+# RemNote MCP — Product Completion Contract
 
-- `ARCH-001` and the cross-file traces in Phases 1–6.
-- Test 14 is now blocked by four historical/live evidence sets plus two fresh exact runs: the newest two reached the intended four-chunk persistent job but reproduced the deployed table-chunk budget defect at chunk 3. Test 11 completed two live runs with known deployed verifier/property warnings; Test 12 remains partial only at an honest SDK heading boundary. Three fresh Test 15 runs pass the content/card/controlled-repair core, but they do not prove the undeployed reconnect/import fixes.
-- Reliable tests show broad rewrites would create unnecessary regression risk.
-
-#### Current code areas
-
-- Import seam: `shared/bridge/bulk-import.ts`, `server/src/bulk-import/`, `server/src/tools/register-bulk-import-tools.ts`, storage providers.
-- Design seam: `src/remnote/templates/designTemplates.ts`, `src/remnote/write/designedNoteTools.ts`, design registration/UI state.
-- Verification seam: `src/remnote/write/verification.ts`, card/design/import verifiers, `server/src/tools/tool-context.ts`.
-- Test/release scripts in root and `server/package.json`, smoke/audit entrypoints under `server/src/`, and `server/src/area3-certification.ts`.
-- Native widget/release seam: `src/widgets/bridge-status.tsx`, `src/widgets/bridge-panel/runtime-actions.ts`, `src/widgets/bridge-panel/design-styles.ts`, `src/index.css`, `public/logo.svg`, `.github/workflows/ci.yml`, and `PRODUCT.md`.
+> **Binding repository-wide execution plan for Codex and other coding agents.**
+>
+> Target branch: `fix/remnote-mcp-mass-note-creation-stability`
+>
+> The objective is not to accumulate more tools, more stages, or more prose. The objective is to finish a **judge-testable, safe, reliable, verifiable RemNote MCP product** whose exact release commit can be installed, connected, tested, and demonstrated without repository archaeology.
+>
+> Historical detail belongs in `remnote report/`, Git history, CI, and dated release reports. This file defines **what must be done next, how Codex must work, which skills it must use, what counts as proof, and what “complete” means**.
 
-#### Investigation tasks
-
-- [x] Re-run the graph/module inspection after Phases 1–6 and identify only remaining high-coupling defect seams.
-- [x] Verify that proposed module boundaries improve depth: callers depend on stable state-machine/compiler/verifier interfaces, not internal orchestration details.
-- [x] Identify compatibility/migration obligations before moving persistent types or public schemas.
-
-#### Implementation tasks
-
-- [x] Extract deep, test-locked interfaces only where prior phases prove leverage: import state transition/persistence/reconciliation, design compiler, and evidence-specific verifier adapters.
-- [x] Keep parsing, writing, verification, repair, and persistence as separable seams with explicit inputs/outputs.
-- [x] Preserve public tool names and compatible schemas unless a versioned migration is required.
-- [x] Preserve existing pathways; no dead duplicate path was removed without live supported-caller evidence.
-- [x] Run final dependency-graph inspection only after behavior and schemas are final; restore generated outputs that indexed untracked benchmark fixtures, and do not let docs imply live proof that was not run.
-- [x] Add a least-privilege CI workflow with real PostgreSQL durability, security, schemas, idempotency, health routing, types, tests, validation, and builds; keep independent GitHub status as a post-push gate.
-- [x] Replace the native widget setup/diagnostic wall with Connection, Writing Access, and Design Style; put diagnostics and dangerous controls under Advanced Details.
-- [x] Add the `Structured Science` recommended preset, current-style capture, custom-style deletion, resilient clipboard/health actions, and the supplied logo on both native brand surfaces.
-- [x] Keep bridge transport in the index-plugin lifecycle; recover automatically on browser `online` and let the visible Connect action recycle an offline transport without reopening the sidebar.
-- [x] Stabilize Advanced settings with a single flow, stable scrollbar space, disabled scroll anchoring, and a dedicated three-button ChatGPT Remote control row.
-- [x] Bound pairing metadata/scopes and HTTP/WebSocket/file sizes; rate-limit failed pairing codes by the actual socket peer rather than an untrusted forwarding header.
-
-#### Regression tests
-
-- Full local suite: unit, integration, storage, boundary, style, schema, routing, and build.
-- Architecture: dependency-boundary tests for the new seams and no verifier-to-writer/storage imports.
-- Migration: old persisted job/template fixtures load conservatively.
-- Live: targeted reruns from Section 8 and final independent Test 15 runs.
-
-#### Acceptance criteria
-
-- A change to import persistence does not require editing Markdown parsing or card/design verification.
-- A new design rule is added once to schema/compiler/manifest verification, not duplicated across unrelated writers.
-- Verifier modules cannot mutate writers or persistent progress through hidden imports.
-- Public compatibility and persistent migrations are documented and tested.
-- All release gates in Section 10 pass without waived P0/P1 issues or false success claims.
-
-#### Required evidence before completion
-
-- Commands: `npm test`, `npm run check-types`, `npm run validate`, `npm run build`, `npm run server:build`, `npm run server:smoke` plus all relevant `server:test:*` gates from prior phases.
-- Attach complete outputs, dependency diff, migration fixtures, before/after benchmark behavior, and a no-regression matrix.
-- [x] Updated 2026-07-16 functional local gate passed: 29 test files/267 tests, types, SDK validation, plugin/server builds, security, tool schemas, idempotency, health routing, boundaries, connector routing, style correctness, and full fault smoke. The prior zero-vulnerability audit and PostgreSQL restart/CAS proof remain unchanged historical evidence because neither dependencies nor persistence changed; fresh registry audit execution is blocked by `HTTP 410` and must be refreshed before release.
-- [x] Updated 2026-07-17 final local gate passed after reconnect, UI, Test 03/12/14, and security hardening: 32 test files/292 tests, types, SDK validation, plugin/server builds, style correctness, tool schemas, auth/pairing/routing/security/boundary gates, idempotency, performance, diagnostics, and full fault smoke. `server:test:bulk-storage` passed memory/CAS checks and correctly reported PostgreSQL `BLOCKED` because `DATABASE_URL` was not configured. `security_best_practices_report.md` records findings and proof gaps.
-- [x] Dependency graph refreshed locally on 2026-07-15 to 4,567 nodes / 10,418 edges; architecture tests lock the import/compiler/verifier seams and conservative migrations; the standalone review was generated and opened from `/tmp/architecture-review-remnote-mcp-2026-07-15.html`.
-- [x] Native widget source/build acceptance passed: the selected three-row daily-use hierarchy is present, the supplied logo is compiled into both brand surfaces instead of a relative URL, individual Lucide icon modules build, and accessibility styles retain 44px controls/focus/reduced motion. `design-qa.md` truthfully records native visual comparison as blocked rather than treating standalone source/build proof as a screenshot.
-- [ ] After push, require the GitHub CI workflow to pass at the candidate SHA and enable branch protection for that workflow before public release.
-- [ ] After push/deploy, rerun the targeted Phase 2–5 failures, Test 14 final verification, Tests 11–13, and an independent Test 15. Pre-edit live evidence cannot close this candidate's release gate.
-
-#### Definition of done
-
-Phase 7 is complete only when `ARCH-001` is closed by bounded seam improvements and every Section 10 release condition is supported by current automated and live benchmark evidence.
-
-## 6. Cross-cutting engineering requirements
-
-### Scope and identity safety
-
-- Resolve explicit target IDs before focus/selection fallbacks. Echo principal, approved root, target, parent, and operation ID in audit evidence without logging secrets.
-- Validate every target and created/moved descendant against the approved scope. Scope checks are not substitutes for authentication or write approval.
-- Never broaden scope, tool profile, CORS, proxy trust, OAuth, CSRF, same-origin, or session policy to make a test pass.
-
-### Idempotency and unknown outcomes
-
-- Every write, repair, reconcile, and destructive action uses a stable request hash and idempotency key bound to principal, tool, and target.
-- `already_applied` must return the original stable IDs and zero new mutations.
-- Timeout/disconnect after dispatch is `unknown`, not failed. Perform read-before-retry using expected IDs/hashes/parentage. No blind retry and no duplicate repair artifact.
-- Preserve idempotency and attempt records across reconnect and restart.
-
-### Persistent state
-
-- Encode legal job transitions centrally and test them exhaustively.
-- Persist state changes atomically with revision/conflict protection. Record who/what caused each transition.
-- Verification does not mutate progress. Reconciliation is explicit, named, audited, and conservative.
-- Persistent format changes require versioning, migration tests, rollback/compatibility notes, and conservative handling of ambiguous old state.
-
-### Verification and repair separation
-
-- Parsing describes intended structure; writing materializes it; verification observes it; repair changes it. Do not combine these responsibilities in one implicit call path.
-- Generic heuristic verification is advisory. Exact manifest, ID-based, semantic, and live property readback must be labeled and used only for claims they can prove.
-- Repair requires exact targets, before-state guards, explicit approval where applicable, and post-write readback.
-
-### Errors and observability
-
-- Use a structured taxonomy: validation, conflict, scope, permission, SDK unsupported, SDK failure, connection, persistence, partial execution, unknown outcome, and internal error.
-- Every response includes one operation ID, consistent status, target IDs, mutation IDs, verification method, warnings, retry classification, and phase timings where applicable.
-- MCP `structuredContent` must satisfy its registered output schema; failures set `isError` and cannot coexist with a false `PASS` envelope.
-- Logs and reports must not contain bearer tokens, OAuth codes, session secrets, cookies, private keys, or raw credentials.
-
-### Compatibility and architecture
-
-- Preserve public tool names, reliable card/creation paths, and old persisted data unless a versioned migration is necessary.
-- Prefer deep modules with narrow interfaces around state transitions, design compilation, verification evidence, and storage.
-- Avoid broad rewrites of reliable subsystems. Add characterization tests before moving a defect path.
-- Keep implementation details local so policy changes do not ripple across parser, writer, verifier, UI, and persistence layers.
-
-## 7. Test strategy
-
-### Layered strategy
-
-1. **Pure parser and normalization tests:** Markdown blocks/inlines, formulas, links, Unicode, logical/native chunks, hierarchy, source and semantic hashes. Validates Tests 05, 06, 14.
-2. **Schema and validation tests:** canonical/legacy arguments, file envelopes, output schemas, error taxonomy, limits. Validates Tests 01, 02, 09, 10, 14.
-3. **Rich-text round-trip tests:** mixed nodes, targeted ranges, style preservation, headings, math conversion, identity. Validates Tests 03, 05, 06, 07, 12, 15.
-4. **Card metadata tests:** all card families, direct SDK metadata, organizational headings, literal cloze, MCQ/list serialization, duplicates. Validates Tests 03, 07, 08, 12, 13, 15.
-5. **Design-template serialization tests:** analyze identity, versioned save/load, compiler manifest, UI selection, one-root materialization. Validates Tests 11, 12.
-6. **Import state-machine tests:** exhaustive transitions, next action, unknown outcome, reconciliation, completed-chunk exclusion. Validates Test 14.
-7. **Persistence and reconnection tests:** memory/Postgres, restart boundaries, CAS conflicts, session restore, durable idempotency. Validates Tests 01, 06, 14, 15.
-8. **Verifier read-only invariant tests:** mutation spies and serialized-state equality across import, design, card, and fidelity verifiers. Validates Tests 11–15.
-9. **Fault-injection tests:** timeouts, disconnects, lost acknowledgements, partial envelopes, stale writers, SDK range/tree errors, multiple sessions. Validates Tests 02, 03, 06, 07, 14, 15.
-10. **Live RemNote benchmark reruns:** exact operation logs, Rem IDs, property/rich readback, before/after artifacts, independent run roots. Validates final user-visible behavior.
-
-### Test-to-phase map
-
-| Benchmark test | Primary phases | What it validates |
-| --- | --- | --- |
-| 01 | 6, 7 | Connection, deployment identity, scope, tool exposure. |
-| 02 | 4, 6 | Retrieval, truncation, search, card-verifier restraint. |
-| 03 | 4, 5, 6 | Tool choice, heading capability, non-card verification, reconnect. |
-| 04 | 5, 7 | Clean structured note and heading/property readback. |
-| 05 | 2, 5 | Markdown semantic and rich presentation fidelity. |
-| 06 | 5, 6, 7 | Core rich math preservation and late disconnect handling. |
-| 07 | 5 | Precision styling, rich replacement, math ranges, headings. |
-| 08 | 3, 4, 7 | Safe extension regression and preview/verifier restraint. |
-| 09 | 6, 7 | Guarded correction, stale conflict, ID preservation, no-op recovery. |
-| 10 | 6, 7 | Hierarchy surgery, exact errors, search fallback. |
-| 11 | 3, 4, 7 | Design analysis, storage, materialization, verification, UI selection. |
-| 12 | 3, 4, 5, 7 | Design diagnosis, formula repair, exact readback. |
-| 13 | 4, 7 | Functional card families, repeatability, verifier accuracy. |
-| 14 | 1, 2, 7 | Durable resumability, reconciliation, file ingestion, hierarchy/fidelity. |
-| 15 | 3–7 | Full integration, recovery restraint, independent-run stability. |
-
-## 8. Required benchmark reruns
-
-Use disposable, uniquely named roots under the approved benchmark root. Preserve prior artifacts unless the benchmark explicitly authorizes cleanup. Do not rerun all tests after every small change.
-
-| After phase | Required reruns | Required focus |
-| --- | --- | --- |
-| Phase 1 | Test 14 twice consecutively | State/readback agreement, IDs, restart/reconnect, no replay, read-only verification. |
-| Phase 2 | Tests 05 and 14; Test 06 control | Markdown semantics, hierarchy, file routes, chunking, formula non-regression. |
-| Phase 3 | Test 11 in at least two independent runs | Exact source identity, template lifecycle, one root, supported rule transfer, UI/direct parity. |
-| Phase 4 | Tests 11, 12, and 13 | Stored-rule verification, zero false card defects, direct metadata truth. |
-| Phase 5 | Tests 03 and 07; targeted 05, 06, 12 checks | Heading capability, rich replacement, math styling, emphasis preservation. |
-| Phase 6 | Tests 01, 02, 09, and 10; connection portions of 03/06 | Continuation, search, error taxonomy, reconnect, least privilege. |
-| Phase 7 | Test 14 twice; Tests 11–13; full Test 15 independent runs | Final integrated release evidence and repeatability. |
-
-The 2026-07-14 supplement records an independent pre-fix Test 15 Run 03 under `New test`; it confirmed capstone structure/cards and reproduced design/verifier defects. Release still requires a new independent Test 15 run after this local candidate is pushed and deployed. A recovery continuation is not an independent core test.
-
-## 9. Non-goals
-
-Protect these evidence-backed capabilities. Change them only when a failing characterization test proves the remediation requires it.
-
-- Do not redesign simple child creation or clean structured-note creation; Test 04 was strong.
-- Do not rewrite safe extension; Test 08 achieved exact source preservation and a perfect artifact score.
-- Do not replace guarded factual correction or hierarchy surgery; Tests 09 and 10 were highly reliable and ID-safe. Only improve their error taxonomy and evidence envelopes.
-- Do not replace core rich-math creation; Test 06 achieved complete formula fidelity. Repair targeted style/range behavior around it.
-- Do not redesign functional multi-family card creation; Test 13 produced 14/14 correct, duplicate-free cards twice, and Test 15 cards remained functional. Fix verifier and preview seams.
-- Do not fake heading success with visible metadata children or plain text.
-- Do not add broad workspace scans to compensate for bounded reads/search.
-- Do not treat benchmark fixture defects, agent schema mistakes, or connection failures as plugin logic defects.
-- Do not perform broad architecture cleanup, documentation rewrite, or dependency migration unrelated to the consolidated issues. The bounded native operator-panel redesign in `UX-001` is explicitly in scope; unrelated product UI is not.
-
-## 10. Final release gate
-
-Release is allowed only when all conditions below have current evidence at the candidate commit and deployed plugin version.
-
-- [ ] No Priority 0 issue remains open at the deployed candidate; local state-machine and PostgreSQL restart/CAS tests pass, but two-run deployed Test 14 proof remains outstanding.
-- [ ] Every Priority 1 acceptance criterion is met; unsupported SDK features are explicit and cannot produce false success.
-- [x] The functional local gate passes at the current candidate: `npm test` (32 files / 292 tests), types, SDK validation, plugin/server builds, style correctness, security, boundaries, routing, tool schemas, idempotency, performance, diagnostics, and full fault smoke are fresh after all code fixes. Fresh PostgreSQL execution remains blocked by missing `DATABASE_URL`; the prior restart/CAS proof is historical. Current npm audit requests cannot reach the registry quick-audit service, so no current zero-vulnerability claim is made.
-- [ ] Test 14 passes twice consecutively with persistent storage, no verifier mutation, no replay, no lost IDs, no state/artifact disagreement, no hierarchy corruption, and no persistent duplicates.
-- [ ] Test 11 design learn/save/apply workflows pass in the required independent runs with one target root and complete supported-rule accounting.
-- [ ] Test 12 diagnosis/repair passes without style loss or generic-verifier false claims.
-- [ ] Test 13 remains functional, 14/14 correct, duplicate-free, and free of aggregate false card defects in main and repeat runs. Fresh deployed `76c6e2d` evidence passes; repeat once after the local verifier changes are deployed.
-- [ ] Test 15 passes the required independent run set, including a new Run 03, within the benchmark repeatability threshold. Three fresh deployed `76c6e2d` runs pass content/cards/repair; repeat at least one independent control after the local candidate is deployed.
-- [x] Connection, branch, deployed commit `76c6e2d`, SDK `0.0.46`, explicit `New test` scope, and one active session are recorded. Read-only and safe-write health passed with zero failures. The post-fix candidate commit must be added after commit/deployment.
-- [x] No scope violation, unauthorized write, secret disclosure, blind retry, or ambiguous-session write occurred in the 2026-07-14 campaign or local gates.
-- [ ] No silent content loss, Rem-ID instability, unrelated-note mutation, child-order drift, or visible metadata pollution occurred.
-- [x] Latest live direct readback found no persistent duplicate root, repair artifact, or card. Test 14 created no job because the source-plan gate failed, so it made no duplicate import artifact.
-- [ ] No verifier or standard envelope made a false success claim; every final claim is traceable to exact live readback or the appropriate evidence class.
-- [x] Benchmark/fixture defects, connector/deployment drift, SDK limitations, and agent-only mistakes are reported separately from confirmed plugin defects.
-- [x] This roadmap supplement and task handoff include before/after behavior, command results, operation/Rem IDs, report provenance, and an explicit deployed-live versus local-candidate proof boundary.
-
-The final release checkbox may be marked complete only after all boxes above are checked with linked evidence from the same candidate revision. A partial, blocked, simulated-only, or registry-only result is not release proof.
+---
+
+# 0. Skill-enforcement contract
+
+Codex has access to the skills listed below and **must actively use them**, not merely mention them.
+
+## 0.1 Mandatory skill-use protocol
+
+At the beginning of **every stage**, Codex must:
+
+1. Read the stage's **Required skills** list.
+2. Activate/use every skill marked **MANDATORY** before editing code for that stage.
+3. Follow the selected skill's workflow, not just its title.
+4. Print a short stage preamble in its working response:
+
+```text
+STAGE:
+SKILLS ACTIVATED:
+WHY EACH SKILL APPLIES:
+EXPECTED DELIVERABLE:
+PROOF REQUIRED BEFORE STAGE COMPLETION:
+```
+
+5. If a required skill cannot be used, stop that stage and report:
+
+```text
+SKILL BLOCKER:
+- Missing/unavailable skill:
+- Why the stage cannot safely continue:
+- Smallest safe fallback:
+```
+
+6. Do not mark a stage complete until `verification-before-completion` has been applied to the evidence for that stage.
+
+## 0.2 Global skills that remain active throughout the project
+
+These two are always mandatory:
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+
+Their purpose is to prevent the most common failure mode in this repository:
+
+```text
+server reachable
+≠ plugin connected
+≠ MCP call returned
+≠ RemNote mutation succeeded
+≠ mutation was correct
+≠ mutation was idempotent
+≠ media rendered
+≠ exact release commit was live-proven
+```
+
+Codex must keep those proof layers separate in every report.
+
+## 0.3 TDD is mandatory for implementation work
+
+For every bug fix, feature, refactor, behavior change, or media capability:
+
+**MANDATORY skill:** `test-driven-development`
+
+The enforced cycle is:
+
+```text
+RED
+write one focused failing test
+↓
+VERIFY RED
+prove it fails for the intended reason
+↓
+GREEN
+write the minimum production change
+↓
+VERIFY GREEN
+run the focused test
+↓
+REGRESSION
+run the relevant surrounding suite
+↓
+REFACTOR
+only while all tests remain green
+```
+
+**Iron rule:**
+
+> No production behavior change without a failing test first, except for pure documentation/configuration changes that do not alter runtime behavior.
+
+If Codex writes implementation before the failing test, it must revert/delete that implementation and restart the change through RED → GREEN.
+
+## 0.4 Planning is mandatory before multi-subsystem implementation
+
+For any work that touches more than one of:
+
+- MCP tool schema/registry,
+- shared bridge protocol,
+- plugin bridge handler,
+- RemNote write engine,
+- SDK capability probing,
+- server auth/security,
+- UI,
+- deployment,
+- live test campaign,
+
+Codex must use:
+
+- `planner`
+- `writing-plans`
+
+The plan must identify:
+
+- exact files to inspect;
+- exact files expected to change;
+- interfaces consumed and produced;
+- tests to write first;
+- commands to run;
+- expected RED failure;
+- expected GREEN behavior;
+- live proof required;
+- commit boundaries.
+
+Save a persistent implementation plan when appropriate, preferably under:
+
+`docs/superpowers/plans/YYYY-MM-DD-<feature-or-repair>.md`
+
+unless the user explicitly requests another location.
+
+After the plan is approved/established, use:
+
+- `executing-plans`
+
+to carry it out task-by-task.
+
+## 0.5 Skill index for this contract
+
+Use these exact skill names:
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `planner`
+- `writing-plans`
+- `executing-plans`
+- `test-driven-development`
+- `mcp-builder`
+- `nodejs-backend-patterns`
+- `security-best-practices`
+- `context7`
+- `openai-docs`
+- `improve-codebase-architecture`
+- `playwright`
+- `webapp-testing`
+
+Do not load every skill for every task. Use the stage-specific list below.
+
+---
+
+# 1. Mission
+
+RemNote MCP already has substantial product functionality. Preserve working systems and finish the product around them.
+
+The repository contains or has historically contained:
+
+- a TypeScript RemNote plugin;
+- a Node.js MCP server;
+- local and hosted connection modes;
+- ChatGPT/Codex connection and authorization paths;
+- scope and write-access controls;
+- structured RemNote read tools;
+- structured RemNote write tools;
+- Markdown and rich-text import;
+- card/flashcard workflows;
+- scientific formula handling;
+- formatting and design tools;
+- reusable design templates;
+- guarded mutation behavior;
+- idempotency patterns;
+- readback and verification;
+- resumable bulk-import planning and execution;
+- durable job state;
+- diagnostic/health tooling;
+- a Tests 01–15 live campaign history;
+- CI and security/boundary regression work.
+
+Do **not** rewrite these systems from scratch.
+
+The completion mission is:
+
+> Make the existing RemNote MCP safe, deterministic, observable, media-capable, easy for a judge to test, and truthful about every proof boundary.
+
+---
+
+# 2. Current repository truth and evidence rules
+
+## 2.1 Branch
+
+All work governed by this contract targets:
+
+`fix/remnote-mcp-mass-note-creation-stability`
+
+Before every work session:
+
+```bash
+git branch --show-current
+git rev-parse HEAD
+git status --short
+```
+
+If the active branch is not the target branch, stop before editing.
+
+## 2.2 Candidate SHA
+
+A candidate used during Build Week preparation was:
+
+`5380dd5f2b87fa7d908a346fef81862498d47eea`
+
+Treat this as a **historical reference only**.
+
+Do not assume it is:
+
+- current HEAD;
+- current deployment SHA;
+- current plugin build;
+- current CI target;
+- final release SHA.
+
+Verify every one independently.
+
+## 2.3 Current known metadata drift that must be audited
+
+The repository has evidence of product/release metadata drift that Codex must reconcile rather than ignore.
+
+Examples to verify at current HEAD:
+
+- root `package.json` reports version `0.0.1`;
+- `server/package.json` reports version `0.0.1`;
+- `public/manifest.json` reports RemNote MCP version `0.1.0`;
+- `chatgpt-app-submission.json` still uses older “RemNote ChatGPT Bridge” naming and a fixed default-profile tool-count description;
+- `public/manifest.json` changelog URL points to `main/README.md`, while the release branch may have a different README state.
+
+Do not blindly normalize versions. First decide whether:
+
+- package versions are implementation-package versions;
+- manifest version is plugin product version;
+- server protocol/versioning is intentionally independent.
+
+Then document the decision and remove contradictory user-facing metadata.
+
+## 2.4 Historical reports are evidence, not current truth
+
+Files in `remnote report/` prove only the branch/SHA/deployment they actually tested.
+
+Every result must be classified as one of:
+
+```text
+EXACT_RELEASE_LIVE_PROOF
+HISTORICAL_LIVE_PROOF
+LOCAL_AUTOMATED_PROOF
+CI_PROOF
+DEPLOYED_SERVER_PROOF
+PLUGIN_CONNECTION_PROOF
+SOURCE_ONLY
+BLOCKED
+SDK_UNSUPPORTED
+NOT_RETESTED
+```
+
+Never write “passed” without naming the proof level.
+
+## 2.5 Proof ladder
+
+Use this ladder in all completion reports:
+
+1. **Static/source proof** — code exists.
+2. **Focused automated proof** — one test passes.
+3. **Regression proof** — relevant suite passes.
+4. **Build proof** — plugin/server builds.
+5. **CI proof** — exact commit passes CI.
+6. **Deployment proof** — `/health` reports exact commit.
+7. **Plugin round-trip proof** — plugin-routed ping succeeds.
+8. **Live mutation proof** — RemNote write succeeds.
+9. **Readback proof** — resulting Rem structure/content is read back.
+10. **Idempotency/recovery proof** — retry/resume does not duplicate/corrupt.
+11. **Visual/playback proof** — media actually renders/plays in RemNote.
+12. **Exact-release campaign proof** — the final immutable SHA passes the defined release workflow.
+
+A higher layer cannot be inferred from a lower one.
+
+---
+
+# 3. Definition of a complete product
+
+RemNote MCP is `COMPLETE` only when:
+
+1. every hard release gate passes;
+2. product score is at least **95/100**;
+3. no unresolved P0 or P1 defect remains;
+4. the exact immutable release SHA is the SHA used for CI, deployment, plugin build, judge artifact, and final live proof.
+
+A high score cannot compensate for a failed hard gate.
+
+---
+
+# 4. Hard release gates
+
+Every checkbox below is mandatory.
+
+## 4.1 Repository and identity
+
+- [ ] Target branch is correct.
+- [ ] Exact final release SHA is pushed and publicly resolvable.
+- [ ] Working tree is clean at the release checkpoint.
+- [ ] Build Week eligible commit range is documented.
+- [ ] Final compare link resolves.
+- [ ] User-facing product name is consistently `RemNote MCP`.
+- [ ] Versioning strategy is documented and conflicting metadata is reconciled.
+
+## 4.2 Automated engineering gates
+
+- [ ] TypeScript checks pass.
+- [ ] Plugin SDK validation passes.
+- [ ] Plugin build passes.
+- [ ] Server build passes.
+- [ ] Full root automated test suite passes.
+- [ ] Security/auth tests pass.
+- [ ] Boundary/input-limit tests pass.
+- [ ] Tool schema tests pass.
+- [ ] Idempotency tests pass.
+- [ ] Source-fidelity tests pass.
+- [ ] Bulk-storage tests pass.
+- [ ] PostgreSQL durability proof passes if PostgreSQL is used for release persistence.
+- [ ] Relevant routing/hosted/pairing tests pass.
+- [ ] Fault/retry/reconnect tests pass.
+- [ ] Performance gates stay within current documented budgets.
+- [ ] Dependency audit is run when the package registry is reachable; otherwise the blocker is documented honestly.
+
+## 4.3 Deployment gates
+
+- [ ] Hosted `/health` is reachable.
+- [ ] `/health` reports the exact final release SHA.
+- [ ] Hosted auth mode matches the documented release configuration.
+- [ ] Plugin build used for live testing corresponds to the exact release SHA.
+- [ ] Plugin connects successfully.
+- [ ] Initial sync completes.
+- [ ] `ping_remnote_plugin` proves a plugin-routed round trip.
+
+## 4.4 Core product live gates
+
+- [ ] Focused/approved Rem is confirmed before writes.
+- [ ] Read-only workflow passes.
+- [ ] Safe small write passes.
+- [ ] Readback verifies the created hierarchy/content.
+- [ ] Same idempotency key repeat does not duplicate content.
+- [ ] Guarded stale-state rejection works.
+- [ ] Card creation/readback works.
+- [ ] Formula/rich-text preservation works.
+- [ ] Supported design/styling paths verify correctly.
+- [ ] Unsupported SDK behavior is returned truthfully.
+- [ ] Resumable import interruption/resume/verify path passes.
+- [ ] Test 14 exact native-node budget case passes on the exact release SHA.
+- [ ] Tests 01–15 are either exact-release live-proven or explicitly replaced by a stronger documented equivalent.
+
+## 4.5 Media gates
+
+- [ ] `insert_image_from_url` implemented.
+- [ ] `insert_audio_from_url` implemented.
+- [ ] `insert_video_from_url` implemented.
+- [ ] Runtime capability probes exist for image/audio/video builders.
+- [ ] Stable HTTPS image renders visibly in RemNote.
+- [ ] Direct audio URL renders a playable audio player.
+- [ ] YouTube URL renders a playable video embed.
+- [ ] Direct video-file URL is tested when practical.
+- [ ] Same media idempotency key does not create duplicates.
+- [ ] Media failure does not partially destroy existing text.
+- [ ] Unsupported media SDK path returns typed `SDK_UNSUPPORTED`.
+- [ ] Media verification separates stored rich-text evidence from actual visual/playback evidence.
+
+## 4.6 Judge-readiness gates
+
+- [ ] Root `README.md` exists.
+- [ ] README contains architecture, setup, supported platforms, Build Week delta, Codex/GPT-5.6 usage, known limitations, and judge quick-start.
+- [ ] Prebuilt plugin artifact or equivalent no-rebuild install path is published.
+- [ ] Artifact is tied to exact release SHA.
+- [ ] Clean-environment install is tested.
+- [ ] Disposable judge sandbox flow is documented.
+- [ ] Read-only judge prompt is documented.
+- [ ] Safe-write judge prompt is documented.
+- [ ] Resumable-import judge prompt is documented.
+- [ ] Media demo prompt is documented.
+- [ ] Danger tier is disabled for judge instructions.
+- [ ] No secret is required inside a prompt.
+
+---
+
+# 5. Product scorecard — 100 points
+
+| Area | Points | Completion standard |
+| --- | ---: | --- |
+| Core RemNote read/write correctness | 20 | Reads, creates, updates, hierarchy, Markdown/rich text, formulas, cards, and guarded mutations work with readback. |
+| Bulk import, idempotency, recovery | 15 | Long imports plan correctly, persist, pause/resume, skip verified chunks, reconcile uncertainty, and avoid duplicate replay. |
+| Safety, auth, permissions, security | 15 | Local/hosted auth, pairing, scope, write tiers, input limits, rate limits, secrets, and destructive boundaries are enforced. |
+| Connection/runtime reliability | 10 | Persistent plugin runtime, reconnect, manual connect/disconnect, online recovery, routing, and diagnostics are stable. |
+| Design and formatting fidelity | 10 | Supported styles, highlights, Concept/Descriptor behavior, cards, formulas, hierarchy, and exact verification behave truthfully. |
+| Media capability | 10 | Image/audio/video URL insertion is safe, discoverable, idempotent, capability-probed, read back, and visually/playback verified. |
+| Automated tests and CI | 10 | Every repaired defect and media path has regression coverage; exact release SHA is green in CI. |
+| Release and judge testability | 10 | README, install path, artifact, hosted endpoint, exact-SHA evidence, and concise judge workflows are ready. |
+
+### Verdict scale
+
+- **95–100 + every hard gate:** `COMPLETE`
+- **90–94 + every hard gate:** strong release candidate but improve remaining non-blocking gaps before submission when time permits
+- **80–89:** functional beta; `NOT COMPLETE`
+- **<80:** incomplete; `NOT COMPLETE`
+
+Known RemNote SDK limitations do not automatically reduce the product below complete when:
+
+- capability is detected;
+- user data is preserved;
+- failure is typed;
+- result is truthful;
+- best supported fallback is documented.
+
+---
+
+# 6. Stage 0 — Exact-state audit and implementation plan
+
+## Goal
+
+Establish current truth before editing code and produce the execution plan Codex will follow.
+
+## Required skills
+
+**MANDATORY**
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `planner`
+- `writing-plans`
+- `context7`
+
+**CONDITIONAL**
+
+- `openai-docs` — only when the audit makes claims about current OpenAI/ChatGPT/Codex capabilities.
+
+## Skill enforcement
+
+Codex must not edit production code in Stage 0.
+
+It must first print:
+
+```text
+STAGE: 0 — Exact-state audit and implementation plan
+SKILLS ACTIVATED:
+- remnote-mcp-workflow-auditor
+- verification-before-completion
+- planner
+- writing-plans
+- context7
+```
+
+Then perform the audit.
+
+## Required repository reads
+
+At minimum inspect:
+
+- `AGENTS.md`
+- `PRODUCT.md`
+- `TOOL_REFERENCE.md`
+- `package.json`
+- `server/package.json`
+- `public/manifest.json`
+- `chatgpt-app-submission.json`
+- `.github/workflows/ci.yml`
+- `security_best_practices_report.md`
+- `docs/engineering-guide.md`
+- `docs/remnote-mcp-repair-and-testing.md`
+- `server/src/tool-registry.ts`
+- `server/src/mcp-tool-map.ts`
+- `server/src/tool-policy.ts`
+- `server/src/tool-permissions.ts`
+- `server/src/tools/schemas.ts`
+- `shared/bridge/protocol.ts`
+- `shared/bridge/protocol-registry.ts`
+- `src/bridge/handlers.ts`
+- `src/bridge/plugin-runtime.ts`
+- `src/remnote/sdkCapabilities.ts`
+- `src/remnote/write-engine/*`
+- `src/remnote/write/*`
+- the latest Tests 01–15 campaign report.
+
+## Required commands
+
+```bash
+git branch --show-current
+git rev-parse HEAD
+git status --short
+git log --oneline --decorate -20
+git diff --stat main...HEAD
+```
+
+Then inspect current scripts and run the cheapest non-destructive baseline gates needed to determine whether the tree is already broken.
+
+## Required audit questions
+
+Codex must answer:
+
+1. What is exact branch HEAD?
+2. Is working tree clean?
+3. What is current deployment SHA?
+4. Does deployment SHA match branch HEAD?
+5. Is the RemNote plugin connected?
+6. Is initial sync complete?
+7. What SDK version is actually installed?
+8. What is the current public tool count?
+9. What is the default tool profile?
+10. Does `chatgpt-app-submission.json` match the actual profile/tool registry?
+11. Are product names consistent?
+12. Are package/manifest versions intentionally different or stale?
+13. Which Tests 01–15 are exact-release proof?
+14. Which are historical only?
+15. Which fixes have only local/CI proof?
+16. What remains blocked?
+17. Does Test 14 have exact-release live proof?
+18. Does root `README.md` exist?
+19. Is there a public prebuilt plugin artifact?
+20. Do installed SDK typings expose:
+    - `plugin.richText.image`
+    - `plugin.richText.audio`
+    - `plugin.richText.video`
+21. Does the live runtime expose them?
+22. Does the current MCP expose any media tools already?
+
+## Required audit output
+
+```text
+HEAD:
+Working tree:
+Compare vs main:
+Deployment SHA:
+CI status:
+Plugin connection:
+Initial sync:
+SDK version:
+Public tool count:
+Default profile:
+Metadata drift:
+Tests 01–15 proof classification:
+Test 14 status:
+Remaining P0:
+Remaining P1:
+Media SDK type-level support:
+Media SDK runtime support:
+Existing MCP media tools:
+README status:
+Prebuilt artifact status:
+Judge-readiness blockers:
+```
+
+## Required planning deliverable
+
+Use `writing-plans` to create a detailed implementation plan before Stage 1.
+
+Preferred path:
+
+`docs/superpowers/plans/YYYY-MM-DD-remnote-mcp-product-completion.md`
+
+The plan must:
+
+- use checkbox steps;
+- name exact files;
+- name interfaces;
+- include RED test step;
+- include expected RED reason;
+- include minimum GREEN implementation;
+- include regression command;
+- include commit boundary;
+- include deployment proof;
+- include live RemNote proof.
+
+Do not use placeholders such as:
+
+- TODO
+- TBD
+- “add validation”
+- “write tests”
+- “handle errors”
+
+without concrete behavior and files.
+
+## Stage 0 completion gate
+
+Stage 0 passes only when:
+
+- repository truth is recorded;
+- proof levels are classified;
+- implementation plan exists;
+- no production code was changed during the audit.
+
+---
+
+# 7. Stage 1 — Close existing reliability and release defects
+
+## Goal
+
+Make the existing core product trustworthy before adding novelty.
+
+## Required skills
+
+**MANDATORY**
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `test-driven-development`
+- `nodejs-backend-patterns`
+- `security-best-practices`
+- `executing-plans`
+
+**CONDITIONAL**
+
+- `improve-codebase-architecture` — only when a concrete release-risk problem cannot be repaired safely within the current seam.
+
+## Priority order
+
+1. P0 data loss/corruption risk.
+2. Duplicate/replay risk.
+3. Auth/scope/permission bypass.
+4. Unknown-state retry risk.
+5. Exact-release Test 14.
+6. Connection/reconnect/runtime ownership.
+7. Verification truthfulness.
+8. Metadata/release drift.
+9. Lower-priority cleanup.
+
+Do not reorder this priority merely because a lower item is easier.
+
+## TDD enforcement
+
+For each defect:
+
+1. Identify one behavior failure.
+2. Write a focused failing test.
+3. Run it and capture RED.
+4. Confirm RED is caused by the target defect.
+5. Implement minimum fix.
+6. Run focused test.
+7. Run surrounding regression suite.
+8. Only then refactor.
+9. Record proof level.
+
+## Stage 1A — Test 14 and resumable import
+
+Re-check:
+
+- native-node budget calculation;
+- logical vs native count;
+- table expansion;
+- exact chunk manifest;
+- persisted revision;
+- chunk state transitions;
+- `written_not_verified`;
+- `partial`;
+- `failed`;
+- `blocked`;
+- `verified`;
+- reconnect/resume behavior;
+- completed-job replay prevention;
+- reconciliation;
+- duplicate prevention;
+- PostgreSQL persistence.
+
+Required outcome:
+
+- exact release candidate passes the Test 14 scenario twice;
+- second run proves repeatability;
+- pause/resume does not rewrite verified chunks;
+- reconnect does not duplicate content;
+- source Rems remain unchanged.
+
+Potential relevant files to inspect:
+
+- `server/src/tools/register-bulk-import-tools.ts`
+- `server/src/bulk-import/job-store.ts`
+- `server/src/bulk-import/access.ts`
+- `server/src/bulk-import/source-file-loader.ts`
+- `shared/bridge/bulk-import.ts`
+- `shared/bridge/markdown-importer.ts`
+- `src/remnote/write/markdownImportExecutor.ts`
+- `src/remnote/write/verification.ts`
+- `tests/*bulk*`
+- `tests/*import*`
+
+Exact files must be confirmed from current repository truth before editing.
+
+## Stage 1B — Verification truthfulness
+
+Re-check known high-value paths:
+
+- Test 03 dry-run prediction;
+- successful style-plan outer `updatedRemIds`;
+- Test 11 native property filtering;
+- Test 11 principal-formula classification;
+- Concept → Descriptor verification;
+- Test 12 exact style verification;
+- supported vs unsupported heading mutation;
+- partial vs fail MCP envelope semantics.
+
+Rules:
+
+- `SDK_UNSUPPORTED` is acceptable when the installed RemNote SDK truly lacks capability.
+- Never convert unsupported behavior into fake success.
+- Exact verification must use evidence produced by the actual applied plan when available.
+- Generic preset assumptions must not contaminate exact verification.
+
+Potential files:
+
+- `server/src/tools/register-formatting-tools.ts`
+- `server/src/tools/register-design-tools.ts`
+- `src/remnote/templates/designPlanCompiler.ts`
+- `src/remnote/templates/designVerificationManifest.ts`
+- `src/remnote/write/designedNoteTools.ts`
+- `src/remnote/write/formattingWrites.ts`
+- `src/remnote/write/verification.ts`
+
+## Stage 1C — Connection/runtime reliability
+
+Re-check:
+
+- plugin runtime ownership independent of sidebar lifecycle;
+- WebSocket generation replacement;
+- browser `online` recovery;
+- stuck `CONNECTING` recovery;
+- explicit Connect action;
+- explicit Disconnect action;
+- late response cleanup;
+- pending request cleanup;
+- session routing;
+- reconnect after transient network loss.
+
+Potential files:
+
+- `src/bridge/plugin-runtime.ts`
+- `src/bridge/runtime.ts`
+- `src/bridge/runtime-channel.ts`
+- `src/bridge/client.ts`
+- `server/src/bridge-hub.ts`
+- `server/src/bridge/*`
+- `tests/bridge-reconnect.test.ts`
+- `tests/bridge-runtime-lifecycle.test.ts`
+- `tests/bridge-retry-safety.test.ts`
+
+## Stage 1D — Metadata/version/release truth
+
+Reconcile:
+
+- product display name;
+- manifest name;
+- package versions;
+- server version;
+- tool counts;
+- default profile description;
+- hosted/private wording;
+- changelog URL;
+- current branch vs main README references.
+
+Do not manually hard-code a tool count if it can be generated from registry truth.
+
+Prefer:
+
+```text
+registry → generated reference/metadata
+```
+
+over:
+
+```text
+registry
++
+hand-maintained count A
++
+hand-maintained count B
++
+hand-maintained count C
+```
+
+where practical.
+
+## Stage 1E — Architecture cleanup only when release-risk evidence exists
+
+Use:
+
+- `improve-codebase-architecture`
+
+only if the current implementation causes a proven risk such as:
+
+- duplicated mutation logic with divergent safety behavior;
+- repeated media write paths with inconsistent validation;
+- untestable giant function blocking reliable change;
+- shallow pass-through modules causing incorrect ownership;
+- cyclic dependency;
+- state ownership split across incompatible modules.
+
+Do not perform broad architecture cleanup merely to make the repository prettier.
+
+Before architecture changes:
+
+1. characterize current behavior with tests;
+2. identify the exact seam;
+3. explain locality/leverage benefit;
+4. preserve public interfaces unless a migration is planned;
+5. keep tests green.
+
+## Stage 1 completion gate
+
+Stage 1 is complete only when:
+
+- no known P0/P1 existing-product defect remains without an explicit blocker;
+- focused RED/GREEN tests exist for every repaired defect;
+- relevant regression suites are green;
+- no security control was weakened;
+- exact-release live proof is clearly separated from local proof.
+
+### 2026-07-18 execution record — Stage 1
+
+Status: `COMPLETE_LOCAL_WITH_EXPLICIT_LIVE_BLOCKERS`.
+
+- Stage 1A rechecked native table-node budgeting, logical/native manifests,
+  chunk states, reconciliation, completed-job no-replay, duplicate prevention,
+  and storage semantics. The focused bulk/import suite passed; memory CAS and
+  restart-loss truth passed. PostgreSQL durability remains `BLOCKED` because
+  `DATABASE_URL` is not configured.
+- Stage 1B rechecked dry-run truth, applied-manifest verification, native
+  property filtering, Concept -> Descriptor evidence, and partial/fail
+  envelopes. Focused verifier/design/read-style regressions passed.
+- Stage 1C rechecked runtime ownership, reconnect, browser-online recovery,
+  request cleanup, and retry safety. Focused runtime/reconnect/retry regressions
+  passed.
+- Stage 1D closed current release drift through a RED/GREEN metadata test:
+  public identity is `RemNote MCP`, default-profile copy matches the current
+  20-tool registry, the changelog link resolves to GitHub releases, and the
+  intentional npm `0.0.1` versus plugin manifest `0.1.0` version lanes are
+  documented. Generated registry evidence now reports 76 declared, 73
+  all-public, and 20 default-public tools.
+- Fresh local proof: 8 focused files / 117 tests, metadata/version 2 files / 5
+  tests, security/auth smoke, boundaries, idempotency, memory bulk storage, and
+  generated tool-reference gates all passed. No security control was weakened.
+- Deployment-health proof: hosted `/health` returned HTTP 200 at exact HEAD
+  `5380dd5f2b87fa7d908a346fef81862498d47eea`, reports one connected plugin
+  session, and exact-SHA GitHub Actions run `29603562034` is green.
+- Live boundary: this run has no `REMNOTE_CODEX_TOKEN`, disposable
+  `REMNOTE_LIVE_TEST_PARENT_ID`, or authenticated plugin-health session.
+  Therefore initial-sync readback, two exact-SHA Test 14 live reruns, current
+  Tests 01-15 live proof, and source-preservation readback remain unclaimed.
+  Historical Test 14 live evidence is for `76c6e2d` and remains historical.
+
+---
+
+# 8. Stage 2 — Design the media feature before implementation
+
+## Goal
+
+Define a safe, narrow, first-class media capability that fits the existing MCP architecture.
+
+## Required skills
+
+**MANDATORY**
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `mcp-builder`
+- `writing-plans`
+- `security-best-practices`
+- `context7`
+
+**MANDATORY FOR OPENAI CLAIMS**
+
+- `openai-docs`
+
+**CONDITIONAL**
+
+- `nodejs-backend-patterns`
+
+## Official RemNote API basis
+
+Current official RemNote Plugin API documentation exposes RichText builders equivalent to:
+
+- `plugin.richText.image(url, width?, height?)`
+- `plugin.richText.audio(url)`
+- `plugin.richText.video(url)`
+
+Current RemNote product documentation also describes:
+
+- image insertion from URLs;
+- audio-file URL embedding with an audio player;
+- YouTube URL embedding;
+- direct video-file URL embedding.
+
+Codex must still verify:
+
+1. installed SDK `@remnote/plugin-sdk` typings;
+2. runtime capability;
+3. actual rendering in the connected RemNote version.
+
+Documentation alone is not live proof.
+
+## Required public MCP tools
+
+Implement these public tools unless the existing repository already has equivalent correctly named public tools:
+
+1. `insert_image_from_url`
+2. `insert_audio_from_url`
+3. `insert_video_from_url`
+
+Use one shared internal media module/helper only when it improves consistency without making the public tools vague.
+
+## Required tool contract design
+
+The design plan must decide and document:
+
+### Shared fields
+
+- `parentId` or the repository's established explicit target field;
+- `url`;
+- `position`;
+- `caption` or `label` only when safely representable;
+- `idempotencyKey`;
+- `verifyAfterWrite`.
+
+### Image-only fields
+
+- `width?`
+- `height?`
+
+### Placement policy
+
+Default to the safest behavior that preserves existing content.
+
+Preferred default:
+
+> create a dedicated child/media Rem at a deterministic position rather than overwrite arbitrary existing rich text.
+
+If the established write engine has a safer canonical pattern, use that pattern.
+
+Any replace-existing-content mode must be explicit and separately guarded.
+
+## URL validation policy
+
+At minimum:
+
+- allow only `http://` and `https://` unless official SDK behavior requires another safe scheme;
+- reject `javascript:`;
+- reject `file:`;
+- reject malformed URLs;
+- enforce bounded URL length;
+- reject empty URL;
+- normalize before idempotency comparison where safe.
+
+### SSRF rule
+
+Before adding private-IP/localhost blocking, determine **who fetches the URL**:
+
+- MCP server;
+- browser/plugin runtime;
+- RemNote service/client.
+
+If the MCP server never fetches the URL, server-side SSRF risk is different from a server proxy/fetch architecture.
+
+Do not add security theater. Document the actual fetch owner and enforce the appropriate threat model.
+
+## MCP annotations
+
+Use `mcp-builder`.
+
+Annotations must match actual behavior.
+
+Do not copy annotations blindly.
+
+For each media tool, explicitly justify:
+
+- `readOnlyHint`
+- `destructiveHint`
+- `idempotentHint` if supported by the repository's MCP SDK/tool metadata model
+- `openWorldHint`
+
+If inserting a remote URL causes an external fetch, decide `openWorldHint` from actual MCP annotation semantics and implementation behavior.
+
+## Capability probing
+
+Extend the runtime capability report for:
+
+- `plugin.richText.image`
+- `plugin.richText.audio`
+- `plugin.richText.video`
+
+If missing:
+
+- no mutation;
+- typed `SDK_UNSUPPORTED`;
+- actionable message;
+- capability name in details.
+
+## Generated-image boundary
+
+Use `openai-docs`.
+
+Document current truth:
+
+- ChatGPT can generate images.
+- RemNote's media builder accepts a URL.
+- A generated image is not automatically equivalent to a durable public URL available to the MCP.
+- Full automation requires a handoff mechanism such as:
+  - client-provided stable URL;
+  - secure upload endpoint;
+  - object storage;
+  - another durable hosting system.
+
+Build Week v1 default:
+
+> implement URL insertion first.
+
+Do not introduce OpenAI image-generation API keys, storage, file retention, or upload services unless all release gates are already safe and the extra architecture is justified.
+
+## Generated-voice/audio boundary
+
+Use `openai-docs`.
+
+Document current truth:
+
+- OpenAI APIs can generate speech audio.
+- RemNote audio insertion needs a URL.
+- Generated audio bytes/file still need durable hosting for URL-based insertion.
+- ChatGPT conversational Voice output must not be assumed to expose a reusable MCP-accessible audio URL.
+
+Build Week v1 default:
+
+> stable audio URL → RemNote MCP → audio embed.
+
+Optional v2:
+
+```text
+text
+→ OpenAI TTS
+→ generated audio file
+→ secure storage
+→ durable URL
+→ RemNote audio embed
+```
+
+Only add this after core release gates.
+
+## Video boundary
+
+For v1:
+
+- YouTube URL is mandatory live proof.
+- Direct MP4/WebM URL is optional but preferred when practical.
+
+Do not claim:
+
+- rich-text YouTube embed = YouTube Annotator source;
+- media embed = uploaded/owned RemNote source object;
+
+unless official API + live proof establishes it.
+
+## Stage 2 planning deliverable
+
+Before implementation, create a media implementation plan containing:
+
+- exact tool schemas;
+- exact shared helper interface;
+- protocol changes;
+- plugin handler changes;
+- capability-probe changes;
+- idempotency model;
+- test files;
+- RED expectations;
+- live proof fixtures;
+- rollback/failure semantics.
+
+Stage 2 ends before production implementation begins.
+
+### 2026-07-18 execution record — Stage 2
+
+Status: `COMPLETE_DESIGN_ONLY`.
+
+- Verified installed `@remnote/plugin-sdk@0.0.46` typings and implementation
+  expose `plugin.richText.image`, `plugin.richText.audio`, and
+  `plugin.richText.video`; runtime availability and rendering remain live-proof
+  obligations.
+- Verified the repository MCP annotation model supports `idempotentHint` and
+  designed all three tools as non-read-only, non-destructive, idempotent,
+  open-world writes.
+- Fixed the v1 scope at stable HTTP(S) URL insertion into one dedicated child
+  Rem. The MCP server will not fetch/proxy media, and no generation API key,
+  upload service, storage system, or retention path is introduced.
+- Defined exact schemas, shared protocol/result interfaces, plugin-side trust
+  validation, scope/permission routing, capability probes, memory idempotency,
+  readback, rollback behavior, RED/GREEN order, regression commands, and later
+  live fixtures in
+  `docs/superpowers/plans/2026-07-18-remnote-mcp-media-insertion.md`.
+- Official OpenAI guidance confirms image and speech APIs produce media data;
+  those bytes still require durable hosting before URL insertion. ChatGPT voice
+  output is not treated as a reusable MCP media URL.
+- No Stage 3 production source was changed before this design checkpoint.
+
+---
+
+# 9. Stage 3 — Implement media insertion with strict TDD
+
+## Goal
+
+Add image, audio, and video/YouTube insertion without weakening safety or existing note behavior.
+
+## Required skills
+
+**MANDATORY**
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `test-driven-development`
+- `mcp-builder`
+- `nodejs-backend-patterns`
+- `security-best-practices`
+- `executing-plans`
+
+**USE FOR CURRENT SDK DETAILS**
+
+- `context7`
+
+## Likely files to inspect
+
+Confirm exact paths before editing. Expected areas include:
+
+### MCP server/tool layer
+
+- `server/src/tools/schemas.ts`
+- `server/src/tools/register-formatting-tools.ts` or a new focused media registration module
+- `server/src/tool-registry.ts`
+- `server/src/mcp-tool-map.ts`
+- `server/src/tool-policy.ts`
+- `server/src/tool-permissions.ts`
+- `server/src/remnote-capability-guide.ts`
+
+### Shared bridge protocol
+
+- `shared/bridge/protocol.ts`
+- `shared/bridge/protocol-registry.ts`
+- `shared/bridge/protocol-write-args.ts`
+- `shared/bridge/protocol-write-results.ts`
+
+### Plugin bridge
+
+- `src/bridge/handlers.ts`
+- `src/bridge/handlers/args.ts`
+- `src/bridge/handlers/validation.ts`
+- `src/bridge/handlers/scope.ts`
+
+### RemNote capability/write layer
+
+- `src/remnote/sdkCapabilities.ts`
+- `src/remnote/write/index.ts`
+- `src/remnote/write/basicWrites.ts`
+- `src/remnote/write/writeValidation.ts`
+- `src/remnote/write/writeErrors.ts`
+- a new focused media write module if this preserves locality.
+
+### Tests
+
+Use the repository's current naming conventions. Prefer focused tests for:
+
+- media schemas;
+- media tool registration;
+- bridge routing;
+- plugin write behavior;
+- idempotency;
+- scope/permission;
+- capability absence;
+- serialization/readback.
+
+## Required TDD sequence — image
+
+### RED 1 — schema
+
+Write failing tests for:
+
+- valid HTTPS URL accepted;
+- valid HTTP URL accepted if policy allows;
+- malformed URL rejected;
+- `javascript:` rejected;
+- `file:` rejected;
+- width <= 0 rejected;
+- height <= 0 rejected;
+- excessive dimensions rejected;
+- excessive URL length rejected.
+
+Run focused tests and capture expected RED.
+
+### GREEN 1
+
+Implement minimum schema/validation.
+
+### RED 2 — builder selection
+
+Write failing test proving image operation calls the image builder with:
+
+```text
+url
+width?
+height?
+```
+
+and does not call audio/video builder.
+
+### GREEN 2
+
+Implement minimum image builder path.
+
+### RED 3 — safe placement
+
+Prove the image write:
+
+- creates or updates only intended target;
+- does not erase unrelated existing text;
+- returns created/updated ID envelope.
+
+### GREEN 3
+
+Implement placement.
+
+### RED 4 — idempotency
+
+Repeat same idempotency key and prove no duplicate media Rem.
+
+### GREEN 4
+
+Implement using the repository's canonical idempotency system.
+
+### RED 5 — capability missing
+
+Simulate runtime without `plugin.richText.image`.
+
+Expected:
+
+- typed `SDK_UNSUPPORTED`;
+- zero mutation.
+
+### GREEN 5
+
+Implement capability gate.
+
+## Required TDD sequence — audio
+
+Repeat the same pattern for:
+
+- schema;
+- audio builder selection;
+- safe placement;
+- idempotency;
+- capability missing;
+- zero partial destruction.
+
+## Required TDD sequence — video
+
+Repeat for:
+
+- normal HTTPS video URL;
+- YouTube URL;
+- video builder selection;
+- safe placement;
+- idempotency;
+- capability missing.
+
+Do not over-specialize YouTube parsing unless the SDK requires it.
+
+## Shared regression matrix
+
+Every media tool must be covered for:
+
+- auth path;
+- scope enforcement;
+- write tier;
+- input validation;
+- capability gate;
+- tool routing;
+- correct bridge command;
+- correct plugin handler;
+- created/updated IDs;
+- no unrelated mutation;
+- idempotent repeat;
+- structured error envelope;
+- readback representation when available.
+
+## Failure semantics
+
+A media failure must not leave the target in a worse state.
+
+Prefer:
+
+```text
+validate
+→ capability check
+→ scope/write authorization
+→ prepare new media rich text
+→ mutate
+→ read back
+→ verify
+```
+
+over:
+
+```text
+erase target
+→ attempt media creation
+→ fail
+```
+
+## Stage 3 completion gate
+
+Stage 3 is complete only when:
+
+- all three public media tools are discoverable;
+- schemas are validated;
+- capability probes exist;
+- focused RED/GREEN history exists;
+- relevant full regression suites pass;
+- no live-success claim has been made yet.
+
+### 2026-07-18 execution record — Stage 3
+
+Status: `COMPLETE_LOCAL_WITH_LIVE_MEDIA_RENDERING_UNPROVEN`.
+
+- Added three public `note_writer` tools: `insert_image_from_url`,
+  `insert_audio_from_url`, and `insert_video_from_url`. The generated registry
+  now reports 79 declared tools, 76 public tools with delete disabled, 77
+  public tools in the danger profile, and the unchanged 20-tool default
+  profile under schema version `2026-07-18.media-url-insertion`.
+- Added strict HTTP(S)-only schemas, bounded URL/label/dimension inputs,
+  current-tree scope enforcement, trusted-write authorization, explicit
+  open-world/idempotent annotations, plugin-side revalidation, and image,
+  audio, and video capability probes.
+- Added dedicated-child media writes with no unrelated text replacement,
+  readback of the serialized media discriminator and URL, same-key replay
+  protection, conflicting-key rejection, and compensation. Failed writes remove
+  the created child when possible; failed compensation returns
+  `PARTIAL_FAILURE` with the orphan Rem ID.
+- Captured the required RED/GREEN sequence in focused TDD: missing media
+  registration, protocol/policy/capabilities, image write, audio route, video
+  route, compensation coverage, and operation-tier metadata each failed before
+  the corresponding minimum implementation. The focused media suite passes 33
+  tests; the related six-file regression passes 98 tests; the full suite passes
+  33 files / 326 tests.
+- Fresh local proof also passes type checking, plugin and server builds,
+  validation, server smoke, tool schemas, boundaries, security, idempotency,
+  source fidelity, health routing, style correctness, and all tool-profile
+  certification (77 danger-profile tools, p95 16 ms). PostgreSQL bulk-storage
+  proof remains `BLOCKED` because `DATABASE_URL` is not configured; memory
+  storage passes.
+- Live boundary: installed SDK typings/builders and local fake-runtime readback
+  are proven, but this commit has not been deployed and no connected RemNote
+  session has rendered an image, audio player, direct video, or YouTube embed.
+  No live media-success or production-readiness claim is made.
+
+---
+
+# 10. Stage 4 — Full automated regression, CI, and conditional architecture review
+
+## Goal
+
+Prove the combined existing fixes + media work do not regress the product.
+
+## Required skills
+
+**MANDATORY**
+
+- `verification-before-completion`
+- `test-driven-development`
+- `executing-plans`
+
+**CONDITIONAL**
+
+- `improve-codebase-architecture`
+- `nodejs-backend-patterns`
+- `security-best-practices`
+
+## Minimum verification commands
+
+Discover current canonical scripts from `package.json` and `server/package.json`.
+
+At minimum run:
+
+```bash
+git status --short
+git rev-parse HEAD
+
+npm run check-types
+npm test
+npm run validate
+npm run build
+
+npm run server:build
+npm run server:smoke
+npm run server:test:security
+npm run server:test:boundaries
+npm run server:test:tool-schemas
+npm run server:test:idempotency
+npm run server:test:source-fidelity
+npm run server:test:health-check-routing
+npm run server:test:bulk-storage
+npm run test:style-correctness
+```
+
+Also inspect and run the strongest current applicable commands for:
+
+- auth;
+- Codex bearer;
+- Codex routing;
+- Codex pairing;
+- ChatGPT pairing;
+- connector compatibility;
+- tool profiles;
+- tier switching;
+- structured depth;
+- Markdown importer;
+- PostgreSQL durability;
+- performance;
+- hosted E2E smoke;
+- live-tool smoke/regression when environment permits.
+
+## Dependency audit
+
+Run when registry access works:
+
+```bash
+npm audit --omit=dev
+npm audit --omit=dev --prefix server
+```
+
+If unavailable:
+
+- record exact failure;
+- do not claim zero vulnerabilities from an old audit.
+
+## Architecture review trigger
+
+Use `improve-codebase-architecture` only when regression work reveals a real architectural release risk.
+
+Possible candidates:
+
+- media validation duplicated across three paths;
+- media mutation duplicated across three handlers with inconsistent authorization;
+- bridge request switch too large to safely extend;
+- write-engine ownership split;
+- repeated serialization logic causing verification mismatch.
+
+If used:
+
+1. read architecture docs first;
+2. characterize behavior;
+3. create report;
+4. choose smallest high-leverage seam;
+5. implement through TDD only after plan.
+
+## Graphify
+
+If the repository uses Graphify as maintained release evidence:
+
+```bash
+graphify . --update
+```
+
+only after code freeze.
+
+Do not let generated Graphify output become the main measure of Build Week work.
+
+## Stage 4 completion gate
+
+- all required automated gates green;
+- exact commit identified;
+- CI green for exact commit;
+- architecture changes, if any, separately justified and tested;
+- no unresolved regression introduced by media.
+
+---
+
+# 11. Stage 5 — Plugin UI and judge-experience verification
+
+## Goal
+
+Ensure a judge can understand connection state, approve scope, and use the plugin without confusion.
+
+## Required skills
+
+**MANDATORY**
+
+- `verification-before-completion`
+- `playwright`
+- `webapp-testing`
+
+**CONDITIONAL**
+
+- `security-best-practices`
+
+## Verify UI states
+
+At minimum inspect:
+
+- disconnected;
+- connecting;
+- connected;
+- reconnecting;
+- failed connection;
+- ChatGPT pairing code entry;
+- pairing review;
+- pairing approved;
+- pairing rejected/expired;
+- writing access selection;
+- scope selection;
+- design style selection;
+- Ping;
+- Connect;
+- Disconnect;
+- health check;
+- Advanced settings;
+- loading states;
+- error states.
+
+## Responsive/accessibility checks
+
+Where browser automation can reach the surface, verify:
+
+- narrow sidebar;
+- 200% zoom;
+- keyboard navigation;
+- visible focus;
+- no clipped controls;
+- no horizontal overflow;
+- minimum practical touch/click targets;
+- readable contrast;
+- reduced-motion behavior where animations exist.
+
+Do not claim native RemNote visual acceptance from a standalone component render if the real plugin UI was not rendered inside RemNote.
+
+## Judge usability requirement
+
+A first-time judge should be able to answer within one minute:
+
+1. Is the MCP server reachable?
+2. Is the RemNote plugin connected?
+3. What RemNote scope is approved?
+4. What write access is enabled?
+5. How do I disconnect?
+6. What should I test first?
+
+## Stage 5 completion gate
+
+- browser/UI proof recorded;
+- native RemNote visual proof performed where required;
+- no blocking setup ambiguity remains.
+
+---
+
+# 12. Stage 6 — Exact-release live RemNote proof
+
+## Goal
+
+Prove the exact release SHA against a real connected RemNote workspace.
+
+## Required skills
+
+**MANDATORY**
+
+- `remnote-mcp-workflow-auditor`
+- `verification-before-completion`
+- `executing-plans`
+
+**CONDITIONAL**
+
+- `webapp-testing` — for visual/browser evidence where useful.
+
+## Preconditions
+
+Before any live write:
+
+- [ ] `/health` reports exact release SHA.
+- [ ] Plugin build corresponds to exact release SHA.
+- [ ] Plugin connected.
+- [ ] Initial sync complete.
+- [ ] Focused/approved root re-read live.
+- [ ] Target is disposable.
+- [ ] Write scope confirmed.
+- [ ] Danger/destructive tier disabled unless explicitly required by one sandbox test.
+- [ ] Test URLs contain no secrets.
+
+Never trust a remembered Rem ID without live confirmation.
+
+## Core proof sequence
+
+Run in this order:
+
+1. `get_bridge_status`
+2. `ping_remnote_plugin`
+3. `get_focused_rem`
+4. bounded read
+5. child/tree read
+6. safe small write
+7. readback
+8. same-idempotency-key repeat
+9. guarded stale-state rejection
+10. card creation/readback
+11. formula/rich-text preservation
+12. supported design/style verification
+13. resumable import interruption
+14. job status inspection
+15. reconnect if part of scenario
+16. resume
+17. verify
+18. completed-job no-replay check
+19. exact Test 14 case
+20. image insertion
+21. audio insertion
+22. YouTube/video insertion
+
+## Test 14 exact-release requirement
+
+Test 14 must prove:
+
+- correct chunk budget;
+- correct native-node count;
+- all intended chunks;
+- pause;
+- status;
+- resume;
+- reconnect where relevant;
+- no duplicate verified chunk;
+- verification;
+- completed-job behavior;
+- PostgreSQL persistence where release uses PostgreSQL.
+
+Run the exact scenario at least twice when feasible.
+
+## Tests 01–15 exact-release campaign
+
+Use the exact existing test prompts/reports as test definitions.
+
+Rules:
+
+- never edit historical reports in place;
+- create a new dated release campaign report;
+- keep writes in disposable approved root;
+- read back every artifact;
+- preserve source Rems;
+- preserve IDs where repair requires in-place update;
+- use explicit verdicts.
+
+Allowed verdicts:
+
+```text
+PASS
+PASS_WITH_WARNINGS
+RECOVERY_PASS
+RECOVERY_PASS_WITH_WARNINGS
+PARTIAL
+SDK_UNSUPPORTED
+BLOCKED
+PLUGIN_NOT_CONNECTED
+FAIL
+```
+
+Do not use `PASS` when the actual result is a supported subset plus limitation.
+
+## Media live-proof campaign
+
+Create:
+
+`remnote-mcp-media-live-proof-YYYY-MM-DD.md`
+
+Record:
+
+```text
+Branch:
+HEAD:
+Deployment SHA:
+Plugin build SHA:
+SDK version:
+Approved root:
+Image URL:
+Image mutation IDs:
+Image readback:
+Image visual result:
+Image idempotency repeat:
+
+Audio URL:
+Audio mutation IDs:
+Audio readback:
+Audio player result:
+Audio idempotency repeat:
+
+YouTube URL:
+Video mutation IDs:
+Video readback:
+Video playback/embed result:
+Video idempotency repeat:
+
+Direct video URL:
+Result:
+
+Limitations:
+```
+
+## Media proof requirements
+
+### Image
+
+Need all:
+
+- MCP call success;
+- created/updated ID;
+- readback evidence;
+- visible image render;
+- no duplicate on same key.
+
+### Audio
+
+Need all:
+
+- MCP call success;
+- created/updated ID;
+- readback evidence;
+- visible audio player;
+- playback works;
+- no duplicate on same key.
+
+### Video
+
+Need all:
+
+- MCP call success;
+- created/updated ID;
+- readback evidence;
+- embedded YouTube/video player visible;
+- playback/embed functional;
+- no duplicate on same key.
+
+A stored URL string is not sufficient.
+
+## Disconnect rule
+
+If plugin disconnects:
+
+- stop affected writes;
+- return/report `PLUGIN_NOT_CONNECTED`;
+- reconnect explicitly;
+- re-read focus/scope;
+- inspect uncertain state;
+- never blind replay.
+
+## Stage 6 completion gate
+
+Exact release SHA has live proof for:
+
+- read;
+- write;
+- readback;
+- idempotency;
+- guarded mutation;
+- resumable import;
+- Test 14;
+- image;
+- audio;
+- video.
+
+---
+
+# 13. Stage 7 — Judge-ready release engineering
+
+## Goal
+
+Package the exact proven release so a judge can test it quickly.
+
+## Required skills
+
+**MANDATORY**
+
+- `verification-before-completion`
+- `writing-plans`
+
+**CONDITIONAL**
+
+- `security-best-practices`
+- `mcp-builder`
+- `openai-docs`
+
+## Root README requirements
+
+Create/update root `README.md` with:
+
+1. What RemNote MCP is.
+2. Why RemNote is a different target from a general-purpose workspace MCP.
+3. Architecture diagram.
+4. Supported platforms.
+5. Local setup.
+6. Hosted setup.
+7. ChatGPT pairing.
+8. Codex connection.
+9. Scope/write-access model.
+10. Tool-profile explanation.
+11. Exact release version/SHA.
+12. Build Week pre-existing foundation.
+13. Build Week eligible delta.
+14. Codex/GPT-5.6 usage.
+15. Judge quick start.
+16. Read-only test.
+17. Safe-write test.
+18. Resumable-import demo.
+19. Media demo.
+20. Known limitations.
+21. Security guidance.
+22. Troubleshooting.
+23. Release artifact link.
+
+## Judge artifact
+
+Publish a prebuilt plugin artifact tied to exact release SHA.
+
+Then test from a clean environment/account where practical.
+
+Record:
+
+```text
+Artifact URL:
+Artifact checksum:
+Source SHA:
+Install date:
+Clean environment:
+Installation result:
+Connection result:
+Read test:
+Write test:
+Media test:
+```
+
+## Judge prompts
+
+### Read-only
+
+A simple bounded prompt proving:
+
+- focus;
+- child read;
+- no mutation.
+
+### Safe write
+
+A small structured note with:
+
+- hierarchy;
+- formula;
+- card;
+- readback;
+- same-key repeat.
+
+### Resumable import
+
+A prepared fixture demonstrating:
+
+- plan;
+- partial run;
+- interruption;
+- resume;
+- verify.
+
+### Media
+
+A prepared prompt with:
+
+- one image URL;
+- one audio URL;
+- one YouTube URL;
+- deterministic placement;
+- readback.
+
+## Metadata release audit
+
+Reconcile:
+
+- `package.json`
+- `server/package.json`
+- `public/manifest.json`
+- `chatgpt-app-submission.json`
+- `TOOL_REFERENCE.md`
+- README
+- hosted health identity
+- release tag
+
+Do not leave stale “RemNote ChatGPT Bridge” text in user-facing material unless intentionally documenting history.
+
+## Immutable release
+
+After final proof:
+
+- create immutable tag/release;
+- do not move the tag;
+- record exact SHA;
+- use same SHA in Devpost evidence.
+
+## Stage 7 completion gate
+
+A judge can:
+
+```text
+understand
+→ install
+→ connect
+→ approve safe scope
+→ read
+→ write
+→ verify
+→ run media demo
+```
+
+without needing private explanations.
+
+---
+
+# 14. Stage 8 — OpenAI Build Week submission completion
+
+## Goal
+
+Finish the submission only after software truth is frozen.
+
+## Required skills
+
+**MANDATORY**
+
+- `verification-before-completion`
+
+**MANDATORY FOR OPENAI PRODUCT/MODEL CLAIMS**
+
+- `openai-docs`
+
+Do not use `openai-docs` for Devpost rules; use official Devpost/OpenAI Build Week rules directly.
+
+## Required submission items
+
+Complete current official submission requirements, including:
+
+- project category;
+- individual/team information;
+- country;
+- repository;
+- license/access requirements;
+- judge installation/testing instructions;
+- plugin/developer-tool instructions;
+- `/feedback` Codex Session ID;
+- demo video;
+- all required custom fields.
+
+## `/feedback`
+
+Use the actual primary Build Week Codex session containing the majority of eligible core implementation.
+
+Do not invent the ID.
+
+Upload logs where required and preserve proof of successful upload.
+
+## Demo video
+
+Public YouTube video.
+
+Keep within current official time limit.
+
+The recommended story:
+
+```text
+problem
+→ why RemNote
+→ safe connection/scope
+→ difficult structured knowledge workflow
+→ interruption/recovery
+→ readback/verification
+→ image/audio/video insertion
+→ what Codex + GPT-5.6 changed during Build Week
+```
+
+The demo must not claim capabilities that were not live-proven on the release SHA.
+
+## Stage 8 completion gate
+
+Submission text, repository, release SHA, video, testing instructions, and evidence all refer to the same product state.
+
+---
+
+# 15. Verification command matrix
+
+Codex must inspect current scripts first. The table below is a minimum, not an excuse to skip stronger current gates.
+
+| Area | Command |
+| --- | --- |
+| Identity | `git branch --show-current && git rev-parse HEAD && git status --short` |
+| Focused TDD | `npx vitest run tests/<relevant>.test.ts` |
+| Root tests | `npm test` |
+| Types | `npm run check-types` |
+| SDK validation | `npm run validate` |
+| Plugin build | `npm run build` |
+| Server build | `npm run server:build` |
+| Server smoke | `npm run server:smoke` |
+| Security | `npm run server:test:security` |
+| Boundaries | `npm run server:test:boundaries` |
+| Tool schemas | `npm run server:test:tool-schemas` |
+| Idempotency | `npm run server:test:idempotency` |
+| Source fidelity | `npm run server:test:source-fidelity` |
+| Health routing | `npm run server:test:health-check-routing` |
+| Bulk storage | `npm run server:test:bulk-storage` |
+| Style correctness | `npm run test:style-correctness` |
+| Hosted smoke | `npm run server:test:e2e-hosted-smoke` |
+| Live bridge | `npm run bridge:live-test` |
+| Live tool smoke | `npm run bridge:live-tool-smoke` |
+| Live regression | `npm run bridge:live-tool-regression` |
+
+Also inspect current scripts for:
+
+- auth;
+- pairing;
+- Codex bearer;
+- Codex routing;
+- connector compatibility;
+- tool profiles;
+- tier switching;
+- performance;
+- PostgreSQL durability.
+
+Record exact commands and exit codes in final report.
+
+---
+
+# 16. Source hierarchy
+
+When sources conflict, use this order.
+
+## Product behavior truth
+
+1. exact-release live RemNote readback/visual proof;
+2. exact-release automated regression;
+3. current source code;
+4. historical reports;
+5. old prose.
+
+## RemNote SDK capability truth
+
+1. installed SDK typings/runtime;
+2. current official RemNote Plugin API docs;
+3. live RemNote behavior.
+
+## OpenAI capability truth
+
+1. current official OpenAI documentation;
+2. live product/API behavior available to the user.
+
+## Repository intent
+
+1. this `AGENTS.md`;
+2. current approved implementation plan;
+3. product/architecture docs;
+4. historical stage plans.
+
+---
+
+# 17. Official external references for media research
+
+RemNote Plugin API:
+
+- https://plugins.remnote.com/api/classes/RichTextNamespace
+
+RemNote media behavior:
+
+- https://help.remnote.com/en/articles/6752220-adding-images-and-media
+
+OpenAI documentation must be retrieved through the `openai-docs` skill or current official OpenAI sources when making claims about:
+
+- ChatGPT image generation;
+- image artifacts/URLs;
+- Codex image generation;
+- speech/TTS;
+- Voice;
+- GPT-5.6.
+
+---
+
+# 18. Final Codex completion report
+
+Codex must not finish with:
+
+- “done”;
+- “all tools work”;
+- “production-ready”;
+
+without the evidence below.
+
+Use this exact final structure:
+
+```markdown
+# RemNote MCP completion report
+
+## Skills used
+- Stage 0:
+- Stage 1:
+- Stage 2:
+- Stage 3:
+- Stage 4:
+- Stage 5:
+- Stage 6:
+- Stage 7:
+- Stage 8:
+
+## Release identity
+- Branch:
+- HEAD:
+- Working tree:
+- Release tag:
+- Deployment SHA:
+- Plugin build SHA:
+- CI run:
+- Artifact URL:
+
+## Product score
+- Core correctness: /20
+- Bulk/recovery: /15
+- Safety/security: /15
+- Connection/runtime: /10
+- Design/formatting: /10
+- Media: /10
+- Tests/CI: /10
+- Judge readiness: /10
+- Total: /100
+
+## Hard gates
+- Passed:
+- Failed:
+- Blocked:
+
+## Existing defects fixed
+- Defect:
+  - RED test:
+  - Fix:
+  - Regression:
+  - Live proof:
+
+## New media capabilities
+### Image
+- Tool:
+- Schema:
+- Capability probe:
+- Automated proof:
+- Live readback:
+- Visual proof:
+- Idempotency:
+
+### Audio
+- Tool:
+- Schema:
+- Capability probe:
+- Automated proof:
+- Live readback:
+- Playback proof:
+- Idempotency:
+
+### Video/YouTube
+- Tool:
+- Schema:
+- Capability probe:
+- Automated proof:
+- Live readback:
+- Embed/playback proof:
+- Idempotency:
+
+## Automated verification
+- Commands:
+- Exit codes:
+- Test counts:
+- CI:
+
+## Live RemNote proof
+- Approved root:
+- Read proof:
+- Write proof:
+- Guarded mutation:
+- Cards:
+- Formula:
+- Design:
+- Resumable import:
+- Test 14:
+- Tests 01–15:
+- Media report:
+
+## Judge readiness
+- README:
+- Prebuilt artifact:
+- Clean install:
+- Judge prompts:
+- Hosted endpoint:
+- Known limitations:
+
+## Known limitations
+- ...
+
+## Remaining blockers
+- ...
+
+## Release verdict
+- COMPLETE / NOT COMPLETE
+```
+
+`COMPLETE` is allowed only when:
+
+- every hard gate passes;
+- score >= 95/100;
+- no P0/P1 defect remains;
+- final exact SHA has live proof;
+- judge installation path works.
+
+---
+
+# 19. Product priority rule
+
+Do not spend remaining Build Week time on speculative breadth.
+
+Priority is:
+
+1. preserve data;
+2. preserve security;
+3. eliminate duplicate/replay risk;
+4. make exact release reliable;
+5. prove core product live;
+6. add image/audio/video URL insertion;
+7. prove media live;
+8. make judge installation effortless;
+9. document limitations honestly;
+10. only then consider optional generation/hosting features.
+
+Do not optimize for tool count.
+
+Optimize for this judge experience:
+
+```text
+I understand what this is.
+I can connect it.
+I can see what access it has.
+I can safely test it.
+It performs a difficult structured workflow.
+It survives interruption.
+It verifies its own work.
+It can add useful media.
+I trust the evidence.
+```
+
+That is the completion standard.

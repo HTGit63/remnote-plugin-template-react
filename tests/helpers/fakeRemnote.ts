@@ -30,8 +30,15 @@ export class FakeRem {
     if (this.plugin.failSetTextIncludes && plain.includes(this.plugin.failSetTextIncludes)) {
       throw new Error(`forced setText failure for ${plain}`);
     }
+    const mediaFilteredText = this.plugin.dropMediaOnSetText
+      ? text.filter((item) => {
+          if (typeof item !== 'object' || item === null || Array.isArray(item)) return true;
+          const record = item as Record<string, unknown>;
+          return record.i !== 'i' && record.i !== 'a';
+        }) as RichTextInterface
+      : text;
     const storedText = this.plugin.flattenMathToPlainText
-      ? text.map((item) => {
+      ? mediaFilteredText.map((item) => {
           if (typeof item !== 'object' || item === null || Array.isArray(item)) {
             return item;
           }
@@ -41,7 +48,7 @@ export class FakeRem {
           }
           return { i: 'm', text: String(record.text ?? '') } as RichTextItem;
         }) as RichTextInterface
-      : text;
+      : mediaFilteredText;
     this.text = JSON.parse(JSON.stringify(storedText));
   }
 
@@ -135,6 +142,9 @@ export class FakeRem {
   }
 
   async setParent(parent: FakeRem, index?: number) {
+    if (this.plugin.failSetParent) {
+      throw new Error(`forced setParent failure for ${this._id}`);
+    }
     if (this.parent) {
       const oldParent = this.plugin.rems.get(this.parent);
       if (oldParent) {
@@ -182,10 +192,18 @@ export class FakePlugin {
   failSetTextIncludes?: string;
   failRemoveIds = new Set<string>();
   flattenMathToPlainText = false;
+  dropMediaOnSetText = false;
+  failSetParent = false;
   materializeHighlightAsPropertyChild = false;
   materializeUnexpectedHighlightChild = false;
   polluteFontSizeAsChildren = false;
   fontSizeCalls: Array<{ remId: string; level: 'H1' | 'H2' | 'H3' | undefined }> = [];
+  mediaBuilderCalls: Array<{
+    kind: 'image' | 'audio' | 'video';
+    url: string;
+    width?: number;
+    height?: number;
+  }> = [];
   private nextId = 1;
 
   richText = {
@@ -232,7 +250,35 @@ export class FakePlugin {
     },
     parseFromMarkdown: async (markdown: string) => [{ i: 'm', text: markdown } as RichTextItem],
     latex: (text: string, block = false) => ({ i: 'x', text, block } as RichTextItem),
+    image: (url: string, width?: number, height?: number) => {
+      this.mediaBuilderCalls.push({ kind: 'image', url, ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }) });
+      return this.mediaBuilder([{ i: 'i', url, ...(width === undefined ? {} : { width }), ...(height === undefined ? {} : { height }) } as RichTextItem]);
+    },
+    audio: (url: string) => {
+      this.mediaBuilderCalls.push({ kind: 'audio', url });
+      return this.mediaBuilder([{ i: 'a', url, onlyAudio: true } as RichTextItem]);
+    },
+    video: (url: string) => {
+      this.mediaBuilderCalls.push({ kind: 'video', url });
+      return this.mediaBuilder([{ i: 'a', url, onlyAudio: false } as RichTextItem]);
+    },
   };
+
+  private mediaBuilder(initial: RichTextInterface) {
+    const value = [...initial] as RichTextInterface;
+    const builder = {
+      newline: () => {
+        value.push('\n');
+        return builder;
+      },
+      text: (text: string) => {
+        value.push(text);
+        return builder;
+      },
+      value: async () => JSON.parse(JSON.stringify(value)) as RichTextInterface,
+    };
+    return builder;
+  }
 
   rem = {
     findOne: async (id: string) => this.rems.get(id) as unknown as Rem | null,

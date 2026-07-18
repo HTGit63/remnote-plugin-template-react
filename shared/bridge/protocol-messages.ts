@@ -34,6 +34,8 @@ import type {
   DeleteRemByIdArgs,
   AppendMarkdownAsRemTreeArgs,
   ImportNoteDesignTemplateArgs,
+  InsertImageFromUrlArgs,
+  InsertMediaFromUrlArgs,
   ListNoteDesignTemplatesArgs,
   MoveRemArgs,
   PreviewNoteDesignPlanArgs,
@@ -107,6 +109,7 @@ import type {
   FormatRemResult,
   AppendMarkdownAsRemTreeResult,
   ImportNoteDesignTemplateResult,
+  InsertMediaFromUrlResult,
   ListNoteDesignTemplatesResult,
   MoveRemResult,
   PreviewNoteDesignPlanResult,
@@ -138,6 +141,9 @@ export interface BridgeToolArgs {
   get_document_or_folder_tree: GetDocumentOrFolderTreeArgs;
   create_rem: CreateRemArgs;
   append_to_rem: AppendToRemArgs;
+  insert_image_from_url: InsertImageFromUrlArgs;
+  insert_audio_from_url: InsertMediaFromUrlArgs;
+  insert_video_from_url: InsertMediaFromUrlArgs;
   create_document: CreateDocumentArgs;
   create_folder: CreateFolderArgs;
   update_rem: UpdateRemArgs;
@@ -203,6 +209,9 @@ export interface BridgeToolResults {
   get_document_or_folder_tree: GetDocumentOrFolderTreeResult;
   create_rem: CreateRemResult;
   append_to_rem: AppendToRemResult;
+  insert_image_from_url: InsertMediaFromUrlResult;
+  insert_audio_from_url: InsertMediaFromUrlResult;
+  insert_video_from_url: InsertMediaFromUrlResult;
   create_document: CreateDocumentResult;
   create_folder: CreateFolderResult;
   update_rem: UpdateRemResult;

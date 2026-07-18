@@ -49,6 +49,9 @@ import {
   appendMarkdownAsRemTree,
   applyRemnoteCommand,
   appendMarkdownToRem,
+  insertImageFromUrl,
+  insertAudioFromUrl,
+  insertVideoFromUrl,
   clearRemFormatting,
   createBasicFlashcard,
   createCardSetFromNote,
@@ -587,6 +590,15 @@ export async function handleBridgeRequest(
         break;
       case 'append_to_rem':
         response = createBridgeSuccess(request, await appendMarkdownToRem(plugin, request.args));
+        break;
+      case 'insert_image_from_url':
+        response = createBridgeSuccess(request, await insertImageFromUrl(plugin, request.args));
+        break;
+      case 'insert_audio_from_url':
+        response = createBridgeSuccess(request, await insertAudioFromUrl(plugin, request.args));
+        break;
+      case 'insert_video_from_url':
+        response = createBridgeSuccess(request, await insertVideoFromUrl(plugin, request.args));
         break;
       case 'create_document':
         response = createBridgeSuccess(request, await createDocumentFromMarkdown(plugin, request.args));

@@ -62,6 +62,7 @@ import type {
   UpdateRemResult,
   VerifyNoteDesignArgs,
   VerifyNoteDesignResult,
+  InsertMediaFromUrlResult,
 } from '../../../shared/bridge/protocol';
 import { STRUCTURED_BATCH_CACHE_LIMIT } from './writeTypes';
 
@@ -84,6 +85,11 @@ export const MOVE_RESULT_CACHE = new Map<string, MoveRemResult>();
 export const REORDER_RESULT_CACHE = new Map<string, ReorderChildrenResult>();
 export const CREATE_TREE_RESULT_CACHE = new Map<string, CreateRemTreeResult>();
 export const FLASHCARD_RESULT_CACHE = new Map<string, CreateFlashcardResult>();
+export interface MediaIdempotencyEntry {
+  signature: string;
+  result: InsertMediaFromUrlResult;
+}
+export const MEDIA_RESULT_CACHE = new Map<string, MediaIdempotencyEntry>();
 export const CURRENT_SESSION_CREATED_REM_IDS = new Set<string>();
 
 export function getWriteIdempotencyKey(input: string | undefined, prefix: string): string {

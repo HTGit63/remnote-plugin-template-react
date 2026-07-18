@@ -25,6 +25,9 @@ const CAPABILITY_PROBES: Array<{
   { name: 'plugin.queue.getNumRemainingCards', namespace: 'queue', api: 'getNumRemainingCards' },
   { name: 'plugin.queue.getCurrentStreak', namespace: 'queue', api: 'getCurrentStreak' },
   { name: 'plugin.queue.inLookbackMode', namespace: 'queue', api: 'inLookbackMode' },
+  { name: 'plugin.richText.image', namespace: 'richText', api: 'image' },
+  { name: 'plugin.richText.audio', namespace: 'richText', api: 'audio' },
+  { name: 'plugin.richText.video', namespace: 'richText', api: 'video' },
 ];
 
 function namespaceRecord(plugin: RNPlugin, namespace: RemnoteSdkCapabilityDetail['namespace']): Record<string, unknown> {

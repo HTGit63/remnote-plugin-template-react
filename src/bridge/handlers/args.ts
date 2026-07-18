@@ -53,6 +53,9 @@ import {
   requiredExpectedStyleMap,
   requiredStringArray,
   optionalScope,
+  requiredMediaUrl,
+  optionalMediaLabel,
+  optionalMediaDimension,
 } from './validation';
 
 export function normalizeArgs<TTool extends BridgeToolName>(
@@ -118,6 +121,27 @@ export function normalizeArgs<TTool extends BridgeToolName>(
         markdown: requiredMarkdown(args),
         position: optionalAppendPosition(args),
         idempotencyKey: optionalIdempotencyKey(args),
+      } as BridgeToolArgs[TTool];
+    case 'insert_image_from_url':
+      return {
+        parentId: requiredParentId(args),
+        url: requiredMediaUrl(args),
+        position: optionalAppendPosition(args),
+        label: optionalMediaLabel(args),
+        width: optionalMediaDimension(args, 'width'),
+        height: optionalMediaDimension(args, 'height'),
+        idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
+      } as BridgeToolArgs[TTool];
+    case 'insert_audio_from_url':
+    case 'insert_video_from_url':
+      return {
+        parentId: requiredParentId(args),
+        url: requiredMediaUrl(args),
+        position: optionalAppendPosition(args),
+        label: optionalMediaLabel(args),
+        idempotencyKey: optionalIdempotencyKey(args),
+        verifyAfterWrite: optionalBoolean(args, 'verifyAfterWrite', true),
       } as BridgeToolArgs[TTool];
     case 'create_document':
     case 'create_folder':

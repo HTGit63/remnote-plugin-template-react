@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-07-15.release-readiness';
+export const TOOL_SCHEMA_VERSION = '2026-07-18.media-url-insertion';
 
 const TOOL_PROFILE_RANK: Record<ToolProfile, number> = {
   basic: 0,
@@ -124,6 +124,9 @@ export const NOTE_WRITER_TIER_TOOLS = [
   'create_rem',
   'create_document',
   'append_to_rem',
+  'insert_image_from_url',
+  'insert_audio_from_url',
+  'insert_video_from_url',
   'create_rem_tree',
   'create_styled_rem_tree',
   'create_polished_note_tree',
@@ -193,6 +196,21 @@ const DEVELOPER_SET = new Set<string>(DEVELOPER_TIER_TOOLS);
 const DANGER_SET = new Set<string>(DANGER_TIER_TOOLS);
 
 export const TOOL_POLICY_ENTRIES = [
+  {
+    name: 'insert_image_from_url',
+    policy: 'preferred',
+    preferredFor: ['inserting a stable HTTP(S) image URL as a dedicated child Rem'],
+  },
+  {
+    name: 'insert_audio_from_url',
+    policy: 'preferred',
+    preferredFor: ['inserting a stable HTTP(S) audio URL as a dedicated child Rem'],
+  },
+  {
+    name: 'insert_video_from_url',
+    policy: 'preferred',
+    preferredFor: ['inserting a stable HTTP(S) video or YouTube URL as a dedicated child Rem'],
+  },
   {
     name: 'create_note_from_markdown_tree',
     policy: 'fallback',
@@ -514,6 +532,9 @@ function defaultSdkCapability(name: string, category: ToolCategory): string | nu
     return 'plugin.rem.createTreeWithMarkdown + style setters';
   }
   if (name === 'create_rem' || name === 'create_document') return 'plugin.rem.createSingleRemWithMarkdown';
+  if (name === 'insert_image_from_url') return 'plugin.richText.image';
+  if (name === 'insert_audio_from_url') return 'plugin.richText.audio';
+  if (name === 'insert_video_from_url') return 'plugin.richText.video';
   if (
     name === 'create_rem_tree' ||
     name === 'create_styled_rem_tree' ||
@@ -585,6 +606,7 @@ function operationTierForMetadata(input: {
     if (
       input.name.startsWith('create_') ||
       input.name.startsWith('append_') ||
+      input.name.startsWith('insert_') ||
       input.name === 'create_polished_note_tree'
     ) {
       return 'Read + Create';
@@ -675,6 +697,9 @@ export const TOOL_METADATA = [
   meta('create_rem', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('create_document', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('append_to_rem', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('insert_image_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('insert_audio_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('insert_video_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('update_rem', 'repair', 'high', { supportsDryRun: true, supportsIdempotency: true }),
   meta('replace_rem', 'danger', 'dangerous', {
     requiresDelete: true,

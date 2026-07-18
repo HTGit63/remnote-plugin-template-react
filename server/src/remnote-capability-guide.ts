@@ -19,7 +19,7 @@ export interface RemnoteCapabilityGuideBlock {
   bridgeUse: string[];
 }
 
-export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-05-17.1';
+export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-07-18.media-url-insertion';
 
 export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = [
   {
@@ -136,12 +136,16 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'Hidden bullets can improve document appearance, but visual heading behavior is not always the same as true indentation hierarchy.',
       'Installed SDK `plugin.richText.text(text, ["Blue"])` writes rich-text field `h`, which is highlight/background. The bridge does not use that path for font color.',
       'The installed SDK color enum supports Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, and Pink return SDK_UNSUPPORTED.',
+      'Installed SDK 0.0.46 exposes URL-backed rich-text builders for image(url, width?, height?), audio(url), and video(url).',
+      'Media URL insertion creates a dedicated child Rem and preserves existing parent/sibling text. Runtime builder availability is checked before mutation.',
     ],
     bridgeUse: [
       'For copied Markdown/source notes, prefer `create_or_replace_note_from_markdown`. For structured JSON polished notes, prefer `create_polished_note_tree` or `apply_structured_note_batch`, then verify with `verify_note_design` or `get_rem_rich`.',
       'For formatting existing Rems, prefer `apply_style_plan`, then verify with `get_rem_rich`.',
       'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer. Rich math block uses plugin.richText.latex(text, true).',
       'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
+      'Use insert_image_from_url, insert_audio_from_url, or insert_video_from_url only with a stable HTTP(S) URL. The MCP server does not download, proxy, generate, upload, or retain media.',
+      'Generated image/audio bytes require separate secure durable hosting before URL insertion. A URL embed is not proof of an uploaded or owned RemNote source object.',
     ],
   },
   {
@@ -202,5 +206,7 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     deprecatedPrivateTools: [],
     installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
     installedSdkUnsupported: ['create_folder', 'Gray text color', 'Brown text color', 'Pink text color'],
+    preferredMediaTools: ['insert_image_from_url', 'insert_audio_from_url', 'insert_video_from_url'],
+    mediaBoundary: 'stable HTTP(S) URL insertion only; no server fetch, generation, upload, storage, or retention',
   };
 }

@@ -18,8 +18,19 @@ const submission = JSON.parse(
   readFileSync(resolve(process.cwd(), 'chatgpt-app-submission.json'), 'utf8')
 ) as {
   $schema?: string;
+  app_info: {
+    display_name: string;
+    description: string;
+  };
   tools: Record<string, unknown>;
   test_cases: Array<{ tools_triggered: string | null }>;
+};
+
+const manifest = JSON.parse(
+  readFileSync(resolve(process.cwd(), 'public/manifest.json'), 'utf8')
+) as {
+  name: string;
+  changelogUrl: string;
 };
 
 function registeredMassNoteTools(): Record<string, ToolDescriptor> {
@@ -31,6 +42,28 @@ function registeredMassNoteTools(): Record<string, ToolDescriptor> {
 }
 
 describe('ChatGPT app contract', () => {
+  test('public product identity and tool-count copy follow current registry truth', () => {
+    const expected = getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE);
+    const dashboardSource = readFileSync(
+      resolve(process.cwd(), 'server/src/dashboard/templates.ts'),
+      'utf8'
+    );
+    const oauthSource = readFileSync(
+      resolve(process.cwd(), 'server/src/auth/oauth-routes.ts'),
+      'utf8'
+    );
+
+    expect(submission.app_info.display_name).toBe('RemNote MCP');
+    expect(submission.app_info.description).toContain(`exactly ${expected.length} focused tools`);
+    expect(submission.app_info.description).not.toContain('RemNote ChatGPT Bridge');
+    expect(manifest.name).toBe('RemNote MCP');
+    expect(manifest.changelogUrl).toBe(
+      'https://github.com/HTGit63/remnote-plugin-template-react/releases'
+    );
+    expect(dashboardSource).not.toContain('RemNote ChatGPT Bridge');
+    expect(oauthSource).not.toContain('RemNote ChatGPT Bridge private client');
+  });
+
   test('submission worksheet matches the exact default mass-note surface', () => {
     expect(submission.$schema, 'submission uses live endpoint scan, not obsolete JSON schema').toBeUndefined();
     const expected = getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE);

@@ -11,6 +11,22 @@ export interface AppendToRemArgs {
   idempotencyKey?: string;
 }
 
+export type MediaKind = 'image' | 'audio' | 'video';
+
+export interface InsertMediaFromUrlArgs {
+  parentId: string;
+  url: string;
+  position?: 'start' | 'end';
+  label?: string;
+  idempotencyKey?: string;
+  verifyAfterWrite?: boolean;
+}
+
+export interface InsertImageFromUrlArgs extends InsertMediaFromUrlArgs {
+  width?: number;
+  height?: number;
+}
+
 export interface CreateDocumentArgs {
   parentId?: string | null;
   markdown: string;

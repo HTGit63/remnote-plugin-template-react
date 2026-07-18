@@ -24,6 +24,7 @@ import {
 } from './tools/register-design-tools.js';
 import { registerDiagnosticTools } from './tools/register-diagnostic-tools.js';
 import { registerFormattingTools, registerStyleVerificationTools } from './tools/register-formatting-tools.js';
+import { registerMediaTools } from './tools/register-media-tools.js';
 import { registerReadTools } from './tools/register-read-tools.js';
 import { registerStatusTools } from './tools/register-status-tools.js';
 import {
@@ -132,6 +133,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   registerDiagnosticTools(context);
   registerReadTools(context);
   registerBasicWriteTools(context);
+  registerMediaTools(context);
   registerDeleteTools(context);
   registerTreeWriteTools(context);
   registerFormattingTools(context);

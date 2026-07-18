@@ -2,6 +2,15 @@
 
 Compressed from root docs, `docs/`, `conductor/`, and prior `AGENTS.md`.
 
+## Version Identity
+
+RemNote MCP uses two intentional version lanes. Root `package.json` and
+`server/package.json` use `0.0.1` as internal implementation-package versions;
+`public/manifest.json` uses `0.1.0` as the user-facing RemNote plugin product
+version. Server runtime metadata follows the server package version, while the
+plugin catalog/release identity follows the manifest version. Do not compare
+these values as though they were one shared release counter.
+
 ## Mission
 
 RemnoteMCP = RemNote plugin + hosted/local companion server + MCP tool bridge. Goal: safe, scoped, verified ChatGPT writes into RemNote.

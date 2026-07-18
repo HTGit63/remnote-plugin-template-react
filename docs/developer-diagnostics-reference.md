@@ -1,6 +1,6 @@
 # Developer Diagnostics Reference
 
-Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-10.file-import-safety.
+Generated from registry. Registry 2026-07-18.media-url-insertion. Schema 2026-07-18.media-url-insertion.
 
 ## Runtime Fields
 
@@ -49,6 +49,9 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | get_rem_tree | read | true | true | true | false | false | false | false | 1000 |
 | get_remnote_capability_guide | debug | true | true | true | true | false | false | false | 1000 |
 | import_note_design_template | design_template | true | true | true | false | false | false | false | 5000 |
+| insert_audio_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
+| insert_image_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
+| insert_video_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
 | list_note_design_templates | design_template | true | true | true | false | false | false | false | 5000 |
 | move_rem | repair | true | true | true | false | false | false | false | 3000 |
 | ping_remnote_plugin | debug | true | true | true | false | false | false | false | 1000 |
@@ -56,6 +59,7 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | plan_note_import_from_file | markdown_note | true | true | true | true | false | false | false | 5000 |
 | preview_markdown_note_tree | markdown_note | true | true | true | true | false | false | false | 5000 |
 | preview_note_design_plan | design_template | true | true | true | false | false | false | false | 5000 |
+| reconcile_note_import_job_chunk | repair | true | true | true | true | false | false | false | 10000 |
 | reorder_children | repair | true | true | true | false | false | false | false | 3000 |
 | repair_card_set | repair | true | true | true | false | false | false | false | 3000 |
 | repair_note_design | repair | true | true | true | false | false | false | false | 3000 |
@@ -129,6 +133,9 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | get_rem_tree | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-core with connected plugin readback |
 | get_remnote_capability_guide | active_profile | schema_ok | server_local_verified | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics |
 | import_note_design_template | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
+| insert_audio_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
+| insert_image_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
+| insert_video_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | list_note_design_templates | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-core with connected plugin readback |
 | move_rem | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | ping_remnote_plugin | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics |
@@ -136,6 +143,7 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | plan_note_import_from_file | active_profile | schema_ok | server_local_verified | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics or server-local smoke |
 | preview_markdown_note_tree | active_profile | schema_ok | server_local_verified | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics or server-local smoke |
 | preview_note_design_plan | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-core with connected plugin readback |
+| reconcile_note_import_job_chunk | active_profile | schema_ok | server_local_verified | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics or server-local smoke |
 | reorder_children | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | repair_card_set | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | repair_note_design | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
@@ -185,6 +193,9 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | create_rem | simple_write | 3000 |
 | create_document | simple_write | 3000 |
 | append_to_rem | simple_write | 3000 |
+| insert_image_from_url | simple_write | 3000 |
+| insert_audio_from_url | simple_write | 3000 |
+| insert_video_from_url | simple_write | 3000 |
 | update_rem | repair | 3000 |
 | replace_rem | danger | 3000 |
 | move_rem | repair | 3000 |
@@ -201,6 +212,7 @@ Generated from registry. Registry 2026-07-10.file-import-safety. Schema 2026-07-
 | run_note_import_job_step | markdown_note | 10000 |
 | get_note_import_job_status | markdown_note | 5000 |
 | resume_note_import_job | markdown_note | 10000 |
+| reconcile_note_import_job_chunk | repair | 10000 |
 | verify_note_import_job | markdown_note | 5000 |
 | cancel_note_import_job | markdown_note | 5000 |
 | preview_markdown_note_tree | markdown_note | 5000 |

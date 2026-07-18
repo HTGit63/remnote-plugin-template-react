@@ -36,6 +36,7 @@ import type {
   CreateFlashcardArgs,
   MoveRemArgs,
   UpdateNoteWithDesignArgs,
+  InsertMediaFromUrlArgs,
 } from '../../../shared/bridge/protocol';
 import { createBridgeFailure } from '../../../shared/bridge/protocol';
 import { RemnoteWriteError } from '../../remnote/write';
@@ -264,6 +265,10 @@ export function getStaticScopeTargetIds(request: BridgeRequest): string[] {
       return uniqueRemIds([(request.args as CreateRemArgs | CreateDocumentArgs | CreateFolderArgs).parentId]);
     case 'create_rem_tree':
       return uniqueRemIds([(request.args as CreateRemTreeArgs).parentId]);
+    case 'insert_image_from_url':
+    case 'insert_audio_from_url':
+    case 'insert_video_from_url':
+      return uniqueRemIds([(request.args as InsertMediaFromUrlArgs).parentId]);
     case 'create_styled_rem_tree':
       return uniqueRemIds([(request.args as CreateStyledRemTreeArgs).parentId]);
     case 'create_polished_note_tree':

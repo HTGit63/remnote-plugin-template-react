@@ -47,10 +47,10 @@ This table is retained as input evidence. It is superseded by the 2026-07-12 Sta
 
 Current generated registry truth:
 
-- Declared tools: 75.
-- Public tools without delete gate: 72.
-- Default `mass_note_writer` public tools: 19.
-- Danger profile public tools with delete gate: 73.
+- Declared tools: 79.
+- Public tools without delete gate: 76.
+- Default `mass_note_writer` public tools: 20.
+- Danger profile public tools with delete gate: 77.
 - Hidden or gated source-level tools: `delete_rem_by_id`, `replace_rem`, `create_folder`.
 - Default profile runtime-unverified tools: 9.
 
@@ -456,7 +456,7 @@ Non-functional signoff:
 | UI | `PASS_LOCAL_WITH_ACTUAL_INSPECTION_BOUNDARY` | Build/validate/state tests pass; RemNote 1.26.20 was inspected before final CSS fixture-only correction. |
 | Security | `PASS_FUNCTIONAL_DEEP_SCAN_BLOCKED` | Threat model/fixes/security gates pass; six-worker deep scan unavailable; no critical/high dependency advisory remains. |
 | Performance | `PASS_LOCAL_LIVE_SOAK_BLOCKED` | Parser/tool benchmarks and timeout budgets pass; no current real large-workflow soak. |
-| Tool matrix | `PASS_LOCAL_LIVE_ROWS_UNPROVEN` | 75 declared tools regenerated; local/server/client fields recorded; absent live success remains `live_not_run`. |
+| Tool matrix | `PASS_LOCAL_LIVE_ROWS_UNPROVEN` | 79 declared tools regenerated; local/server/client fields recorded; absent live success remains `live_not_run`. |
 
 Final verdict: `PARTIAL_LIVE_PROOF_ONLY`.
 

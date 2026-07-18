@@ -20,6 +20,9 @@ export const MAX_REM_ID_CHARS = 256;
 export const MAX_MARKDOWN_CHARS = 20000;
 export const MAX_LONG_MARKDOWN_CHARS = 120000;
 export const MAX_SEARCH_QUERY_CHARS = 500;
+export const MAX_MEDIA_URL_CHARS = 2048;
+export const MAX_MEDIA_LABEL_CHARS = 500;
+export const MAX_MEDIA_DIMENSION = 4096;
 
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,6 +105,58 @@ export function requiredTextField(args: unknown, field: string): string {
     throw new Error(`${field} exceeds ${MAX_MARKDOWN_CHARS} characters.`);
   }
 
+  return value;
+}
+
+export function requiredMediaUrl(args: unknown): string {
+  const value = getStringField(args, 'url')?.trim();
+  if (!value) {
+    throw new Error('Missing url.');
+  }
+  if (value.length > MAX_MEDIA_URL_CHARS) {
+    throw new Error(`url exceeds ${MAX_MEDIA_URL_CHARS} characters.`);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error('url is malformed.');
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Media URL must use http or https.');
+  }
+  return parsed.toString();
+}
+
+export function optionalMediaLabel(args: unknown): string | undefined {
+  if (!isPlainObject(args) || args.label === undefined) {
+    return undefined;
+  }
+  if (typeof args.label !== 'string') {
+    throw new Error('label must be a string.');
+  }
+  const label = args.label.trim();
+  if (!label) {
+    throw new Error('label must not be empty.');
+  }
+  if (label.length > MAX_MEDIA_LABEL_CHARS) {
+    throw new Error(`label exceeds ${MAX_MEDIA_LABEL_CHARS} characters.`);
+  }
+  return label;
+}
+
+export function optionalMediaDimension(
+  args: unknown,
+  field: 'width' | 'height'
+): number | undefined {
+  if (!isPlainObject(args) || args[field] === undefined) {
+    return undefined;
+  }
+  const value = args[field];
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > MAX_MEDIA_DIMENSION) {
+    throw new Error(`${field} must be an integer between 1 and ${MAX_MEDIA_DIMENSION}.`);
+  }
   return value;
 }
 
