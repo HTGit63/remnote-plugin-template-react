@@ -284,5 +284,12 @@
   "282": "RemNote MCP Test 13 — Flashcard Lifecycle — 2026-07-17",
   "283": "RemNote MCP Test 15 — Complete Course Capstone — 2026-07-17",
   "284": "assets.d.ts",
-  "285": "bridge-widget-ux.test.ts"
+  "285": "bridge-widget-ux.test.ts",
+  "286": "BridgeWidgetPieces.tsx",
+  "287": "connector-compat-routing-smoke.ts",
+  "288": "normalizeMarkdownImportArgs",
+  "289": "widget-loader-security.test.ts",
+  "290": "RemNote MCP Test 07 — Precision Styling and Targeted Formatting",
+  "291": "config.ts",
+  "292": "CodexClientLink"
 }

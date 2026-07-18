@@ -68,6 +68,8 @@ export interface BridgeStatusSnapshot {
 }
 
 export const DEFAULT_BRIDGE_SERVER_URL = 'ws://localhost:47391/remnote-bridge';
+export const HOSTED_PAIRING_START_INSTRUCTION =
+  'Open ChatGPT, connect RemNote MCP, then enter the pairing code shown there.';
 
 export const INITIAL_BRIDGE_STATUS: BridgeStatusSnapshot = {
   state: 'disconnected',
@@ -142,7 +144,7 @@ export function getBridgeStatusLabel(state: BridgeConnectionState): string {
 export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
   if (status.lastError && status.state === 'error') {
     return status.serverUrl.startsWith('wss://')
-      ? 'Check Render URL, hosted pairing, and RemNote plugin connection, then reconnect.'
+      ? 'Check the hosted server URL, pairing session, and RemNote plugin connection, then reconnect.'
       : 'Check the local companion server URL and bridge token, then reconnect.';
   }
 
@@ -150,9 +152,9 @@ export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
     case 'connected':
       return 'Ready for RemNote tool calls.';
     case 'not_paired':
-      return 'Pair this RemNote device from the dashboard.';
+      return HOSTED_PAIRING_START_INSTRUCTION;
     case 'pairing':
-      return 'Enter the pairing code in the dashboard.';
+      return 'Enter the ChatGPT pairing code in this RemNote MCP widget.';
     case 'paired_offline':
       return 'Paired device is offline. Reconnect bridge.';
     case 'connecting':
@@ -173,7 +175,7 @@ export function getBridgeNextAction(status: BridgeStatusSnapshot): string {
       return 'Stale connection detected. Reconnect.';
     case 'error':
       return status.serverUrl.startsWith('wss://')
-        ? 'Check Render server, hosted pairing, and plugin WebSocket.'
+        ? 'Check the hosted server, pairing session, and plugin connection.'
         : 'Check the local companion server and bridge token.';
     case 'disconnected':
     default:

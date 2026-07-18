@@ -590,8 +590,8 @@
     "semantic_hash": ""
   },
   "src/bridge/status.ts": {
-    "mtime": 1783759424.1893315,
-    "ast_hash": "01b705b37d81bcc03ff5f023d5fef750",
+    "mtime": 1784398309.1639323,
+    "ast_hash": "0500a35b9370eb583f92fa043b9c023c",
     "semantic_hash": ""
   },
   "src/remnote/capabilities/index.ts": {
@@ -795,8 +795,8 @@
     "semantic_hash": ""
   },
   "src/widgets/bridge-status.tsx": {
-    "mtime": 1784311693.5902762,
-    "ast_hash": "7d816952900bbe48dae0477b2df29e0c",
+    "mtime": 1784398309.1655965,
+    "ast_hash": "f8adbd3db9316edd4158d89d9e427947",
     "semantic_hash": ""
   },
   "src/widgets/components/BridgeWidgetPieces.tsx": {
@@ -820,8 +820,8 @@
     "semantic_hash": ""
   },
   "tests/bridge-ui-state.test.ts": {
-    "mtime": 1783758862.0508235,
-    "ast_hash": "993a27d407f62d168006c93eeac77ddc",
+    "mtime": 1784398217.1886559,
+    "ast_hash": "ed8e7a972c65ecf10967520b7c1bbc00",
     "semantic_hash": ""
   },
   "tests/bulk-import-tools.test.ts": {
@@ -925,8 +925,8 @@
     "semantic_hash": ""
   },
   "webpack.config.js": {
-    "mtime": 1784200591.6243598,
-    "ast_hash": "1943716e7c475453442e495df2ec5bd5",
+    "mtime": 1784397145.2254703,
+    "ast_hash": "670f739af63e05eb5d23b54d9e3f0c8e",
     "semantic_hash": ""
   },
   "TOOL_REFERENCE.md": {
@@ -1090,8 +1090,8 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1784395832.468017,
-    "ast_hash": "ce77003b21bafb217efe87551d4c40df",
+    "mtime": 1784398418.017237,
+    "ast_hash": "fccbb978d371eb0aa3600156f024cb9a",
     "semantic_hash": ""
   },
   "PRODUCT.md": {
@@ -1265,8 +1265,8 @@
     "semantic_hash": ""
   },
   "tests/bridge-widget-ux.test.ts": {
-    "mtime": 1784310454.8455515,
-    "ast_hash": "7777b37c840af6d7ff3a857b9d48b17a",
+    "mtime": 1784398309.1659021,
+    "ast_hash": "672240e693fc9647b2123b44ddc16c5c",
     "semantic_hash": ""
   },
   "tests/media-tools.test.ts": {
@@ -1362,6 +1362,36 @@
   "security_best_practices_report.md": {
     "mtime": 1784312080.1158626,
     "ast_hash": "e1e28e55046ce6de007628c5af0f7225",
+    "semantic_hash": ""
+  },
+  "tests/widget-loader-security.test.ts": {
+    "mtime": 1784397122.7778594,
+    "ast_hash": "2c4ae33e357088404876a0d0e8b4b7bd",
+    "semantic_hash": ""
+  },
+  "docs/stage-4-5-verification.md": {
+    "mtime": 1784399401.6215065,
+    "ast_hash": "0a33f74dbd286583f464bd51c398795e",
+    "semantic_hash": ""
+  },
+  "output/playwright/stage5-sandbox-connected.png": {
+    "mtime": 1784397982.642123,
+    "ast_hash": "689f6f9d34812ff481c9bce46ad92381",
+    "semantic_hash": ""
+  },
+  "output/playwright/stage5-sandbox-disconnected.png": {
+    "mtime": 1784397760.4303577,
+    "ast_hash": "a163447bab9c11b5dd89408f1d8ea985",
+    "semantic_hash": ""
+  },
+  "output/playwright/stage5-sandbox-narrow.png": {
+    "mtime": 1784398057.688869,
+    "ast_hash": "f3158143e8aa8f458089da155a454d74",
+    "semantic_hash": ""
+  },
+  "output/playwright/stage5-sandbox-pairing-review.png": {
+    "mtime": 1784399116.908104,
+    "ast_hash": "e34d338004b38da052591882391df0af",
     "semantic_hash": ""
   }
 }

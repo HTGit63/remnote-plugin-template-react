@@ -3,7 +3,7 @@ import {
   deriveBridgeActivity,
   deriveBridgeUiConnectionState,
 } from '../src/widgets/bridge-panel/ui-state';
-import { getBridgeCloseState } from '../src/bridge/status';
+import { getBridgeCloseState, getBridgeNextAction } from '../src/bridge/status';
 
 describe('bridge UI connection state', () => {
   it.each([
@@ -136,4 +136,22 @@ describe('bridge close reason mapping', () => {
       expect(getBridgeCloseState({ code, reason, hosted })).toBe(expected);
     }
   );
+});
+
+describe('bridge judge setup guidance', () => {
+  it.each([
+    ['not_paired', 'Open ChatGPT, connect RemNote MCP, then enter the pairing code shown there.'],
+    ['pairing', 'Enter the ChatGPT pairing code in this RemNote MCP widget.'],
+    ['error', 'Check the hosted server URL, pairing session, and RemNote plugin connection, then reconnect.'],
+  ] as const)('keeps hosted %s recovery inside the visible user flow', (state, expected) => {
+    const action = getBridgeNextAction({
+      state,
+      serverUrl: 'wss://bridge.example/ws',
+      lastEvent: 'Judge setup test',
+      ...(state === 'error' ? { lastError: 'Connection failed.' } : {}),
+    });
+
+    expect(action).toBe(expected);
+    expect(action).not.toMatch(/dashboard|render/i);
+  });
 });

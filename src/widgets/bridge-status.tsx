@@ -20,6 +20,7 @@ import {
 } from '../bridge/protocol';
 import {
   DEFAULT_BRIDGE_SERVER_URL,
+  HOSTED_PAIRING_START_INSTRUCTION,
   INITIAL_BRIDGE_STATUS,
   getBridgeNextAction,
   getBridgeStatusLabel,
@@ -199,12 +200,12 @@ function isHostedBridgeUrl(serverUrl: string): boolean {
 function getFriendlyPairingError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   if (/failed to fetch|networkerror|load failed/i.test(message)) {
-    return 'Could not reach Render pairing endpoint. Check CORS, server URL, or deployment status.';
+    return 'Could not reach the hosted pairing endpoint. Check CORS, server URL, or deployment status.';
   }
   if (/unexpected token|not valid json/i.test(message)) {
-    return 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
+    return 'Pairing request failed. Open browser DevTools or hosted server logs to see the exact error.';
   }
-  return message || 'Pairing request failed. Open browser DevTools or Render logs to see the exact error.';
+  return message || 'Pairing request failed. Open browser DevTools or hosted server logs to see the exact error.';
 }
 
 function runtimeDeploymentMode(report: Record<string, unknown> | null): 'local' | 'hosted' | null {
@@ -388,7 +389,7 @@ export function BridgeStatusWidget() {
   const [savedTemplates, setSavedTemplates] = useState<NoteDesignTemplateSummary[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [templateStatus, setTemplateStatus] = useState('No template selected.');
-  const [pairingEvent, setPairingEvent] = useState('Open ChatGPT connector auth, then enter the Render pairing code here.');
+  const [pairingEvent, setPairingEvent] = useState(HOSTED_PAIRING_START_INSTRUCTION);
   const [chatGptPairingCode, setChatGptPairingCode] = useState('');
   const [localConnectionLabel, setLocalConnectionLabel] = useState('');
   const [chatGptPairingPreview, setChatGptPairingPreview] = useState<ChatGptPairingPreview | null>(null);

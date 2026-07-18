@@ -76,8 +76,11 @@ const config = {
       <script type="text/javascript">
       const urlSearchParams = new URLSearchParams(window.location.search);
       const queryParams = Object.fromEntries(urlSearchParams.entries());
-      const widgetName = queryParams["widgetName"] || "bridge-status";
-      if (widgetName == undefined) {document.body.innerHTML+="Widget ID not specified."}
+      const allowedWidgetNames = new Set(["bridge-status"]);
+      const requestedWidgetName = queryParams["widgetName"] || "bridge-status";
+      const widgetName = allowedWidgetNames.has(requestedWidgetName)
+        ? requestedWidgetName
+        : "bridge-status";
 
       const css = document.createElement('link');
       css.rel = "stylesheet";

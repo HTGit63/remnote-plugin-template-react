@@ -1489,6 +1489,14 @@ Do not let generated Graphify output become the main measure of Build Week work.
 - architecture changes, if any, separately justified and tested;
 - no unresolved regression introduced by media.
 
+### 2026-07-18 execution record — Stage 4
+
+- Required local gates, strongest applicable auth/routing/pairing/profile/import/performance gates, builds, validation, and both production dependency audits passed.
+- PostgreSQL bulk-storage proof remains `BLOCKED` because `DATABASE_URL` is not configured; memory storage passed.
+- Exact-commit remote CI remains `BLOCKED`: the remote branch predates this work, `gh` is unavailable, and no push was authorized.
+- TDD fixed an arbitrary widget asset URL injection risk. The conditional architecture review chose that narrow release seam and did not perform a speculative dispatcher/widget refactor.
+- Full command evidence and proof boundaries are recorded in `docs/stage-4-5-verification.md`.
+
 ---
 
 # 11. Stage 5 — Plugin UI and judge-experience verification
@@ -1565,6 +1573,13 @@ A first-time judge should be able to answer within one minute:
 - browser/UI proof recorded;
 - native RemNote visual proof performed where required;
 - no blocking setup ambiguity remains.
+
+### 2026-07-18 execution record — Stage 5
+
+- The real widget rendered through the RemNote SDK sandbox and passed the state, pairing, control, scope, design, health, narrow-layout, keyboard, focus, target-size, zoom, and reduced-motion checks recorded in `docs/stage-4-5-verification.md`.
+- TDD replaced contradictory dashboard/Render setup copy with one visible ChatGPT-to-widget pairing flow.
+- Native visual proof remains `BLOCKED`: RemNote 1.26.30 was running on Wayland, no companion server listened on 47391/47392, and the native window was not safely automatable or capturable from this session.
+- Browser screenshots are under `output/playwright/`. They are SDK sandbox evidence only and are not represented as native RemNote proof.
 
 ---
 

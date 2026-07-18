@@ -55,6 +55,8 @@ describe('RemnoteMCP sidebar experience', () => {
     expect(styles).toContain('overflow-anchor: none');
     expect(styles).toContain('.bridge-remote-controls');
     expect(widget).not.toContain('Pair this RemNote device from the dashboard');
+    expect(widget).toContain('HOSTED_PAIRING_START_INSTRUCTION');
+    expect(widget).not.toMatch(/\bRender\b/);
     expect(widget.indexOf('bridge-primary-actions')).toBeLessThan(widget.indexOf('bridge-advanced-shell'));
     expect(widget.indexOf('bridge-advanced-shell')).toBeLessThan(widget.indexOf('Run Quick Health Check'));
   });
