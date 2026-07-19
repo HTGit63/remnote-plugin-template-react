@@ -55,6 +55,8 @@ export interface BulkImportChunkAttempt {
   hierarchyCreatedRemIds: string[];
   createdRemIds: string[];
   updatedRemIds: string[];
+  pluginVerificationPassed?: boolean;
+  readbackVerificationPassed?: boolean;
   error?: string;
   errorCode?: string;
   lifecycle?: unknown[];

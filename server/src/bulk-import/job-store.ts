@@ -265,6 +265,8 @@ export class BulkImportJobStore {
       hierarchyCreatedRemIds?: string[];
       createdRemIds?: string[];
       updatedRemIds?: string[];
+      pluginVerificationPassed?: boolean;
+      readbackVerificationPassed?: boolean;
       error?: string;
       errorCode?: string;
       lifecycle?: unknown[];
@@ -298,6 +300,8 @@ export class BulkImportJobStore {
           ])),
           createdRemIds: Array.from(new Set([...attempt.createdRemIds, ...(input.createdRemIds ?? [])])),
           updatedRemIds: Array.from(new Set([...attempt.updatedRemIds, ...(input.updatedRemIds ?? [])])),
+          pluginVerificationPassed: input.pluginVerificationPassed ?? attempt.pluginVerificationPassed,
+          readbackVerificationPassed: input.readbackVerificationPassed ?? attempt.readbackVerificationPassed,
           error: input.error,
           errorCode: input.errorCode,
           lifecycle: input.lifecycle,

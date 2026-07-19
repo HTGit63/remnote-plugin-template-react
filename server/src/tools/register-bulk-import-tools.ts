@@ -39,6 +39,7 @@ import {
   loadBulkImportSourceFile,
   type BulkImportLoadedSourceFile,
 } from '../bulk-import/source-file-loader.js';
+import { readCompleteRemTree } from '../bulk-import/complete-rem-tree-readback.js';
 
 const READ_ONLY_BULK_TOOL_ANNOTATIONS = {
   readOnlyHint: true,
@@ -445,6 +446,56 @@ export function registerBulkImportTools({
       }, { expectedRevision: job.revision });
       bulkImportJobStore.saveJob(stored);
     }
+  }
+
+  async function reconcileAcknowledgedChunkFromFreshReadback(
+    jobId: string,
+    chunk: BulkImportChunk
+  ): Promise<{ reconciled: boolean; reason?: string }> {
+    const lastAttempt = chunk.attempts[chunk.attempts.length - 1];
+    const hasMutationIds = chunk.createdRemIds.length > 0 || chunk.updatedRemIds.length > 0;
+    if (
+      !lastAttempt ||
+      lastAttempt.state !== 'acknowledged' ||
+      lastAttempt.pluginVerificationPassed !== true ||
+      !hasMutationIds
+    ) {
+      return { reconciled: false, reason: 'Acknowledged write verification and exact mutation IDs are required.' };
+    }
+
+    const readback = await readCompleteRemTree(callPlugin, chunk.expectedParent);
+    if (!readback.ok) {
+      return { reconciled: false, reason: readback.error };
+    }
+    const report = verifyBulkImportSourceText({
+      expectedText: chunk.expectedSourceText ?? chunk.sourceText,
+      actualText: flattenBulkImportReadbackText(readback.tree),
+      jobId,
+      sectionKey: chunk.sectionKey,
+      chunkIndex: chunk.chunkIndex,
+    });
+    if (!report.ok) {
+      return {
+        reconciled: false,
+        reason: report.missingTextPreview ?? report.extraTextPreview ?? report.warnings.join(' '),
+      };
+    }
+
+    bulkImportJobStore.reconcileChunk(jobId, chunk.chunkId, {
+      outcome: 'written',
+      createdRemIds: chunk.createdRemIds,
+      updatedRemIds: chunk.updatedRemIds,
+      provenance: 'Automatic recovery from fresh complete live readback; no write replayed.',
+    });
+    bulkImportJobStore.saveCheckpoint(jobId, {
+      chunkId: chunk.chunkId,
+      sectionKey: chunk.sectionKey,
+      chunkIndex: chunk.chunkIndex,
+      status: 'verified',
+      message: 'Acknowledged chunk reconciled from fresh complete live readback without replay.',
+    });
+    await persistJob(jobId);
+    return { reconciled: true };
   }
 
   function persistenceConflictResult(toolName: string, error: BulkImportRevisionConflictError): McpToolResult {
@@ -917,38 +968,36 @@ export function registerBulkImportTools({
       ...stringArray(result.updatedRemIds),
     ]));
     const hasChunkMutationIds = createdRemIds.length > 0 || updatedRemIds.length > 0;
+    const verification = typeof result.verification === 'object' && result.verification !== null
+      ? result.verification as { passed?: boolean }
+      : undefined;
+    const pluginVerificationPassed = verification?.passed === true;
     bulkImportJobStore.finishChunkAttempt(jobId, chunk.chunkId, {
       attemptId,
       state: 'acknowledged',
       status: 'written_not_verified',
       verificationStatus: 'written_not_verified',
+      pluginVerificationPassed,
       hierarchyCreatedRemIds: hierarchy.createdRemIds,
       createdRemIds,
       updatedRemIds,
       finishedAt,
     });
     await persistJob(jobId);
-    const verification = typeof result.verification === 'object' && result.verification !== null
-      ? result.verification as { passed?: boolean }
-      : undefined;
-    const pluginVerificationPassed = verification?.passed === true;
     let readbackVerification = null as ReturnType<typeof verifyBulkImportSourceText> | null;
     let readbackError: string | undefined;
     if (!dryRun) {
-      const readback = await callPlugin('get_rem_tree', {
-        remId: hierarchy.parentRemId,
-        depth: 12,
-      });
+      const readback = await readCompleteRemTree(callPlugin, hierarchy.parentRemId);
       if (readback.ok) {
         readbackVerification = verifyBulkImportSourceText({
           expectedText: chunk.expectedSourceText ?? chunk.sourceText,
-          actualText: flattenBulkImportReadbackText(readback.result),
+          actualText: flattenBulkImportReadbackText(readback.tree),
           jobId,
           sectionKey: chunk.sectionKey,
           chunkIndex: chunk.chunkIndex,
         });
       } else {
-        readbackError = bridgeFailureMessage(readback);
+        readbackError = readback.error;
       }
     }
     const nextStatus = dryRun
@@ -972,6 +1021,8 @@ export function registerBulkImportTools({
       finishedAt,
       createdRemIds,
       updatedRemIds,
+      pluginVerificationPassed,
+      readbackVerificationPassed: readbackVerification?.ok,
       error: !dryRun && readbackVerification?.ok === true && pluginVerificationPassed && !hasChunkMutationIds
         ? 'Write and readback verification passed, but exact chunk mutation IDs were missing.'
         : readbackVerification?.ok === false
@@ -1262,7 +1313,12 @@ export function registerBulkImportTools({
         }
         const unresolved = bulkImportJobStore.firstReconciliationRequiredChunk(jobId);
         if (unresolved) {
-          return reconciliationRequiredResult('run_note_import_job_step', existingJob, unresolved);
+          const recovery = dryRun
+            ? { reconciled: false }
+            : await reconcileAcknowledgedChunkFromFreshReadback(jobId, unresolved);
+          if (!recovery.reconciled) {
+            return reconciliationRequiredResult('run_note_import_job_step', existingJob, unresolved);
+          }
         }
         if (dryRun) {
           const preview = previewRunnableChunks(jobId, maxChunks, maxChars);
@@ -1385,7 +1441,12 @@ export function registerBulkImportTools({
       }
       const unresolved = bulkImportJobStore.firstReconciliationRequiredChunk(jobId);
       if (unresolved) {
-        return reconciliationRequiredResult('resume_note_import_job', existingJob, unresolved);
+        const recovery = dryRun
+          ? { reconciled: false }
+          : await reconcileAcknowledgedChunkFromFreshReadback(jobId, unresolved);
+        if (!recovery.reconciled) {
+          return reconciliationRequiredResult('resume_note_import_job', existingJob, unresolved);
+        }
       }
       if (dryRun) {
         try {
@@ -1677,14 +1738,11 @@ export function registerBulkImportTools({
         let liveReadbackFailed: string | undefined;
         let liveReadbackTree = readbackTree;
         if (!liveReadbackTree && !actualTextByChunkId && job.chapterRootRemId) {
-          const readback = await callPlugin('get_rem_tree', {
-            remId: job.chapterRootRemId,
-            depth: 12,
-          });
+          const readback = await readCompleteRemTree(callPlugin, job.chapterRootRemId);
           if (readback.ok) {
-            liveReadbackTree = readback.result;
+            liveReadbackTree = readback.tree;
           } else {
-            liveReadbackFailed = `${readback.error.code}: ${readback.error.message}`;
+            liveReadbackFailed = readback.error;
           }
         }
         const reports = liveReadbackTree || actualTextByChunkId

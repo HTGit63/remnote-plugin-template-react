@@ -2,6 +2,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
+const { staticResponseHeaders } = require('./dev-server-headers.cjs');
 
 const rootDir = path.resolve(__dirname, '..');
 const distDir = path.join(rootDir, 'dist');
@@ -72,11 +73,7 @@ function fetchJson(url, timeoutMs = 3000) {
 function sendFile(response, filePath) {
   const extension = path.extname(filePath).toLowerCase();
   const contentType = contentTypes[extension] || 'application/octet-stream';
-  response.writeHead(200, {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'baggage, sentry-trace',
-    'Content-Type': contentType,
-  });
+  response.writeHead(200, staticResponseHeaders(contentType));
   fs.createReadStream(filePath).pipe(response);
 }
 

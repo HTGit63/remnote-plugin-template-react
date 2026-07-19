@@ -833,6 +833,33 @@ describe('bulk import MCP tools', () => {
     expect(h.createCalls.filter((call) => call.markdown === '1.1 Atomic nuclei')).toHaveLength(1);
   });
 
+  test('resume safely reconciles an acknowledged chunk when fresh complete readback now passes', async () => {
+    const h = makeHarness({
+      readbackFailures: 1,
+      writeResponses: [
+        success('write-1', { createdRemIds: ['chunk-1'], verification: { passed: true } }),
+        success('write-2', { createdRemIds: ['chunk-2'], verification: { passed: true } }),
+      ],
+    });
+    const { jobId } = await h.createJob('bulk-job:auto-reconcile-readback');
+    const first = text(await h.handlers.run_note_import_job_step({ jobId, maxChunks: 1, dryRun: false }));
+
+    expect(first.lastStep.status).toBe('written_not_verified');
+    expect(h.writeCalls).toHaveLength(1);
+
+    const resumed = text(await h.handlers.resume_note_import_job({ jobId, dryRun: false }));
+    const status = text(await h.handlers.get_note_import_job_status({ jobId }));
+
+    expect(resumed.status).toBe('PASS');
+    expect(h.writeCalls).toHaveLength(2);
+    expect(status.job.chunks[0]).toMatchObject({
+      status: 'verified',
+      verificationStatus: 'passed',
+      reconciliationStatus: 'reconciled_written',
+    });
+    expect(status.job.chunks[0].attempts).toHaveLength(1);
+  });
+
   test('serializes concurrent commands for the same job before plugin dispatch', async () => {
     const h = makeHarness();
     const { jobId } = await h.createJob('bulk-job:concurrent-command');
