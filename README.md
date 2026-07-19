@@ -47,17 +47,21 @@ Mode app or Codex connection for evaluation.
 | --- | --- |
 | Product | RemNote MCP |
 | Plugin release | `0.1.0` |
-| Release tag | `v0.1.0` |
-| Proven runtime source/deployment | `ebc99df6901356b055a425b5909e8d0b5829d5cf` |
+| Canonical release source/deployment | `c0a6ff9187debcad04d1f30f2b509bedd862e508` |
+| Media proof source | `ebc99df6901356b055a425b5909e8d0b5829d5cf` |
 | Hosted MCP endpoint | `https://remnote-plugin-template-react.onrender.com/mcp` |
-| Plugin archive | [PluginZip.zip](https://github.com/HTGit63/remnote-plugin-template-react/releases/download/v0.1.0/PluginZip.zip) |
+| Artifact commit | `146b171bef68baef7555896978cc3d84177f3884` |
+| Plugin archive | [PluginZip.zip](https://raw.githubusercontent.com/HTGit63/remnote-plugin-template-react/146b171bef68baef7555896978cc3d84177f3884/PluginZip.zip) |
 | Archive SHA-256 | `bc43addc88e6c32c01ea1cf9e4a5c080ff29eefbcd4f189121363454f49474c2` |
 
-The plugin/product version is `0.1.0`. The root and server npm packages remain
+The plugin/product version is `0.1.0`. The archive is published from the
+dedicated `release-artifacts/v0.1.0` branch and linked by immutable commit SHA.
+The root and server npm packages remain
 at the intentional internal implementation version `0.0.1`; they are not the
-judge-facing plugin release lane. The final tag contains release documentation
-and packaging only after the proven runtime commit; no production source was
-changed during Stage 7.
+judge-facing plugin release lane. No production source was changed during
+Stage 7. An annotated Git tag and GitHub Release page still require a
+user-authenticated Git client because the available repository connection does
+not expose tag or release-asset creation.
 
 ## Judge quick start
 
@@ -257,12 +261,13 @@ The pre-existing foundation included the RemNote plugin shell, companion bridge,
 basic graph reads/writes, Markdown/rich-text support, cards/formulas/styles,
 bulk-import concepts, authentication/pairing, and automated tests.
 
-The audited release delta from historical baseline `5380dd5` through `v0.1.0`
+The audited release delta from historical baseline `5380dd5` through release
+source `c0a6ff9`
 stabilized reconnect and routing, authorization boundaries, exact readback,
 idempotent replay, resumable persistent imports, UI recovery, tool metadata,
 image/audio/video URL insertion, discovery-cache recovery, exact live proof,
 and judge-ready release engineering. Inspect the
-[historical comparison](https://github.com/HTGit63/remnote-plugin-template-react/compare/5380dd5f2b87fa7d908a346fef81862498d47eea...v0.1.0).
+[historical comparison](https://github.com/HTGit63/remnote-plugin-template-react/compare/5380dd5f2b87fa7d908a346fef81862498d47eea...c0a6ff9187debcad04d1f30f2b509bedd862e508).
 This range documents provenance; it is not a substitute for the event's own
 eligibility rules.
 

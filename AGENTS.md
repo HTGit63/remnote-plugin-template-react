@@ -1977,6 +1977,51 @@ understand
 
 without needing private explanations.
 
+### 2026-07-19 execution record — Stage 7
+
+Status: `98% — FUNCTIONAL_AND_JUDGE_READY_WITH_ONE_EXTERNAL_RELEASE_GATE`.
+
+- Remote `main` and `fix/remnote-mcp-mass-note-creation-stability` were
+  fast-forwarded without force or branch deletion to canonical release source
+  `c0a6ff9187debcad04d1f30f2b509bedd862e508`.
+- Render deployed that exact SHA. Hosted health returned `plugin_connected`,
+  one active plugin connection, non-stale pairing, developer profile with 76
+  public tools, registry `2026-07-19.connector-media-proof`, and delete absent.
+- Exact-SHA connected MCP checks passed after deployment: bridge status
+  `status-mrruhcr1`, ping `3c905127-decd-4e15-ae27-f41313437e2f`, plugin status
+  `82611c60-8536-43b0-a2f5-65a8340dd4dd`, focus
+  `cae51bff-b93f-4f80-9284-34e0bb992c72`, bounded root read
+  `6e52d78e-0b56-44ca-9762-3133e7c70140`, and video-root read
+  `673e8450-dd04-4a44-8328-dbf2b3ef3a07`. Every check reported zero created,
+  updated, and deleted Rems.
+- The root README covers all 23 required items, including architecture, local
+  and hosted setup, ChatGPT and Codex pairing, scope/write controls, profiles,
+  four judge prompts, Build Week provenance, security, troubleshooting, and
+  limitations. Official OpenAI MCP/App deployment guidance is linked directly.
+- `PluginZip.zip` was rebuilt from the unchanged production tree, passed
+  `unzip -t`, contains manifest `RemNote MCP` version `0.1.0`, and has SHA-256
+  `bc43addc88e6c32c01ea1cf9e4a5c080ff29eefbcd4f189121363454f49474c2`.
+  A public download at immutable artifact commit
+  `146b171bef68baef7555896978cc3d84177f3884` reproduced the same checksum.
+- Fresh tests, typecheck, validation, plugin/server builds, security, auth,
+  pairing, routing, boundaries, schemas, idempotency, source fidelity, style,
+  hosted E2E, profiles, Areas 2/3, Markdown/import, and performance gates pass.
+  Both production dependency audits report zero known vulnerabilities.
+- Local PostgreSQL was not configured for the ad hoc bulk-storage command, so
+  that sub-check truthfully reported environment-blocked. The CI service gate
+  and the exact live persistent Test 14 proof cover PostgreSQL durability.
+- **Remaining 2% external gate:** create the annotated `v0.1.0` tag and GitHub
+  Release page with the ZIP attached. The authenticated repository connector
+  available to this run can update commits/branches but exposes no tag or
+  release-asset API; HTTPS and SSH Git credentials are also unavailable. Do not
+  label this administrative gate complete until a user-authenticated push does
+  it.
+
+Stage 7 may become `100% COMPLETE` after the remote tag and release asset are
+verified against the source and archive checksums above. Functional install,
+connection, read/write/resume/media documentation, exact deployment, and the
+public no-rebuild archive are already complete.
+
 ### 2026-07-19 local development recovery record
 
 - RemNote desktop logs showed `ERR_CONNECTION_REFUSED` for
