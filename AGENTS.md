@@ -1944,6 +1944,20 @@ understand
 
 without needing private explanations.
 
+### 2026-07-19 local development recovery record
+
+- RemNote desktop logs showed `ERR_CONNECTION_REFUSED` for
+  `http://localhost:8080/index.html?widgetName=bridge-status&pluginId=remnote-chatgpt-bridge`;
+  the plugin bundle was not faulty—the required development HTTP server had stopped.
+- `npm run dev:start`, `dev:status`, `dev:doctor`, and `dev:stop` now provide a
+  persistent, asset-verified local service with owned-PID shutdown protection.
+- RemNote installation still requires the exact base URL
+  `http://localhost:8080` after `dev:status` reports ready. Do not append
+  `/manifest.json`.
+- Current Codex managed sandbox denies local socket creation with `EPERM`, so
+  native reinstallation must be triggered from the user's normal terminal and
+  is not falsely recorded as live proof here.
+
 ---
 
 # 14. Stage 8 — OpenAI Build Week submission completion

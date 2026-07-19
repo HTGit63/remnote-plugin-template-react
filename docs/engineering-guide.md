@@ -146,6 +146,37 @@ Call `plan_note_import_from_file` with a path under that root and the authentica
 
 ## Local Commands
 
+### RemNote local plugin installation
+
+RemNote loads this development plugin from a live HTTP server. Installing
+`http://localhost:8080` does not copy the plugin bundle into RemNote. If the
+server stops, the plugin disappears or its widget fails with
+`ERR_CONNECTION_REFUSED`.
+
+Use the durable service commands:
+
+```bash
+npm run dev:start
+npm run dev:status
+```
+
+Only after `dev:status` reports ready, install this exact URL in RemNote:
+
+```text
+http://localhost:8080
+```
+
+Do not append `/manifest.json`. Keep the service running while using RemNote.
+Useful recovery commands:
+
+```bash
+npm run dev:doctor
+npm run dev:stop
+```
+
+The background service writes `.remnote-dev-server.log` and an owned PID file
+in the repository. `dev:stop` refuses to signal a reused or unrelated PID.
+
 Root:
 
 ```bash
