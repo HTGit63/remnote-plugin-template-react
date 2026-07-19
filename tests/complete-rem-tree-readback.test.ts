@@ -89,4 +89,38 @@ describe('complete Rem tree readback', () => {
     if (result.ok) return;
     expect(result.error).toContain('text_limit');
   });
+
+  test('restores direct siblings omitted when a descendant consumed node budget', async () => {
+    const first = treeNode('first', 'Section 1');
+    const root = treeNode('root', 'Chapter', {
+      hasChildren: true,
+      children: [first],
+      truncated: true,
+    });
+    root.readCoverage = {
+      appliedLimits: { depth: 12, maxChildrenPerNode: 25, maxNodes: 50, maxChars: 6000 },
+      truncationReasons: ['node_limit'],
+      continuation: { tool: 'get_children', args: { parentRemId: 'deep-descendant', startIndex: 0 } },
+    };
+    const second = treeNode('second', 'Section 2');
+    const callPlugin = vi.fn(async (tool: string, args: Record<string, unknown>) => {
+      if (tool === 'get_rem_tree' && args.remId === 'root') return success(root);
+      if (tool === 'get_rem_tree' && args.remId === 'second') return success(second);
+      if (tool === 'get_children' && args.parentRemId === 'root') {
+        return success({
+          children: [
+            { remId: 'first', hasChildren: false },
+            { remId: 'second', hasChildren: false },
+          ],
+        });
+      }
+      throw new Error(`Unexpected call: ${tool} ${JSON.stringify(args)}`);
+    }) as unknown as CallPluginFunction;
+
+    const result = await readCompleteRemTree(callPlugin, 'root');
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.tree.children?.map((child) => child.plainText)).toEqual(['Section 1', 'Section 2']);
+  });
 });

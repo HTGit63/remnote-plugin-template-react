@@ -150,7 +150,11 @@ export async function readCompleteRemTree(
 
     const existing = node.children ?? [];
     const continuationParent = node.readCoverage?.continuation?.args.parentRemId;
-    const requiresDirectChildRead = existing.length === 0 || continuationParent === node.remId;
+    const truncationReasons = node.readCoverage?.truncationReasons ?? [];
+    const requiresDirectChildRead = existing.length === 0 ||
+      continuationParent === node.remId ||
+      truncationReasons.includes('node_limit') ||
+      truncationReasons.includes('child_limit');
     const summaries = requiresDirectChildRead ? await getAllChildren(node.remId) : [];
     const existingChildren = new Map(existing.map((child) => [child.remId, child]));
     const completeChildren: SerializedRem[] = [];
