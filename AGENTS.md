@@ -1979,7 +1979,7 @@ without needing private explanations.
 
 ### 2026-07-19 execution record — Stage 7
 
-Status: `98% — FUNCTIONAL_AND_JUDGE_READY_WITH_ONE_EXTERNAL_RELEASE_GATE`.
+Status: `99% — FUNCTIONAL_AND_JUDGE_READY_WITH_ONE_EXTERNAL_RELEASE_GATE`.
 
 - Remote `main` and `fix/remnote-mcp-mass-note-creation-stability` were
   fast-forwarded without force or branch deletion to canonical release source
@@ -2007,10 +2007,15 @@ Status: `98% — FUNCTIONAL_AND_JUDGE_READY_WITH_ONE_EXTERNAL_RELEASE_GATE`.
   pairing, routing, boundaries, schemas, idempotency, source fidelity, style,
   hosted E2E, profiles, Areas 2/3, Markdown/import, and performance gates pass.
   Both production dependency audits report zero known vulnerabilities.
+- GitHub Actions run `29689624736` passed on certification commit
+  `a98d80b10af0349992df7885ca5507d2495a0a13`, whose source tree is
+  byte-identical to canonical `main`. It included PostgreSQL, dependency audits,
+  TypeScript, 346 tests, plugin validation/build, server build, and all
+  release-critical server checks.
 - Local PostgreSQL was not configured for the ad hoc bulk-storage command, so
   that sub-check truthfully reported environment-blocked. The CI service gate
   and the exact live persistent Test 14 proof cover PostgreSQL durability.
-- **Remaining 2% external gate:** create the annotated `v0.1.0` tag and GitHub
+- **Remaining 1% external gate:** create the annotated `v0.1.0` tag and GitHub
   Release page with the ZIP attached. The authenticated repository connector
   available to this run can update commits/branches but exposes no tag or
   release-asset API; HTTPS and SSH Git credentials are also unavailable. Do not

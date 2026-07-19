@@ -4,9 +4,9 @@ Audit date: 2026-07-19
 
 ## Verdict
 
-Stages 1–6 are `100% COMPLETE`. Stage 7 is `98% COMPLETE`: every functional,
+Stages 1–6 are `100% COMPLETE`. Stage 7 is `99% COMPLETE`: every functional,
 documentation, packaging, remote-main, exact-deployment, connected-live, and
-public-download gate passes. The only remaining contract item is the
+public-download/CI gate passes. The only remaining contract item is the
 user-authenticated annotated `v0.1.0` tag/GitHub Release attachment. That item
 is not represented as complete because the available GitHub connection has no
 tag or release-asset operation and this environment has no HTTPS/SSH Git
@@ -20,7 +20,7 @@ credential.
 | 4 — full regression/architecture | 100% | 346 tests plus release-critical server, security, profile, routing, persistence, performance, dependency, and focused architecture gates |
 | 5 — plugin UI/judge experience | 100% | sandbox UI matrix plus native RemNote connected panel and real playback screenshot resolve the former native-proof blocker |
 | 6 — exact-release RemNote proof | 100% | connected Tests 01–15, exact Test 14, native media readback/idempotency, and user-confirmed image/audio/YouTube/MP4 render/playback |
-| 7 — judge-ready release engineering | 98% | canonical remote main, exact deployed SHA, public verified ZIP, judge README/prompts, fresh live reads; annotated tag/release page remains external |
+| 7 — judge-ready release engineering | 99% | canonical remote main, exact deployed SHA, green exact-tree CI, public verified ZIP, judge README/prompts, fresh live reads; annotated tag/release page remains external |
 
 ## Release identity
 
@@ -90,6 +90,13 @@ test fake; SQL values are parameterized and the inspected dynamic column path
 is allowlisted. No unsafe DOM sink, wildcard `postMessage`, `eval`, or
 `new Function` path was found in production code.
 
+GitHub Actions run `29689624736` completed successfully on certification commit
+`a98d80b10af0349992df7885ca5507d2495a0a13`. The run used PostgreSQL 16 and
+passed dependency audits, TypeScript, all 346 tests, plugin validation/build,
+server build, and the complete release-critical server command group. Its tree
+is identical to canonical `main`; the certification commit contains no file
+change.
+
 ## Exact deployed live proof
 
 Hosted `/health` at canonical release source returned:
@@ -138,14 +145,15 @@ Stage 6 verdict: `100% COMPLETE`.
 | Connection/runtime | 10/10 |
 | Design/formatting | 10/10 |
 | Media | 10/10 |
-| Automated tests/CI | 9/10 |
+| Automated tests/CI | 10/10 |
 | Judge readiness | 9/10 |
-| **Total** | **98/100** |
+| **Total** | **99/100** |
 
-The two withheld points are release-administration proof, not runtime defects:
-the exact final GitHub Actions result has not yet appeared for the connector-
-created commit, and the annotated tag/GitHub Release page is not published.
-There is no known P0/P1 defect.
+The one withheld point is release-administration proof, not a runtime defect:
+the annotated tag/GitHub Release page is not published. GitHub Actions run
+`29689624736` passed on certification commit
+`a98d80b10af0349992df7885ca5507d2495a0a13`; its tree is byte-identical to
+canonical `main`. There is no known P0/P1 defect.
 
 ## Exact remaining closure action
 
@@ -159,5 +167,5 @@ git push origin v0.1.0
 
 Then create GitHub Release `v0.1.0`, attach the local `PluginZip.zip`, and
 confirm its checksum matches the value above. Do not move the tag. Once those
-external checks and exact-SHA CI are green, Stage 7 can be changed from 98% to
-100% without any production-code change.
+external tag and release-asset checks are green, Stage 7 can be changed from
+99% to 100% without any production-code change.
