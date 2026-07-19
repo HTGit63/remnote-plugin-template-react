@@ -1605,15 +1605,15 @@ Prove the exact release SHA against a real connected RemNote workspace.
 
 Before any live write:
 
-- [ ] `/health` reports exact release SHA.
-- [ ] Plugin build corresponds to exact release SHA.
-- [ ] Plugin connected.
-- [ ] Initial sync complete.
-- [ ] Focused/approved root re-read live.
-- [ ] Target is disposable.
-- [ ] Write scope confirmed.
-- [ ] Danger/destructive tier disabled unless explicitly required by one sandbox test.
-- [ ] Test URLs contain no secrets.
+- [x] `/health` reports exact release SHA.
+- [x] Plugin build corresponds to exact release SHA.
+- [x] Plugin connected.
+- [x] Initial sync complete.
+- [x] Focused/approved root re-read live.
+- [x] Target is disposable.
+- [x] Write scope confirmed.
+- [x] Danger/destructive tier disabled unless explicitly required by one sandbox test.
+- [x] Test URLs contain no secrets.
 
 Never trust a remembered Rem ID without live confirmation.
 
@@ -1801,8 +1801,8 @@ Exact release SHA has live proof for:
   and resumable import are live-proven.
 - Exact Test 14 passed twice with four chunks, persistent 50% checkpoints,
   one attempt per chunk, whole-note live readback, and completed-job no-replay.
-- Tests 01–15 received explicit exact-release verdicts in
-  `remnote report/remnote-mcp-tests-01-15-exact-release-campaign-report-2026-07-19.md`.
+- Tests 01–15 received explicit exact-release verdicts; the consolidated,
+  retained summary is `STAGE_1_7_COMPLETION_AUDIT.md`.
 - Media root cause is resolved live: server discovery and plugin SDK expose all
   three native media operations. The installed Codex app snapshot remains stale
   at 72 tools, but the scoped compatibility probe reaches the 76-tool server.
@@ -1814,8 +1814,17 @@ Exact release SHA has live proof for:
   idempotency, schema, 76-tool profile, and health-routing gates pass.
 - Exact-SHA media insertion, native rich-text readback, stable-ID idempotent
   replay, and direct MP4 evidence pass for image, audio, and video.
-- Stage 6 stays open only until native image render, audio player playback, and
-  YouTube/direct-video playback are visibly confirmed in RemNote.
+- Human visual proof is complete. The user confirmed the native image render
+  and audio player playback, then confirmed both the embedded YouTube player
+  and the direct MP4 player worked in RemNote. The final screenshot shows the
+  MP4 at `0:05 / 0:05` and the RemNote MCP side panel in `Connected` state.
+- Final video proof root `XPFBYmEiwUpSaxQ5P` contained exactly two children:
+  YouTube `Pqtihq0K8aFw0JjGW` and direct MP4 `xi7BoEuts2fuaRFtS`. Independent
+  native rich-text readback and same-key replay preserved both IDs without a
+  duplicate.
+- **Stage 6 verdict: 100% COMPLETE.** All exact-release read, write, readback,
+  idempotency, guarded mutation, resumable-import, Test 14, image, audio, and
+  video hard gates are satisfied.
 
 ---
 
