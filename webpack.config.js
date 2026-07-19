@@ -76,7 +76,7 @@ const config = {
       <script type="text/javascript">
       const urlSearchParams = new URLSearchParams(window.location.search);
       const queryParams = Object.fromEntries(urlSearchParams.entries());
-      const allowedWidgetNames = new Set(["bridge-status"]);
+      const allowedWidgetNames = new Set(["index", "bridge-status"]);
       const requestedWidgetName = queryParams["widgetName"] || "bridge-status";
       const widgetName = allowedWidgetNames.has(requestedWidgetName)
         ? requestedWidgetName

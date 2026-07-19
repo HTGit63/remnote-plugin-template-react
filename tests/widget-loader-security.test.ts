@@ -67,6 +67,15 @@ function executeWidgetLoader(search: string): {
 }
 
 describe('widget loader security', () => {
+  test('preserves the trusted index widget required for plugin activation', () => {
+    const result = executeWidgetLoader(
+      '?widgetName=index&pluginId=remnote-chatgpt-bridge'
+    );
+
+    expect(result.links[0]?.href).toBe('index-sandbox.css');
+    expect(result.scripts[0]?.src).toBe('index-sandbox.js');
+  });
+
   test('rejects an untrusted widgetName before constructing script and stylesheet URLs', () => {
     const result = executeWidgetLoader(
       '?widgetName=https%3A%2F%2Fevil.example%2Fpayload'
