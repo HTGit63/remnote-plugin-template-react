@@ -1795,7 +1795,7 @@ Exact release SHA has live proof for:
 
 ### Stage 6 exact-release execution status — 2026-07-19
 
-- Exact deployed SHA `aff5cbb71b4818c3e0e218d56355217099382904`:
+- Exact deployed SHA `ebc99df6901356b055a425b5909e8d0b5829d5cf`:
   health, bridge, plugin connection, sync, focus, scope, read, write, readback,
   idempotency, guarded mutation, cards, rich math, supported styling, hierarchy,
   and resumable import are live-proven.
@@ -1803,17 +1803,19 @@ Exact release SHA has live proof for:
   one attempt per chunk, whole-note live readback, and completed-job no-replay.
 - Tests 01–15 received explicit exact-release verdicts in
   `remnote report/remnote-mcp-tests-01-15-exact-release-campaign-report-2026-07-19.md`.
-- Media root cause is isolated: deployed server discovery and plugin SDK expose
-  all three native media operations, while the installed Codex app snapshot is
-  stale at 72 tools and omits media plus import reconciliation.
+- Media root cause is resolved live: server discovery and plugin SDK expose all
+  three native media operations. The installed Codex app snapshot remains stale
+  at 72 tools, but the scoped compatibility probe reaches the 76-tool server.
 - The repair in this change ties MCP server identity to the discovery version
   and adds a media-only compatibility probe through the already-exposed
   `run_bridge_health_check` tool. The probe uses stable idempotency keys, exact
   URL readback evidence, and direct-parent access only for the three media tools.
 - Local TDD, 346 tests, typecheck, validation, builds, routing, security,
   idempotency, schema, 76-tool profile, and health-routing gates pass.
-- Stage 6 stays open until this repair's exact SHA is deployed, the live probe is
-  repeated, and native render/player/playback are confirmed in RemNote.
+- Exact-SHA media insertion, native rich-text readback, stable-ID idempotent
+  replay, and direct MP4 evidence pass for image, audio, and video.
+- Stage 6 stays open only until native image render, audio player playback, and
+  YouTube/direct-video playback are visibly confirmed in RemNote.
 
 ---
 

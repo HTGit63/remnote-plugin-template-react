@@ -2,9 +2,9 @@
 
 Branch: `fix/remnote-mcp-mass-note-creation-stability`
 
-HEAD: `aff5cbb71b4818c3e0e218d56355217099382904`
+HEAD: `ebc99df6901356b055a425b5909e8d0b5829d5cf`
 
-Deployment SHA: `aff5cbb71b4818c3e0e218d56355217099382904`
+Deployment SHA: `ebc99df6901356b055a425b5909e8d0b5829d5cf`
 
 Plugin build SHA: `NOT_RUNTIME_OBSERVABLE` — plugin status reports SDK/runtime
 capabilities but does not embed a separate build SHA.
@@ -16,58 +16,80 @@ Approved root: `Stage 6 Exact Release Proof — 2026-07-19 — aff5cbb`
 
 Image URL: `https://interactive-examples.mdn.mozilla.net/media/cc0-images/grapefruit-slice-332-332.jpg` (`HTTP 200`, `image/jpeg`)
 
-Image mutation IDs: `BLOCKED`
+Image mutation ID: `bQae0xzHsWdZts6y7`
 
-Image readback: `BLOCKED`
+Image readback: `PASS` — raw rich text contains native image payload
+`{"i":"i","url":"https://interactive-examples.mdn.mozilla.net/media/cc0-images/grapefruit-slice-332-332.jpg"}`.
 
-Image visual result: `BLOCKED`
+Image visual result: `PENDING_USER_VISIBLE_CONFIRMATION`
 
-Image idempotency repeat: `BLOCKED`
+Image idempotency repeat: `PASS` — operation `health-mrrrko2h` returned
+`already_applied` with the same Rem ID and child index `7`.
 
 Audio URL: `https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3` (`HTTP 200`, `audio/mpeg`)
 
-Audio mutation IDs: `BLOCKED`
+Audio mutation ID: `9OBzXKeko2dIwWx4V`
 
-Audio readback: `BLOCKED`
+Audio readback: `PASS` — raw rich text contains native audio payload
+`{"i":"a","url":"https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3","onlyAudio":true}`.
 
-Audio player result: `BLOCKED`
+Audio player result: `PENDING_USER_VISIBLE_CONFIRMATION`
 
-Audio idempotency repeat: `BLOCKED`
+Audio idempotency repeat: `PASS` — operation `health-mrrrko2h` returned
+`already_applied` with the same Rem ID and child index `8`.
 
 YouTube URL: `https://www.youtube.com/watch?v=jNQXAC9IVRw` (`HTTP 200`)
 
-Video mutation IDs: `BLOCKED`
+YouTube mutation ID: `vR0GEHXOXGjQiBe9E`
 
-Video readback: `BLOCKED`
+YouTube readback: `PASS` — raw rich text contains native video payload
+`{"i":"a","url":"https://www.youtube.com/watch?v=jNQXAC9IVRw","onlyAudio":false}`.
 
-Video playback/embed result: `BLOCKED`
+YouTube playback/embed result: `PENDING_USER_VISIBLE_CONFIRMATION`
 
-Video idempotency repeat: `BLOCKED`
+YouTube idempotency repeat: `PASS` — operation `health-mrrrko2h` returned
+`already_applied` with the same Rem ID and child index `9`.
 
 Direct video URL: `https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4` (`HTTP 200`, `video/mp4`)
 
-Result: `BLOCKED`
+Direct video mutation ID: `TAaM36oxyhKUPAOTc`
+
+Direct video readback: `PASS` — raw rich text contains native video payload
+`{"i":"a","url":"https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4","onlyAudio":false}`.
+
+Direct video idempotency repeat: `PASS` — operation `health-mrrrkws8`
+returned `already_applied` with the same Rem ID and child index `10`.
+
+Direct video playback result: `PENDING_USER_VISIBLE_CONFIRMATION`
 
 Limitations:
 
-- Server registry and discovery advertise `insert_image_from_url`,
-  `insert_audio_from_url`, and `insert_video_from_url`.
-- Live plugin reports native `plugin.richText.image`, `.audio`, and `.video`
-  builders as supported.
-- Current connector session exposes 72 RemNote tools but omits all three media
-  tools and `reconcile_note_import_job_chunk`.
-- Media calls therefore cannot be invoked through the user-authorized connector
-  in this session. Stored URL text would not meet the Stage 6 contract and was
-  not used as fake media proof.
-- Native visual render, audio playback, and video playback require user-visible
-  RemNote confirmation after connector refresh and successful MCP insertion.
+- Exact deployment, local HEAD, and origin all match
+  `ebc99df6901356b055a425b5909e8d0b5829d5cf`.
+- Live server exposes 76 tools with registry/schema version
+  `2026-07-19.connector-media-proof`.
+- Connected plugin reports initial sync complete and native
+  `plugin.richText.image`, `.audio`, and `.video` support.
+- Codex app snapshot remains at 72 descriptors. The compatibility path through
+  `run_bridge_health_check` invoked the exact three native media operations.
+- First operation `health-mrrrkbe3` passed all three writes and exact readback.
+- Identical retry `health-mrrrko2h` passed all three as `already_applied`.
+- Direct-video operations `health-mrrrkvj0` and `health-mrrrkws8` passed insert
+  and idempotent replay.
+- Independent `get_rem_rich` calls confirmed native media payload type, exact
+  URL, and audio/video discriminator for every created Rem.
+- Independent child listing found exactly one of each expected Rem ID at child
+  indexes `7`, `8`, `9`, and `10`; no retry duplicates appeared.
+- Native visual render and player playback remain user-visible proof. MCP
+  readback cannot truthfully infer pixels or sound.
 
-Overall media verdict: `BLOCKED` — connector tool surface refresh required.
+Overall media verdict: `LIVE_MCP_PASS_VISUAL_CONFIRMATION_PENDING`.
 
-## Root cause and repair candidate
+## Root cause and deployed repair
 
-- Exact deployed server `aff5cbb71b4818c3e0e218d56355217099382904`
-  returns 76 tools from `tools/list`; all three native media tools are present.
+- Before the repair, exact deployed server
+  `aff5cbb71b4818c3e0e218d56355217099382904` returned 76 tools from
+  `tools/list`, while the connected Codex app snapshot exposed only 72.
 - The connected plugin reports image, audio, and video rich-text SDK support.
 - The installed Codex app snapshot exposes 72 tools. It is missing the same four
   post-snapshot tools: image, audio, video, and import reconciliation.
@@ -90,8 +112,8 @@ Overall media verdict: `BLOCKED` — connector tool surface refresh required.
   boundaries, tool schemas, idempotency, hosted routing, connector routing,
   Codex routing, 76-tool profile, and health routing passed.
 
-Repair status: `READY_FOR_EXACT-SHA_DEPLOY`.
+Repair status: `EXACT-SHA_LIVE_PROVEN`.
 
-Stage 6 status remains `BLOCKED` until the repair commit is deployed and the
-connected RemNote media probe plus native render/player/playback confirmation
-are recorded here.
+Stage 6 automated, connector, plugin, mutation, readback, and idempotency gates
+pass. Completion remains pending only native render/player/playback confirmation
+inside RemNote.
