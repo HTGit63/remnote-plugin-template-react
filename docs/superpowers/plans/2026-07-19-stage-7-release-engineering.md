@@ -204,13 +204,13 @@ Expected: the commit records only verified evidence and completed checklist stat
 - Consumes: clean `main`, all required gates passing, final source SHA, and `PluginZip.zip` checksum.
 - Produces: immutable `v0.1.0` tag, pushed `main`, public source/tag URLs, and a release artifact when GitHub release tooling is available.
 
-- [ ] **Step 1: Prove clean final state**
+- [x] **Step 1: Prove clean final state**
 
 Run: `git status --short --branch && git diff --check && git log -1 --format='%H %s'`
 
 Expected: clean `main` and one exact final SHA.
 
-- [ ] **Step 2: Push final `main`**
+- [x] **Step 2: Push final `main`**
 
 Run: `git push origin main`
 
