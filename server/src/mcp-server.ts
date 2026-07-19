@@ -10,6 +10,7 @@ import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
   getToolRegistrySummary,
+  MCP_DISCOVERY_VERSION,
   type RegisteredMcpToolName,
 } from './tool-registry.js';
 import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
@@ -53,7 +54,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
   const server = new McpServer(
     {
       name: 'remnote-local-bridge',
-      version: '0.1.0',
+      version: MCP_DISCOVERY_VERSION,
     },
     {
       capabilities: {

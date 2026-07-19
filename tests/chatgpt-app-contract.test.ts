@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { createMcpServer } from '../server/src/mcp-server';
-import { getPublicMcpToolNames } from '../server/src/tool-registry';
+import { MCP_DISCOVERY_VERSION, getPublicMcpToolNames } from '../server/src/tool-registry';
 import { DEFAULT_TOOL_PROFILE } from '../server/src/tool-policy';
 
 type ToolDescriptor = {
@@ -42,6 +42,36 @@ function registeredMassNoteTools(): Record<string, ToolDescriptor> {
 }
 
 describe('ChatGPT app contract', () => {
+  test('MCP server identity changes with the discovery contract', () => {
+    expect(MCP_DISCOVERY_VERSION).toBe(
+      'mcp-discovery-2026-07-19.connector-media-proof'
+    );
+    const server = createMcpServer({} as never, {
+      toolProfile: 'developer',
+      toolCallAuthMode: 'hosted_oauth_required',
+    });
+    const serverInfo = (server.server as unknown as {
+      _serverInfo: { name: string; version: string };
+    })._serverInfo;
+
+    expect(serverInfo).toEqual({
+      name: 'remnote-local-bridge',
+      version: MCP_DISCOVERY_VERSION,
+    });
+  });
+
+  test('media-capable health probe declares open-world behavior', () => {
+    const server = createMcpServer({} as never, {
+      toolProfile: 'developer',
+      toolCallAuthMode: 'hosted_oauth_required',
+    });
+    const descriptor = (server as unknown as {
+      _registeredTools: Record<string, ToolDescriptor>;
+    })._registeredTools.run_bridge_health_check;
+
+    expect(descriptor.annotations?.openWorldHint).toBe(true);
+  });
+
   test('public product identity and tool-count copy follow current registry truth', () => {
     const expected = getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE);
     const dashboardSource = readFileSync(

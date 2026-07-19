@@ -1,6 +1,6 @@
 # Developer Diagnostics Reference
 
-Generated from registry. Registry 2026-07-18.media-url-insertion. Schema 2026-07-18.media-url-insertion.
+Generated from registry. Registry 2026-07-19.connector-media-proof. Schema 2026-07-19.connector-media-proof.
 
 ## Runtime Fields
 

@@ -11,6 +11,7 @@ export interface BridgeHealthCheckToolResult {
   status: BridgeHealthCheckToolStatus;
   durationMs: number;
   bridgeTool?: string;
+  evidence?: Record<string, unknown>;
   reason?: string;
   errorCode?: string;
   errorMessage?: string;

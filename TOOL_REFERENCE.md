@@ -1,6 +1,6 @@
 # Tool Reference
 
-Generated from registry. Server 0.0.1. Registry 2026-07-18.media-url-insertion. Schema 2026-07-18.media-url-insertion.
+Generated from registry. Server 0.0.1. Registry 2026-07-19.connector-media-proof. Schema 2026-07-19.connector-media-proof.
 
 Declared tools: 79. All public tools: 76. Default public tools: 20. Runtime-unverified default tools: 9. Hidden/gated/unsupported tools: 3.
 

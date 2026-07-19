@@ -29,6 +29,14 @@ export interface RunBridgeHealthCheckOptions {
   signal?: AbortSignal;
   toolProfile?: ToolProfile;
   principal?: AuthenticatedPrincipal;
+  toolNames?: string[];
+  useParentDirectly?: boolean;
+  mediaFixtures?: {
+    imageUrl?: string;
+    audioUrl?: string;
+    videoUrl?: string;
+  };
+  mediaIdempotencyKeyPrefix?: string;
 }
 
 const DIRECT_SERVER_TOOLS = new Set<string>(SERVER_LOCAL_MCP_TOOLS);
@@ -46,6 +54,12 @@ const EXISTING_REM_MUTATION_TOOLS = new Set(
 const DESTRUCTIVE_TOOLS = new Set(
   TOOL_METADATA.filter((tool) => tool.isPublic && tool.sdkSupported && tool.isDangerous).map((tool) => tool.name)
 );
+
+const MEDIA_PROBE_TOOLS = new Set<BridgeToolName>([
+  'insert_image_from_url',
+  'insert_audio_from_url',
+  'insert_video_from_url',
+]);
 
 function nowMs(): number {
   return Date.now();
@@ -102,11 +116,15 @@ function resultFromResponse(
   startedAt: number
 ): BridgeHealthCheckToolResult {
   if (response.ok) {
+    const evidence = MEDIA_PROBE_TOOLS.has(bridgeTool) && typeof response.result === 'object' && response.result !== null
+      ? mediaEvidence(response.result as Record<string, unknown>)
+      : undefined;
     return {
       tool,
       bridgeTool,
       status: 'passed',
       durationMs: durationFrom(startedAt),
+      ...(evidence ? { evidence } : {}),
     };
   }
 
@@ -119,6 +137,23 @@ function resultFromResponse(
     errorMessage: response.error.message,
     reason: response.error.code === 'SDK_UNSUPPORTED' ? 'Installed RemNote SDK does not expose this operation.' : undefined,
   };
+}
+
+function mediaEvidence(result: Record<string, unknown>): Record<string, unknown> {
+  const keys = [
+    'createdRemId',
+    'parentId',
+    'mediaKind',
+    'url',
+    'position',
+    'insertIndex',
+    'status',
+    'idempotencyKey',
+    'verification',
+  ] as const;
+  return Object.fromEntries(
+    keys.flatMap((key) => result[key] === undefined ? [] : [[key, result[key]]])
+  );
 }
 
 function responseRawTextItems(response: BridgeResponse): Array<Record<string, unknown>> {
@@ -328,6 +363,19 @@ function healthCheckArgsFor(
 ): BridgeToolArgs[BridgeToolName] | undefined {
   const parentId = options.parentId?.trim();
   const targetRemId = options.targetRemId?.trim() || parentId;
+  const mediaKeyPrefix = options.mediaIdempotencyKeyPrefix?.trim();
+
+  const mediaArgs = (kind: 'image' | 'audio' | 'video', url: string | undefined) =>
+    options.includeWrites && parentId && url && mediaKeyPrefix && mediaKeyPrefix.length <= 110
+      ? {
+          parentId,
+          url,
+          position: 'end' as const,
+          label: `Stage 6 ${kind} live proof`,
+          idempotencyKey: `${mediaKeyPrefix}:${kind}`,
+          verifyAfterWrite: true,
+        }
+      : undefined;
 
   switch (bridgeTool) {
     case 'ping':
@@ -353,6 +401,12 @@ function healthCheckArgsFor(
         : undefined;
     case 'get_children':
       return targetRemId ? { parentRemId: targetRemId, maxChildren: 10 } : undefined;
+    case 'insert_image_from_url':
+      return mediaArgs('image', options.mediaFixtures?.imageUrl);
+    case 'insert_audio_from_url':
+      return mediaArgs('audio', options.mediaFixtures?.audioUrl);
+    case 'insert_video_from_url':
+      return mediaArgs('video', options.mediaFixtures?.videoUrl);
     case 'apply_structured_note_batch':
       return parentId
         ? {
@@ -791,7 +845,11 @@ export async function runBridgeHealthCheck(
   const startedAtMs = Date.now();
   const startedAt = new Date(startedAtMs).toISOString();
   const connectedAtStart = hub.getStatus().connected;
-  const publicTools = getPublicMcpToolNames(Boolean(options.exposeDeleteTool), options.toolProfile ?? DEFAULT_TOOL_PROFILE);
+  const allPublicTools = getPublicMcpToolNames(Boolean(options.exposeDeleteTool), options.toolProfile ?? DEFAULT_TOOL_PROFILE);
+  const requestedToolNames = options.toolNames?.length ? new Set(options.toolNames) : undefined;
+  const publicTools = requestedToolNames
+    ? allPublicTools.filter((tool) => requestedToolNames.has(tool))
+    : allPublicTools;
   const results: BridgeHealthCheckToolResult[] = [];
   const mode = resolveMode(options);
   const includeWrites = modeIncludesWrites(mode);
@@ -801,7 +859,13 @@ export async function runBridgeHealthCheck(
   let effectiveTargetRemId = options.targetRemId?.trim() || effectiveParentId;
   let disposableSandboxRemId: string | undefined;
 
-  if (connectedAtStart && includeWrites && effectiveParentId) {
+  const directMediaParent = Boolean(
+    options.useParentDirectly &&
+    requestedToolNames?.size &&
+    [...requestedToolNames].every((tool) => MEDIA_PROBE_TOOLS.has(tool as BridgeToolName))
+  );
+
+  if (connectedAtStart && includeWrites && effectiveParentId && !directMediaParent) {
     const toolStartedAt = nowMs();
     const title =
       mode === 'destructive_on_disposable_rem'

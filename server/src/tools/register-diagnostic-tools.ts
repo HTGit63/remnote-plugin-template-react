@@ -13,6 +13,7 @@ import { getDirectWritePolicySnapshot } from '../tool-permissions.js';
 import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diagnostics-redaction.js';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
+  MEDIA_URL_SCHEMA,
   REM_ID_SCHEMA,
   REMNOTE_GUIDE_SECTION_SCHEMA,
 } from './schemas.js';
@@ -220,16 +221,24 @@ export function registerDiagnosticTools({
         parentId: REM_ID_SCHEMA.optional().describe('Existing parent Rem ID for dry-run/batch/create checks.'),
         targetRemId: REM_ID_SCHEMA.optional().describe('Existing target Rem ID for read and explicit existing-Rem mutation checks. Defaults to parentId when omitted.'),
         timeoutMs: z.number().int().min(1000).max(30000).default(5000).describe('Per-tool bridge timeout.'),
+        toolNames: z.array(z.string().trim().min(1).max(128)).max(12).optional().describe('Optional public-tool allowlist for a focused health probe.'),
+        useParentDirectly: z.boolean().default(false).describe('Use parentId directly only when toolNames contains media insertion tools; otherwise a disposable sandbox Rem is created.'),
+        mediaFixtures: z.object({
+          imageUrl: MEDIA_URL_SCHEMA.optional(),
+          audioUrl: MEDIA_URL_SCHEMA.optional(),
+          videoUrl: MEDIA_URL_SCHEMA.optional(),
+        }).strict().optional().describe('Stable HTTP(S) fixtures for focused media insertion proof.'),
+        mediaIdempotencyKeyPrefix: z.string().trim().min(1).max(110).optional().describe('Stable prefix reused across media probe retries.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: {
         readOnlyHint: false,
-        openWorldHint: false,
+        openWorldHint: true,
         destructiveHint: false,
         idempotentHint: false,
       },
     },
-    async ({ mode, includeWrites, includeExistingRemMutations, parentId, targetRemId, timeoutMs }) => {
+    async ({ mode, includeWrites, includeExistingRemMutations, parentId, targetRemId, timeoutMs, toolNames, useParentDirectly, mediaFixtures, mediaIdempotencyKeyPrefix }) => {
       const result = await runBridgeHealthCheck(hub, {
         mode,
         exposeDeleteTool,
@@ -238,6 +247,10 @@ export function registerDiagnosticTools({
         parentId,
         targetRemId,
         timeoutMs,
+        toolNames,
+        useParentDirectly,
+        mediaFixtures,
+        mediaIdempotencyKeyPrefix,
         signal: requestSignal,
         toolProfile,
         principal,
