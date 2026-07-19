@@ -8,6 +8,17 @@ async function source(path: string): Promise<string> {
 }
 
 describe('RemnoteMCP sidebar experience', () => {
+  test('registers a persistent RemNote sidebar selector that opens the bridge panel', async () => {
+    const index = await source('src/widgets/index.tsx');
+
+    expect(index).toContain('await plugin.app.registerSidebarButton({');
+    expect(index).toContain("id: 'remnotemcp.sidebar'");
+    expect(index).toContain("name: 'RemNote MCP'");
+    expect(index).toContain('icon: bridgeTabIcon');
+    expect(index).toContain('action: openBridgeStatus');
+    expect(index.indexOf('registerWidget')).toBeLessThan(index.indexOf('registerSidebarButton'));
+  });
+
   test('ships the supplied logo as an inline build asset for native and sandbox widgets', async () => {
     const [webpack, brand, pieces, index] = await Promise.all([
       source('webpack.config.js'),

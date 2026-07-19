@@ -120,6 +120,15 @@ async function onActivate(plugin: ReactRNPlugin) {
     dontOpenByDefaultInTabLocation: false,
   });
 
+  await plugin.app.registerSidebarButton({
+    id: 'remnotemcp.sidebar',
+    name: 'RemNote MCP',
+    description: 'Open RemNote MCP in the right sidebar.',
+    keywords: 'remnote mcp chatgpt bridge',
+    icon: bridgeTabIcon,
+    action: openBridgeStatus,
+  });
+
   await startPluginBridgeRuntime(plugin, openBridgeStatus);
 
   await plugin.app.registerCommand({
