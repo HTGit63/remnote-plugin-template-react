@@ -20,11 +20,13 @@
 | ZIP integrity | 21 entries; `unzip -t` passed |
 | ZIP manifest | RemNote MCP `0.1.1`, desktop-only |
 | ZIP Graphify content | none |
-| Local ZIP SHA-256 | `207e1d5fd13cbe9c22e45555a36624d1fb7bc4475f9159f1c97191416527ea5b` |
+| Local and public ZIP SHA-256 | `207e1d5fd13cbe9c22e45555a36624d1fb7bc4475f9159f1c97191416527ea5b` |
+| Exact-main GitHub Actions | run `29691773546`, success |
 
-The archive is 630,748 bytes. The checksum above is valid for the locally
-verified archive produced on 2026-07-19; the public artifact must reproduce it
-before being presented as identical.
+The archive is 630,748 bytes. A fresh public download from artifact commit
+`c8b65b990e5ca3ecdfb47f032c6f9acdd1c7890c` reproduced the locally verified
+checksum on 2026-07-19. Main source
+`417218945879148b842e16a465c0a8ac639b9985` passed CI.
 
 ## Exact live release evidence
 
@@ -50,6 +52,8 @@ proof; it must not be described as a new live mutation campaign.
   `c0a6ff9187debcad04d1f30f2b509bedd862e508`
 - v0.1.0 artifact commit:
   `146b171bef68baef7555896978cc3d84177f3884`
+- v0.1.0 cleaned artifact-branch tip:
+  `4f47c84f4a66f170488f13f1c294d81ed40b3c7c`
 - v0.1.0 ZIP SHA-256:
   `bc43addc88e6c32c01ea1cf9e4a5c080ff29eefbcd4f189121363454f49474c2`
 - Exact media proof source:

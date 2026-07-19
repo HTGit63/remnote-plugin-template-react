@@ -47,13 +47,15 @@ changes are limited to the plugin manifest, public/evaluation documentation,
 release-hygiene regression coverage, and removal of generated Graphify output
 from public branches. All production TypeScript is unchanged.
 
-Before calling v0.1.1 publicly released, verify:
+The maintenance source is public on `main` at
+`417218945879148b842e16a465c0a8ac639b9985`. The verified ZIP is public at
+artifact commit `c8b65b990e5ca3ecdfb47f032c6f9acdd1c7890c`, its public
+download matches [BENCHMARKS.md](BENCHMARKS.md), and exact-main GitHub Actions
+run `29691773546` passed.
 
-- remote `main` contains the maintenance commit;
-- `release-artifacts/v0.1.1` contains the verified ZIP;
-- public download SHA-256 matches [BENCHMARKS.md](BENCHMARKS.md);
-- immutable `v0.1.1` exists if a new tagged release is desired;
-- any claim of fresh v0.1.1 live proof is supported by a new connected test.
+A local annotated `v0.1.1` tag peels to the exact main source. Its remote push
+and an optional GitHub Release page remain administrative steps. Do not claim a
+fresh v0.1.1 live mutation campaign without a new connected test.
 
 ## Current live-check note
 

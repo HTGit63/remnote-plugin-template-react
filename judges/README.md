@@ -10,6 +10,8 @@ root [README](../README.md) remains the public guide for RemNote users.
 | Product | RemNote MCP |
 | Installable plugin version | `0.1.1` |
 | Immutable proven tag | `v0.1.0` → `c0a6ff9187debcad04d1f30f2b509bedd862e508` |
+| v0.1.1 main source | `417218945879148b842e16a465c0a8ac639b9985` |
+| v0.1.1 artifact commit | `c8b65b990e5ca3ecdfb47f032c6f9acdd1c7890c` |
 | Hosted MCP | `https://remnote-plugin-template-react.onrender.com/mcp` |
 | Plugin WebSocket | `wss://remnote-plugin-template-react.onrender.com/remnote` |
 | v0.1.1 archive branch | `release-artifacts/v0.1.1` |
@@ -19,6 +21,10 @@ second plugin upload with the same version. Compared with the proven release,
 it changes manifest metadata, public documentation, tests, and repository
 hygiene only. No production TypeScript, bridge, server, policy, or UI behavior
 changed.
+
+The v0.1.1 public download reproduces SHA-256
+`207e1d5fd13cbe9c22e45555a36624d1fb7bc4475f9159f1c97191416527ea5b`.
+GitHub Actions run `29691773546` passed on the exact main source above.
 
 ## Installation
 
