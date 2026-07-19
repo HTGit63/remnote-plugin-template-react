@@ -242,7 +242,7 @@ export const GET_DOCUMENT_OR_FOLDER_TREE_INPUT_SCHEMA = z
   .object({
     rootRemId: REM_ID_SCHEMA.nullable().optional().describe('Optional document, folder, portal, or Rem root ID.'),
     remId: REM_ID_SCHEMA.nullable().optional().describe('Alias for rootRemId.'),
-    depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 3.'),
+    depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 12.'),
     maxChildren: MAX_CHILDREN_SCHEMA.optional().describe('Maximum children per node, capped at 100.'),
   })
   .strict();

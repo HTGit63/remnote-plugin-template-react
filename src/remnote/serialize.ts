@@ -2,7 +2,7 @@ import type { PluginRem as Rem, RichTextInterface, RNPlugin } from '@remnote/plu
 import type { ReadContinuation, SerializedRem, TreeTruncationReason } from '../../shared/bridge/protocol';
 
 const DEFAULT_TREE_DEPTH = 0;
-const HARD_MAX_TREE_DEPTH = 3;
+const HARD_MAX_TREE_DEPTH = 12;
 const DEFAULT_MAX_CHILDREN = 25;
 const DEFAULT_MAX_CHARS = 6000;
 const DEFAULT_MAX_TREE_NODES = 50;

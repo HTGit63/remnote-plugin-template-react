@@ -93,7 +93,7 @@ export function registerReadTools({ registerTool, callPlugin }: ToolRegistration
       description: 'Use this when the user asks to inspect a bounded Rem subtree by Rem ID.',
       inputSchema: z.object({
         remId: REM_ID_SCHEMA.describe('The root RemNote Rem ID to read.'),
-        depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 3.'),
+        depth: TREE_DEPTH_SCHEMA.describe('Maximum descendant depth, capped at 12.'),
       }),
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
       annotations: annotationsFor('get_rem_tree'),
