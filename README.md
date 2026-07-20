@@ -42,8 +42,7 @@ server policy and RemNote-side approval checks.
 
 The current plugin version is **0.1.1**.
 
-1. Download
-   [PluginZip.zip](https://github.com/HTGit63/remnote-plugin-template-react/raw/refs/heads/release-artifacts/v0.1.1/PluginZip.zip).
+1. Download [PluginZip.zip](PluginZip.zip).
 2. Open RemNote desktop and go to **Settings → Plugins**.
 3. Choose **Upload plugin** and select the downloaded ZIP.
 4. Enable **RemNote MCP** and open its sidebar panel.
@@ -70,18 +69,10 @@ https://remnote-plugin-template-react.onrender.com/mcp
 Complete the displayed pairing flow in the RemNote plugin before using write
 tools. Refresh the client connection after changing tool profiles.
 
-For Codex, configure a remote Streamable HTTP server:
-
-```toml
-[mcp_servers.remnote_mcp]
-url = "https://remnote-plugin-template-react.onrender.com/mcp"
-bearer_token_env_var = "REMNOTE_CODEX_TOKEN"
-default_tools_approval_mode = "writes"
-```
-
-Set `REMNOTE_CODEX_TOKEN` in the process environment, never in the TOML file.
-The bearer authenticates Codex to the server; it does not bypass RemNote scope,
-pairing, or write approval.
+Codex uses the same installed ChatGPT plugin connection and provider
+authentication. No separate Codex secret or pairing route is required. Connect
+and authorize the plugin in ChatGPT, then use it from either ChatGPT or Codex;
+RemNote scope and write approvals still apply.
 
 ## Local development
 
@@ -161,12 +152,12 @@ rendering or playback in RemNote.
 - Choose the smallest scope and tool profile.
 - Keep write confirmation on until the workflow is trusted.
 - Keep deletion disabled for normal use.
-- Never place bridge tokens, bearer tokens, OAuth credentials, pairing codes,
+- Never place bridge tokens, OAuth credentials, pairing codes,
   session secrets, or database URLs in prompts or committed files.
 - Use TLS for remote connections and distinct high-entropy credentials for
-  plugin, Codex, OAuth, database, and administrative access.
+  local bridge, OAuth, database, and administrative access.
 - Treat remote note content and tool output as untrusted input.
-- Pairing and bearer authentication never replace RemNote-side scope and write
+- Shared OAuth authentication never replaces RemNote-side scope and write
   approval.
 
 See [TOOL_REFERENCE.md](TOOL_REFERENCE.md) for tool schemas, permission tiers,

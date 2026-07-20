@@ -5,6 +5,7 @@ dist-ssr
 /graphify-out/
 *.local
 *.zip
+!PluginZip.zip
 .env
 .remnote-dev-server.pid
 .remnote-dev-server.log

@@ -22,8 +22,6 @@ export interface BridgeRuntimeInfo {
   mcpDiscoveryAuth: 'no_auth_required';
   mcpToolCallAuth: ToolCallAuthMode;
   authModesSupported: string[];
-  codexBearerAuthAvailable: boolean;
-  codexBearerAuthConfigured: boolean;
   connectorCompatibilityMode: boolean;
   browserGetMcpIsNotConnectorTest: true;
   mcpEndpoint: string;
@@ -83,7 +81,6 @@ export interface CompanionServerConfig {
   bridgePath: string;
   mcpPath: string;
   bridgeToken: string;
-  codexToken: string;
   toolProfile: ToolProfile;
   allowNoToken: boolean;
   connectorCompatNoAuthTools: boolean;
@@ -255,7 +252,7 @@ function deploymentModeFromEnv(env: NodeJS.ProcessEnv): BridgeDeploymentMode {
 }
 
 export function getToolCallAuthMode(config: CompanionServerConfig): ToolCallAuthMode {
-  if (config.connectorCompatNoAuthTools && !isCodexBearerAuthAvailable(config)) {
+  if (config.connectorCompatNoAuthTools) {
     return 'connector_compat_no_auth_tools';
   }
 
@@ -276,14 +273,6 @@ export function isHostedPairingEnabled(config: CompanionServerConfig): boolean {
   return config.deploymentMode === 'hosted' && config.hostedPairingEnabled;
 }
 
-export function isCodexBearerAuthConfigured(config: CompanionServerConfig): boolean {
-  return Boolean(config.codexToken);
-}
-
-export function isCodexBearerAuthAvailable(config: CompanionServerConfig): boolean {
-  return config.deploymentMode === 'hosted' && isCodexBearerAuthConfigured(config);
-}
-
 export function getAuthModesSupported(config: CompanionServerConfig): string[] {
   const modes: string[] =
     config.deploymentMode === 'hosted'
@@ -292,10 +281,7 @@ export function getAuthModesSupported(config: CompanionServerConfig): string[] {
         ? ['local_no_auth']
         : ['local_bearer'];
 
-  if (isCodexBearerAuthAvailable(config)) {
-    modes.push('codex_bearer');
-  }
-  if (config.connectorCompatNoAuthTools && !isCodexBearerAuthAvailable(config)) {
+  if (config.connectorCompatNoAuthTools) {
     modes.push('connector_compat_no_auth_tools');
   }
   return modes;
@@ -306,7 +292,7 @@ export function getExpectedPairingBehavior(config: CompanionServerConfig): strin
     return LOCAL_PAIRING_DISABLED_MESSAGE;
   }
 
-  return 'hosted ChatGPT OAuth/pairing token required; local bridge token is not used for MCP tool calls';
+  return 'hosted plugin OAuth/pairing token required; local bridge token is not used for MCP tool calls';
 }
 
 function endpointHost(config: CompanionServerConfig, hostOverride?: string): string {
@@ -332,8 +318,6 @@ export function getRuntimeInfo(
       mcpDiscoveryAuth: 'no_auth_required',
       mcpToolCallAuth: getToolCallAuthMode(config),
       authModesSupported: getAuthModesSupported(config),
-      codexBearerAuthAvailable: isCodexBearerAuthAvailable(config),
-      codexBearerAuthConfigured: isCodexBearerAuthConfigured(config),
       connectorCompatibilityMode: config.connectorCompatNoAuthTools,
       browserGetMcpIsNotConnectorTest: true,
       mcpEndpoint: publicEndpoint(publicBaseUrl, 'http', config.mcpPath),
@@ -357,8 +341,6 @@ export function getRuntimeInfo(
     mcpDiscoveryAuth: 'no_auth_required',
     mcpToolCallAuth: getToolCallAuthMode(config),
     authModesSupported: getAuthModesSupported(config),
-    codexBearerAuthAvailable: isCodexBearerAuthAvailable(config),
-    codexBearerAuthConfigured: isCodexBearerAuthConfigured(config),
     connectorCompatibilityMode: config.connectorCompatNoAuthTools,
     browserGetMcpIsNotConnectorTest: true,
     mcpEndpoint: `${httpProtocol}://${host}:${ports.mcpPort}${config.mcpPath}`,
@@ -444,7 +426,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     (nodeEnv === 'development' && boolFromEnv(env.ALLOW_DEV_NO_AUTH));
   const connectorCompatNoAuthTools = boolFromEnv(env.REMNOTE_BRIDGE_CONNECTOR_COMPAT_NO_AUTH_TOOLS);
   const bridgeToken = env.REMNOTE_BRIDGE_TOKEN?.trim() ?? '';
-  const codexToken = env.REMNOTE_CODEX_TOKEN?.trim() ?? '';
   const bindHost = env.REMNOTE_BRIDGE_HOST?.trim() || '127.0.0.1';
   const singlePort = boolFromEnv(env.REMNOTE_BRIDGE_SINGLE_PORT);
   const port = numberFromEnv(env.PORT ?? env.REMNOTE_BRIDGE_PORT, DEFAULT_MCP_PORT);
@@ -576,7 +557,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     bridgePath: env.REMNOTE_BRIDGE_WS_PATH?.trim() || env.PLUGIN_WS_PATH?.trim() || '/remnote-bridge',
     mcpPath: env.REMNOTE_BRIDGE_MCP_PATH?.trim() || '/mcp',
     bridgeToken,
-    codexToken,
     toolProfile: normalizeToolProfile(
       env.REMNOTE_MCP_TOOL_PROFILE ??
         env.REMNOTE_BRIDGE_TOOL_PROFILE ??

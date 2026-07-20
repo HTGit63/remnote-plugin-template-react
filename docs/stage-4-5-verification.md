@@ -52,9 +52,6 @@ The following commands completed with exit code 0:
 - `npm run server:test:health-check-routing`
 - `npm run test:style-correctness`
 - `npm run server:test:auth`
-- `npm run server:test:codex-bearer`
-- `npm run server:test:codex-routing`
-- `npm run server:test:codex-pairing`
 - `npm run server:test:pairing`
 - `npm run server:test:connector-compat-routing`
 - `npm run server:test:tool-profile`

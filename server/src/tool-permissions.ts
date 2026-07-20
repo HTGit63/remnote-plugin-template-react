@@ -207,8 +207,7 @@ export function validateMcpToolPermission(
     principal.authMode !== 'local_bridge_token' &&
     principal.authMode !== 'local_no_token' &&
     principal.authMode !== 'hosted_oauth' &&
-    principal.authMode !== 'connector_compat_noauth' &&
-    principal.authMode !== 'codex_bearer'
+    principal.authMode !== 'connector_compat_noauth'
   ) {
     return { ok: true };
   }

@@ -46,7 +46,6 @@ export function registerDiagnosticTools({
     },
     async () => {
       const diagnostics = hub.getDiagnostics();
-      const codexRouting = await hub.getCodexRoutingDiagnostics(principal);
       const registry = currentRegistry();
       const directWrite = getDirectWritePolicySnapshot(principal);
       const serverLocalTools = SERVER_LOCAL_MCP_TOOLS.filter((tool) => registry.publicTools.includes(tool));
@@ -110,12 +109,9 @@ export function registerDiagnosticTools({
         hostedMode: runtimeInfo?.deploymentMode === 'hosted',
         connectorCompatNoAuthTools: diagnostics.connectorCompatNoAuthTools ?? false,
         connectorCompatRouting: diagnostics.connectorCompatRouting ?? 'disabled',
-        codexBearerAuthenticated: principal?.authMode === 'codex_bearer',
-        codexRoutingMode: codexRouting.codexRoutingMode,
-        codexPairingStatus: codexRouting.codexPairingStatus,
-        codexPairingRequired: codexRouting.pairingRequired,
-        codexPairingSupported: runtimeInfo?.codexBearerAuthAvailable ?? false,
-        codexLinked: codexRouting.linked,
+        pluginAuthMode: principal?.authMode ?? 'unauthenticated_or_discovery',
+        sharedPluginAuthentication: principal?.authMode === 'hosted_oauth',
+        sessionRouterStatus: diagnostics.sessionRouter,
         activePluginConnectionCount: diagnostics.activePluginConnectionCount ?? diagnostics.activePluginConnections?.length ?? 0,
         activePluginUsers: (diagnostics.activePluginConnections ?? []).map((connection) => connection.userId),
         selectedToolTier: registry.activeToolTier,
@@ -168,7 +164,6 @@ export function registerDiagnosticTools({
         unauthMcpCallableTools:
           registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
         publicUserSummary,
-        codexRouting,
       };
       const operationId = `diagnostics-${Date.now().toString(36)}`;
       const standard = {

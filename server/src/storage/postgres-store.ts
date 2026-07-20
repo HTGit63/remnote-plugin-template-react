@@ -6,8 +6,6 @@ import {
 } from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
-  CodexClientLink,
-  CodexPairingSession,
   IdempotencyRecord,
   McpAuthorizationCode,
   McpClient,
@@ -160,29 +158,6 @@ export class PostgresStorageProvider implements StorageProvider {
         finished_at TIMESTAMPTZ,
         error_code TEXT,
         UNIQUE (user_id, tool, idempotency_key)
-      );
-
-      CREATE TABLE IF NOT EXISTS codex_pairing_sessions (
-        pairing_id TEXT PRIMARY KEY,
-        user_code_hash VARCHAR(64) UNIQUE NOT NULL,
-        codex_client_hash VARCHAR(64) NOT NULL,
-        status VARCHAR(32) NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        data JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS codex_client_links (
-        codex_client_hash VARCHAR(64) PRIMARY KEY,
-        linked_pairing_id TEXT NOT NULL,
-        linked_user_id TEXT NOT NULL,
-        linked_plugin_instance_id TEXT,
-        linked_plugin_connection_id TEXT,
-        data JSONB NOT NULL,
-        created_at TIMESTAMPTZ NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL,
-        revoked_at TIMESTAMPTZ
       );
 
       CREATE TABLE IF NOT EXISTS bulk_import_plans (
@@ -611,118 +586,6 @@ export class PostgresStorageProvider implements StorageProvider {
       .filter((session: ChatGptPairingSession | null): session is ChatGptPairingSession => Boolean(session));
   }
 
-  async createCodexPairingSession(session: CodexPairingSession): Promise<CodexPairingSession> {
-    const now = new Date().toISOString();
-    const stored = this.normalizeCodexPairingForStorage(session);
-    await this.pool.query(
-      `INSERT INTO codex_pairing_sessions (
-        pairing_id, user_code_hash, codex_client_hash, status, expires_at,
-        data, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        stored.pairingId,
-        stored.userCodeHash,
-        stored.codexClientHash,
-        stored.status,
-        stored.expiresAt,
-        JSON.stringify(stored),
-        stored.createdAt,
-        now,
-      ]
-    );
-    return stored;
-  }
-
-  async getCodexPairingSessionById(pairingId: string): Promise<CodexPairingSession | null> {
-    const res = await this.pool.query(
-      'SELECT * FROM codex_pairing_sessions WHERE pairing_id = $1',
-      [pairingId]
-    );
-    return this.codexPairingFromRow(res.rows[0]);
-  }
-
-  async getCodexPairingSessionByUserCode(userCode: string): Promise<CodexPairingSession | null> {
-    const res = await this.pool.query(
-      `SELECT * FROM codex_pairing_sessions
-       WHERE user_code_hash = $1 AND (data->>'revokedAt' IS NULL)`,
-      [hashToken(userCode)]
-    );
-    return this.codexPairingFromRow(res.rows[0]);
-  }
-
-  async updateCodexPairingSession(
-    pairingId: string,
-    updates: Partial<Omit<CodexPairingSession, 'pairingId' | 'createdAt'>>
-  ): Promise<CodexPairingSession> {
-    const existing = await this.getCodexPairingSessionById(pairingId);
-    if (!existing) {
-      throw new Error(`Codex pairing session with ID ${pairingId} not found.`);
-    }
-    const updated = this.normalizeCodexPairingForStorage({ ...existing, ...updates });
-    const now = new Date().toISOString();
-    const res = await this.pool.query(
-      `UPDATE codex_pairing_sessions
-       SET user_code_hash = $2,
-           codex_client_hash = $3,
-           status = $4,
-           expires_at = $5,
-           data = $6,
-           updated_at = $7
-       WHERE pairing_id = $1
-       RETURNING *`,
-      [
-        pairingId,
-        updated.userCodeHash,
-        updated.codexClientHash,
-        updated.status,
-        updated.expiresAt,
-        JSON.stringify(updated),
-        now,
-      ]
-    );
-    return this.codexPairingFromRow(res.rows[0])!;
-  }
-
-  async getCodexClientLink(codexClientHash: string): Promise<CodexClientLink | null> {
-    const res = await this.pool.query(
-      'SELECT * FROM codex_client_links WHERE codex_client_hash = $1',
-      [codexClientHash]
-    );
-    return this.codexLinkFromRow(res.rows[0]);
-  }
-
-  async upsertCodexClientLink(link: CodexClientLink): Promise<CodexClientLink> {
-    const stored = this.normalizeCodexLinkForStorage(link);
-    const res = await this.pool.query(
-      `INSERT INTO codex_client_links (
-        codex_client_hash, linked_pairing_id, linked_user_id,
-        linked_plugin_instance_id, linked_plugin_connection_id,
-        data, created_at, updated_at, revoked_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-      ON CONFLICT (codex_client_hash) DO UPDATE SET
-        linked_pairing_id = EXCLUDED.linked_pairing_id,
-        linked_user_id = EXCLUDED.linked_user_id,
-        linked_plugin_instance_id = EXCLUDED.linked_plugin_instance_id,
-        linked_plugin_connection_id = EXCLUDED.linked_plugin_connection_id,
-        data = EXCLUDED.data,
-        updated_at = EXCLUDED.updated_at,
-        revoked_at = EXCLUDED.revoked_at
-      RETURNING *`,
-      [
-        stored.codexClientHash,
-        stored.linkedPairingId,
-        stored.linkedUserId,
-        stored.linkedPluginInstanceId ?? null,
-        stored.linkedPluginConnectionId ?? null,
-        JSON.stringify(stored),
-        stored.createdAt,
-        stored.updatedAt,
-        stored.revokedAt ?? null,
-      ]
-    );
-    return this.codexLinkFromRow(res.rows[0])!;
-  }
-
   async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
     const stored: StoredAuditEvent = {
       id: randomUUID(),
@@ -996,54 +859,6 @@ export class PostgresStorageProvider implements StorageProvider {
       toolTier: normalizeToolProfile(session.toolTier),
       requiresConnectorRefresh: false,
       status: session.status ?? 'pending',
-    };
-  }
-
-  private codexPairingFromRow(row: any): CodexPairingSession | null {
-    if (!row) {
-      return null;
-    }
-    const data = typeof row.data === 'object' && row.data !== null ? row.data : {};
-    return this.normalizeCodexPairingForStorage({
-      ...data,
-      pairingId: row.pairing_id,
-      userCodeHash: row.user_code_hash,
-      codexClientHash: row.codex_client_hash,
-      status: row.status,
-      expiresAt: row.expires_at.toISOString(),
-      createdAt: row.created_at.toISOString(),
-    } as CodexPairingSession);
-  }
-
-  private codexLinkFromRow(row: any): CodexClientLink | null {
-    if (!row) {
-      return null;
-    }
-    const data = typeof row.data === 'object' && row.data !== null ? row.data : {};
-    return this.normalizeCodexLinkForStorage({
-      ...data,
-      codexClientHash: row.codex_client_hash,
-      linkedPairingId: row.linked_pairing_id,
-      linkedUserId: row.linked_user_id,
-      linkedPluginInstanceId: row.linked_plugin_instance_id ?? data.linkedPluginInstanceId,
-      linkedPluginConnectionId: row.linked_plugin_connection_id ?? data.linkedPluginConnectionId,
-      createdAt: row.created_at.toISOString(),
-      updatedAt: row.updated_at.toISOString(),
-      revokedAt: row.revoked_at?.toISOString() ?? data.revokedAt,
-    } as CodexClientLink);
-  }
-
-  private normalizeCodexPairingForStorage(session: CodexPairingSession): CodexPairingSession {
-    return {
-      ...session,
-      status: session.status ?? 'pending',
-    };
-  }
-
-  private normalizeCodexLinkForStorage(link: CodexClientLink): CodexClientLink {
-    return {
-      ...link,
-      updatedAt: link.updatedAt ?? new Date().toISOString(),
     };
   }
 

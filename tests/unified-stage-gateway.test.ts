@@ -225,8 +225,8 @@ describe('unified staged live-proof gateway regressions', () => {
     expect(allowed).toMatchObject({ ok: true });
   });
 
-  test('all auth lanes use the same server scope boundary', () => {
-    for (const authMode of ['local_bridge_token', 'hosted_oauth', 'codex_bearer'] as const) {
+  test('local and hosted auth lanes use the same server scope boundary', () => {
+    for (const authMode of ['local_bridge_token', 'hosted_oauth'] as const) {
       const result = validateMcpToolPermission(
         mcpBody('get_rem', { remId: 'outside-current-tree' }),
         hostedPrincipal({

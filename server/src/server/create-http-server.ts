@@ -6,10 +6,8 @@ import {
 } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from '../auth/local-token.js';
-import { codexClientHashForRequest, hasValidCodexBearerToken } from '../auth/codex-token.js';
 import { validateDashboardSession } from '../auth/dashboard-session.js';
 import { handleChatGptPairingRoute } from '../auth/chatgpt-pairing-routes.js';
-import { handleCodexPairingRoute } from '../auth/codex-pairing-routes.js';
 import { handleDashboardRoute } from '../auth/dashboard-routes.js';
 import { handlePairingRoute } from '../auth/pairing-routes.js';
 import { buildOauthChallenge, handleOAuthRoute } from '../auth/oauth-routes.js';
@@ -398,81 +396,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     };
   }
 
-  function codexScopeGrants(session?: ChatGptPairingSession | null): ScopeGrant[] {
-    const allowed = new Set<ScopeGrant>([
-      'bridge:read',
-      'bridge:write',
-      'bridge:trusted_write',
-      'bridge:pair',
-    ]);
-    const grants = (session?.approvedScopes ?? [])
-      .filter((scope): scope is ScopeGrant => allowed.has(scope as ScopeGrant));
-    return grants.length ? grants : ['bridge:read', 'bridge:write'];
-  }
-
-  async function linkedCodexPairingContext(codexClientHash: string): Promise<{
-    linkId?: string;
-    session: ChatGptPairingSession | null;
-    status: 'linked' | 'not_linked' | 'revoked';
-  }> {
-    const link = await storage.getCodexClientLink(codexClientHash);
-    if (!link) {
-      return { session: null, status: 'not_linked' };
-    }
-    if (link.revokedAt) {
-      return { linkId: link.linkedPairingId, session: null, status: 'revoked' };
-    }
-    const session = await storage.getChatGptPairingSessionById(link.linkedPairingId);
-    if (!session || session.revokedAt) {
-      return { linkId: link.linkedPairingId, session: null, status: 'revoked' };
-    }
-    return { linkId: link.linkedPairingId, session, status: 'linked' };
-  }
-
-  async function authorizeCodexMcpRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]): Promise<AuthResult | null> {
-    if (config.deploymentMode !== 'hosted' || !config.codexToken || !hasValidCodexBearerToken(req, config)) {
-      return null;
-    }
-
-    const codexClientHash = codexClientHashForRequest(req, config);
-    if (!codexClientHash) {
-      return null;
-    }
-    const linked = await linkedCodexPairingContext(codexClientHash);
-    // A global bearer proves the Codex client identity only. RemNote authority
-    // comes exclusively from an explicit Codex-to-plugin pairing link.
-    const session = linked.session;
-    const codexSubject = `codex:${codexClientHash.slice(0, 16)}`;
-    return {
-      ok: true,
-      principal: {
-        subject: codexSubject,
-        userId: codexSubject,
-        authMode: 'codex_bearer',
-        scopeGrants: codexScopeGrants(session),
-        accessScope: session?.accessScope ?? 'current-rem-tree',
-        trustedWriteMode: session?.trustedWriteMode ?? 'ask-every-write',
-        toolTier: session?.toolTier ?? config.toolProfile,
-        requiresConnectorRefresh: false,
-        codexClientHash,
-        codexLinkId: linked.linkId,
-        codexPairingStatus: linked.status,
-      },
-    };
-  }
-
-  async function codexRoutingFields(principal?: AuthenticatedPrincipal) {
-    const routing = await hub.getCodexRoutingDiagnostics(principal);
-    return {
-      codexBearerRoutingAvailable: config.deploymentMode === 'hosted' && Boolean(config.codexToken),
-      codexBearerRoutingMode: routing.codexRoutingMode,
-      codexPairingSupported: config.deploymentMode === 'hosted' && config.hostedPairingEnabled && Boolean(config.codexToken),
-      codexPairingRequired: routing.pairingRequired,
-      codexPairingStatus: routing.codexPairingStatus,
-      sessionRouterStatus: routing.sessionRouterStatus,
-    };
-  }
-
   function writeUnknownToolCall(body: unknown, res: ServerResponse, toolProfile: ToolProfile): boolean {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return false;
@@ -593,7 +516,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       };
     }
 
-    if (config.connectorCompatNoAuthTools && !config.codexToken && isMcpToolCallRequest(body)) {
+    if (config.connectorCompatNoAuthTools && isMcpToolCallRequest(body)) {
       return {
         ok: true,
         principal: connectorCompatPrincipal(),
@@ -601,11 +524,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     }
 
     if (config.deploymentMode === 'hosted') {
-      const codexAuth = await authorizeCodexMcpRequest(req);
-      if (codexAuth) {
-        return codexAuth;
-      }
-
       return authorizeHostedMcpRequest(req, config, storage, requiredScopesForMcpRequest(body));
     }
 
@@ -789,31 +707,12 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       }
     }
 
-    if (url.pathname.startsWith('/codex/')) {
-      if (req.method === 'OPTIONS') {
-        const corsAllowed = applyCors(req, res, config);
-        setSecurityHeaders(res);
-        res.writeHead(corsAllowed ? 204 : 403);
-        res.end();
-        return;
-      }
-      applyCors(req, res, config);
-      if (!rateLimitRequest(req, res, config, 'pairing')) {
-        return;
-      }
-      const handled = await handleCodexPairingRoute(req, res, url, { config, storage });
-      if (handled) {
-        return;
-      }
-    }
-
     if (url.pathname === '/health' && req.method === 'GET') {
       const runtimeInfo = runtimeInfoForRequest(req);
       const chatGptPairing = await latestPairingSummary();
       const registry = registrySummary(undefined, chatGptPairing.toolTier ?? config.toolProfile);
       const bridgeStatus = hub.getStatus();
       const bridgeDiagnostics = hub.getDiagnostics();
-      const codexRouting = await codexRoutingFields();
       if (config.deploymentMode === 'hosted') {
         writeJson(res, 200, {
           ok: true,
@@ -831,7 +730,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           connectorCompatNoAuthTools: config.connectorCompatNoAuthTools,
           connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
           activePluginConnectionCount: bridgeDiagnostics.activePluginConnectionCount ?? 0,
-          ...codexRouting,
+          sessionRouterStatus: bridgeDiagnostics.sessionRouter,
           lastErrorCode: diagnosticsSummary(registry, bridgeDiagnostics).lastErrorCode,
           lastRequestReachedPlugin: diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool
             ? Boolean(diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool?.pluginLifecycle?.length)
@@ -1119,7 +1018,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       const toolProfile = requestedToolProfile(req, undefined, url) ?? config.toolProfile;
       const registry = registrySummary(undefined, toolProfile);
       const bridgeDiagnostics = hub.getDiagnostics();
-      const codexRouting = await codexRoutingFields();
       const summary = diagnosticsSummary(registry, bridgeDiagnostics);
       writeJson(res, 200, {
         ...runtimeInfoForRequest(req),
@@ -1136,7 +1034,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
         lastErrorCode: summary.lastErrorCode,
         lastRequestReachedPlugin: summary.lastFailedTool ? Boolean(summary.lastFailedTool.pluginLifecycle?.length) : null,
-        ...codexRouting,
+        sessionRouterStatus: bridgeDiagnostics.sessionRouter,
         connectorCompatibilityMode: config.connectorCompatNoAuthTools,
         browserGetMcpIsNotConnectorTest: true,
       });

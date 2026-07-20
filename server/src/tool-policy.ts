@@ -734,7 +734,7 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     agentWarning:
-      'Local paths require authenticated local/Codex bearer access and canonical allowed-root checks. ChatGPT uses the top-level sourceFile file param on hosted OAuth. Symlinks, root escapes, private-network URLs, and oversized sources are rejected.',
+      'Local paths require authenticated local bridge access and canonical allowed-root checks. Hosted plugin clients use the top-level sourceFile file param with OAuth. Symlinks, root escapes, private-network URLs, and oversized sources are rejected.',
   }),
   meta('start_note_import_job', 'markdown_note', 'low', {
     requiresWrite: false,
@@ -755,7 +755,7 @@ export const TOOL_METADATA = [
     runtimeVerified: true,
     runtimeVerifiedSource: 'server_local',
     agentWarning:
-      'Accepts authenticated local/Codex paths or hosted-OAuth ChatGPT sourceFile params. Check storageDurability before assuming restart durability.',
+      'Accepts authenticated local bridge paths or hosted OAuth sourceFile params. Check storageDurability before assuming restart durability.',
   }),
   meta('run_note_import_job_step', 'markdown_note', 'medium', {
     supportsDryRun: true,
