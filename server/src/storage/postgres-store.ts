@@ -7,6 +7,7 @@ import {
 import type {
   ChatGptPairingSession,
   IdempotencyRecord,
+  HostedMediaAsset,
   McpAuthorizationCode,
   McpClient,
   PairingChallenge,
@@ -16,7 +17,7 @@ import type {
   User,
   BulkImportJobSaveOptions,
 } from './types.js';
-import { BulkImportRevisionConflictError } from './types.js';
+import { BulkImportRevisionConflictError, HostedMediaIdempotencyConflictError } from './types.js';
 import { hashToken } from './crypto-utils.js';
 import { normalizeToolProfile } from '../tool-policy.js';
 
@@ -158,6 +159,19 @@ export class PostgresStorageProvider implements StorageProvider {
         finished_at TIMESTAMPTZ,
         error_code TEXT,
         UNIQUE (user_id, tool, idempotency_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS hosted_media_assets (
+        asset_id UUID PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        source_file_id TEXT NOT NULL,
+        sha256 VARCHAR(64) NOT NULL,
+        content_type VARCHAR(64) NOT NULL,
+        file_name TEXT NOT NULL,
+        bytes BYTEA NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        UNIQUE (owner_id, idempotency_key)
       );
 
       CREATE TABLE IF NOT EXISTS bulk_import_plans (
@@ -664,6 +678,71 @@ export class PostgresStorageProvider implements StorageProvider {
     return res.rows[0] ? this.idempotencyFromRow(res.rows[0]) : null;
   }
 
+  hostedMediaStorageDurability() {
+    return 'persistent' as const;
+  }
+
+  async createHostedMediaAsset(asset: HostedMediaAsset): Promise<{ asset: HostedMediaAsset; created: boolean }> {
+    const inserted = await this.pool.query(
+      `INSERT INTO hosted_media_assets (
+        asset_id, owner_id, idempotency_key, source_file_id, sha256,
+        content_type, file_name, bytes, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (owner_id, idempotency_key) DO NOTHING
+      RETURNING *`,
+      [
+        asset.assetId,
+        asset.ownerId,
+        asset.idempotencyKey,
+        asset.sourceFileId,
+        asset.sha256,
+        asset.contentType,
+        asset.fileName,
+        asset.bytes,
+        asset.createdAt,
+      ]
+    );
+    if (inserted.rows[0]) {
+      return { asset: this.hostedMediaAssetFromRow(inserted.rows[0]), created: true };
+    }
+    const existing = await this.pool.query(
+      `SELECT * FROM hosted_media_assets WHERE owner_id = $1 AND idempotency_key = $2`,
+      [asset.ownerId, asset.idempotencyKey]
+    );
+    if (!existing.rows[0]) {
+      throw new Error('Hosted media idempotency lookup failed after insert conflict.');
+    }
+    const stored = this.hostedMediaAssetFromRow(existing.rows[0]);
+    if (stored.sourceFileId !== asset.sourceFileId || stored.sha256 !== asset.sha256) {
+      throw new HostedMediaIdempotencyConflictError(asset.ownerId, asset.idempotencyKey);
+    }
+    return { asset: stored, created: false };
+  }
+
+  async getHostedMediaAsset(assetId: string): Promise<HostedMediaAsset | null> {
+    const result = await this.pool.query(
+      `SELECT * FROM hosted_media_assets WHERE asset_id = $1`,
+      [assetId]
+    );
+    return result.rows[0] ? this.hostedMediaAssetFromRow(result.rows[0]) : null;
+  }
+
+  async getHostedMediaAssetByIdempotency(ownerId: string, idempotencyKey: string): Promise<HostedMediaAsset | null> {
+    const result = await this.pool.query(
+      `SELECT * FROM hosted_media_assets WHERE owner_id = $1 AND idempotency_key = $2`,
+      [ownerId, idempotencyKey]
+    );
+    return result.rows[0] ? this.hostedMediaAssetFromRow(result.rows[0]) : null;
+  }
+
+  async deleteHostedMediaAsset(assetId: string, ownerId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `DELETE FROM hosted_media_assets WHERE asset_id = $1 AND owner_id = $2 RETURNING asset_id`,
+      [assetId, ownerId]
+    );
+    return Boolean(result.rows[0]);
+  }
+
   bulkImportStorageDurability(): BulkImportJob['storageDurability'] {
     return 'persistent';
   }
@@ -809,6 +888,20 @@ export class PostgresStorageProvider implements StorageProvider {
       startedAt: row.started_at.toISOString(),
       finishedAt: row.finished_at?.toISOString(),
       errorCode: row.error_code ?? undefined,
+    };
+  }
+
+  private hostedMediaAssetFromRow(row: any): HostedMediaAsset {
+    return {
+      assetId: row.asset_id,
+      ownerId: row.owner_id,
+      idempotencyKey: row.idempotency_key,
+      sourceFileId: row.source_file_id,
+      sha256: row.sha256,
+      contentType: row.content_type,
+      fileName: row.file_name,
+      bytes: Buffer.from(row.bytes),
+      createdAt: row.created_at.toISOString(),
     };
   }
 

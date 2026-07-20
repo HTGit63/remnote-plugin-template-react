@@ -44,7 +44,7 @@ function registeredMassNoteTools(): Record<string, ToolDescriptor> {
 describe('ChatGPT app contract', () => {
   test('MCP server identity changes with the discovery contract', () => {
     expect(MCP_DISCOVERY_VERSION).toBe(
-      'mcp-discovery-2026-07-19.connector-media-proof'
+      'mcp-discovery-2026-07-20.hosted-image-media'
     );
     const server = createMcpServer({} as never, {
       toolProfile: 'developer',
@@ -155,7 +155,7 @@ describe('ChatGPT app contract', () => {
         _meta?: { securitySchemes?: Array<{ type?: string; scopes?: string[] }> };
       }>;
     };
-    expect(listed.tools).toHaveLength(20);
+    expect(listed.tools).toHaveLength(getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE).length);
     for (const descriptor of listed.tools) {
       expect(descriptor.securitySchemes, `${descriptor.name} top-level securitySchemes`).toEqual([
         expect.objectContaining({ type: 'oauth2', scopes: expect.arrayContaining(['bridge:read']) }),

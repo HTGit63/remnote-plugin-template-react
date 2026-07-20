@@ -85,6 +85,7 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   create_folder: { toolName: 'create_folder', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   append_to_rem: { toolName: 'append_to_rem', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
   insert_image_from_url: { toolName: 'insert_image_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  insert_image_from_file: { toolName: 'insert_image_from_file', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   insert_audio_from_url: { toolName: 'insert_audio_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   insert_video_from_url: { toolName: 'insert_video_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   update_rem: { toolName: 'update_rem', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },

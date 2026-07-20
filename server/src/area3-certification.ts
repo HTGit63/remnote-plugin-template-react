@@ -22,6 +22,18 @@ import {
   getToolPolicyEntry,
   type ToolProfile,
 } from './tool-policy.js';
+import { MemoryStorageProvider } from './storage/memory-store.js';
+
+class PersistentCertificationStorage extends MemoryStorageProvider {
+  hostedMediaStorageDurability() {
+    return 'persistent' as const;
+  }
+}
+
+const certificationImageBytes = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d,
+]);
 
 const mode = process.argv[2] ?? 'all';
 const token = 'area3-certification-token';
@@ -314,6 +326,20 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         label: 'Area 3 image',
         width: 640,
         height: 480,
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'insert_image_from_file':
+      return {
+        parentId,
+        imageFile: {
+          download_url: 'https://files.openai.example.test/area3-image',
+          file_id: 'file_area3_image',
+          mime_type: 'image/png',
+          file_name: 'area3-image.png',
+        },
+        position: 'end',
+        label: 'Area 3 hosted image',
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
@@ -1282,6 +1308,7 @@ async function assertBulkResumeDurability(baseUrl: string, publicTools: readonly
 
 async function certifyProfile(profile: ToolProfile) {
   assertSchemaQuality(profile);
+  const storage = new PersistentCertificationStorage();
   const app = await startCompanionApp({
     deploymentMode: 'local',
     storageMode: 'memory',
@@ -1302,6 +1329,15 @@ async function certifyProfile(profile: ToolProfile) {
     auditLog: false,
     enableDeleteTool: true,
     sourceFileAllowRoots: [repoRoot],
+    publicBaseUrl: 'https://bridge.example.test',
+  }, {
+    storage,
+    hostedImageLoader: async () => ({
+      bytes: certificationImageBytes,
+      contentType: 'image/png',
+      fileName: 'area3-image.png',
+      fileId: 'file_area3_image',
+    }),
   });
   const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
   const seen: SeenBridgeRequest[] = [];

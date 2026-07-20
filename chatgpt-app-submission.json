@@ -3,7 +3,7 @@
   "app_info": {
     "display_name": "RemNote MCP",
     "subtitle": "Use RemNote from ChatGPT",
-    "description": "RemNote MCP lets ChatGPT inspect and safely update a running private RemNote workspace through an OAuth-protected companion server. The submitted default mass_note_writer profile exposes exactly 20 focused tools: bridge/plugin status, bounded Rem reads and search, one idempotent Markdown importer, and resumable bulk-import planning, execution, reconciliation, verification, and cancellation. Higher note, design, card, formatting, diagnostic, and delete profiles are deployment options and are not part of this submission worksheet. File-backed tools accept ChatGPT-authorized temporary file references; local paths remain limited to authenticated local/Codex callers and configured roots. This tool-only app is intended for private Developer Mode until hosted HTTPS, real ChatGPT plus RemNote sandbox proof, privacy/support URLs, organization verification, and plugin review are complete.",
+    "description": "RemNote MCP lets ChatGPT inspect and safely update a running private RemNote workspace through an OAuth-protected companion server. The submitted default mass_note_writer profile exposes exactly 23 focused tools: bridge/plugin status, bounded Rem reads and search, native image and YouTube insertion, one idempotent Markdown importer, and resumable bulk-import planning, execution, reconciliation, verification, and cancellation. ChatGPT image files are byte-validated, stored durably in PostgreSQL, served from opaque immutable HTTPS URLs, and inserted through RemNote's native image builder. Successful URL-backed images retain the required bytes; definitive no-write failures delete newly created orphans. Higher note, design, card, formatting, diagnostic, and delete profiles are deployment options and are not part of this submission worksheet. This tool-only app remains a private Developer Mode app until the updated deployment and connected ChatGPT plus RemNote media proof are complete.",
     "category": "PRODUCTIVITY"
   },
   "tools": {
@@ -113,6 +113,42 @@
         "read_only_justification": "Only reads a bounded tree for a requested or focused RemNote document-like root.",
         "open_world_justification": "Reads local RemNote structure and does not write to external systems.",
         "destructive_justification": "Does not modify, replace, move, or delete RemNote content."
+      }
+    },
+    "insert_image_from_url": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one native image child Rem under the approved parent and verifies the stored media representation.",
+        "open_world_justification": "RemNote fetches the caller-provided stable HTTPS image URL as an external media resource.",
+        "destructive_justification": "Creates a dedicated child and does not replace, overwrite, move, or delete existing RemNote content."
+      }
+    },
+    "insert_image_from_file": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Downloads one authorized ChatGPT image file, persists one hosted asset, and creates one native image child Rem.",
+        "open_world_justification": "Consumes a temporary ChatGPT download URL and creates an opaque public HTTPS asset URL so RemNote can render the image.",
+        "destructive_justification": "Creates new hosted media and one dedicated child Rem without replacing or deleting existing RemNote content; a definitive no-write failure deletes only the newly created unreferenced hosted orphan, and a required idempotency key prevents duplicate replay."
+      }
+    },
+    "insert_video_from_url": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Creates one native video child Rem for a stable video or YouTube URL and verifies its media representation.",
+        "open_world_justification": "RemNote loads the external video or YouTube URL to render the native media embed.",
+        "destructive_justification": "Creates a dedicated child and does not replace, overwrite, move, or delete existing RemNote content."
       }
     },
     "create_or_replace_note_from_markdown": {
@@ -319,6 +355,30 @@
       "file_attachment_urls": null,
       "tools_triggered": "get_document_or_folder_tree",
       "expected_output": "Returns the current document-like root and bounded descendants.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Insert a generated image as native RemNote media.",
+      "user_prompt": "Create an educational diagram, then insert the generated image under rem_parent_1 with idempotency key diagram-1.",
+      "file_attachment_urls": null,
+      "tools_triggered": "insert_image_from_file",
+      "expected_output": "Consumes the top-level imageFile reference, validates and durably hosts the bytes, creates a native RemNote image child, and returns readback plus hosted-byte retention status rather than a text URL.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Insert an existing stable image URL as native media.",
+      "user_prompt": "Insert https://example.com/diagram.png as a native image under rem_parent_1.",
+      "file_attachment_urls": null,
+      "tools_triggered": "insert_image_from_url",
+      "expected_output": "Creates and verifies a native RemNote image child without inserting a plain text link.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Embed a YouTube lesson as native RemNote video.",
+      "user_prompt": "Embed this YouTube lesson under rem_parent_1: https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "file_attachment_urls": null,
+      "tools_triggered": "insert_video_from_url",
+      "expected_output": "Creates and verifies a native RemNote video child; a plain text URL does not count as success.",
       "expected_output_url": null
     },
     {

@@ -1,6 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { extname, resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { extname, relative, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { getRuntimeInfo, loadConfig } from '../server/src/config';
 
@@ -12,15 +11,23 @@ const legacyConfigField = ['codex', 'Token'].join('');
 const legacyDocsLabel = ['Codex', ' bearer'].join('');
 
 function repositoryTextFiles(): string[] {
-  return execFileSync(
-    'git',
-    ['ls-files', '--cached', '--others', '--exclude-standard'],
-    { cwd: process.cwd(), encoding: 'utf8' }
-  )
-    .split('\n')
-    .filter(Boolean)
-    .filter((file) => existsSync(resolve(process.cwd(), file)))
-    .filter((file) => ['.ts', '.tsx', '.js', '.cjs', '.json', '.md', '.yaml', '.yml'].includes(extname(file)));
+  const root = process.cwd();
+  const excludedDirectories = new Set(['.git', 'node_modules', 'dist', 'coverage']);
+  const supportedExtensions = new Set(['.ts', '.tsx', '.js', '.cjs', '.json', '.md', '.yaml', '.yml']);
+  const files: string[] = [];
+  const visit = (directory: string) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (entry.isDirectory() && excludedDirectories.has(entry.name)) continue;
+      const absolutePath = resolve(directory, entry.name);
+      if (entry.isDirectory()) {
+        visit(absolutePath);
+      } else if (entry.isFile() && supportedExtensions.has(extname(entry.name))) {
+        files.push(relative(root, absolutePath));
+      }
+    }
+  };
+  visit(root);
+  return files;
 }
 
 describe('unified ChatGPT and Codex plugin authentication', () => {

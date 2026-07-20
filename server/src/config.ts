@@ -97,6 +97,8 @@ export interface CompanionServerConfig {
   sourceFileAllowRoots: string[];
   maxSourceFileBytes: number;
   sourceFileRemoteTimeoutMs: number;
+  maxHostedImageBytes: number;
+  hostedImageRemoteTimeoutMs: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
   gitCommit: string;
@@ -124,6 +126,9 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_BRIDGE_MESSAGE_BYTES = 8 * 1024 * 1024;
 const MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SOURCE_FILE_REMOTE_TIMEOUT_MS = 15_000;
+const DEFAULT_MAX_HOSTED_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_HOSTED_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_HOSTED_IMAGE_REMOTE_TIMEOUT_MS = 30_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
 const DEFAULT_OAUTH_ACCESS_TOKEN_TTL_SECONDS = 900;
@@ -579,6 +584,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
     sourceFileRemoteTimeoutMs: boundedNumberFromEnv(
       env.REMNOTE_MCP_SOURCE_FILE_REMOTE_TIMEOUT_MS,
       DEFAULT_SOURCE_FILE_REMOTE_TIMEOUT_MS,
+      1000,
+      120000
+    ),
+    maxHostedImageBytes: boundedNumberFromEnv(
+      env.REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES,
+      DEFAULT_MAX_HOSTED_IMAGE_BYTES,
+      1024,
+      MAX_HOSTED_IMAGE_BYTES
+    ),
+    hostedImageRemoteTimeoutMs: boundedNumberFromEnv(
+      env.REMNOTE_MCP_HOSTED_IMAGE_REMOTE_TIMEOUT_MS,
+      DEFAULT_HOSTED_IMAGE_REMOTE_TIMEOUT_MS,
       1000,
       120000
     ),

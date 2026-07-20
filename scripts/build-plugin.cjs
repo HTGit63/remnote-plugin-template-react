@@ -47,7 +47,7 @@ async function main() {
 
   try {
     ensureTemporaryReadmeForSdkValidation();
-    runNodeScript('node_modules/@remnote/plugin-sdk/scripts/index.js', ['validate']);
+    runNodeScript('scripts/remnote-sdk-validate.cjs', ['validate']);
   } finally {
     cleanupTemporaryReadme();
   }

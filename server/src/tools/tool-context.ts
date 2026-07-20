@@ -18,6 +18,7 @@ import type {
   BulkImportSourceFileLoader,
   BulkImportSourceFilePolicy,
 } from '../bulk-import/source-file-loader.js';
+import type { HostedImageFileLoader } from '../media/hosted-image-loader.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
 import { getToolPerformanceBudgetMs } from '../performance/tool-budgets.js';
 
@@ -71,6 +72,12 @@ export interface ToolRegistrationContext {
   storage?: StorageProvider;
   sourceFilePolicy?: BulkImportSourceFilePolicy;
   sourceFileLoader?: BulkImportSourceFileLoader;
+  hostedMediaPolicy?: {
+    publicBaseUrl: string;
+    maxImageBytes: number;
+    remoteTimeoutMs: number;
+  };
+  hostedImageLoader?: HostedImageFileLoader;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {
@@ -524,8 +531,14 @@ export function failureToToolResult(failure: BridgeFailure, toolName?: string, b
 }
 
 export function internalErrorToToolResult(error: unknown): McpToolResult {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('MCP bridge tool failed:', message);
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorCode = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code: unknown }).code).replace(/[^A-Z0-9_-]/gi, '').slice(0, 64)
+    : undefined;
+  console.error('MCP bridge tool failed internally.', {
+    errorName,
+    ...(errorCode ? { errorCode } : {}),
+  });
   return failureToToolResult({
     id: 'unknown',
     ok: false,
@@ -533,7 +546,7 @@ export function internalErrorToToolResult(error: unknown): McpToolResult {
       code: 'INTERNAL_ERROR',
       message: 'Bridge tool call failed internally.',
       details: {
-        message,
+        layer: 'server_tool_execution',
       },
     },
   });

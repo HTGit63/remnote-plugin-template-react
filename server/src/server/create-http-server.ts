@@ -38,6 +38,7 @@ import type { AuditLogger } from '../sessions/types.js';
 import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from '../storage/index.js';
 import { getAllPublicMcpToolNames, getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
 import { validateMcpToolPermission } from '../tool-permissions.js';
+import type { HostedImageFileLoader } from '../media/hosted-image-loader.js';
 import {
   clampToolProfile,
   getToolPolicyEntry,
@@ -53,7 +54,36 @@ import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diag
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
 
-export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, storage: StorageProvider): HttpServer {
+export async function serveHostedImageAsset(
+  storage: StorageProvider,
+  assetId: string,
+  method: 'GET' | 'HEAD',
+  res: ServerResponse
+): Promise<void> {
+  const asset = await storage.getHostedMediaAsset(assetId);
+  if (!asset) {
+    writeText(res, 404, 'Not Found');
+    return;
+  }
+  res.writeHead(200, {
+    'content-type': asset.contentType,
+    'content-length': String(asset.bytes.byteLength),
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    'cross-origin-resource-policy': 'cross-origin',
+    'access-control-allow-origin': '*',
+  });
+  res.end(method === 'HEAD' ? undefined : asset.bytes);
+}
+
+export function createMcpHttpServer(
+  config: CompanionServerConfig,
+  hub: BridgeHub,
+  storage: StorageProvider,
+  dependencies: { hostedImageLoader?: HostedImageFileLoader } = {}
+): HttpServer {
   const auditLogger: AuditLogger | undefined = config.auditLog ? new ConsoleAuditLogger() : undefined;
   const startedAt = new Date().toISOString();
   const toolCallAuthMode = getToolCallAuthMode(config);
@@ -199,12 +229,14 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return {
         ...tool,
         exposed: summary.publicTools.includes(tool.name),
-        runtimeVerified: Boolean(lastSuccess) || Boolean(tool.serverLocalVerified),
+        runtimeVerified: Boolean(lastSuccess) || Boolean(tool.serverLocalVerified) || tool.runtimeVerified === true,
         runtimeVerifiedSource: lastSuccess
           ? 'recent_plugin_call'
           : tool.serverLocalVerified
             ? 'server_local'
-            : tool.runtimeVerifiedSource,
+            : tool.runtimeVerified === true
+              ? tool.runtimeVerifiedSource
+              : 'registry_only',
         lastSuccessTimestamp: lastSuccess?.finishedAt ?? null,
         lastFailureTimestamp: lastFailure?.finishedAt ?? null,
         lastSuccessAt: lastSuccess?.finishedAt ?? tool.lastSuccessAt ?? null,
@@ -572,6 +604,25 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return;
     }
 
+    const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
+
+    if (url.pathname.startsWith('/media/images/')) {
+      if (!['GET', 'HEAD'].includes(req.method || '')) {
+        writeText(res, 405, 'Method Not Allowed');
+        return;
+      }
+      if (!rateLimitRequest(req, res, config, 'hosted-media')) {
+        return;
+      }
+      const assetId = url.pathname.slice('/media/images/'.length);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
+        writeText(res, 404, 'Not Found');
+        return;
+      }
+      await serveHostedImageAsset(storage, assetId, req.method as 'GET' | 'HEAD', res);
+      return;
+    }
+
     if (
       req.headers.origin &&
       (!config.allowCors || !config.allowedOrigins.includes(String(req.headers.origin)))
@@ -588,8 +639,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       writeText(res, 403, 'Browser origin is not allowed.');
       return;
     }
-
-    const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
 
     if (
       url.pathname.startsWith('/oauth/') ||
@@ -1196,6 +1245,12 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         maxBytes: config.maxSourceFileBytes,
         remoteTimeoutMs: config.sourceFileRemoteTimeoutMs,
       },
+      hostedMediaPolicy: {
+        publicBaseUrl: config.publicBaseUrl,
+        maxImageBytes: config.maxHostedImageBytes,
+        remoteTimeoutMs: config.hostedImageRemoteTimeoutMs,
+      },
+      hostedImageLoader: dependencies.hostedImageLoader,
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

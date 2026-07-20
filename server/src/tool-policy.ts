@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-07-19.connector-media-proof';
+export const TOOL_SCHEMA_VERSION = '2026-07-20.hosted-image-media';
 
 const TOOL_PROFILE_RANK: Record<ToolProfile, number> = {
   basic: 0,
@@ -104,6 +104,9 @@ export const BASIC_TIER_TOOLS = [
 export const MASS_NOTE_WRITER_TIER_TOOLS = [
   ...BASIC_TIER_TOOLS,
   'get_document_or_folder_tree',
+  'insert_image_from_url',
+  'insert_image_from_file',
+  'insert_video_from_url',
   'create_or_replace_note_from_markdown',
   'plan_note_import',
   'plan_note_import_from_file',
@@ -124,9 +127,7 @@ export const NOTE_WRITER_TIER_TOOLS = [
   'create_rem',
   'create_document',
   'append_to_rem',
-  'insert_image_from_url',
   'insert_audio_from_url',
-  'insert_video_from_url',
   'create_rem_tree',
   'create_styled_rem_tree',
   'create_polished_note_tree',
@@ -200,6 +201,11 @@ export const TOOL_POLICY_ENTRIES = [
     name: 'insert_image_from_url',
     policy: 'preferred',
     preferredFor: ['inserting a stable HTTP(S) image URL as a dedicated child Rem'],
+  },
+  {
+    name: 'insert_image_from_file',
+    policy: 'preferred',
+    preferredFor: ['hosting a ChatGPT image file durably and inserting it as a native RemNote image'],
   },
   {
     name: 'insert_audio_from_url',
@@ -533,6 +539,7 @@ function defaultSdkCapability(name: string, category: ToolCategory): string | nu
   }
   if (name === 'create_rem' || name === 'create_document') return 'plugin.rem.createSingleRemWithMarkdown';
   if (name === 'insert_image_from_url') return 'plugin.richText.image';
+  if (name === 'insert_image_from_file') return 'ChatGPT file param + PostgreSQL hosted media + plugin.richText.image';
   if (name === 'insert_audio_from_url') return 'plugin.richText.audio';
   if (name === 'insert_video_from_url') return 'plugin.richText.video';
   if (
@@ -698,6 +705,11 @@ export const TOOL_METADATA = [
   meta('create_document', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('append_to_rem', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('insert_image_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
+  meta('insert_image_from_file', 'simple_write', 'medium', {
+    supportsIdempotency: true,
+    agentWarning:
+      'Requires authenticated hosted OAuth, persistent PostgreSQL media storage, and a public HTTPS base URL. The opaque asset URL is public because RemNote must fetch it. Successful URL-backed writes retain required bytes and report retained_remote_dependency; definitive no-write failures delete newly created orphans.',
+  }),
   meta('insert_audio_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('insert_video_from_url', 'simple_write', 'medium', { supportsIdempotency: true }),
   meta('update_rem', 'repair', 'high', { supportsDryRun: true, supportsIdempotency: true }),

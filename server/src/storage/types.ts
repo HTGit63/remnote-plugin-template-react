@@ -180,6 +180,34 @@ export interface IdempotencyRecord {
   errorCode?: string;
 }
 
+export type HostedMediaStorageDurability = 'memory_only' | 'persistent';
+
+export interface HostedMediaAsset {
+  assetId: string;
+  ownerId: string;
+  idempotencyKey: string;
+  sourceFileId: string;
+  sha256: string;
+  contentType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  fileName: string;
+  bytes: Buffer;
+  createdAt: string;
+}
+
+export class HostedMediaIdempotencyConflictError extends Error {
+  readonly code = 'HOSTED_MEDIA_IDEMPOTENCY_CONFLICT';
+
+  constructor(
+    public readonly ownerId: string,
+    public readonly idempotencyKey: string
+  ) {
+    super(
+      `HOSTED_MEDIA_IDEMPOTENCY_CONFLICT: Hosted media key ${idempotencyKey} was already used with different bytes.`
+    );
+    this.name = 'HostedMediaIdempotencyConflictError';
+  }
+}
+
 export interface StorageProvider {
   // User operations
   createUser(email: string): Promise<User>;
@@ -224,6 +252,13 @@ export interface StorageProvider {
   createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent>;
   createOrUpdateIdempotencyRecord(record: Omit<IdempotencyRecord, 'id'>): Promise<IdempotencyRecord>;
   getIdempotencyRecord(userId: string, tool: string, idempotencyKey: string): Promise<IdempotencyRecord | null>;
+
+  // Public opaque media assets referenced by native RemNote rich text
+  hostedMediaStorageDurability(): HostedMediaStorageDurability;
+  createHostedMediaAsset(asset: HostedMediaAsset): Promise<{ asset: HostedMediaAsset; created: boolean }>;
+  getHostedMediaAsset(assetId: string): Promise<HostedMediaAsset | null>;
+  getHostedMediaAssetByIdempotency(ownerId: string, idempotencyKey: string): Promise<HostedMediaAsset | null>;
+  deleteHostedMediaAsset(assetId: string, ownerId: string): Promise<boolean>;
 
   // Bulk import job durability
   bulkImportStorageDurability(): BulkImportJob['storageDurability'];

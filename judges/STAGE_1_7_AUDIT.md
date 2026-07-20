@@ -144,6 +144,11 @@ The v1 boundary was stable HTTP(S) URL insertion. It explicitly excluded media
 generation, upload hosting, retained binary storage, and hidden assumptions
 that ChatGPT voice or generated media automatically supplies a durable URL.
 
+This paragraph records the historical v0.1.1 boundary. A later July 20 working-
+tree delta adds a separate top-level ChatGPT `imageFile` tool, PostgreSQL-backed
+opaque asset hosting, and native image insertion without rewriting the original
+release evidence.
+
 ### Work completed
 
 Codex inspected installed `@remnote/plugin-sdk@0.0.46` typings and confirmed

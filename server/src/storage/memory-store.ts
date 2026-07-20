@@ -7,6 +7,8 @@ import {
 import type {
   ChatGptPairingSession,
   IdempotencyRecord,
+  HostedMediaAsset,
+  HostedMediaStorageDurability,
   McpAuthorizationCode,
   McpClient,
   PairingChallenge,
@@ -16,7 +18,7 @@ import type {
   User,
   BulkImportJobSaveOptions,
 } from './types.js';
-import { BulkImportRevisionConflictError } from './types.js';
+import { BulkImportRevisionConflictError, HostedMediaIdempotencyConflictError } from './types.js';
 import { hashToken } from './crypto-utils.js';
 import { normalizeToolProfile } from '../tool-policy.js';
 
@@ -29,6 +31,8 @@ export class MemoryStorageProvider implements StorageProvider {
   private chatGptPairingSessions = new Map<string, ChatGptPairingSession>();
   private auditEvents: StoredAuditEvent[] = [];
   private idempotencyRecords = new Map<string, IdempotencyRecord>();
+  private hostedMediaAssets = new Map<string, HostedMediaAsset>();
+  private hostedMediaIdempotency = new Map<string, string>();
   private bulkImportPlans = new Map<string, BulkImportPlan>();
   private bulkImportJobs = new Map<string, BulkImportJob>();
 
@@ -282,6 +286,49 @@ export class MemoryStorageProvider implements StorageProvider {
     return this.idempotencyRecords.get(this.idempotencyKey(userId, tool, idempotencyKey)) ?? null;
   }
 
+  hostedMediaStorageDurability(): HostedMediaStorageDurability {
+    return 'memory_only';
+  }
+
+  async createHostedMediaAsset(asset: HostedMediaAsset): Promise<{ asset: HostedMediaAsset; created: boolean }> {
+    const key = this.hostedMediaKey(asset.ownerId, asset.idempotencyKey);
+    const existingAssetId = this.hostedMediaIdempotency.get(key);
+    if (existingAssetId) {
+      const existing = this.hostedMediaAssets.get(existingAssetId);
+      if (!existing) {
+        throw new Error(`Hosted media index points to missing asset ${existingAssetId}.`);
+      }
+      if (existing.sourceFileId !== asset.sourceFileId || existing.sha256 !== asset.sha256) {
+        throw new HostedMediaIdempotencyConflictError(asset.ownerId, asset.idempotencyKey);
+      }
+      return { asset: this.cloneHostedMediaAsset(existing), created: false };
+    }
+    const stored = this.cloneHostedMediaAsset(asset);
+    this.hostedMediaAssets.set(stored.assetId, stored);
+    this.hostedMediaIdempotency.set(key, stored.assetId);
+    return { asset: this.cloneHostedMediaAsset(stored), created: true };
+  }
+
+  async getHostedMediaAsset(assetId: string): Promise<HostedMediaAsset | null> {
+    const asset = this.hostedMediaAssets.get(assetId);
+    return asset ? this.cloneHostedMediaAsset(asset) : null;
+  }
+
+  async getHostedMediaAssetByIdempotency(ownerId: string, idempotencyKey: string): Promise<HostedMediaAsset | null> {
+    const assetId = this.hostedMediaIdempotency.get(this.hostedMediaKey(ownerId, idempotencyKey));
+    return assetId ? this.getHostedMediaAsset(assetId) : null;
+  }
+
+  async deleteHostedMediaAsset(assetId: string, ownerId: string): Promise<boolean> {
+    const asset = this.hostedMediaAssets.get(assetId);
+    if (!asset || asset.ownerId !== ownerId) {
+      return false;
+    }
+    this.hostedMediaAssets.delete(assetId);
+    this.hostedMediaIdempotency.delete(this.hostedMediaKey(asset.ownerId, asset.idempotencyKey));
+    return true;
+  }
+
   bulkImportStorageDurability(): BulkImportJob['storageDurability'] {
     return 'memory_only';
   }
@@ -320,6 +367,14 @@ export class MemoryStorageProvider implements StorageProvider {
 
   private idempotencyKey(userId: string, tool: string, idempotencyKey: string): string {
     return `${userId}\u0000${tool}\u0000${idempotencyKey}`;
+  }
+
+  private hostedMediaKey(ownerId: string, idempotencyKey: string): string {
+    return `${ownerId}\u0000${idempotencyKey}`;
+  }
+
+  private cloneHostedMediaAsset(asset: HostedMediaAsset): HostedMediaAsset {
+    return { ...asset, bytes: Buffer.from(asset.bytes) };
   }
 
   private async findPairingByHash(

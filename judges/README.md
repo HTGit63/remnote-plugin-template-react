@@ -240,7 +240,9 @@ passes, and the final resume creates nothing.
 
 ## Test 4 — image, audio, YouTube, and direct video
 
-Select the `developer` profile and refresh the client tool snapshot first.
+The default `mass_note_writer` profile now exposes image and YouTube tools. Use
+`note_writer` or higher when the audio tool is also required, then refresh the
+client tool snapshot.
 
 ```text
 Under the approved disposable parent, insert exactly one image, one audio
@@ -280,9 +282,17 @@ user-confirmed image, audio, YouTube, and direct MP4 behavior.
 
 The installed RemNote SDK is `@remnote/plugin-sdk@0.0.46`. When a required
 runtime capability is absent, the media path returns typed `SDK_UNSUPPORTED`
-without mutation. URL insertion does not upload or host generated media; image,
-audio, and video bytes need a stable HTTP(S) URL before insertion. Destructive
-tools remain outside this evaluation workflow.
+without mutation. The original v0.1.1 campaign used URL-only media. The July 20
+hosted-image delta adds `insert_image_from_file`: ChatGPT image files are byte-
+validated, persisted in PostgreSQL, served from opaque immutable HTTPS URLs,
+and routed through the same native image builder. Because the installed RemNote
+SDK stores a URL-backed rich-text image rather than accepting a binary upload,
+successful readback retains the required bridge bytes and reports that remote
+dependency. Newly created orphans are deleted only after definitive no-write
+failures; uncertain writes are retained. This new path has automated
+and simulated bridge proof in the working tree; connected deployed rendering
+must still be rerun on the updated deployment. Audio and video remain URL-
+backed. Destructive tools remain outside this evaluation workflow.
 
 The exact connected campaign belongs to the production code at `ebc99df`,
 which is functionally identical to the runtime in `v0.1.0` and `v0.1.1`.

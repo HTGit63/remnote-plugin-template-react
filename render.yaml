@@ -37,6 +37,10 @@ services:
         value: "0"
       - key: REMNOTE_BRIDGE_AUDIT_LOG
         value: "1"
+      - key: REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES
+        value: "10485760"
+      - key: REMNOTE_MCP_HOSTED_IMAGE_REMOTE_TIMEOUT_MS
+        value: "30000"
       - key: SESSION_SECRET
         sync: false
       - key: ADMIN_DEBUG_SECRET
