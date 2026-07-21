@@ -76,6 +76,19 @@ describe('bridge timeout budgets', () => {
     expect(config.maxSourceFileBytes).toBe(2 * 1024 * 1024);
   });
 
+  test('loads separate bounded limits for hosted image, audio, and video files', () => {
+    const config = loadConfig({
+      REMNOTE_BRIDGE_TOKEN: 'token',
+      REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES: String(4 * 1024 * 1024),
+      REMNOTE_MCP_HOSTED_AUDIO_MAX_BYTES: String(24 * 1024 * 1024),
+      REMNOTE_MCP_HOSTED_VIDEO_MAX_BYTES: String(512 * 1024 * 1024),
+    });
+
+    expect(config.maxHostedImageBytes).toBe(4 * 1024 * 1024);
+    expect(config.maxHostedAudioBytes).toBe(24 * 1024 * 1024);
+    expect(config.maxHostedVideoBytes).toBe(100 * 1024 * 1024);
+  });
+
   test('rejects relative source-root env overrides', () => {
     expect(() => loadConfig({
       REMNOTE_BRIDGE_TOKEN: 'token',

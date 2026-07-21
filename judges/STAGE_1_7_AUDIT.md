@@ -417,7 +417,7 @@ hash.
 | --- | --- |
 | `main` | Canonical public source at `4172189`; clean `0.1.1`, no Graphify output, exact-main CI green. |
 | `fix/remnote-mcp-mass-note-creation-stability` | Historical development and audit line. The local retained tip is `4c858a1`; the published remote/tagged release line resolves through `c0a6ff9`. Graphify remains here by design, not in public release branches. |
-| `judges/openai-build-week-v0.1.1` | Evaluation-only narrative, benchmarks, and audit layered on public `main`. It does not alter production code. |
+| `judges/openai-build-week-v0.1.1` | Evaluation narrative and historical evidence plus later post-release authentication/media commits that were selectively reconciled into `main`. Those later commits do not change immutable `v0.1.1` evidence. |
 | `release-artifacts/v0.1.0` | Preserves the `0.1.0` ZIP; cleaned at `4f47c84` so generated Graphify files are absent. |
 | `release-artifacts/v0.1.1` | Preserves the final installable `0.1.1` ZIP at `c8b65b9`. |
 | `release/local-stage7-evidence` | Local evidence branch at `70088d5` retaining the exact-tree CI record; it is not the canonical public source. |

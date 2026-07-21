@@ -1,6 +1,6 @@
 # Developer Diagnostics Reference
 
-Generated from registry. Registry 2026-07-20.hosted-image-media. Schema 2026-07-20.hosted-image-media.
+Generated from registry. Registry 2026-07-21.hosted-media-files. Schema 2026-07-21.hosted-media-files.
 
 ## Runtime Fields
 
@@ -49,9 +49,11 @@ Generated from registry. Registry 2026-07-20.hosted-image-media. Schema 2026-07-
 | get_rem_tree | read | true | true | true | false | false | false | false | 1000 |
 | get_remnote_capability_guide | debug | true | true | true | true | false | false | false | 1000 |
 | import_note_design_template | design_template | true | true | true | false | false | false | false | 5000 |
+| insert_audio_from_file | simple_write | true | true | true | false | false | false | false | 3000 |
 | insert_audio_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
 | insert_image_from_file | simple_write | true | true | true | false | false | false | false | 3000 |
 | insert_image_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
+| insert_video_from_file | simple_write | true | true | true | false | false | false | false | 3000 |
 | insert_video_from_url | simple_write | true | true | true | false | false | false | false | 3000 |
 | list_note_design_templates | design_template | true | true | true | false | false | false | false | 5000 |
 | move_rem | repair | true | true | true | false | false | false | false | 3000 |
@@ -134,9 +136,11 @@ Generated from registry. Registry 2026-07-20.hosted-image-media. Schema 2026-07-
 | get_rem_tree | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-core with connected plugin readback |
 | get_remnote_capability_guide | active_profile | schema_ok | server_local_verified | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-diagnostics |
 | import_note_design_template | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
+| insert_audio_from_file | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | insert_audio_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | insert_image_from_file | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | insert_image_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
+| insert_video_from_file | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | insert_video_from_url | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
 | list_note_design_templates | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-core with connected plugin readback |
 | move_rem | active_profile | schema_ok | not_server_local | live_not_run | default_profile_available | same_registry_auth_and_scope_boundary | npm run server:test:tools-advanced plus targeted Vitest/readback |
@@ -198,7 +202,9 @@ Generated from registry. Registry 2026-07-20.hosted-image-media. Schema 2026-07-
 | insert_image_from_url | simple_write | 3000 |
 | insert_image_from_file | simple_write | 3000 |
 | insert_audio_from_url | simple_write | 3000 |
+| insert_audio_from_file | simple_write | 3000 |
 | insert_video_from_url | simple_write | 3000 |
+| insert_video_from_file | simple_write | 3000 |
 | update_rem | repair | 3000 |
 | replace_rem | danger | 3000 |
 | move_rem | repair | 3000 |

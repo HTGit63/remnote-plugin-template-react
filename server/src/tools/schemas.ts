@@ -46,12 +46,13 @@ export const INSERT_IMAGE_FROM_URL_INPUT_SCHEMA = z.object({
   width: MEDIA_DIMENSION_SCHEMA.optional().describe('Optional image width in pixels, 1-4096.'),
   height: MEDIA_DIMENSION_SCHEMA.optional().describe('Optional image height in pixels, 1-4096.'),
 }).strict();
-export const CHATGPT_IMAGE_FILE_REFERENCE_SCHEMA = z.object({
+export const CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA = z.object({
   download_url: z.string().trim().min(1).max(8192).url(),
   file_id: z.string().trim().min(1).max(512),
   mime_type: z.string().trim().max(256).optional(),
   file_name: z.string().trim().max(512).optional(),
 }).passthrough();
+export const CHATGPT_IMAGE_FILE_REFERENCE_SCHEMA = CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA;
 export const INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA = z.object({
   parentId: REM_ID_SCHEMA.describe('Parent Rem that receives a dedicated native image child Rem.'),
   imageFile: CHATGPT_IMAGE_FILE_REFERENCE_SCHEMA.describe('Top-level ChatGPT image file parameter.'),
@@ -61,6 +62,21 @@ export const INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA = z.object({
   height: MEDIA_DIMENSION_SCHEMA.optional().describe('Optional image height in pixels, 1-4096.'),
   idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.describe('Required stable key for hosting and native insertion replay safety.'),
   verifyAfterWrite: z.boolean().default(true).describe('Read back and verify the native image representation.'),
+}).strict();
+const SHARED_HOSTED_MEDIA_FILE_INPUT_FIELDS = {
+  parentId: REM_ID_SCHEMA.describe('Parent Rem that receives a dedicated native media child Rem.'),
+  position: POSITION_SCHEMA.describe('Insert the dedicated media child at the start or end.'),
+  label: MEDIA_LABEL_SCHEMA.optional().describe('Optional plain-text label rendered after the media.'),
+  idempotencyKey: IDEMPOTENCY_KEY_SCHEMA.describe('Required stable key for hosting and native insertion replay safety.'),
+  verifyAfterWrite: z.boolean().default(true).describe('Read back and verify the native media representation.'),
+};
+export const INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA = z.object({
+  ...SHARED_HOSTED_MEDIA_FILE_INPUT_FIELDS,
+  audioFile: CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA.describe('Top-level ChatGPT audio file parameter.'),
+}).strict();
+export const INSERT_VIDEO_FROM_FILE_INPUT_SCHEMA = z.object({
+  ...SHARED_HOSTED_MEDIA_FILE_INPUT_FIELDS,
+  videoFile: CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA.describe('Top-level ChatGPT video file parameter.'),
 }).strict();
 export const INSERT_AUDIO_FROM_URL_INPUT_SCHEMA = z.object(SHARED_MEDIA_INPUT_FIELDS).strict();
 export const INSERT_VIDEO_FROM_URL_INPUT_SCHEMA = z.object(SHARED_MEDIA_INPUT_FIELDS).strict();

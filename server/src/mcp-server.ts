@@ -6,7 +6,10 @@ import type { AuthenticatedPrincipal } from './auth/types.js';
 import type { BridgeRuntimeInfo, BridgeTimeoutBudgets } from './config.js';
 import type { StorageProvider } from './storage/types.js';
 import type { BulkImportSourceFilePolicy } from './bulk-import/source-file-loader.js';
-import type { HostedImageFileLoader } from './media/hosted-image-loader.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from './media/hosted-image-loader.js';
 import {
   assertRegisteredToolsMatchRegistry,
   getPublicMcpToolNames,
@@ -50,9 +53,12 @@ export interface CreateMcpServerOptions {
   hostedMediaPolicy?: {
     publicBaseUrl: string;
     maxImageBytes: number;
+    maxAudioBytes?: number;
+    maxVideoBytes?: number;
     remoteTimeoutMs: number;
   };
   hostedImageLoader?: HostedImageFileLoader;
+  hostedMediaLoader?: HostedMediaFileLoader;
 }
 
 export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions = {}): McpServer {
@@ -136,6 +142,7 @@ export function createMcpServer(hub: BridgeHub, options: CreateMcpServerOptions 
     sourceFilePolicy: options.sourceFilePolicy,
     hostedMediaPolicy: options.hostedMediaPolicy,
     hostedImageLoader: options.hostedImageLoader,
+    hostedMediaLoader: options.hostedMediaLoader,
   };
 
   registerStatusTools(context);

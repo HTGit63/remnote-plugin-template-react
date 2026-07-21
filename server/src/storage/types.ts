@@ -188,7 +188,13 @@ export interface HostedMediaAsset {
   idempotencyKey: string;
   sourceFileId: string;
   sha256: string;
-  contentType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+  contentType:
+    | 'image/png'
+    | 'image/jpeg'
+    | 'image/webp'
+    | 'image/gif'
+    | 'audio/mpeg'
+    | 'video/mp4';
   fileName: string;
   bytes: Buffer;
   createdAt: string;

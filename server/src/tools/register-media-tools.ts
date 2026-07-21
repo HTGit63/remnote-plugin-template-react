@@ -1,18 +1,29 @@
 import { randomUUID } from 'node:crypto';
 import type { BridgeFailure } from '../../../shared/bridge/protocol.js';
-import { loadHostedImageFile } from '../media/hosted-image-loader.js';
+import {
+  loadHostedImageFile,
+  loadHostedMediaFile,
+  type ChatGptMediaFileReference,
+  type HostedMediaKind,
+} from '../media/hosted-image-loader.js';
 import {
   assessSuccessfulHostedImageRetention,
+  assessSuccessfulHostedMediaRetention,
   cleanupNewHostedImageAfterFailure,
+  cleanupNewHostedMediaAfterFailure,
   findReusableHostedImageAsset,
+  findReusableHostedMediaAsset,
   persistHostedImageAsset,
+  persistHostedMediaAsset,
 } from '../media/hosted-image-service.js';
 import { recordToolHistoryEvent } from '../tool-health-history.js';
 import {
   BRIDGE_TOOL_OUTPUT_SCHEMA,
+  INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA,
   INSERT_AUDIO_FROM_URL_INPUT_SCHEMA,
   INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA,
   INSERT_IMAGE_FROM_URL_INPUT_SCHEMA,
+  INSERT_VIDEO_FROM_FILE_INPUT_SCHEMA,
   INSERT_VIDEO_FROM_URL_INPUT_SCHEMA,
 } from './schemas.js';
 import {
@@ -23,7 +34,7 @@ import {
   type ToolRegistrationContext,
 } from './tool-context.js';
 
-const HOSTED_IMAGE_ANNOTATIONS = {
+const HOSTED_FILE_MEDIA_ANNOTATIONS = {
   readOnlyHint: false,
   destructiveHint: false,
   idempotentHint: true,
@@ -38,7 +49,158 @@ export function registerMediaTools({
   requestSignal,
   hostedMediaPolicy,
   hostedImageLoader = loadHostedImageFile,
+  hostedMediaLoader = loadHostedMediaFile,
 }: ToolRegistrationContext): void {
+  const handleHostedMediaFile = async (input: {
+    toolName: 'insert_audio_from_file' | 'insert_video_from_file';
+    mediaKind: Exclude<HostedMediaKind, 'image'>;
+    file: ChatGptMediaFileReference;
+    parentId: string;
+    position: 'start' | 'end';
+    label?: string;
+    idempotencyKey: string;
+    verifyAfterWrite: boolean;
+  }) => {
+    const operationId = `${input.toolName}-${randomUUID()}`;
+    const startedAt = Date.now();
+    try {
+      if (!storage) {
+        throw Object.assign(new Error('Hosted media storage is unavailable.'), {
+          code: 'HOSTED_MEDIA_STORAGE_UNAVAILABLE',
+        });
+      }
+      if (!hostedMediaPolicy?.publicBaseUrl) {
+        throw Object.assign(new Error('Hosted media public URL is unavailable.'), {
+          code: 'HOSTED_MEDIA_PUBLIC_URL_INVALID',
+        });
+      }
+      const ownerId = principal?.userId ?? principal?.subject;
+      if (!ownerId) {
+        throw Object.assign(new Error('Authenticated hosted media owner is unavailable.'), {
+          code: 'HOSTED_MEDIA_AUTH_REQUIRED',
+        });
+      }
+      const reusable = await findReusableHostedMediaAsset({
+        storage,
+        ownerId,
+        idempotencyKey: input.idempotencyKey,
+        sourceFileId: input.file.file_id,
+        publicBaseUrl: hostedMediaPolicy.publicBaseUrl,
+        mediaKind: input.mediaKind,
+      });
+      const hosted = reusable ?? await (async () => {
+        const maxBytes = input.mediaKind === 'audio'
+          ? hostedMediaPolicy.maxAudioBytes ?? hostedMediaPolicy.maxImageBytes
+          : hostedMediaPolicy.maxVideoBytes ?? hostedMediaPolicy.maxImageBytes;
+        const file = await hostedMediaLoader(input.mediaKind, input.file, {
+          principal,
+          policy: { maxBytes, remoteTimeoutMs: hostedMediaPolicy.remoteTimeoutMs },
+          signal: requestSignal,
+        });
+        return persistHostedMediaAsset({
+          storage,
+          ownerId,
+          idempotencyKey: input.idempotencyKey,
+          publicBaseUrl: hostedMediaPolicy.publicBaseUrl,
+          file,
+        });
+      })();
+      const pluginArgs = {
+        parentId: input.parentId,
+        url: hosted.url,
+        position: input.position,
+        label: input.label,
+        idempotencyKey: input.idempotencyKey,
+        verifyAfterWrite: input.verifyAfterWrite,
+      };
+      const response = input.mediaKind === 'audio'
+        ? await callPlugin('insert_audio_from_url', pluginArgs)
+        : await callPlugin('insert_video_from_url', pluginArgs);
+      if (!response.ok) {
+        const hostedAssetCleanup = await cleanupNewHostedMediaAfterFailure({
+          storage,
+          ownerId,
+          assetId: hosted.asset.assetId,
+          wasCreated: hosted.status === 'hosted',
+          failure: response,
+        });
+        recordToolHistoryEvent({
+          tool: input.toolName,
+          kind: 'failure',
+          durationMs: Date.now() - startedAt,
+          errorCode: response.error.code,
+          source: 'bridge',
+        });
+        const originalDetails = typeof response.error.details === 'object'
+          && response.error.details !== null
+          && !Array.isArray(response.error.details)
+          ? response.error.details as Record<string, unknown>
+          : response.error.details === undefined
+            ? {}
+            : { originalDetails: response.error.details };
+        return failureToToolResult({
+          ...response,
+          error: {
+            ...response.error,
+            details: { ...originalDetails, hostedAssetCleanup },
+          },
+        }, input.toolName);
+      }
+      const result = typeof response.result === 'object' && response.result !== null && !Array.isArray(response.result)
+        ? response.result as Record<string, unknown>
+        : { value: response.result };
+      const hostedAssetCleanup = assessSuccessfulHostedMediaRetention(result, hosted.url);
+      recordToolHistoryEvent({
+        tool: input.toolName,
+        kind: 'success',
+        durationMs: Date.now() - startedAt,
+        source: 'bridge',
+      });
+      return successToToolResult({
+        ...response,
+        result: {
+          ...result,
+          toolName: input.toolName,
+          hostedAsset: {
+            assetId: hosted.asset.assetId,
+            url: hosted.url,
+            contentType: hosted.asset.contentType,
+            fileName: hosted.asset.fileName,
+            byteLength: hosted.asset.bytes.byteLength,
+            storageDurability: storage.hostedMediaStorageDurability(),
+            hostingStatus: hosted.status,
+            ...hostedAssetCleanup,
+          },
+        },
+      }, `ChatGPT ${input.mediaKind} file hosted and inserted as native RemNote media.`);
+    } catch (error) {
+      const errorCode = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code: unknown }).code)
+        : 'HOSTED_MEDIA_INTERNAL_ERROR';
+      const safeErrorCode = errorCode !== 'HOSTED_MEDIA_INTERNAL_ERROR'
+        && errorCode.startsWith('HOSTED_MEDIA_');
+      const message = safeErrorCode && error instanceof Error
+        ? error.message
+        : 'Hosted media processing failed internally.';
+      recordToolHistoryEvent({
+        tool: input.toolName,
+        kind: 'failure',
+        durationMs: Date.now() - startedAt,
+        errorCode,
+        source: 'bridge',
+      });
+      return failureToToolResult({
+        id: operationId,
+        ok: false,
+        error: {
+          code: safeErrorCode ? 'INVALID_ARGS' : 'INTERNAL_ERROR',
+          message,
+          details: { errorCode, layer: 'server_hosted_media' },
+        },
+      }, input.toolName);
+    }
+  };
+
   registerTool(
     'insert_image_from_url',
     {
@@ -63,7 +225,7 @@ export function registerMediaTools({
         'Use this when ChatGPT creates or receives an image file. Download the authorized top-level imageFile, store it durably at an opaque HTTPS URL, and create a native RemNote image child with readback verification. Do not insert a file name or URL as plain text.',
       inputSchema: INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA,
       outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
-      annotations: HOSTED_IMAGE_ANNOTATIONS,
+      annotations: HOSTED_FILE_MEDIA_ANNOTATIONS,
       _meta: {
         'openai/fileParams': ['imageFile'],
       },
@@ -218,6 +380,29 @@ export function registerMediaTools({
   );
 
   registerTool(
+    'insert_audio_from_file',
+    {
+      title: 'Host and insert ChatGPT audio file',
+      description: 'Use this when ChatGPT receives an audio file. Host the authorized top-level audioFile durably, then create and verify a native RemNote audio child.',
+      inputSchema: INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: HOSTED_FILE_MEDIA_ANNOTATIONS,
+      _meta: { 'openai/fileParams': ['audioFile'] },
+    },
+    async ({ parentId, audioFile, position, label, idempotencyKey, verifyAfterWrite }) =>
+      handleHostedMediaFile({
+        toolName: 'insert_audio_from_file',
+        mediaKind: 'audio',
+        file: audioFile,
+        parentId,
+        position,
+        label,
+        idempotencyKey,
+        verifyAfterWrite,
+      })
+  );
+
+  registerTool(
     'insert_audio_from_url',
     {
       title: 'Insert audio from URL',
@@ -231,6 +416,29 @@ export function registerMediaTools({
         () => callPlugin('insert_audio_from_url', { parentId, url, position, label, idempotencyKey, verifyAfterWrite }),
         'Insert audio from URL request processed.'
       )
+  );
+
+  registerTool(
+    'insert_video_from_file',
+    {
+      title: 'Host and insert ChatGPT video file',
+      description: 'Use this when ChatGPT receives a video file. Host the authorized top-level videoFile durably, then create and verify a native RemNote video child.',
+      inputSchema: INSERT_VIDEO_FROM_FILE_INPUT_SCHEMA,
+      outputSchema: BRIDGE_TOOL_OUTPUT_SCHEMA,
+      annotations: HOSTED_FILE_MEDIA_ANNOTATIONS,
+      _meta: { 'openai/fileParams': ['videoFile'] },
+    },
+    async ({ parentId, videoFile, position, label, idempotencyKey, verifyAfterWrite }) =>
+      handleHostedMediaFile({
+        toolName: 'insert_video_from_file',
+        mediaKind: 'video',
+        file: videoFile,
+        parentId,
+        position,
+        label,
+        idempotencyKey,
+        verifyAfterWrite,
+      })
   );
 
   registerTool(

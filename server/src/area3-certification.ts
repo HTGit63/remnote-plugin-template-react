@@ -352,12 +352,40 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
+    case 'insert_audio_from_file':
+      return {
+        parentId,
+        audioFile: {
+          download_url: 'https://files.openai.example.test/area3-audio',
+          file_id: 'file_area3_audio',
+          mime_type: 'audio/mpeg',
+          file_name: 'area3-audio.mp3',
+        },
+        position: 'end',
+        label: 'Area 3 hosted audio',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
     case 'insert_video_from_url':
       return {
         parentId,
         url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         position: 'end',
         label: 'Area 3 video',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'insert_video_from_file':
+      return {
+        parentId,
+        videoFile: {
+          download_url: 'https://files.openai.example.test/area3-video',
+          file_id: 'file_area3_video',
+          mime_type: 'video/mp4',
+          file_name: 'area3-video.mp4',
+        },
+        position: 'end',
+        label: 'Area 3 hosted video',
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
@@ -1338,6 +1366,31 @@ async function certifyProfile(profile: ToolProfile) {
       fileName: 'area3-image.png',
       fileId: 'file_area3_image',
     }),
+    hostedMediaLoader: async (mediaKind, reference) => mediaKind === 'audio'
+      ? {
+          mediaKind,
+          bytes: Buffer.concat([
+            Buffer.from('ID3\u0004\u0000\u0000\u0000\u0000\u0000\u0000'),
+            Buffer.from([0xff, 0xfb, 0x90, 0x64]),
+          ]),
+          contentType: 'audio/mpeg',
+          fileName: reference.file_name ?? 'area3-audio.mp3',
+          fileId: reference.file_id,
+        }
+      : {
+          mediaKind,
+          bytes: Buffer.from([
+            0x00, 0x00, 0x00, 0x18,
+            0x66, 0x74, 0x79, 0x70,
+            0x69, 0x73, 0x6f, 0x6d,
+            0x00, 0x00, 0x02, 0x00,
+            0x69, 0x73, 0x6f, 0x6d,
+            0x6d, 0x70, 0x34, 0x32,
+          ]),
+          contentType: 'video/mp4',
+          fileName: reference.file_name ?? 'area3-video.mp4',
+          fileId: reference.file_id,
+        },
   });
   const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
   const seen: SeenBridgeRequest[] = [];

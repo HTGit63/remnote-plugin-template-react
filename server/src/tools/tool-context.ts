@@ -18,7 +18,10 @@ import type {
   BulkImportSourceFileLoader,
   BulkImportSourceFilePolicy,
 } from '../bulk-import/source-file-loader.js';
-import type { HostedImageFileLoader } from '../media/hosted-image-loader.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from '../media/hosted-image-loader.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
 import { getToolPerformanceBudgetMs } from '../performance/tool-budgets.js';
 
@@ -75,9 +78,12 @@ export interface ToolRegistrationContext {
   hostedMediaPolicy?: {
     publicBaseUrl: string;
     maxImageBytes: number;
+    maxAudioBytes?: number;
+    maxVideoBytes?: number;
     remoteTimeoutMs: number;
   };
   hostedImageLoader?: HostedImageFileLoader;
+  hostedMediaLoader?: HostedMediaFileLoader;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {

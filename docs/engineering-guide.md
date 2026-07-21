@@ -122,21 +122,22 @@ export REMNOTE_MCP_SOURCE_FILE_MAX_BYTES='2097152'
 
 Call `plan_note_import_from_file` with a path under that root and the authenticated local MCP endpoint. Hosted ChatGPT and Codex clients must use the top-level `sourceFile` input instead of a server-local path.
 
-## Hosted ChatGPT Images
+## Hosted ChatGPT Media
 
-- `insert_image_from_file` declares the top-level `imageFile` field through `_meta["openai/fileParams"]` and accepts the official `download_url`, `file_id`, optional `mime_type`, and optional `file_name` object.
+- `insert_image_from_file`, `insert_audio_from_file`, and `insert_video_from_file` declare top-level `imageFile`, `audioFile`, and `videoFile` fields through `_meta["openai/fileParams"]`. Each accepts the official `download_url`, `file_id`, optional `mime_type`, and optional `file_name` object.
 - The tool requires hosted OAuth, trusted write scope, persistent PostgreSQL media storage, a public HTTPS base URL, and a stable idempotency key.
-- Downloads use HTTPS port 443, filter DNS results to public addresses, pin one validated public address, revalidate redirects, and enforce a 30-second default timeout and 10 MiB default cap. Private-only results remain blocked. Configure the limits with `REMNOTE_MCP_HOSTED_IMAGE_REMOTE_TIMEOUT_MS` and `REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES`.
-- The server recognizes PNG, JPEG, WebP, and GIF from byte signatures. It never trusts a file extension or claimed MIME type as proof of image content.
-- PostgreSQL stores the exact bytes and content hash. The public route is `/media/images/:opaqueUuid` with immutable caching, `nosniff`, and cross-origin resource policy so RemNote can render it.
+- Downloads use HTTPS port 443, filter DNS results to public addresses, pin one validated public address, revalidate redirects, and enforce a 30-second default timeout. Private-only results remain blocked. Default caps are 10 MiB for images, 25 MiB for MP3, and 50 MiB for MP4, with hard caps of 20/50/100 MiB. Configure them with `REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES`, `REMNOTE_MCP_HOSTED_AUDIO_MAX_BYTES`, and `REMNOTE_MCP_HOSTED_VIDEO_MAX_BYTES`.
+- The server recognizes PNG, JPEG, WebP, GIF, MPEG Layer III audio, and ISO-BMFF MP4 from byte structure. It never trusts a file extension or claimed MIME type as proof. MP4 validation proves the container type, while RemNote/browser playback remains the codec compatibility check.
+- PostgreSQL stores the exact bytes and content hash. New assets use `/media/assets/:opaqueUuid`; the original `/media/images/:opaqueUuid` route remains compatible. Responses use immutable caching, `nosniff`, cross-origin resource policy, and single-range HTTP responses for audio/video playback.
 - Same-user, same-key, same-file retries reuse the existing asset without re-downloading the temporary ChatGPT URL. Reusing a key with another file or different bytes fails explicitly.
 - The final bridge step calls `insert_image_from_url`, which uses `plugin.richText.image` and verifies native rich-text readback. A returned file name or text URL is not success.
-- Hosted image URLs are intentionally public and unguessable because RemNote must fetch them. Do not use this path for confidential images.
+- Hosted media URLs are intentionally public and unguessable because RemNote must fetch them. Do not use this path for confidential media.
 - The installed RemNote SDK exposes `richText.image(url, width?, height?)`; it does not expose binary media upload. Exact successful readback therefore proves RemNote still references the bridge URL, not that it copied the bytes.
 - Successful URL-backed writes retain required bytes and return `cleanupStatus: retained_remote_dependency`. Deleting them would make later rendering, another device, or a cold cache fail.
 - A newly created asset is deleted automatically only after a definitive plugin no-write failure. Unknown write status, partial failure, and pre-existing/replayed assets return `retained_uncertain_reference` and remain available.
 - The PostgreSQL delete is parameterized and owner-scoped by both `asset_id` and `owner_id`. There is no public media-delete endpoint.
-- A 1 GB database is usable for a small personal collection, but image bytes share that capacity with bridge state. Monitor database usage; the default per-image cap is 10 MiB and this release does not claim an aggregate quota.
+- SVG is rejected. The service does not serve active XML from the shared media origin and does not claim a sanitizer or isolated SVG-to-raster conversion path. Convert trusted SVG to PNG first.
+- A 1 GB database is usable for a small personal collection, but media bytes share that capacity with bridge state. Monitor database usage; this release does not claim an aggregate quota.
 - Local tests prove file-contract shape, byte validation, SSRF controls, durable idempotency, public byte serving, native bridge routing, and retry reuse. Connected RemNote rendering remains a separate live/human proof.
 
 ## Development Workflow

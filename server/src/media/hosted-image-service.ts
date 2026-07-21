@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { BridgeFailure } from '../../../shared/bridge/protocol.js';
 import type { StorageProvider } from '../storage/types.js';
-import type { HostedImageFile } from './hosted-image-loader.js';
+import type {
+  HostedImageFile,
+  HostedMediaFile,
+  HostedMediaKind,
+} from './hosted-image-loader.js';
 
 export class HostedMediaError extends Error {
   constructor(
@@ -36,7 +40,7 @@ function assertDurableStorage(storage: StorageProvider): void {
   if (storage.hostedMediaStorageDurability() !== 'persistent') {
     throw new HostedMediaError(
       'HOSTED_MEDIA_STORAGE_NOT_DURABLE',
-      'Durable hosted images require PostgreSQL storage.'
+      'Durable hosted media requires PostgreSQL storage.'
     );
   }
 }
@@ -94,6 +98,72 @@ export async function persistHostedImageAsset(input: {
   };
 }
 
+function contentTypeMatchesMediaKind(contentType: string, mediaKind: HostedMediaKind): boolean {
+  return contentType.startsWith(`${mediaKind}/`);
+}
+
+export async function findReusableHostedMediaAsset(input: {
+  storage: StorageProvider;
+  ownerId: string;
+  idempotencyKey: string;
+  sourceFileId: string;
+  publicBaseUrl: string;
+  mediaKind: HostedMediaKind;
+}) {
+  assertDurableStorage(input.storage);
+  const publicBaseUrl = validatedPublicBaseUrl(input.publicBaseUrl);
+  const asset = await input.storage.getHostedMediaAssetByIdempotency(input.ownerId, input.idempotencyKey);
+  if (!asset) return null;
+  if (
+    asset.sourceFileId !== input.sourceFileId
+    || !contentTypeMatchesMediaKind(asset.contentType, input.mediaKind)
+  ) {
+    throw new HostedMediaError(
+      'HOSTED_MEDIA_IDEMPOTENCY_CONFLICT',
+      'The idempotency key is already bound to a different ChatGPT media file.'
+    );
+  }
+  return {
+    status: 'already_hosted' as const,
+    asset,
+    url: new URL(`/media/assets/${asset.assetId}`, publicBaseUrl).toString(),
+  };
+}
+
+export async function persistHostedMediaAsset(input: {
+  storage: StorageProvider;
+  ownerId: string;
+  idempotencyKey: string;
+  publicBaseUrl: string;
+  file: HostedMediaFile;
+}) {
+  assertDurableStorage(input.storage);
+  if (!contentTypeMatchesMediaKind(input.file.contentType, input.file.mediaKind)) {
+    throw new HostedMediaError(
+      'HOSTED_MEDIA_KIND_MISMATCH',
+      'Detected media bytes do not match the requested media kind.'
+    );
+  }
+  const publicBaseUrl = validatedPublicBaseUrl(input.publicBaseUrl);
+  const sha256 = createHash('sha256').update(input.file.bytes).digest('hex');
+  const stored = await input.storage.createHostedMediaAsset({
+    assetId: randomUUID(),
+    ownerId: input.ownerId,
+    idempotencyKey: input.idempotencyKey,
+    sourceFileId: input.file.fileId,
+    sha256,
+    contentType: input.file.contentType,
+    fileName: input.file.fileName,
+    bytes: input.file.bytes,
+    createdAt: new Date().toISOString(),
+  });
+  return {
+    status: stored.created ? 'hosted' as const : 'already_hosted' as const,
+    asset: stored.asset,
+    url: new URL(`/media/assets/${stored.asset.assetId}`, publicBaseUrl).toString(),
+  };
+}
+
 type HostedAssetCleanupStatus =
   | 'deleted_unreferenced_after_failure'
   | 'retained_remote_dependency'
@@ -136,7 +206,7 @@ function failureHasUnresolvedCreatedRem(details: unknown): boolean {
   return visit(details);
 }
 
-export function assessSuccessfulHostedImageRetention(
+export function assessSuccessfulHostedMediaRetention(
   result: unknown,
   hostedUrl: string
 ): HostedAssetCleanupResult {
@@ -159,7 +229,7 @@ export function assessSuccessfulHostedImageRetention(
   };
 }
 
-export async function cleanupNewHostedImageAfterFailure(input: {
+export async function cleanupNewHostedMediaAfterFailure(input: {
   storage: StorageProvider;
   ownerId: string;
   assetId: string;
@@ -204,3 +274,7 @@ export async function cleanupNewHostedImageAfterFailure(input: {
     };
   }
 }
+
+// Compatibility names for the original image-only interface.
+export const assessSuccessfulHostedImageRetention = assessSuccessfulHostedMediaRetention;
+export const cleanupNewHostedImageAfterFailure = cleanupNewHostedMediaAfterFailure;

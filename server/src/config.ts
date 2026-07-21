@@ -98,6 +98,8 @@ export interface CompanionServerConfig {
   maxSourceFileBytes: number;
   sourceFileRemoteTimeoutMs: number;
   maxHostedImageBytes: number;
+  maxHostedAudioBytes: number;
+  maxHostedVideoBytes: number;
   hostedImageRemoteTimeoutMs: number;
   rateLimitWindowMs: number;
   rateLimitMaxRequests: number;
@@ -128,6 +130,10 @@ const MAX_SOURCE_FILE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_SOURCE_FILE_REMOTE_TIMEOUT_MS = 15_000;
 const DEFAULT_MAX_HOSTED_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_HOSTED_IMAGE_BYTES = 20 * 1024 * 1024;
+const DEFAULT_MAX_HOSTED_AUDIO_BYTES = 25 * 1024 * 1024;
+const MAX_HOSTED_AUDIO_BYTES = 50 * 1024 * 1024;
+const DEFAULT_MAX_HOSTED_VIDEO_BYTES = 50 * 1024 * 1024;
+const MAX_HOSTED_VIDEO_BYTES = 100 * 1024 * 1024;
 const DEFAULT_HOSTED_IMAGE_REMOTE_TIMEOUT_MS = 30_000;
 const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 120;
@@ -592,6 +598,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CompanionServe
       DEFAULT_MAX_HOSTED_IMAGE_BYTES,
       1024,
       MAX_HOSTED_IMAGE_BYTES
+    ),
+    maxHostedAudioBytes: boundedNumberFromEnv(
+      env.REMNOTE_MCP_HOSTED_AUDIO_MAX_BYTES,
+      DEFAULT_MAX_HOSTED_AUDIO_BYTES,
+      1024,
+      MAX_HOSTED_AUDIO_BYTES
+    ),
+    maxHostedVideoBytes: boundedNumberFromEnv(
+      env.REMNOTE_MCP_HOSTED_VIDEO_MAX_BYTES,
+      DEFAULT_MAX_HOSTED_VIDEO_BYTES,
+      1024,
+      MAX_HOSTED_VIDEO_BYTES
     ),
     hostedImageRemoteTimeoutMs: boundedNumberFromEnv(
       env.REMNOTE_MCP_HOSTED_IMAGE_REMOTE_TIMEOUT_MS,

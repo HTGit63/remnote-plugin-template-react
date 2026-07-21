@@ -4,7 +4,10 @@ import { type CompanionServerConfig, loadConfig, validateConfig } from './config
 import { createMcpHttpServer } from './server/create-http-server.js';
 import { createStorageProvider } from './storage/index.js';
 import type { StorageProvider } from './storage/types.js';
-import type { HostedImageFileLoader } from './media/hosted-image-loader.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from './media/hosted-image-loader.js';
 
 export interface RunningCompanionApp {
   config: CompanionServerConfig;
@@ -20,6 +23,7 @@ export async function startCompanionApp(
   dependencies: {
     storage?: StorageProvider;
     hostedImageLoader?: HostedImageFileLoader;
+    hostedMediaLoader?: HostedMediaFileLoader;
   } = {}
 ): Promise<RunningCompanionApp> {
   const baseConfig = loadConfig();
@@ -50,6 +54,7 @@ export async function startCompanionApp(
   const hub = new BridgeHub(config, storage);
   const mcpServer = createMcpHttpServer(config, hub, storage, {
     hostedImageLoader: dependencies.hostedImageLoader,
+    hostedMediaLoader: dependencies.hostedMediaLoader,
   });
   if (config.singlePort) {
     hub.attachToServer(mcpServer);

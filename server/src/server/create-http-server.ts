@@ -38,7 +38,10 @@ import type { AuditLogger } from '../sessions/types.js';
 import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from '../storage/index.js';
 import { getAllPublicMcpToolNames, getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
 import { validateMcpToolPermission } from '../tool-permissions.js';
-import type { HostedImageFileLoader } from '../media/hosted-image-loader.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from '../media/hosted-image-loader.js';
 import {
   clampToolProfile,
   getToolPolicyEntry,
@@ -54,35 +57,100 @@ import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diag
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
 
-export async function serveHostedImageAsset(
+type HostedMediaByteRange = { start: number; end: number };
+
+function parseHostedMediaRange(value: string, totalBytes: number): HostedMediaByteRange | null {
+  if (totalBytes < 1 || value.includes(',')) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength < 1) return null;
+    return {
+      start: Math.max(0, totalBytes - suffixLength),
+      end: totalBytes - 1,
+    };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : totalBytes - 1;
+  if (
+    !Number.isSafeInteger(start)
+    || !Number.isSafeInteger(requestedEnd)
+    || start < 0
+    || start >= totalBytes
+    || requestedEnd < start
+  ) {
+    return null;
+  }
+  return { start, end: Math.min(requestedEnd, totalBytes - 1) };
+}
+
+export async function serveHostedMediaAsset(
   storage: StorageProvider,
   assetId: string,
   method: 'GET' | 'HEAD',
-  res: ServerResponse
+  res: ServerResponse,
+  rangeHeader?: string
 ): Promise<void> {
   const asset = await storage.getHostedMediaAsset(assetId);
   if (!asset) {
     writeText(res, 404, 'Not Found');
     return;
   }
-  res.writeHead(200, {
+  const headers: Record<string, string> = {
     'content-type': asset.contentType,
-    'content-length': String(asset.bytes.byteLength),
     'cache-control': 'public, max-age=31536000, immutable',
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
     'content-security-policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
     'cross-origin-resource-policy': 'cross-origin',
     'access-control-allow-origin': '*',
+    'accept-ranges': 'bytes',
+  };
+  if (rangeHeader) {
+    const range = parseHostedMediaRange(rangeHeader, asset.bytes.byteLength);
+    if (range) {
+      const bytes = asset.bytes.subarray(range.start, range.end + 1);
+      res.writeHead(206, {
+        ...headers,
+        'content-range': `bytes ${range.start}-${range.end}/${asset.bytes.byteLength}`,
+        'content-length': String(bytes.byteLength),
+      });
+      res.end(method === 'HEAD' ? undefined : bytes);
+      return;
+    }
+    res.writeHead(416, {
+      ...headers,
+      'content-range': `bytes */${asset.bytes.byteLength}`,
+      'content-length': '0',
+    });
+    res.end();
+    return;
+  }
+  res.writeHead(200, {
+    ...headers,
+    'content-length': String(asset.bytes.byteLength),
   });
   res.end(method === 'HEAD' ? undefined : asset.bytes);
+}
+
+export async function serveHostedImageAsset(
+  storage: StorageProvider,
+  assetId: string,
+  method: 'GET' | 'HEAD',
+  res: ServerResponse
+): Promise<void> {
+  return serveHostedMediaAsset(storage, assetId, method, res);
 }
 
 export function createMcpHttpServer(
   config: CompanionServerConfig,
   hub: BridgeHub,
   storage: StorageProvider,
-  dependencies: { hostedImageLoader?: HostedImageFileLoader } = {}
+  dependencies: {
+    hostedImageLoader?: HostedImageFileLoader;
+    hostedMediaLoader?: HostedMediaFileLoader;
+  } = {}
 ): HttpServer {
   const auditLogger: AuditLogger | undefined = config.auditLog ? new ConsoleAuditLogger() : undefined;
   const startedAt = new Date().toISOString();
@@ -606,7 +674,9 @@ export function createMcpHttpServer(
 
     const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
 
-    if (url.pathname.startsWith('/media/images/')) {
+    const hostedMediaPrefix = ['/media/assets/', '/media/images/']
+      .find((prefix) => url.pathname.startsWith(prefix));
+    if (hostedMediaPrefix) {
       if (!['GET', 'HEAD'].includes(req.method || '')) {
         writeText(res, 405, 'Method Not Allowed');
         return;
@@ -614,12 +684,18 @@ export function createMcpHttpServer(
       if (!rateLimitRequest(req, res, config, 'hosted-media')) {
         return;
       }
-      const assetId = url.pathname.slice('/media/images/'.length);
+      const assetId = url.pathname.slice(hostedMediaPrefix.length);
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
         writeText(res, 404, 'Not Found');
         return;
       }
-      await serveHostedImageAsset(storage, assetId, req.method as 'GET' | 'HEAD', res);
+      await serveHostedMediaAsset(
+        storage,
+        assetId,
+        req.method as 'GET' | 'HEAD',
+        res,
+        typeof req.headers.range === 'string' ? req.headers.range : undefined
+      );
       return;
     }
 
@@ -1248,9 +1324,12 @@ export function createMcpHttpServer(
       hostedMediaPolicy: {
         publicBaseUrl: config.publicBaseUrl,
         maxImageBytes: config.maxHostedImageBytes,
+        maxAudioBytes: config.maxHostedAudioBytes,
+        maxVideoBytes: config.maxHostedVideoBytes,
         remoteTimeoutMs: config.hostedImageRemoteTimeoutMs,
       },
       hostedImageLoader: dependencies.hostedImageLoader,
+      hostedMediaLoader: dependencies.hostedMediaLoader,
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

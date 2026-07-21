@@ -51,6 +51,12 @@ production-path difference is the plugin manifest version; the other changes
 are release documentation, release-hygiene coverage, and removal of generated
 Graphify output from public branches and archives.
 
+This statement describes the immutable `v0.1.1` release comparison. Later
+commits on this judge branch added unified ChatGPT/Codex authentication and
+hosted file-media work. Those post-release production changes are separate from
+the submitted release evidence and are reconciled selectively into current
+`main`; the release tag and historical counts remain unchanged.
+
 ## Why this project exists
 
 The project began with a practical content-production problem. While building
