@@ -44,7 +44,7 @@ function registeredMassNoteTools(): Record<string, ToolDescriptor> {
 describe('ChatGPT app contract', () => {
   test('MCP server identity changes with the discovery contract', () => {
     expect(MCP_DISCOVERY_VERSION).toBe(
-      'mcp-discovery-2026-07-21.hosted-media-files'
+      'mcp-discovery-2026-07-21.hosted-media-file-schemas-v2'
     );
     const server = createMcpServer({} as never, {
       toolProfile: 'developer',
@@ -151,8 +151,14 @@ describe('ChatGPT app contract', () => {
     ) as {
       tools: Array<{
         name: string;
+        inputSchema?: {
+          properties?: Record<string, { additionalProperties?: unknown }>;
+        };
         securitySchemes?: Array<{ type?: string; scopes?: string[] }>;
-        _meta?: { securitySchemes?: Array<{ type?: string; scopes?: string[] }> };
+        _meta?: {
+          securitySchemes?: Array<{ type?: string; scopes?: string[] }>;
+          'openai/fileParams'?: string[];
+        };
       }>;
     };
     expect(listed.tools).toHaveLength(getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE).length);
@@ -163,6 +169,16 @@ describe('ChatGPT app contract', () => {
       expect(descriptor._meta?.securitySchemes, `${descriptor.name} mirrored securitySchemes`).toEqual([
         expect.objectContaining({ type: 'oauth2', scopes: expect.arrayContaining(['bridge:read']) }),
       ]);
+    }
+
+    for (const [toolName, fileParam] of [
+      ['insert_image_from_file', 'imageFile'],
+      ['insert_audio_from_file', 'audioFile'],
+      ['insert_video_from_file', 'videoFile'],
+    ] as const) {
+      const descriptor = listed.tools.find((tool) => tool.name === toolName);
+      expect(descriptor?._meta?.['openai/fileParams']).toEqual([fileParam]);
+      expect(descriptor?.inputSchema?.properties?.[fileParam]?.additionalProperties).toBe(false);
     }
   });
 });

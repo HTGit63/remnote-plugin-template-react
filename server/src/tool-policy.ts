@@ -73,7 +73,7 @@ export interface ToolMetadata {
 }
 
 export const DEFAULT_TOOL_PROFILE: ToolProfile = 'mass_note_writer';
-export const TOOL_SCHEMA_VERSION = '2026-07-21.hosted-media-files';
+export const TOOL_SCHEMA_VERSION = '2026-07-21.hosted-media-file-schemas-v2';
 
 const TOOL_PROFILE_RANK: Record<ToolProfile, number> = {
   basic: 0,
