@@ -51,7 +51,7 @@ export const CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA = z.object({
   file_id: z.string().trim().min(1).max(512),
   mime_type: z.string().trim().max(256).optional(),
   file_name: z.string().trim().max(512).optional(),
-}).passthrough();
+}).strict();
 export const CHATGPT_IMAGE_FILE_REFERENCE_SCHEMA = CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA;
 export const INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA = z.object({
   parentId: REM_ID_SCHEMA.describe('Parent Rem that receives a dedicated native image child Rem.'),

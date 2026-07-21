@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { registerMediaTools } from '../server/src/tools/register-media-tools';
 import {
+  CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA,
   INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA,
   INSERT_AUDIO_FROM_URL_INPUT_SCHEMA,
   INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA,
@@ -149,6 +150,16 @@ function mediaRegistrationHarness(options: {
 describe('media MCP schemas and registration', () => {
   beforeEach(() => {
     MEDIA_RESULT_CACHE.clear();
+  });
+
+  test('keeps ChatGPT file references closed for connector schema ingestion', () => {
+    expect(CHATGPT_MEDIA_FILE_REFERENCE_SCHEMA.safeParse({
+      download_url: 'https://files.openai.example.test/audio',
+      file_id: 'file_audio_1',
+      mime_type: 'audio/mpeg',
+      file_name: 'lesson.mp3',
+      unexpected: 'must be rejected',
+    }).success).toBe(false);
   });
 
   test('registers URL media plus ChatGPT image-file hosting with truthful annotations and routing', async () => {

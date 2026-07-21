@@ -19,7 +19,7 @@ export interface RemnoteCapabilityGuideBlock {
   bridgeUse: string[];
 }
 
-export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-07-21.hosted-media-files';
+export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-07-21.hosted-media-file-schemas-v2';
 
 export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = [
   {

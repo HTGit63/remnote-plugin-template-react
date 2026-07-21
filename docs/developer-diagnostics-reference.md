@@ -1,6 +1,6 @@
 # Developer Diagnostics Reference
 
-Generated from registry. Registry 2026-07-21.hosted-media-files. Schema 2026-07-21.hosted-media-files.
+Generated from registry. Registry 2026-07-21.hosted-media-file-schemas-v2. Schema 2026-07-21.hosted-media-file-schemas-v2.
 
 ## Runtime Fields
 
