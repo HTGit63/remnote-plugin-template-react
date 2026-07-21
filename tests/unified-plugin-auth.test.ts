@@ -76,14 +76,14 @@ describe('unified ChatGPT and Codex plugin authentication', () => {
     }
   });
 
-  test('built RemNote plugin archive stays out of source and is linked from the release branch', () => {
+  test('built plugin archives stay out of main and localhost development is documented', () => {
     const ignore = readFileSync(resolve(process.cwd(), '.gitignore'), 'utf8');
     const readme = readFileSync(resolve(process.cwd(), 'README.md'), 'utf8');
 
     expect(ignore).toContain('*.zip');
     expect(ignore).not.toContain('!PluginZip.zip');
-    expect(readme).toContain(
-      'https://github.com/HTGit63/remnote-plugin-template-react/raw/refs/heads/release-artifacts/v0.1.1/PluginZip.zip',
-    );
+    expect(readme).toContain('Develop from localhost');
+    expect(readme).toContain('http://localhost:8080');
+    expect(readme).toContain('https://remnote-plugin-template-react.onrender.com/mcp');
   });
 });
