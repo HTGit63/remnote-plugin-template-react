@@ -1,306 +1,256 @@
-# RemNote MCP — Judge Evaluation Guide
+# RemNote MCP — OpenAI Build Week Judge Guide
 
-> **RemNote MCP lets AI agents safely turn complex ideas into structured,
-> verifiable knowledge in RemNote.**
+> I did not want another AI note generator. I wanted an AI agent to work with
+> my existing knowledge base under my control.
 
-Generating another document is easy. The harder problem is letting an AI agent
-operate on a learning-oriented knowledge system without losing hierarchy,
-formatting, formulas, flashcards, identity, or user control. RemNote MCP is the
-tool layer built for that problem.
+That is the reason I built RemNote MCP. It connects ChatGPT and Codex to
+RemNote through narrow, inspectable tools instead of browser automation or one
+large paste. The user chooses the scope and writing level. The plugin performs
+the RemNote SDK operation. The tool reports what it created or changed and, for
+important workflows, reads the result back.
 
-This branch is the evaluation companion for the public project. The root
-[README](../README.md) remains the installation and usage guide for all RemNote
-users. This folder explains the Build Week work, the role of Codex, the proof
-behind the release, and the fastest safe evaluation path.
+This is the fastest honest path for evaluating the current project. Please use
+RemNote desktop's **Develop from localhost** flow. Do not use the old plugin ZIP
+for this branch; RemNote still has to review public plugin releases, and the ZIP
+does not contain the newest judge-branch changes.
 
-## Five-minute review path
+## Five-minute review
 
-1. Read **Why this project exists** and **What Codex changed during Build Week**
-   below.
-2. Inspect the exact metrics and proof boundaries in
-   [BENCHMARKS.md](BENCHMARKS.md).
-3. Read the plan-to-proof narrative and complete commit ledger in
-   [STAGE_1_7_AUDIT.md](STAGE_1_7_AUDIT.md).
-4. Download the public `0.1.1` plugin archive and install it in RemNote desktop.
-5. Run the bounded read, safe write, resumable import, and media prompts in this
-   guide under a disposable Rem.
+1. Read the project story and judging-criteria map below.
+2. Follow **Run the plugin from localhost**.
+3. Connect the hosted MCP app and refresh its tool metadata.
+4. Run the read-only test before approving any write.
+5. Use a disposable `Plugin Test` Rem for the structured-write and media tests.
+6. Check [BENCHMARKS.md](BENCHMARKS.md) for every registered tool and current
+   proof status.
+7. Check [BUILD_WEEK_ENGINEERING_AUDIT.md](BUILD_WEEK_ENGINEERING_AUDIT.md) for
+   the complete engineering, Codex, failure-repair, and security record.
 
-## Project and release identity
+## Required `/feedback` Codex Session ID
 
-| Item | Verified value |
+Use this as the primary session for the hackathon feedback requirement:
+
+```text
+019f761b-7a26-7413-a2b1-99112f18888d
+```
+
+This session contains the main media-first implementation and judge-package
+work. The engineering audit lists the other material supporting sessions and
+states what each contributed. Those sessions are supporting evidence; the ID
+above is the single recommended `/feedback` submission.
+
+## Project identity
+
+| Item | Current value |
 | --- | --- |
-| Devpost project | [RemNote MCP](https://devpost.com/software/remnote-mcp) |
-| Hackathon | [OpenAI Build Week](https://openai.devpost.com/) |
-| Official submission window opened | `2026-07-13 16:00 UTC` |
-| Installable plugin version | `0.1.1` |
-| Public source | `main` at `417218945879148b842e16a465c0a8ac639b9985` |
-| Immutable tag | `v0.1.1` → `417218945879148b842e16a465c0a8ac639b9985` |
-| Live-proven runtime source | `ebc99df6901356b055a425b5909e8d0b5829d5cf` |
-| Immutable `0.1.0` release | `v0.1.0` → `c0a6ff9187debcad04d1f30f2b509bedd862e508` |
-| `0.1.1` artifact commit | `c8b65b990e5ca3ecdfb47f032c6f9acdd1c7890c` |
-| Plugin archive | [PluginZip.zip](https://github.com/HTGit63/remnote-plugin-template-react/raw/refs/heads/release-artifacts/v0.1.1/PluginZip.zip) |
-| Archive SHA-256 | `207e1d5fd13cbe9c22e45555a36624d1fb7bc4475f9159f1c97191416527ea5b` |
-| Exact-main CI | [GitHub Actions run 29691773546](https://github.com/HTGit63/remnote-plugin-template-react/actions/runs/29691773546), success |
+| Project | [RemNote MCP on Devpost](https://devpost.com/software/remnote-mcp) |
+| Event | [OpenAI Build Week](https://openai.devpost.com/) |
+| Judge branch | `judges/openai-build-week-v0.1.1` |
+| Installable manifest version | `0.1.1` |
+| MCP/server implementation version | `0.0.1` |
+| RemNote Plugin SDK | `0.0.46` |
 | Hosted MCP | `https://remnote-plugin-template-react.onrender.com/mcp` |
 | Plugin WebSocket | `wss://remnote-plugin-template-react.onrender.com/remnote` |
+| Deployed media/discovery code checked on July 21 | `4a5ee394ee536e3ccebbe141dd9d3a6856c16967` |
+| Current registry/schema version | `2026-07-21.hosted-media-file-schemas-v2` |
+| Declared / public developer tools | `82 / 79` |
 
-RemNote requires a new version number for a replacement upload, so `0.1.1` is
-the installable maintenance release. Between the live-proven `0.1.0` source and
-`0.1.1`, production TypeScript, bridge, and server behavior did not change. The
-production-path difference is the plugin manifest version; the other changes
-are release documentation, release-hygiene coverage, and removal of generated
-Graphify output from public branches and archives.
+The final judge-documentation commit is intentionally not described as a new
+deployment. It changes the evaluation package, not the production media path.
 
-This statement describes the immutable `v0.1.1` release comparison. Later
-commits on this judge branch added unified ChatGPT/Codex authentication and
-hosted file-media work. Those post-release production changes are separate from
-the submitted release evidence and are reconciled selectively into current
-`main`; the release tag and historical counts remain unchanged.
+## The problem I wanted to solve
 
-## Why this project exists
+I was building educational material for Phronesis. AI could help me research,
+explain, and draft difficult topics, but the useful result still had to be
+rebuilt manually inside RemNote. A learning note is not just a string. It can
+have ordered hierarchy, formulas, Concepts, Descriptors, rich-text emphasis,
+flashcards, references, and media. It also has stable identities that should
+not change because a request was retried.
 
-The project began with a practical content-production problem. While building
-Phronesis, an education platform, the author used AI to research curricula,
-explain concepts, develop examples, and work with scientific formulas. The AI
-could produce useful text, but converting that text into a durable learning
-resource remained manual. Hierarchy had to be rebuilt, formulas preserved,
-formatting restored, flashcards created, and the finished material prepared for
-later export or transformation.
-
-RemNote was already the preferred authoring environment because one knowledge
-tree can combine nested notes, rich formatting, scientific notation, linked
-concepts, Concept–Descriptor relationships, and active-recall cards. That makes
-the target more demanding than a conventional page write. A correct operation
-may need to preserve content, parent-child order, rich-text representation,
-mathematical meaning, card behavior, references, existing Rem identity, and a
-safe recovery path after an uncertain failure.
-
-RemNote MCP connects that environment to MCP clients such as ChatGPT and Codex.
-Instead of simulating clicks or pasting a wall of text, the client calls narrow,
-inspectable tools. The user chooses the allowed RemNote scope and writing level;
-the plugin performs the SDK operation; the result reports IDs, warnings, and
-verification evidence; and the client can read the result back before deciding
-whether a targeted repair is needed.
-
-The intended content workflow is:
+RemNote MCP turns that manual transfer into a controlled agent workflow:
 
 ```text
-curriculum or source material
+source material or an existing RemNote note
 → ChatGPT / Codex reasoning
-→ RemNote MCP
-→ structured RemNote knowledge
-→ hierarchy + formulas + formatting + cards + media
-→ export or transformation
-→ Phronesis or another destination
+→ scoped MCP tool call
+→ RemNote desktop plugin
+→ native hierarchy, cards, formulas, formatting, and media
+→ readback and verification
 ```
 
-## What the product does
+The product is useful beyond one note. It gives people who already use RemNote
+a way to let an agent help with their real knowledge base without granting an
+unbounded “do anything” command.
 
-RemNote MCP exposes controlled tools for context inspection, bounded tree
-reads, search, structured note creation and updates, Markdown imports,
-formatting, cards, scientific formulas, note-design verification, URL-based
-image/audio/video insertion, diagnostics, and resumable bulk-import jobs.
+## What is technically different
 
-Two runtimes cooperate. A Node.js MCP server handles discovery, authentication,
-tool profiles, policy, hosted pairing, durable job state, routing, and
-diagnostics. A React/TypeScript RemNote plugin owns the live connection,
-re-checks scope and permission, performs RemNote Plugin API operations, and
-returns structured results.
+RemNote MCP combines four boundaries that are normally handled separately:
+
+- an OAuth-protected Streamable HTTP MCP server with explicit tool schemas and
+  profiles;
+- a persistent authenticated WebSocket bridge to the RemNote desktop plugin;
+- RemNote-side permission, scope, approval, idempotency, and readback rules;
+- PostgreSQL-backed resumable imports and hosted media for temporary ChatGPT
+  file uploads.
+
+Long imports use plan, job, chunk, checkpoint, verification, cancellation, and
+reconciliation states. They do not replay an unknown write blindly. File media
+uses authorized ChatGPT file objects, verified bytes, safe remote download,
+opaque hosted URLs, native RemNote builders, and post-write readback.
+
+## How the project matches the official criteria
+
+| OpenAI Build Week criterion | Evidence |
+| --- | --- |
+| Technological Implementation | Codex was used for non-trivial architecture, TDD repairs, registry work, resumable state, media ingestion, live diagnosis, and verification. The engineering audit links the work to commits and sessions. |
+| Design | The product is runnable as one coherent flow: local RemNote plugin, hosted MCP, sidebar scope/approval controls, narrow tools, typed results, and readback. |
+| Potential Impact | It addresses a real workflow for students, educators, researchers, and knowledge workers who want AI assistance inside an existing structured knowledge base. |
+| Quality of the Idea | It treats safe agent operation over hierarchy, rich text, formulas, cards, media, retries, and partial failure as one product problem—not just “generate a note.” |
+
+## Run the plugin from localhost
+
+Use RemNote desktop and Node.js 20 or newer.
+
+```bash
+git clone https://github.com/HTGit63/remnote-plugin-template-react.git
+cd remnote-plugin-template-react
+git checkout judges/openai-build-week-v0.1.1
+npm ci
+npm ci --prefix server
+npm run dev:start
+npm run dev:status
+npm run dev:doctor
+```
+
+In RemNote desktop:
+
+1. Open **Settings → Plugins**.
+2. Choose **Develop from localhost**.
+3. Enter exactly `http://localhost:8080`.
+4. Enable **RemNote MCP** and open its sidebar.
+5. Set the server endpoint to
+   `wss://remnote-plugin-template-react.onrender.com/remnote`.
+6. Complete pairing and select `mass_note_writer` or `developer` for media.
+7. Keep **Ask for every write** enabled.
+
+Do not append `/manifest.json` to the localhost URL. Leave `npm run dev:start`
+running for the evaluation.
+
+In ChatGPT Developer Mode, add or refresh the private app using:
 
 ```text
-ChatGPT or Codex
-→ MCP auth, profile, schema, and scope checks
-→ WebSocket bridge
-→ persistent RemNote plugin runtime
-→ RemNote Plugin API
-→ readback and verification
-→ structured MCP result
+https://remnote-plugin-template-react.onrender.com/mcp
 ```
 
-Long imports are deliberately not one unbounded write. They use a
-plan/job/chunk lifecycle with revisions, stable mutation identities,
-checkpoints, no-replay rules, verification, cancellation, and explicit
-reconciliation when an outcome is uncertain.
+After any server deployment or profile change, refresh the app in
+**Settings → Plugins** and start a new conversation. OpenAI's app workflow
+caches tool discovery; an already-open chat cannot gain newly registered tools
+mid-conversation.
 
-## What Codex changed during Build Week
+## Test 1 — connection and bounded read
 
-The repository predates Build Week and was already developed with Codex. The
-pre-event foundation—primarily built through GPT-5.5-based Codex sessions—had
-the RemNote plugin, MCP bridge, broad read/write surface, Markdown workflows,
-formatting and card operations, and the original bulk-import system. This
-submission does **not** claim that GPT-5.6 created the entire project from
-scratch.
-
-OpenAI Build Week opened on July 13, 2026 at 16:00 UTC. From that point through
-this judge-package revision, the six retained branch tips contain 35 unique
-commits: 34 earlier implementation/release commits plus this documentation-only
-branch update. Codex with GPT-5.6 was used as the repository engineering loop: it
-inspected architecture and live reports, classified failures across runtime
-layers, planned bounded repairs, implemented them with regression tests, ran
-local and hosted checks, interpreted connected RemNote evidence, and repeated
-the cycle when real behavior disagreed with assumptions.
-
-The significant Build Week delta was a reliability transformation:
-
-- resumable imports gained revision-aware state, legal transitions, stable
-  mutation identities, read-only verification, no-replay behavior, and
-  reconciliation for uncertain chunks;
-- hierarchy and source-fidelity handling were repaired, including exact native
-  node budgets and complete readback for deep or width-limited trees;
-- design compilation and verification became deterministic and evidence-based,
-  including metadata filtering and Concept–Descriptor relationships;
-- rich text, formulas, cards, headings, highlights, and repair behavior gained
-  stronger invariants and truthful unsupported-SDK results;
-- connection ownership moved from the sidebar lifecycle to a persistent plugin
-  runtime, while local development gained a supervised server and clearer
-  diagnostics;
-- the sidebar was simplified around connection, writing access, design style,
-  pairing, health, and safe advanced controls;
-- authentication and inputs were hardened with rate, scope, metadata, payload,
-  file-root, symlink, and secret-handling protections;
-- image, audio, and video insertion were designed first, then implemented as
-  HTTP(S)-URL tools with capability probes, strict validation, dedicated-child
-  placement, idempotency, readback, and compensation;
-- a 15-scenario connected RemNote campaign and focused Stage 6 reruns drove
-  additional fixes instead of being treated as a ceremonial final check;
-- the project was packaged as immutable `v0.1.0`, then published as clean
-  installable `v0.1.1` source and a checksum-verified no-build ZIP.
-
-The complete milestone and commit-level account is in
-[STAGE_1_7_AUDIT.md](STAGE_1_7_AUDIT.md).
-
-## Build Week timeline
-
-| Date | Main engineering outcome |
-| --- | --- |
-| July 14 | Completed the first seven-phase remediation pass, then used deployed live benchmarks to find and close remaining state, fidelity, verification, and reconnect defects. |
-| July 15 | Added CI, tightened release metadata and tool exposure, fixed exact native-node budgeting, and simplified the plugin control surface. |
-| July 16 | Refined the native-style sidebar, asset packaging, accessibility, and truthful highlight verification. |
-| July 17 | Completed the 15-scenario campaign record, hardened pairing/configuration, and moved connection ownership into the persistent plugin runtime. |
-| July 18 | Reframed the work as the final product-completion contract; designed and implemented image, audio, and video URL tools with strict tests; completed broad regression and sandbox UI verification. |
-| July 19 | Repaired local plugin serving and selector activation, fixed deep and width-limited import readback, recovered media proof through a stale client snapshot, completed exact-release live proof, published `v0.1.0`, produced `v0.1.1`, removed generated Graphify output from public artifacts, and created this judge branch. |
-
-## Evaluation against the judging criteria
-
-| Criterion | Where to look |
-| --- | --- |
-| Technological Implementation | The Stage 1–7 audit shows the Codex-driven repair loop, TDD sequence, architecture seams, 34-commit ledger, 349-test release suite, exact-main CI, and live RemNote campaign. |
-| Design | Install the plugin and inspect the connected sidebar. Its primary decisions are connection, writing access, and design style; pairing and diagnostics remain available without dominating the daily view. |
-| Potential Impact | The project addresses a concrete educational-authoring workflow: converting AI reasoning into structured, reusable learning material instead of another isolated document. |
-| Quality of the Idea | RemNote MCP treats hierarchy, rich text, formulas, cards, linked knowledge, media, and recovery as one agent-operation problem rather than reducing integration success to page text. |
-
-## Install and connect
-
-1. Download the public
-   [PluginZip.zip](https://github.com/HTGit63/remnote-plugin-template-react/raw/refs/heads/release-artifacts/v0.1.1/PluginZip.zip).
-2. In RemNote desktop, open **Settings → Plugins → Upload plugin**.
-3. Select the ZIP, enable **RemNote MCP**, and open its sidebar.
-4. Set the WebSocket endpoint to
-   `wss://remnote-plugin-template-react.onrender.com/remnote`.
-5. In ChatGPT Developer Mode, create a private MCP app using
-   `https://remnote-plugin-template-react.onrender.com/mcp`.
-6. Complete pairing in the plugin and refresh the client tool snapshot.
-7. Start with **Current Rem tree** and **Ask for every write**.
-8. Create a disposable parent Rem before testing writes.
-
-Do not use the `danger` profile for evaluation. Never place tokens, pairing
-codes, OAuth credentials, session secrets, or database credentials in a prompt.
-
-## Test 1 — bounded read
+Focus a disposable Rem named `Plugin Test`, then use:
 
 ```text
 Use RemNote MCP. Check bridge and plugin status, read the focused Rem, and read
-at most 25 direct children in RemNote order. Return each Rem ID and label. Do
-not call a write tool and do not mutate anything.
+at most 20 direct children in RemNote order. Return IDs and labels. Do not call
+a write tool.
 ```
 
-Pass means the requested Rems return in order and the result reports no
-mutation.
+Pass means the plugin is connected, the focused Rem is correct, the children
+are bounded and ordered, and no mutation is reported.
 
 ## Test 2 — safe structured write and replay
 
 ```text
-Under the approved disposable parent, create a note named "RemNote MCP Safe
-Write" with one child containing the formula E=mc^2 and one Descriptor card:
+Under the focused Plugin Test Rem, create a child note called “Build Week Safe
+Write” with one formula E=mc^2 and one Descriptor card:
 Energy-mass relation::Energy equals mass times the speed of light squared.
-Use idempotency key evaluation-v011-safe-write-01, verify after writing, and
-read back the hierarchy, rich text, formula, and card. Repeat with the same key
-and prove that no duplicate Rem was created.
+Use idempotency key build-week-safe-write-01, verify after writing, and read the
+result back. Repeat the exact request with the same key and prove that no
+duplicate was created.
 ```
 
-Pass means the hierarchy, formula, and card read back correctly and replay
-preserves the original IDs.
+Pass requires native hierarchy and content readback plus stable IDs on replay.
+A successful response without readback is incomplete evidence.
 
-## Test 3 — interrupted and resumed import
+## Test 3 — uploaded PNG, MP3, and MP4
+
+Upload one small PNG, one MP3, and one **real MP4 container**, then use:
 
 ```text
-Plan a resumable import of a four-section Markdown fixture under the approved
-disposable parent. Start with idempotency key evaluation-v011-resume-01. Run
-one job step and stop. Report the persistent checkpoint, resume only pending
-chunks until complete, verify whole-source fidelity, and call resume again to
-prove completed chunks are not replayed. Never delete existing Rems.
+Under Plugin Test, insert each uploaded file with its native RemNote media tool.
+Use a different stable idempotency key per file. Verify the created media Rems
+by readback. Do not replace a failed media call with Markdown or a plain URL.
 ```
 
-Pass means the checkpoint is visible, the final source-fidelity verification
-passes, and the final resume creates nothing.
+Expected tool names:
 
-## Test 4 — image, audio, YouTube, and direct video
+- `insert_image_from_file`
+- `insert_audio_from_file`
+- `insert_video_from_file`
 
-The default `mass_note_writer` profile now exposes image and YouTube tools. Use
-`note_writer` or higher when the audio tool is also required, then refresh the
-client tool snapshot.
+If only the URL versions appear, stop the test, refresh the ChatGPT app, and
+start a new chat. On July 21 the deployed server returned all 79 public tools,
+including both new file tools, while the already-open test conversation still
+showed 77. That is a client discovery snapshot, not a missing server
+registration.
+
+The supplied MP3 used during diagnosis is valid MPEG Layer III and within the
+limit. The previously reported `.mp4` sample was actually Matroska/WebM with
+VP8, so it is not a valid MP4 fixture. The loader correctly rejects it. SVG is
+also unsupported by design.
+
+After successful readback, a person should reopen the Rem and confirm image
+rendering, audio playback, and video playback. That last UI check cannot be
+replaced by a JSON response.
+
+## Test 4 — URL media
 
 ```text
-Under the approved disposable parent, insert exactly one image, one audio
-player, and one YouTube embed with verify-after-write enabled and these keys:
-evaluation-v011-image-01, evaluation-v011-audio-01, and
-evaluation-v011-video-01. Use:
-image https://interactive-examples.mdn.mozilla.net/media/cc0-images/grapefruit-slice-332-332.jpg
-audio https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3
-video https://www.youtube.com/watch?v=jNQXAC9IVRw
-Read back the native rich-text payloads, repeat each same-key operation, and
-prove that IDs stay stable with no duplicate.
+Under Plugin Test, insert one stable public image URL, one public MP3 URL, one
+YouTube URL, and one direct MP4 URL. Require native media readback and then
+confirm rendering or playback in RemNote. A plain text URL is a failure.
 ```
 
-The optional direct-file fixture is
-`https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4`.
-Media passes only when native rich-text readback succeeds **and** a human
-confirms that the image renders and the audio/video players work.
+Image URL, public MP3 URL, YouTube, and direct-video paths have connected
+success evidence. The current benchmark keeps that prior live proof separate
+from this pass's read-only checks.
+
+## What is proven now
+
+- The deployed server and connected plugin reported the same current media
+  implementation SHA.
+- Raw hosted MCP discovery returned 79 developer-profile tools and included
+  strict ChatGPT file schemas for image, audio, and video.
+- The connected `Plugin Test` Rem passed current selection, focus, read, tree,
+  rich-text, breadcrumb, search, diagnostics, and read-only health checks.
+- Focused media/ChatGPT regressions passed 62/62 tests.
+- Earlier July 21 connected tests proved uploaded PNG/JPEG insertion, URL audio,
+  and native YouTube insertion.
+
+## What is not claimed
+
+- This documentation pass did not perform 79 live mutations. Most write tools
+  are covered by schema, policy, simulation, focused regressions, and retained
+  connected evidence; their current-pass live status is marked `NOT RUN`.
+- The already-open ChatGPT conversation could not call the new MP3/MP4 file
+  tools because it held the old 77-tool snapshot.
+- A mislabeled WebM file is not proof that real MP4 ingestion fails.
+- Native readback is not human rendering or playback proof.
+- Local tests do not prove hosted PostgreSQL availability or a connected
+  RemNote session.
+- The public media URL is not appropriate for confidential files.
 
 ## Evidence map
 
-| Question | Source |
+| Question | Document |
 | --- | --- |
-| What exactly changed during Build Week? | [STAGE_1_7_AUDIT.md](STAGE_1_7_AUDIT.md) |
-| Which commit implemented or proved each milestone? | [Commit ledger](STAGE_1_7_AUDIT.md#complete-build-week-commit-ledger) |
-| What passed automatically and live? | [BENCHMARKS.md](BENCHMARKS.md) |
-| What tools and schemas are public? | [TOOL_REFERENCE.md](../TOOL_REFERENCE.md) |
-| How do users install and operate the product? | [Root README](../README.md) |
-| How are architecture, diagnostics, and repair handled? | [Engineering guide](../docs/engineering-guide.md) and [repair/testing guide](../docs/remnote-mcp-repair-and-testing.md) |
+| How do I run the project? | [Root README](../README.md) |
+| What changed, why, and through which Codex sessions? | [BUILD_WEEK_ENGINEERING_AUDIT.md](BUILD_WEEK_ENGINEERING_AUDIT.md) |
+| What is the status of every tool and every verification gate? | [BENCHMARKS.md](BENCHMARKS.md) |
+| What schemas and policies does the server generate? | [TOOL_REFERENCE.md](../TOOL_REFERENCE.md) |
 
-## Proof boundaries and known limitations
-
-The release deliberately separates proof layers. A healthy hosted endpoint is
-not proof that the plugin is connected. A successful MCP response is not proof
-that RemNote mutated correctly. Native media readback is not playback proof.
-The retained Stage 6 result includes exact URL readback, stable-ID replay, and
-user-confirmed image, audio, YouTube, and direct MP4 behavior.
-
-The installed RemNote SDK is `@remnote/plugin-sdk@0.0.46`. When a required
-runtime capability is absent, the media path returns typed `SDK_UNSUPPORTED`
-without mutation. The original v0.1.1 campaign used URL-only media. The July 20
-hosted-image delta adds `insert_image_from_file`: ChatGPT image files are byte-
-validated, persisted in PostgreSQL, served from opaque immutable HTTPS URLs,
-and routed through the same native image builder. Because the installed RemNote
-SDK stores a URL-backed rich-text image rather than accepting a binary upload,
-successful readback retains the required bridge bytes and reports that remote
-dependency. Newly created orphans are deleted only after definitive no-write
-failures; uncertain writes are retained. This new path has automated
-and simulated bridge proof in the working tree; connected deployed rendering
-must still be rerun on the updated deployment. Audio and video remain URL-
-backed. Destructive tools remain outside this evaluation workflow.
-
-The exact connected campaign belongs to the production code at `ebc99df`,
-which is functionally identical to the runtime in `v0.1.0` and `v0.1.1`.
-`v0.1.1` has automated, build, artifact, and exact-main CI proof; it is not
-misrepresented as a separate fresh live-mutation campaign.
+Those are the three primary judge documents in this folder: this guide, the
+engineering audit, and the benchmark. Historical stage and standalone media
+audit material has been merged into them so the evidence has one current home.
