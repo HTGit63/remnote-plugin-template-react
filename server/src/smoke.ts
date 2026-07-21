@@ -1513,7 +1513,7 @@ try {
     !diagnostics.includes(`"publicToolCount":${expectedToolNames.length}`) ||
     !diagnostics.includes('toolRegistryVersion') ||
     !diagnostics.includes('"discoveryAuthMode":"no_auth_required"') ||
-    !diagnostics.includes('"callabilitySource":"runtime_matrix_not_live_execution"')
+    !diagnostics.includes('"callabilitySource":"mcp_registered_and_listed"')
   ) {
     throw new Error('get_bridge_diagnostics did not report the live registry, discovery auth mode, and callability source.');
   }
@@ -1523,7 +1523,7 @@ try {
     !diagnosticsResult.callableTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.callableTools?.includes('run_bridge_health_check') ||
     !diagnosticsResult.actualMcpCallableTools?.includes('get_bridge_status') ||
-    diagnosticsResult.callabilitySource !== 'runtime_matrix_not_live_execution' ||
+    diagnosticsResult.callabilitySource !== 'mcp_registered_and_listed' ||
     !diagnosticsResult.realPluginVerifiedTools?.includes('ping_remnote_plugin') ||
     !diagnosticsResult.runtimeUnverifiedTools?.includes('create_rem') ||
     !diagnosticsResult.staticSdkUnsupportedTools?.includes('create_folder') ||

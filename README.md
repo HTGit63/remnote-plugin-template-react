@@ -56,7 +56,7 @@ ChatGPT and Codex use the same installed app authentication, with no extra
 client-specific credential. RemNote scope and write approval still apply to
 every client.
 
-## Install the plugin
+## Install the plugin from localhost
 
 Requirements:
 
@@ -92,11 +92,13 @@ npm run dev:stop
 ```
 
 This loads the current branch directly and avoids waiting for RemNote's plugin
-review process.
+review process. Port `8080` serves only the plugin JavaScript and manifest. It
+is not the MCP server and does not need an ngrok tunnel.
 
 ## Connect ChatGPT or Codex
 
-In the RemNote MCP sidebar, use the hosted WebSocket endpoint:
+New plugin installations use the hosted Render bridge by default. The endpoint
+shown in the RemNote MCP sidebar should be:
 
 ```text
 wss://remnote-plugin-template-react.onrender.com/remnote
@@ -111,11 +113,57 @@ https://remnote-plugin-template-react.onrender.com/mcp
 Complete pairing in the plugin, choose the smallest useful scope and tool
 profile, and keep **Ask for every write** enabled for the first run.
 
+| Address | Used by | Purpose |
+| --- | --- | --- |
+| `http://localhost:8080` | RemNote desktop | Loads the development plugin bundle |
+| `wss://remnote-plugin-template-react.onrender.com/remnote` | RemNote plugin | Connects the plugin to the hosted bridge |
+| `https://remnote-plugin-template-react.onrender.com/mcp` | ChatGPT or Codex | Connects the MCP app |
+
+An existing installation may keep its previously saved localhost override. If
+the sidebar copies `http://localhost:47392/mcp`, open the plugin settings and
+replace the bridge URL with the hosted `wss://.../remnote` address above. The
+plugin then derives the correct hosted `/mcp` URL. Custom local and self-hosted
+URLs remain supported and are never overwritten.
+
 ChatGPT caches an app's tool list per conversation. After a deployment or tool
 profile change, rebuild/restart the server if local, refresh the app in
 **Settings → Plugins**, and start a new conversation. If the server reports 79
 tools but the current chat reports 77, the chat is using an older discovery
 snapshot; changing the server code again will not refresh that conversation.
+
+## Run the entire bridge locally with ngrok
+
+This advanced path is only for developing the companion server itself. ChatGPT
+cannot connect to `http://localhost:47392/mcp`, so expose that port through a
+temporary public HTTPS tunnel. Keep authentication enabled; never tunnel
+`REMNOTE_BRIDGE_ALLOW_NO_TOKEN=1` to the internet.
+
+1. Install ngrok, start `ngrok http 47392`, and copy its HTTPS origin, for
+   example `https://example.ngrok.app`.
+2. Copy `.env.example` to `.env`. Replace every example public origin with the
+   ngrok HTTPS origin, configure PostgreSQL, and generate new session/admin
+   secrets.
+3. The server does not auto-load `.env`. Load it into the shell, then start the
+   companion server:
+
+```bash
+set -a
+source .env
+set +a
+npm run server:dev
+```
+
+4. Set the RemNote plugin bridge URL to
+   `wss://example.ngrok.app/remnote`.
+5. Add or refresh the ChatGPT Developer Mode app with
+   `https://example.ngrok.app/mcp`.
+6. Complete pairing, then start a new conversation so ChatGPT receives the
+   current tool descriptors.
+
+Free ngrok URLs can change after restart. When the origin changes, update
+`.env`, restart the server, update the plugin bridge URL, and refresh the
+ChatGPT app. For local-only CLI tests that do not use ChatGPT, use
+`.env.local.example`; it keeps the bridge on loopback with a local token.
 
 ## A safe first test
 
@@ -146,7 +194,9 @@ HTTPS URL, creates native media rich text, and verifies the resulting Rem.
 The tested `NEW LINEN 新しいリネン.mp3` is a valid 2,970,931-byte MPEG Layer
 III file and is below the 25 MiB audio limit. The current server exposes its
 file tool correctly. A chat that still shows only `insert_audio_from_url` must
-refresh the app and start a new conversation.
+refresh the app and start a new conversation. Diagnostics report MCP exposure
+separately from runtime verification: `callable` means registered and listed,
+while `runtimeVerified` requires a successful server or connected-plugin run.
 
 A filename ending in `.mp4` is not enough. One reported test file was actually
 a Matroska/WebM container with VP8 video, so it is correctly rejected by the
@@ -218,6 +268,8 @@ private note content into committed files or benchmark reports.
   RemNote scope.
 - **MP3/MP4 file tools are missing:** select `mass_note_writer` or `developer`,
   refresh the ChatGPT app, and open a new conversation.
+- **Tool is listed but not runtime-verified:** this does not mean the action is
+  missing. Connect RemNote and run it against a disposable Rem for live proof.
 - **`REMOTE_HOST_BLOCKED`:** the download resolved only to a non-public or
   otherwise unsafe address. Do not bypass the protection.
 - **`HOSTED_MEDIA_UNSUPPORTED_FORMAT`:** the bytes are not a supported format,

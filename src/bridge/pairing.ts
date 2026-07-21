@@ -1,5 +1,8 @@
 import type { RNPlugin } from '@remnote/plugin-sdk';
 import type { BridgeToolProfile, PermissionMode, PermissionScope } from '../../shared/bridge/protocol';
+import { companionHttpBaseUrl } from './endpoints';
+
+export { companionHttpBaseUrl } from './endpoints';
 
 export interface HostedPairingSession {
   pairingId?: string;
@@ -100,18 +103,6 @@ function randomId(prefix: string): string {
     return `${prefix}_${cryptoApi.randomUUID()}`;
   }
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
-}
-
-export function companionHttpBaseUrl(serverUrl: string): string {
-  const url = new URL(serverUrl);
-  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  if (url.port === '47391') {
-    url.port = '47392';
-  }
-  url.pathname = '';
-  url.search = '';
-  url.hash = '';
-  return url.toString().replace(/\/+$/, '');
 }
 
 export function accessScopeForPermissionScope(

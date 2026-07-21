@@ -3,6 +3,7 @@ import type {
   BridgeToolPolicy,
   BridgeToolProfile,
 } from '../../shared/bridge/protocol';
+import { DEFAULT_BRIDGE_SERVER_URL } from './endpoints';
 
 export type BridgeConnectionState =
   | 'not_paired'
@@ -34,7 +35,7 @@ export interface BridgeStatusSnapshot {
   allPublicTools?: string[];
   publicToolCount?: number;
   publicTools?: string[];
-  callabilitySource?: 'runtime_matrix_not_live_execution' | 'live_execution';
+  callabilitySource?: 'mcp_registered_and_listed' | 'live_execution';
   realPluginVerifiedTools?: string[];
   runtimeUnverifiedTools?: string[];
   sdkUnsupportedTools?: string[];
@@ -67,14 +68,13 @@ export interface BridgeStatusSnapshot {
   initialSyncWarning?: string;
 }
 
-export const DEFAULT_BRIDGE_SERVER_URL = 'ws://localhost:47391/remnote-bridge';
 export const HOSTED_PAIRING_START_INSTRUCTION =
   'Open ChatGPT, connect RemNote MCP, then enter the pairing code shown there.';
 
 export const INITIAL_BRIDGE_STATUS: BridgeStatusSnapshot = {
   state: 'disconnected',
   serverUrl: DEFAULT_BRIDGE_SERVER_URL,
-  lastEvent: 'Waiting for local companion server.',
+  lastEvent: 'Waiting for RemNote bridge connection.',
 };
 
 export function getBridgeCloseState(input: {

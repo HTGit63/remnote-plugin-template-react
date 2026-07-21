@@ -1,6 +1,6 @@
 # Tool Reference
 
-Generated from registry. Server 0.0.1. Registry 2026-07-21.hosted-media-file-schemas-v2. Schema 2026-07-21.hosted-media-file-schemas-v2.
+Generated from registry. Server 0.0.1. Registry 2026-07-21.hosted-default-callability-v3. Schema 2026-07-21.hosted-media-file-schemas-v2.
 
 Declared tools: 82. All public tools: 79. Default public tools: 25. Runtime-unverified default tools: 14. Hidden/gated/unsupported tools: 3.
 

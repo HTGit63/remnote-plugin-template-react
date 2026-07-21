@@ -119,7 +119,39 @@ describe('tool status matrix policy', () => {
     expect(summary.activeToolProfile).toBe('mass_note_writer');
     expect(summary.registeredToolNames).toEqual(summary.mcpRegisteredTools);
     expect(summary.mcpListedToolNames).toEqual(summary.mcpListedTools);
-    expect(summary.runtimeVerifiedTools).toEqual(summary.actualMcpCallableTools);
+    expect(summary.actualMcpCallableTools).toEqual(summary.publicTools);
+    expect(summary.runtimeVerifiedTools).not.toEqual(summary.actualMcpCallableTools);
+    expect(summary.callabilitySource).toBe('mcp_registered_and_listed');
+    expect(summary.mcpListToCallableMismatch).toEqual({
+      listedButNotCallable: [],
+      callableButNotListed: [],
+    });
+  });
+
+  test('keeps MCP exposure separate from live RemNote verification', () => {
+    const summary = getToolRegistrySummary(false, DEFAULT_TOOL_PROFILE);
+
+    for (const toolName of ['insert_audio_from_file', 'insert_video_from_file']) {
+      const state = summary.toolStates.find((tool) => tool.name === toolName);
+      const runtime = summary.runtimeVerificationMatrix.find((tool) => tool.toolName === toolName);
+
+      expect(state).toMatchObject({
+        name: toolName,
+        declared: true,
+        registered: true,
+        listed: true,
+        callable: true,
+        liveVerified: false,
+      });
+      expect(runtime).toMatchObject({
+        toolName,
+        registered: true,
+        listed: true,
+        callable: true,
+        liveVerified: false,
+      });
+      expect(summary.runtimeUnverifiedTools).toContain(toolName);
+    }
   });
 
   test('standard bridge envelope exposes required write-audit fields', async () => {

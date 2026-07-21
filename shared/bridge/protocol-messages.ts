@@ -368,7 +368,7 @@ export interface BridgeServerHello {
   registryDeclaredTools?: string[];
   mcpRegisteredTools?: string[];
   mcpListedTools?: string[];
-  callabilitySource?: 'runtime_matrix_not_live_execution' | 'live_execution';
+  callabilitySource?: 'mcp_registered_and_listed' | 'live_execution';
   callableTools?: string[];
   actualMcpCallableTools?: string[];
   unauthMcpCallableTools?: string[];

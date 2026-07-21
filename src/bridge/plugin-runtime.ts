@@ -7,7 +7,7 @@ import {
   BRIDGE_RUNTIME_RECONNECT_GENERATION_KEY,
   BridgeRuntimeChannel,
 } from './runtime-channel';
-import { DEFAULT_BRIDGE_SERVER_URL } from './status';
+import { DEFAULT_BRIDGE_SERVER_URL } from './endpoints';
 import { normalizePermissionMode, normalizePermissionScope } from '../remnote/permissions';
 
 let runtime: PersistentBridgeRuntime | null = null;

@@ -128,8 +128,9 @@ In RemNote desktop:
 2. Choose **Develop from localhost**.
 3. Enter exactly `http://localhost:8080`.
 4. Enable **RemNote MCP** and open its sidebar.
-5. Set the server endpoint to
-   `wss://remnote-plugin-template-react.onrender.com/remnote`.
+5. Confirm the default server endpoint is
+   `wss://remnote-plugin-template-react.onrender.com/remnote`. If an older
+   installation retained a localhost override, replace it with this value.
 6. Complete pairing and select `mass_note_writer` or `developer` for media.
 7. Keep **Ask for every write** enabled.
 
@@ -146,6 +147,12 @@ After any server deployment or profile change, refresh the app in
 **Settings → Plugins** and start a new conversation. OpenAI's app workflow
 caches tool discovery; an already-open chat cannot gain newly registered tools
 mid-conversation.
+
+Port `8080` only loads the RemNote development plugin. It is not the MCP
+endpoint. Judges using the hosted Render bridge do not need ngrok. Developers
+running the companion MCP server locally must expose port `47392` through an
+HTTPS tunnel such as ngrok and connect ChatGPT to the tunnel's `/mcp` path; the
+root README documents that advanced flow.
 
 ## Test 1 — connection and bounded read
 
