@@ -1,6 +1,6 @@
 # Media MCP Functional and Security Audit
 
-Date: 2026-07-20
+Date: 2026-07-21
 Branch: `judges/openai-build-week-v0.1.1`
 
 ## Outcome
@@ -28,7 +28,8 @@ or another-device rendering. The tool now reports this state explicitly as
    the file name, and recognizes only PNG, JPEG, WebP, or GIF byte signatures
    (`server/src/media/hosted-image-loader.ts:54`).
 3. Remote retrieval requires HTTPS on port 443, rejects embedded credentials and
-   private/special IP ranges, pins DNS for the connection, revalidates redirects,
+   private/special IP ranges, filters mixed DNS results to validated public
+   addresses, pins one public address for the connection, revalidates redirects,
    and enforces redirect, time, and byte limits
    (`server/src/security/safe-remote-download.ts:22`).
 4. PostgreSQL stores an opaque UUID, owner, idempotency key, source file ID,
@@ -73,7 +74,7 @@ or another-device rendering. The tool now reports this state explicitly as
 
 | Gate | Result |
 |---|---|
-| Vitest suite | PASS: 42 files, 365 tests |
+| Vitest suite | PASS: 43 files, 368 tests |
 | TypeScript | PASS: root and server builds |
 | RemNote SDK validation | PASS |
 | Hosted-image focused tests | PASS: byte validation, SSRF boundaries, owner-scoped deletion, public serving, retention states |
@@ -108,6 +109,20 @@ or another-device rendering. The tool now reports this state explicitly as
   isolated CI test database credential. No real token, database URL, or private
   key was found.
 
+### 2026-07-21 remote-host repair
+
+- Root cause 1: adding IPv4-mapped IPv6 subnet `::ffff:0:0/96` to Node's shared
+  `BlockList` also matched ordinary IPv4 checks, so public IPv4 download hosts
+  were incorrectly reported as non-public.
+- Root cause 2: a mixed DNS response was rejected when any answer was
+  non-public, even though the connection is pinned to one selected address.
+- Repair: mapped IPv6 addresses remain explicitly rejected, DNS answers are
+  filtered to public addresses, the first validated public answer is pinned,
+  and a host with no public answer still fails with `REMOTE_HOST_BLOCKED`.
+- Regression proof exercises the real DNS-selection and pinned-request path;
+  it verifies public IPv4, mixed public/private answers, and private-only
+  blocking. No hostname allowlist or private-network bypass was added.
+
 ### Findings and residual risks
 
 | ID | Severity | Status | Finding |
@@ -117,6 +132,7 @@ or another-device rendering. The tool now reports this state explicitly as
 | SEC-MEDIA-03 | Medium | Required architecture boundary | Asset URLs are public bearer-like UUID URLs because RemNote must fetch them. Do not use this path for confidential images. |
 | SEC-MEDIA-04 | Low | Documented | Successful assets cannot be automatically deleted while RemNote readback still contains the bridge URL. The new lifecycle status prevents false deletion claims. |
 | SEC-MEDIA-05 | Informational | Blocked external check | Online `npm audit` could not resolve `registry.npmjs.org` in the sandbox. Root and server offline-cache audits each reported zero vulnerabilities; rerun online in CI/deployment. |
+| SEC-MEDIA-06 | High | Fixed | The IPv4-mapped IPv6 `BlockList` entry caused public IPv4 file hosts to fail as non-public. Mapped IPv6 is now rejected explicitly, public IPv4 is accepted, and the request remains pinned to a validated public answer. |
 
 ## Live acceptance checklist
 

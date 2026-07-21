@@ -42,7 +42,6 @@ for (const [network, prefix] of [
   ['::', 128],
   ['::', 96],
   ['::1', 128],
-  ['::ffff:0:0', 96],
   ['64:ff9b::', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
@@ -55,10 +54,14 @@ for (const [network, prefix] of [
 ] as const) {
   blockedNetworks.addSubnet(network, prefix, 'ipv6');
 }
+const mappedIpv6Networks = new BlockList();
+mappedIpv6Networks.addSubnet('::ffff:0:0', 96, 'ipv6');
 
 export function isPublicRemoteAddress(address: string, family: 4 | 6): boolean {
   if (isIP(address) !== family) return false;
-  if (family === 6 && address.toLowerCase().startsWith('::ffff:')) return false;
+  // Keep this subnet in a separate list: Node applies it to IPv4 checks when it
+  // shares a BlockList with IPv4 ranges, which would block every public IPv4.
+  if (family === 6 && mappedIpv6Networks.check(address, 'ipv6')) return false;
   return !blockedNetworks.check(address, family === 4 ? 'ipv4' : 'ipv6');
 }
 
@@ -111,10 +114,13 @@ async function resolvePublicAddress(hostname: string): Promise<{ address: string
     if (error instanceof SafeRemoteDownloadError) throw error;
     remoteError('REMOTE_DNS_FAILED', 'Remote download host could not be resolved.');
   }
-  if (addresses.length === 0 || addresses.some((entry) => !isPublicRemoteAddress(entry.address, entry.family))) {
+  const publicAddresses = addresses.filter((entry) => (
+    isPublicRemoteAddress(entry.address, entry.family)
+  ));
+  if (publicAddresses.length === 0) {
     remoteError('REMOTE_HOST_BLOCKED', 'Remote download host resolves to a non-public address.');
   }
-  return addresses[0];
+  return publicAddresses[0];
 }
 
 export async function downloadSafeRemoteBytes(
