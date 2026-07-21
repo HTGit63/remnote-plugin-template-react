@@ -49,7 +49,7 @@ function mcpBody(tool: string, args: Record<string, unknown>) {
 }
 
 function scopePrincipal(
-  authMode: 'local_bridge_token' | 'hosted_oauth' | 'codex_bearer',
+  authMode: 'local_bridge_token' | 'hosted_oauth',
   overrides: Partial<AuthenticatedPrincipal> = {}
 ): AuthenticatedPrincipal {
   return {
@@ -82,7 +82,7 @@ function stage3PermissionBoundaryViolations(): string[] {
       violations.push(`public tool ${toolName} has no explicit server permission policy`);
     }
   }
-  for (const authMode of ['local_bridge_token', 'hosted_oauth', 'codex_bearer'] as const) {
+  for (const authMode of ['local_bridge_token', 'hosted_oauth'] as const) {
     const blocked = validateMcpToolPermission(
       mcpBody('get_rem', { remId: 'outside-current-tree' }),
       scopePrincipal(authMode, { accessScope: 'focused-rem-only' })
@@ -124,7 +124,7 @@ function stage3PermissionBoundaryViolations(): string[] {
   for (const bulkTool of ['run_note_import_job_step', 'resume_note_import_job']) {
     const untrustedBulkWrite = validateMcpToolPermission(
       mcpBody(bulkTool, { jobId: 'other-session-job' }),
-      scopePrincipal('codex_bearer', {
+      scopePrincipal('hosted_oauth', {
         scopeGrants: ['bridge:read', 'bridge:write'],
         trustedWriteMode: 'ask-every-write',
       })

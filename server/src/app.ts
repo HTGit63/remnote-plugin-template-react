@@ -3,6 +3,11 @@ import { BridgeHub } from './bridge-hub.js';
 import { type CompanionServerConfig, loadConfig, validateConfig } from './config.js';
 import { createMcpHttpServer } from './server/create-http-server.js';
 import { createStorageProvider } from './storage/index.js';
+import type { StorageProvider } from './storage/types.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from './media/hosted-image-loader.js';
 
 export interface RunningCompanionApp {
   config: CompanionServerConfig;
@@ -14,7 +19,12 @@ export interface RunningCompanionApp {
 }
 
 export async function startCompanionApp(
-  overrideConfig: Partial<CompanionServerConfig> = {}
+  overrideConfig: Partial<CompanionServerConfig> = {},
+  dependencies: {
+    storage?: StorageProvider;
+    hostedImageLoader?: HostedImageFileLoader;
+    hostedMediaLoader?: HostedMediaFileLoader;
+  } = {}
 ): Promise<RunningCompanionApp> {
   const baseConfig = loadConfig();
   const timeoutBudgets =
@@ -38,11 +48,14 @@ export async function startCompanionApp(
   validateConfig(config);
 
   // Initialize persistent storage (Phase 3/4)
-  const storage = createStorageProvider(config);
+  const storage = dependencies.storage ?? createStorageProvider(config);
   await storage.initialize();
 
   const hub = new BridgeHub(config, storage);
-  const mcpServer = createMcpHttpServer(config, hub, storage);
+  const mcpServer = createMcpHttpServer(config, hub, storage, {
+    hostedImageLoader: dependencies.hostedImageLoader,
+    hostedMediaLoader: dependencies.hostedMediaLoader,
+  });
   if (config.singlePort) {
     hub.attachToServer(mcpServer);
   } else {

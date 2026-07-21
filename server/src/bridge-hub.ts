@@ -27,7 +27,6 @@ import type { StorageProvider } from './storage/types.js';
 import { getToolRegistrySummary } from './tool-registry.js';
 import { publicMcpToolNameForBridgeTool } from './mcp-tool-map.js';
 import { recordToolHistoryEvent } from './tool-health-history.js';
-import { startCodexPairingSession } from './auth/codex-pairing-routes.js';
 
 import {
   type PendingRequest,
@@ -265,64 +264,6 @@ export class BridgeHub {
       }
     }
     return [...ids];
-  }
-
-  async getCodexRoutingDiagnostics(principal?: AuthenticatedPrincipal) {
-    const status = this.sessionRouter.getStatus();
-    const activePluginConnectionCount = status.activeConnections;
-    const base = {
-      authenticated: principal?.authMode === 'codex_bearer',
-      linked: false,
-      activePluginConnectionCount,
-      sessionRouterStatus: status,
-      codexPairingStatus: 'not_linked' as const,
-      codexRoutingMode: activePluginConnectionCount === 0
-        ? 'no_active_plugin_connection'
-        : activePluginConnectionCount === 1
-          ? 'single_active_plugin_fallback'
-          : 'multiple_active_plugin_connections',
-      pairingRequired: activePluginConnectionCount !== 1,
-      pluginConnectionStatus: activePluginConnectionCount > 0 ? 'connected' : 'offline',
-    };
-
-    if (principal?.authMode !== 'codex_bearer') {
-      return base;
-    }
-
-    const codexClientHash = principal.codexClientHash;
-    if (!codexClientHash || !this.storage) {
-      return {
-        ...base,
-        codexRoutingMode: 'pairing_required',
-        pairingRequired: true,
-      };
-    }
-
-    const link = await this.storage.getCodexClientLink(codexClientHash);
-    if (!link) {
-      return base;
-    }
-
-    if (link.revokedAt) {
-      return {
-        ...base,
-        codexPairingStatus: 'revoked' as const,
-        codexRoutingMode: 'pairing_required',
-        pairingRequired: true,
-      };
-    }
-
-    const connection = this.sessionRouter.getConnectionForUser(link.linkedUserId);
-    return {
-      ...base,
-      linked: true,
-      codexPairingStatus: 'linked' as const,
-      codexRoutingMode: 'linked_plugin_session',
-      pairingRequired: false,
-      pluginConnectionStatus: connection ? 'connected' : 'offline',
-      linkedPairingIdHash: hashDiagnosticId(link.linkedPairingId),
-      linkedPluginInstanceIdHash: link.linkedPluginInstanceId ? hashDiagnosticId(link.linkedPluginInstanceId) : undefined,
-    };
   }
 
   recordHealthCheck(result: BridgeHealthCheckResult) {
@@ -722,10 +663,6 @@ export class BridgeHub {
     | { ok: false; error: BridgeErrorCode; message: string; details?: unknown }
     > {
     if (this.config.deploymentMode === 'hosted') {
-      if (principal?.authMode === 'codex_bearer') {
-        return this.getCodexTargetSocket(principal);
-      }
-
       if (principal?.authMode === 'connector_compat_noauth') {
         const singleActive = this.sessionRouter.getSingleActiveConnection();
         if (!singleActive.ok) {
@@ -781,103 +718,6 @@ export class BridgeHub {
       socket: this.pluginSocket,
       userId: '__local__',
     });
-  }
-
-  private async getCodexTargetSocket(
-    principal: AuthenticatedPrincipal
-  ): Promise<
-    | { ok: true; socket: WebSocket; userId: string }
-    | { ok: false; error: BridgeErrorCode; message: string; details?: unknown }
-  > {
-    const routing = await this.getCodexRoutingDiagnostics(principal);
-    const codexClientHash = principal.codexClientHash;
-    if (codexClientHash && this.storage) {
-      const link = await this.storage.getCodexClientLink(codexClientHash);
-      if (link && !link.revokedAt) {
-        const linkedConnection = this.sessionRouter.getConnectionForUser(link.linkedUserId);
-        if (linkedConnection) {
-          return {
-            ok: true,
-            socket: linkedConnection.socketRef,
-            userId: link.linkedUserId,
-          };
-        }
-        return {
-          ok: false,
-          error: 'PLUGIN_NOT_CONNECTED',
-          message: 'Codex is linked to a RemNote plugin session, but that plugin connection is not currently open.',
-          details: {
-            codexRouting: routing,
-            recommendation: 'Open RemNote and reconnect the approved ChatGPT Bridge plugin session, then retry.',
-          },
-        };
-      }
-      if (link?.revokedAt) {
-        return {
-          ok: false,
-          error: 'CODEX_PAIRING_REQUIRED',
-          message: 'Codex pairing was revoked. Start a new Codex pairing.',
-          details: await this.codexPairingRequiredDetails(principal, routing),
-        };
-      }
-    }
-
-    const singleActive = this.sessionRouter.getSingleActiveConnection();
-    if (singleActive.ok) {
-      return {
-        ok: true,
-        socket: singleActive.connection.socketRef,
-        userId: singleActive.userId,
-      };
-    }
-
-    const noActive = singleActive.error === 'PLUGIN_NOT_CONNECTED';
-    return {
-      ok: false,
-      error: noActive ? 'PLUGIN_NOT_CONNECTED' : 'DEVICE_CONFLICT',
-      message: noActive
-        ? 'No active RemNote plugin connection is available.'
-        : 'Multiple active RemNote plugin connections are available. Codex requires explicit pairing.',
-      details: await this.codexPairingRequiredDetails(principal, routing),
-    };
-  }
-
-  private async codexPairingRequiredDetails(principal: AuthenticatedPrincipal, routing: Awaited<ReturnType<BridgeHub['getCodexRoutingDiagnostics']>>) {
-    let codexPairing:
-      | {
-          pairingRequired: true;
-          pairingId: string;
-          userCode: string;
-          browserUrl: string;
-          expiresAt: string;
-        }
-      | undefined;
-    if (this.storage && principal.codexClientHash) {
-      const baseUrl = this.config.publicBaseUrl || `http://127.0.0.1:${this.config.singlePort ? this.config.port : this.config.mcpPort}`;
-      const started = await startCodexPairingSession({
-        config: this.config,
-        storage: this.storage,
-        codexClientHash: principal.codexClientHash,
-        baseUrl,
-      });
-      codexPairing = {
-        pairingRequired: true,
-        pairingId: started.session.pairingId,
-        userCode: started.userCode,
-        browserUrl: started.browserUrl,
-        expiresAt: started.session.expiresAt,
-      };
-    }
-
-    return {
-      codexRouting: {
-        ...routing,
-        authenticated: true,
-        pairingRequired: true,
-      },
-      codexPairing,
-      recommendation: 'Start Codex pairing from the browser URL, approve it in RemNote, then retry the tool call.',
-    };
   }
 
   private handleConnection(socket: WebSocket, req?: IncomingMessage) {

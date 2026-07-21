@@ -85,8 +85,11 @@ export const TOOL_PERMISSIONS: Record<string, ToolPermission> = {
   create_folder: { toolName: 'create_folder', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   append_to_rem: { toolName: 'append_to_rem', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
   insert_image_from_url: { toolName: 'insert_image_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  insert_image_from_file: { toolName: 'insert_image_from_file', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   insert_audio_from_url: { toolName: 'insert_audio_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  insert_audio_from_file: { toolName: 'insert_audio_from_file', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   insert_video_from_url: { toolName: 'insert_video_from_url', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
+  insert_video_from_file: { toolName: 'insert_video_from_file', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
   update_rem: { toolName: 'update_rem', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
   update_rem_rich: { toolName: 'update_rem_rich', category: 'write', requiredAccessScope: 'focused-rem-only', requiresTrustedWrite: true },
   move_rem: { toolName: 'move_rem', category: 'write', requiredAccessScope: 'current-rem-tree', requiresTrustedWrite: true },
@@ -207,8 +210,7 @@ export function validateMcpToolPermission(
     principal.authMode !== 'local_bridge_token' &&
     principal.authMode !== 'local_no_token' &&
     principal.authMode !== 'hosted_oauth' &&
-    principal.authMode !== 'connector_compat_noauth' &&
-    principal.authMode !== 'codex_bearer'
+    principal.authMode !== 'connector_compat_noauth'
   ) {
     return { ok: true };
   }

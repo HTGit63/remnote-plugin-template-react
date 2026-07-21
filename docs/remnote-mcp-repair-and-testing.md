@@ -179,19 +179,13 @@ Local evidence: `tests/chatgpt-app-contract.test.ts`, `npm run server:test:routi
 
 Live boundary: no real ChatGPT account/app installation, production HTTPS deployment, live RemNote plugin session, disposable Rem IDs, or ChatGPT write/readback/retry transcript was available. Goals 12.3 and 12.4, plus the real-client half of 12.5, remain `LIVE_BLOCKED`; mock routing is not promoted to live proof.
 
-## Stage 13 Codex Bearer And Routing Proof, 2026-07-11
+## Stage 13 Unified Plugin Authentication, updated 2026-07-20
 
-Local Stage 13 evidence now covers Codex identity and RemNote authority as separate seams:
+Hosted ChatGPT and Codex now share the plugin OAuth installation, provider authorization, approved scopes, tool tier, trusted-write policy, and user-session router. The former Codex-only credential, pairing endpoints, single-connection fallback, and storage records were removed. Local bridge authentication remains separate for local development.
 
-- Hosted setup uses dedicated `REMNOTE_CODEX_TOKEN`; `REMNOTE_BRIDGE_TOKEN` remains local bridge/plugin auth. `.env.example`, Render config, and `docs/engineering-guide.md` use canonical hosted mode and Codex `bearer_token_env_var` setup without embedding secret values.
-- Missing/invalid bearer calls return an explicit MCP OAuth auth error and never reach a tool handler. Valid bearer reaches server/plugin routing; allowed source files pass and canonical-root escapes fail before import.
-- Unlinked Codex bearer may read through the sole unambiguous active plugin route, but no longer inherits the latest ChatGPT pairing's scopes or `trusted-inside-scope` authority. Direct writes fail `TRUSTED_WRITE_REQUIRED` before the plugin.
-- Explicit Codex pairing links one bearer client hash to one approved plugin session. Two active unlinked plugins produce `DEVICE_CONFLICT`; linked routing reaches only the selected plugin.
-- Default `mass_note_writer` discovery omits danger tools. Direct danger calls are blocked by server permission policy, and bearer identity never grants delete scope.
+Local evidence: `npm run server:test:auth`, `npm run server:test:pairing`, `npm run server:test:routing`, `npm run server:test:boundaries`, and `npm run server:test:tool-profile` cover the retained authentication and safety boundaries.
 
-Local evidence: `npm run server:test:codex-bearer`, `npm run server:test:codex-routing`, `npm run server:test:codex-pairing`, `npm run server:test:boundaries`, and `npm run server:test:tool-profile` all pass.
-
-Live boundary: `REMNOTE_CODEX_TOKEN`, MCP endpoint env, and both disposable-parent env variables were unset; the configured public health URL timed out. No real Codex MCP process, live RemNote plugin, write/readback, Rem ID, idempotent retry, or duplicate count exists. Goal 13.5 remains `LIVE_BLOCKED`, not simulated success.
+Live boundary: local tests do not prove a real ChatGPT/Codex installation, live RemNote plugin session, write/readback, Rem ID, idempotent retry, or duplicate count. Goal 13.5 remains `LIVE_BLOCKED`, not simulated success.
 
 ## Stage 14 Plugin UI State And Safety Map, 2026-07-11
 
@@ -310,7 +304,7 @@ Visual evidence:
 
 ## Stage 15 Security Audit, 2026-07-12
 
-Threat model scope covered HTTP/MCP entrypoints, local/OAuth/Codex auth lanes, dashboard and pairing sessions, hosted plugin routing, server/plugin permission seams, destructive tools, bulk-import storage, file loaders, diagnostics, audit logs, and deployment config.
+Threat model scope covered HTTP/MCP entrypoints, local and hosted OAuth lanes, dashboard and pairing sessions, shared ChatGPT/Codex plugin routing, server/plugin permission seams, destructive tools, bulk-import storage, file loaders, diagnostics, audit logs, and deployment config.
 
 Validated critical/high fixes:
 
@@ -320,7 +314,7 @@ Validated critical/high fixes:
 - Request-selected tool tiers are clamped to approval; plugin registration cannot widen stored authority.
 - Every public tool has explicit permission policy; bulk run/resume require trusted write; unknown policy fails closed.
 - Connector compatibility no-auth is read-only.
-- Local file imports require linked Codex; plans/jobs are principal-owned; status output omits source text.
+- Local file imports require the authenticated local bridge; hosted file inputs use OAuth; plans/jobs are principal-owned; status output omits source text.
 - Vitest upgraded to 3.2.6 and Hono to 4.12.27. `npm audit` reports no critical/high findings; low esbuild dev-only findings remain.
 - Offline reads return immediately when never forwarded; reconnect wait remains only for post-forward transient failures.
 
@@ -328,7 +322,7 @@ Residual tracked risks: PKCE-bound authorization-code exchange denial from consu
 
 Deep-scan proof boundary: Codex Security deep preflight was blocked because this runtime exposes 3 usable worker slots and the skill mandates 6. Ordinary security-scan preflight was ready and the repository-specific fallback review completed. Do not claim the six-worker deep scan ran.
 
-Stage 15 acceptance commands passed: auth, Codex bearer/routing/pairing, pairing, routing, connector compatibility, security, boundaries, and hosted end-to-end smoke.
+Stage 15 acceptance commands passed at the time: auth, pairing, routing, connector compatibility, security, boundaries, and hosted end-to-end smoke. The superseded Codex-only auth checks were removed in the unified-auth migration.
 
 ## Stage 16 Performance And Soak Audit, 2026-07-12
 
@@ -383,13 +377,13 @@ Legend: ✅ goal implementation/audit and its required local evidence pass. ⚠�
 | Stage | Every goal | Evidence/result |
 | --- | --- | --- |
 | 1 | ✅ 1.1 registry completeness; ✅ 1.2 annotations; ✅ 1.3 schema compatibility; ✅ 1.4 reference generation; ✅ 1.5 danger/unsupported protection; ✅ 1.6 client discovery | Build, schemas, profile, generated 75-tool reference pass. |
-| 2 | ✅ 2.1 deployment truth; ✅ 2.2 auth order; ✅ 2.3 OAuth/pairing contract; ✅ 2.4 Codex bearer; ✅ 2.5 router isolation; ✅ 2.6 auth errors; ✅ 2.7 UI auth state | All auth, pairing, routing, Codex, connector, and hosted E2E smokes pass locally. |
+| 2 | ✅ 2.1 deployment truth; ✅ 2.2 auth order; ✅ 2.3 OAuth/pairing contract; ✅ 2.4 shared ChatGPT/Codex auth; ✅ 2.5 router isolation; ✅ 2.6 auth errors; ✅ 2.7 UI auth state | Auth, pairing, routing, connector, and hosted E2E smokes pass locally. |
 | 3 | ✅ 3.1 principal scope; ✅ 3.2 plugin enforcement; ✅ 3.3 trusted write; ✅ 3.4 destructive safety; ✅ 3.5 actionable errors; ✅ 3.6 no auth bypass | Boundaries and unified gateway pass; unknown policy fails closed. |
 | 4 | ✅ 4.1 inventory; ✅ 4.2 reads; ✅ 4.3 writes; ✅ 4.4 diagnostics; ✅ 4.5 matrix test; ✅ 4.6 honest unproven labels | Generated correctness matrix preserves `live_not_run`; core/advanced/diagnostic suites pass. |
 | 5 | ✅ 5.1 read-preview-write-readback; ✅ 5.2 retry classification; ✅ 5.3 style-after-write; ✅ 5.4 cards-after-note; ✅ 5.5 cross-client isolation | Simulation, idempotency, routing, and server certification pass. |
 | 6 | ✅ 6.1 reproduce failure; ✅ 6.2 hierarchy parser; ✅ 6.3 fidelity comparison; ✅ 6.4 false-verification block; ✅ 6.5 retry idempotency; ✅ 6.6 envelopes; ✅ 6.7 audit expectations; ✅ 6.8 live retest script | Bulk, importer, source-fidelity, and audit gates pass locally; live script reports blockers honestly. |
 | 7 | ✅ 7.1 state machine; ✅ 7.2 memory durability language; ⚠️ 7.3 persistent storage path; ✅ 7.4 resume; ✅ 7.5 cancel; ✅ 7.6 resume audit | Memory/resume/cancel pass. Configured PostgreSQL runtime proof remains blocked without `DATABASE_URL`. |
-| 8 | ✅ 8.1 normalization; ✅ 8.2 roots; ✅ 8.3 size behavior; ✅ 8.4 ChatGPT handoff truth; ✅ 8.5 Codex file handoff | Traversal/private-network/size/root denials pass. Local files require linked Codex; hosted file boundary is explicit. |
+| 8 | ✅ 8.1 normalization; ✅ 8.2 roots; ✅ 8.3 size behavior; ✅ 8.4 hosted file handoff truth; ✅ 8.5 local bridge file handoff | Traversal/private-network/size/root denials pass. Local files require local bridge auth; hosted file boundary is explicit. |
 | 9 | ✅ 9.1 hierarchy; ✅ 9.2 formulas; ✅ 9.3 tables/code; ✅ 9.4 readback normalization; ✅ 9.5 exact live matrix | Local fidelity passes. Stage acceptance remains live-blocked for inline/block/nested formula readback. |
 | 10 | ✅ 10.1 marker bug reproduction; ✅ 10.2 classification fix; ✅ 10.3 card idempotency; ✅ 10.4 card-set validation; ✅ 10.5 representative live matrix | Local card tests pass. Stage acceptance remains live-blocked for basic/cloze/MC readback. |
 | 11 | ✅ 11.1 pollution regression; ✅ 11.2 style plan local proof; ✅ 11.3 template safety; ✅ 11.4 style/formula safety; ⚠️ 11.5 representative live style path | Local style/design gates pass; real disposable-root `apply_style_plan` proof is blocked. |
@@ -419,9 +413,6 @@ PASS npm run validate
 PASS npm run server:build
 PASS npm run server:smoke
 PASS npm run server:test:auth
-PASS npm run server:test:codex-bearer
-PASS npm run server:test:codex-routing
-PASS npm run server:test:codex-pairing
 PASS npm run server:test:pairing
 PASS npm run server:test:routing
 PASS npm run server:test:connector-compat-routing

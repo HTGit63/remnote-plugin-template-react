@@ -22,6 +22,18 @@ import {
   getToolPolicyEntry,
   type ToolProfile,
 } from './tool-policy.js';
+import { MemoryStorageProvider } from './storage/memory-store.js';
+
+class PersistentCertificationStorage extends MemoryStorageProvider {
+  hostedMediaStorageDurability() {
+    return 'persistent' as const;
+  }
+}
+
+const certificationImageBytes = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d,
+]);
 
 const mode = process.argv[2] ?? 'all';
 const token = 'area3-certification-token';
@@ -317,6 +329,20 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
+    case 'insert_image_from_file':
+      return {
+        parentId,
+        imageFile: {
+          download_url: 'https://files.openai.example.test/area3-image',
+          file_id: 'file_area3_image',
+          mime_type: 'image/png',
+          file_name: 'area3-image.png',
+        },
+        position: 'end',
+        label: 'Area 3 hosted image',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
     case 'insert_audio_from_url':
       return {
         parentId,
@@ -326,12 +352,40 @@ function mcpArgsFor(tool: string): Record<string, unknown> {
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
+    case 'insert_audio_from_file':
+      return {
+        parentId,
+        audioFile: {
+          download_url: 'https://files.openai.example.test/area3-audio',
+          file_id: 'file_area3_audio',
+          mime_type: 'audio/mpeg',
+          file_name: 'area3-audio.mp3',
+        },
+        position: 'end',
+        label: 'Area 3 hosted audio',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
     case 'insert_video_from_url':
       return {
         parentId,
         url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
         position: 'end',
         label: 'Area 3 video',
+        verifyAfterWrite: true,
+        idempotencyKey: idempotencyKey(tool),
+      };
+    case 'insert_video_from_file':
+      return {
+        parentId,
+        videoFile: {
+          download_url: 'https://files.openai.example.test/area3-video',
+          file_id: 'file_area3_video',
+          mime_type: 'video/mp4',
+          file_name: 'area3-video.mp4',
+        },
+        position: 'end',
+        label: 'Area 3 hosted video',
         verifyAfterWrite: true,
         idempotencyKey: idempotencyKey(tool),
       };
@@ -1282,6 +1336,7 @@ async function assertBulkResumeDurability(baseUrl: string, publicTools: readonly
 
 async function certifyProfile(profile: ToolProfile) {
   assertSchemaQuality(profile);
+  const storage = new PersistentCertificationStorage();
   const app = await startCompanionApp({
     deploymentMode: 'local',
     storageMode: 'memory',
@@ -1302,6 +1357,40 @@ async function certifyProfile(profile: ToolProfile) {
     auditLog: false,
     enableDeleteTool: true,
     sourceFileAllowRoots: [repoRoot],
+    publicBaseUrl: 'https://bridge.example.test',
+  }, {
+    storage,
+    hostedImageLoader: async () => ({
+      bytes: certificationImageBytes,
+      contentType: 'image/png',
+      fileName: 'area3-image.png',
+      fileId: 'file_area3_image',
+    }),
+    hostedMediaLoader: async (mediaKind, reference) => mediaKind === 'audio'
+      ? {
+          mediaKind,
+          bytes: Buffer.concat([
+            Buffer.from('ID3\u0004\u0000\u0000\u0000\u0000\u0000\u0000'),
+            Buffer.from([0xff, 0xfb, 0x90, 0x64]),
+          ]),
+          contentType: 'audio/mpeg',
+          fileName: reference.file_name ?? 'area3-audio.mp3',
+          fileId: reference.file_id,
+        }
+      : {
+          mediaKind,
+          bytes: Buffer.from([
+            0x00, 0x00, 0x00, 0x18,
+            0x66, 0x74, 0x79, 0x70,
+            0x69, 0x73, 0x6f, 0x6d,
+            0x00, 0x00, 0x02, 0x00,
+            0x69, 0x73, 0x6f, 0x6d,
+            0x6d, 0x70, 0x34, 0x32,
+          ]),
+          contentType: 'video/mp4',
+          fileName: reference.file_name ?? 'area3-video.mp4',
+          fileId: reference.file_id,
+        },
   });
   const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
   const seen: SeenBridgeRequest[] = [];

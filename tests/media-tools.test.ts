@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { registerMediaTools } from '../server/src/tools/register-media-tools';
 import {
+  INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA,
   INSERT_AUDIO_FROM_URL_INPUT_SCHEMA,
+  INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA,
   INSERT_IMAGE_FROM_URL_INPUT_SCHEMA,
+  INSERT_VIDEO_FROM_FILE_INPUT_SCHEMA,
   INSERT_VIDEO_FROM_URL_INPUT_SCHEMA,
 } from '../server/src/tools/schemas';
 import type { McpToolResult, ToolRegistrationContext } from '../server/src/tools/tool-context';
@@ -17,22 +20,39 @@ import { getToolMetadata } from '../server/src/tool-policy';
 import { FakePlugin } from './helpers/fakeRemnote';
 import { insertImageFromUrl, MEDIA_RESULT_CACHE } from '../src/remnote/write';
 import { handleBridgeRequest } from '../src/bridge/handlers';
+import { MemoryStorageProvider } from '../server/src/storage/memory-store';
 
 type Handler = (args: any) => Promise<McpToolResult>;
+
+class PersistentTestStorage extends MemoryStorageProvider {
+  hostedMediaStorageDurability() {
+    return 'persistent' as const;
+  }
+}
 
 function success(id: string, result: Record<string, unknown>): BridgeResponse {
   return { id, ok: true, result } as BridgeResponse;
 }
 
-function mediaRegistrationHarness() {
+function mediaRegistrationHarness(options: {
+  pluginResponse?: BridgeResponse;
+  hostedImageError?: Error;
+} = {}) {
   const handlers: Record<string, Handler> = {};
   const configs: Record<string, Record<string, any>> = {};
   const calls: Array<{ tool: BridgeToolName; args: unknown }> = [];
+  let hostedImageLoads = 0;
+  const hostedMediaLoads: string[] = [];
+  const hostedMediaMaxBytes: number[] = [];
+  const storage = new PersistentTestStorage();
   const callPlugin = async <TTool extends BridgeToolName>(
     tool: TTool,
     args: BridgeToolArgs[TTool]
   ): Promise<BridgeResponse> => {
     calls.push({ tool, args });
+    if (options.pluginResponse) {
+      return options.pluginResponse;
+    }
     return success('media', {
       createdRemId: 'media-child',
       parentId: (args as any).parentId,
@@ -55,9 +75,75 @@ function mediaRegistrationHarness() {
     currentRegistry: (() => ({})) as ToolRegistrationContext['currentRegistry'],
     exposeDeleteTool: false,
     hub: {} as ToolRegistrationContext['hub'],
-  });
+    principal: {
+      subject: 'chatgpt:test-user',
+      userId: 'test-user',
+      authMode: 'hosted_oauth',
+      scopeGrants: ['bridge:read', 'bridge:write', 'bridge:trusted_write'],
+      accessScope: 'current-rem-tree',
+      trustedWriteMode: 'trusted-inside-scope',
+    },
+    storage,
+    hostedMediaPolicy: {
+      publicBaseUrl: 'https://bridge.example.test',
+      maxImageBytes: 1024 * 1024,
+      maxAudioBytes: 25 * 1024 * 1024,
+      maxVideoBytes: 50 * 1024 * 1024,
+      remoteTimeoutMs: 1000,
+    },
+    hostedImageLoader: async () => {
+      if (options.hostedImageError) {
+        throw options.hostedImageError;
+      }
+      hostedImageLoads += 1;
+      return {
+        bytes: Buffer.from([
+          0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+          0x00, 0x00, 0x00, 0x0d,
+        ]),
+        contentType: 'image/png',
+        fileName: 'diagram.png',
+        fileId: 'file_image_1',
+      };
+    },
+    hostedMediaLoader: async (
+      mediaKind: 'image' | 'audio' | 'video',
+      reference: { file_id: string; file_name?: string },
+      loaderOptions: { policy: { maxBytes: number } }
+    ) => {
+      hostedMediaLoads.push(mediaKind);
+      hostedMediaMaxBytes.push(loaderOptions.policy.maxBytes);
+      if (mediaKind === 'audio') {
+        return {
+          mediaKind,
+          bytes: Buffer.from('ID3\u0004\u0000\u0000\u0000\u0000\u0000\u0000'),
+          contentType: 'audio/mpeg' as const,
+          fileName: reference.file_name ?? 'lesson.mp3',
+          fileId: reference.file_id,
+        };
+      }
+      if (mediaKind === 'video') {
+        return {
+          mediaKind,
+          bytes: Buffer.from([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]),
+          contentType: 'video/mp4' as const,
+          fileName: reference.file_name ?? 'lesson.mp4',
+          fileId: reference.file_id,
+        };
+      }
+      throw new Error('Image path remains covered by hostedImageLoader compatibility test.');
+    },
+  } as ToolRegistrationContext);
 
-  return { handlers, configs, calls };
+  return {
+    handlers,
+    configs,
+    calls,
+    storage,
+    hostedImageLoads: () => hostedImageLoads,
+    hostedMediaLoads: () => hostedMediaLoads,
+    hostedMediaMaxBytes: () => hostedMediaMaxBytes,
+  };
 }
 
 describe('media MCP schemas and registration', () => {
@@ -65,11 +151,14 @@ describe('media MCP schemas and registration', () => {
     MEDIA_RESULT_CACHE.clear();
   });
 
-  test('registers three explicit media tools with truthful annotations and routing', async () => {
+  test('registers URL media plus ChatGPT image-file hosting with truthful annotations and routing', async () => {
     const harness = mediaRegistrationHarness();
     expect(Object.keys(harness.handlers).sort()).toEqual([
+      'insert_audio_from_file',
       'insert_audio_from_url',
+      'insert_image_from_file',
       'insert_image_from_url',
+      'insert_video_from_file',
       'insert_video_from_url',
     ]);
 
@@ -106,13 +195,277 @@ describe('media MCP schemas and registration', () => {
       idempotencyKey: 'video-1',
       verifyAfterWrite: true,
     });
+    const hosted = await harness.handlers.insert_image_from_file({
+      parentId: 'parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image',
+        file_id: 'file_image_1',
+        mime_type: 'image/png',
+        file_name: 'diagram.png',
+      },
+      position: 'end',
+      label: 'Generated diagram',
+      idempotencyKey: 'hosted-image-1',
+      verifyAfterWrite: true,
+    });
+    await harness.handlers.insert_image_from_file({
+      parentId: 'parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image?refreshed=1',
+        file_id: 'file_image_1',
+        mime_type: 'image/png',
+        file_name: 'diagram.png',
+      },
+      position: 'end',
+      label: 'Generated diagram',
+      idempotencyKey: 'hosted-image-1',
+      verifyAfterWrite: true,
+    });
 
     expect(harness.calls.map((call) => call.tool)).toEqual([
       'insert_image_from_url',
       'insert_audio_from_url',
       'insert_video_from_url',
+      'insert_image_from_url',
+      'insert_image_from_url',
     ]);
     expect(harness.calls[0].args).toMatchObject({ width: 640, height: 480, label: 'Diagram' });
+    expect(harness.calls[3].args).toMatchObject({
+      parentId: 'parent',
+      label: 'Generated diagram',
+      idempotencyKey: 'hosted-image-1',
+      verifyAfterWrite: true,
+    });
+    expect((harness.calls[3].args as { url: string }).url).toMatch(
+      /^https:\/\/bridge\.example\.test\/media\/images\/[0-9a-f-]+$/
+    );
+    expect((harness.calls[4].args as { url: string }).url).toBe(
+      (harness.calls[3].args as { url: string }).url
+    );
+    expect(harness.hostedImageLoads()).toBe(1);
+    expect(harness.configs.insert_image_from_file._meta['openai/fileParams']).toEqual(['imageFile']);
+    expect(hosted.structuredContent).toMatchObject({
+      ok: true,
+      toolName: 'insert_image_from_file',
+      result: {
+        mediaKind: 'image',
+        hostedAsset: {
+          contentType: 'image/png',
+          fileName: 'diagram.png',
+          storageDurability: 'persistent',
+          cleanupStatus: 'retained_remote_dependency',
+          remnoteStillReferencesHostedUrl: true,
+        },
+      },
+    });
+  });
+
+  test('hosts uploaded MP3 and MP4 files and routes them through native media writes', async () => {
+    const harness = mediaRegistrationHarness();
+
+    const audio = await harness.handlers.insert_audio_from_file({
+      parentId: 'parent',
+      audioFile: {
+        download_url: 'https://files.openai.example.test/lesson-audio',
+        file_id: 'file_audio_1',
+        mime_type: 'audio/mpeg',
+        file_name: 'lesson.mp3',
+      },
+      position: 'end',
+      idempotencyKey: 'hosted-audio-1',
+      verifyAfterWrite: true,
+    });
+    const video = await harness.handlers.insert_video_from_file({
+      parentId: 'parent',
+      videoFile: {
+        download_url: 'https://files.openai.example.test/lesson-video',
+        file_id: 'file_video_1',
+        mime_type: 'video/mp4',
+        file_name: 'lesson.mp4',
+      },
+      position: 'end',
+      idempotencyKey: 'hosted-video-1',
+      verifyAfterWrite: true,
+    });
+
+    expect(INSERT_AUDIO_FROM_FILE_INPUT_SCHEMA.safeParse({
+      parentId: 'parent',
+      audioFile: { download_url: 'https://files.example.test/audio', file_id: 'file_audio_1' },
+      position: 'end',
+      idempotencyKey: 'hosted-audio-1',
+    }).success).toBe(true);
+    expect(INSERT_VIDEO_FROM_FILE_INPUT_SCHEMA.safeParse({
+      parentId: 'parent',
+      videoFile: { download_url: 'https://files.example.test/video', file_id: 'file_video_1' },
+      position: 'end',
+      idempotencyKey: 'hosted-video-1',
+    }).success).toBe(true);
+
+    expect(harness.hostedMediaLoads()).toEqual(['audio', 'video']);
+    expect(harness.hostedMediaMaxBytes()).toEqual([25 * 1024 * 1024, 50 * 1024 * 1024]);
+    expect(harness.configs.insert_audio_from_file._meta['openai/fileParams']).toEqual(['audioFile']);
+    expect(harness.configs.insert_video_from_file._meta['openai/fileParams']).toEqual(['videoFile']);
+    expect(harness.calls.map((call) => call.tool)).toEqual([
+      'insert_audio_from_url',
+      'insert_video_from_url',
+    ]);
+    expect((harness.calls[0].args as { url: string }).url).toMatch(
+      /^https:\/\/bridge\.example\.test\/media\/assets\/[0-9a-f-]+$/
+    );
+    expect((harness.calls[1].args as { url: string }).url).toMatch(
+      /^https:\/\/bridge\.example\.test\/media\/assets\/[0-9a-f-]+$/
+    );
+    expect(audio.structuredContent).toMatchObject({
+      ok: true,
+      toolName: 'insert_audio_from_file',
+      result: {
+        mediaKind: 'audio',
+        hostedAsset: {
+          contentType: 'audio/mpeg',
+          cleanupStatus: 'retained_remote_dependency',
+        },
+      },
+    });
+    expect(video.structuredContent).toMatchObject({
+      ok: true,
+      toolName: 'insert_video_from_file',
+      result: {
+        mediaKind: 'video',
+        hostedAsset: {
+          contentType: 'video/mp4',
+          cleanupStatus: 'retained_remote_dependency',
+        },
+      },
+    });
+  });
+
+  test('deletes a newly hosted orphan after a definitive plugin no-write failure', async () => {
+    const harness = mediaRegistrationHarness({
+      pluginResponse: {
+        id: 'media-failed',
+        ok: false,
+        error: {
+          code: 'PARENT_NOT_FOUND',
+          message: 'Parent was not found.',
+        },
+      },
+    });
+
+    const result = await harness.handlers.insert_image_from_file({
+      parentId: 'missing-parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image',
+        file_id: 'file_orphan_1',
+        mime_type: 'image/png',
+        file_name: 'orphan.png',
+      },
+      position: 'end',
+      idempotencyKey: 'orphan-image-1',
+      verifyAfterWrite: true,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        code: 'PARENT_NOT_FOUND',
+        details: {
+          hostedAssetCleanup: {
+            cleanupStatus: 'deleted_unreferenced_after_failure',
+          },
+        },
+      },
+    });
+    expect(await harness.storage.getHostedMediaAssetByIdempotency('test-user', 'orphan-image-1')).toBeNull();
+  });
+
+  test('retains hosted bytes when plugin write status is uncertain', async () => {
+    const harness = mediaRegistrationHarness({
+      pluginResponse: {
+        id: 'media-uncertain',
+        ok: false,
+        error: {
+          code: 'RETRYABLE_UNKNOWN_WRITE_STATUS',
+          message: 'The write may have completed before the connection closed.',
+        },
+      },
+    });
+
+    const result = await harness.handlers.insert_image_from_file({
+      parentId: 'parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image',
+        file_id: 'file_uncertain_1',
+        mime_type: 'image/png',
+        file_name: 'uncertain.png',
+      },
+      position: 'end',
+      idempotencyKey: 'uncertain-image-1',
+      verifyAfterWrite: true,
+    });
+
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        details: {
+          hostedAssetCleanup: {
+            cleanupStatus: 'retained_uncertain_reference',
+          },
+        },
+      },
+    });
+    expect(await harness.storage.getHostedMediaAssetByIdempotency('test-user', 'uncertain-image-1')).not.toBeNull();
+  });
+
+  test('redacts unexpected hosted-image infrastructure errors', async () => {
+    const harness = mediaRegistrationHarness({
+      hostedImageError: new Error('postgresql://bridge-user:super-secret@private-db/bridge'),
+    });
+
+    const result = await harness.handlers.insert_image_from_file({
+      parentId: 'parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image',
+        file_id: 'file_error_1',
+        mime_type: 'image/png',
+        file_name: 'error.png',
+      },
+      position: 'end',
+      idempotencyKey: 'error-image-1',
+      verifyAfterWrite: true,
+    });
+
+    expect(JSON.stringify(result)).not.toContain('super-secret');
+    expect(result.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        details: {
+          errorCode: 'HOSTED_IMAGE_INTERNAL_ERROR',
+          layer: 'server_hosted_media',
+        },
+      },
+    });
+  });
+
+  test('accepts the official ChatGPT image file object and requires an idempotency key', () => {
+    const valid = {
+      parentId: 'parent',
+      imageFile: {
+        download_url: 'https://files.openai.example.test/generated-image',
+        file_id: 'file_image_1',
+        mime_type: 'image/png',
+        file_name: 'diagram.png',
+      },
+      idempotencyKey: 'hosted-image-1',
+    };
+    expect(INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA.safeParse(valid).success).toBe(true);
+    expect(INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA.safeParse({
+      ...valid,
+      imageFile: { download_url: valid.imageFile.download_url },
+    }).success).toBe(false);
+    expect(INSERT_IMAGE_FROM_FILE_INPUT_SCHEMA.safeParse({
+      ...valid,
+      idempotencyKey: undefined,
+    }).success).toBe(false);
   });
 
   test('accepts bounded HTTP(S) media URLs and image dimensions', () => {
@@ -637,14 +990,16 @@ describe('media bridge policy and capability contract', () => {
 
   test.each([
     'insert_image_from_url',
-    'insert_audio_from_url',
+    'insert_image_from_file',
+    'insert_audio_from_file',
+    'insert_video_from_file',
     'insert_video_from_url',
-  ] as const)('%s is public at note-writer tier without widening the default mass-note profile', (tool) => {
+  ] as const)('%s is available to the default ChatGPT profile', (tool) => {
     expect(getAllPublicMcpToolNames()).toContain(tool);
     expect(getPublicMcpToolNames(false, 'note_writer')).toContain(tool);
-    expect(getPublicMcpToolNames(false, 'mass_note_writer')).not.toContain(tool);
+    expect(getPublicMcpToolNames(false, 'mass_note_writer')).toContain(tool);
     expect(getToolMetadata(tool)).toMatchObject({
-      tier: 'note_writer',
+      tier: 'mass_note_writer',
       category: 'simple_write',
       operationTier: 'Read + Create',
       riskLevel: 'medium',
@@ -654,6 +1009,12 @@ describe('media bridge policy and capability contract', () => {
       supportsIdempotency: true,
       isPublic: true,
     });
+  });
+
+  test('YouTube discovery tells ChatGPT to create a native video Rem, never a text-link substitute', () => {
+    const harness = mediaRegistrationHarness();
+    expect(harness.configs.insert_video_from_url.description).toContain('native RemNote video');
+    expect(harness.configs.insert_video_from_url.description).toContain('Do not insert the URL as plain text');
   });
 
   test('server auth policy permits trusted current-tree media writes and blocks insufficient scope', () => {

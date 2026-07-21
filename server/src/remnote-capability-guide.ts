@@ -19,7 +19,7 @@ export interface RemnoteCapabilityGuideBlock {
   bridgeUse: string[];
 }
 
-export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-07-18.media-url-insertion';
+export const REMNOTE_CAPABILITY_GUIDE_VERSION = '2026-07-21.hosted-media-files';
 
 export const REMNOTE_CAPABILITY_GUIDE_SOURCES: RemnoteCapabilityGuideSource[] = [
   {
@@ -138,14 +138,19 @@ const GUIDE_BLOCKS: RemnoteCapabilityGuideBlock[] = [
       'The installed SDK color enum supports Red, Orange, Yellow, Green, Blue, and Purple. Gray, Brown, and Pink return SDK_UNSUPPORTED.',
       'Installed SDK 0.0.46 exposes URL-backed rich-text builders for image(url, width?, height?), audio(url), and video(url).',
       'Media URL insertion creates a dedicated child Rem and preserves existing parent/sibling text. Runtime builder availability is checked before mutation.',
+      'Authenticated ChatGPT raster image, MP3, and MP4 files can be downloaded once, validated from bytes, stored persistently in PostgreSQL, and exposed through an opaque immutable HTTPS asset URL.',
+      'Hosted audio and video responses support HTTP byte ranges required by native media players. SVG is rejected because the bridge does not have an isolated sanitizer or rasterizer.',
     ],
     bridgeUse: [
       'For copied Markdown/source notes, prefer `create_or_replace_note_from_markdown`. For structured JSON polished notes, prefer `create_polished_note_tree` or `apply_structured_note_batch`, then verify with `verify_note_design` or `get_rem_rich`.',
       'For formatting existing Rems, prefer `apply_style_plan`, then verify with `get_rem_rich`.',
       'Use `richText` spans or LaTeX spans for math; `$...$`, `\\(...\\)`, `$$...$$`, and `\\[...\\]` are parsed by the structured writer. Rich math block uses plugin.richText.latex(text, true).',
       'Use colors sparingly for semantic emphasis. If Pink, Gray, Brown, or normal type reset is requested but unsupported by installed SDK, return SDK_UNSUPPORTED instead of guessing.',
-      'Use insert_image_from_url, insert_audio_from_url, or insert_video_from_url only with a stable HTTP(S) URL. The MCP server does not download, proxy, generate, upload, or retain media.',
-      'Generated image/audio bytes require separate secure durable hosting before URL insertion. A URL embed is not proof of an uploaded or owned RemNote source object.',
+      'Use insert_image_from_file for a ChatGPT-created or attached image. It hosts the validated file durably, calls the native image builder, and returns readback evidence.',
+      'Use insert_audio_from_file for an attached MP3 and insert_video_from_file for an attached MP4. Both host validated bytes durably and route the asset URL through the native RemNote media builder.',
+      'RemNote richText.image is URL-backed. A successful hosted-file write returns retained_remote_dependency and keeps required bytes; automatic cleanup is limited to newly created assets after definitive no-write failures.',
+      'Use insert_image_from_url, insert_audio_from_url, or insert_video_from_url only with a stable HTTP(S) URL. A raw text URL is never a substitute for a native media Rem.',
+      'Hosted media URLs are intentionally public and unguessable because RemNote must fetch them; do not use this path for secrets.',
     ],
   },
   {
@@ -206,7 +211,7 @@ export function getRemnoteCapabilityGuide(section: RemnoteCapabilityGuideSection
     deprecatedPrivateTools: [],
     installedSdkTextColorFormats: ['Red', 'Orange', 'Yellow', 'Green', 'Blue', 'Purple'],
     installedSdkUnsupported: ['create_folder', 'Gray text color', 'Brown text color', 'Pink text color'],
-    preferredMediaTools: ['insert_image_from_url', 'insert_audio_from_url', 'insert_video_from_url'],
-    mediaBoundary: 'stable HTTP(S) URL insertion only; no server fetch, generation, upload, storage, or retention',
+    preferredMediaTools: ['insert_image_from_file', 'insert_audio_from_file', 'insert_video_from_file', 'insert_image_from_url', 'insert_audio_from_url', 'insert_video_from_url'],
+    mediaBoundary: 'ChatGPT raster images, MP3, and MP4 files are validated and durably hosted; SVG is rejected; all native RemNote media remains URL-backed',
   };
 }

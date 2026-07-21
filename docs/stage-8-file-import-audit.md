@@ -17,11 +17,11 @@ The RemNote tools declare `sourceFile` as that top-level file field. They do not
 
 | Input | Required auth lane | Boundary |
 | --- | --- | --- |
-| Local path and path aliases | `local_bridge_token` or `codex_bearer` | Canonical existing allowed root |
+| Local path and path aliases | `local_bridge_token` | Canonical existing allowed root |
 | ChatGPT `sourceFile` object | `hosted_oauth` | HTTPS port 443, public pinned DNS address, max three redirects |
 | Connector-compatible no-auth | Denied | `SOURCE_FILE_AUTH_REQUIRED` |
 | Hosted OAuth with local server path | Denied | `SOURCE_FILE_LOCAL_AUTH_REQUIRED` |
-| Codex bearer with ChatGPT file object | Denied | `SOURCE_FILE_CHATGPT_AUTH_REQUIRED` |
+| Local bridge with hosted file object | Denied | `SOURCE_FILE_CHATGPT_AUTH_REQUIRED` |
 | Authenticated principal without `bridge:read` | Denied | `SOURCE_FILE_READ_SCOPE_REQUIRED` |
 
 Local roots come from absolute paths in `REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS` plus `/mnt/data` and `~/Downloads/Remnote`. Canonical target checks block traversal and directory-symlink escape. Final file symlinks are rejected. Reads are bounded to `maxSourceFileBytes + 1`, validate UTF-8, and never return partial source.
@@ -36,6 +36,6 @@ Remote file fetches reject credentials, non-HTTPS schemes, non-default ports, lo
 
 ## Proof Boundary
 
-Automated local proof covers aliases, root allow/deny, traversal, symlink escape, local/Codex/hosted/no-auth separation, official descriptor metadata, private-address SSRF denial, source-size rejection, and HTTP body rejection.
+Automated local proof covers aliases, root allow/deny, traversal, symlink escape, local/hosted/no-auth separation, official descriptor metadata, private-address SSRF denial, source-size rejection, and HTTP body rejection.
 
-Not proven here: a real ChatGPT Developer Mode upload and temporary URL download, a live Codex MCP process against the server, or a resulting live RemNote write/readback. Those remain runtime checks and must not be inferred from unit tests or descriptor metadata.
+Not proven here: a real ChatGPT Developer Mode upload and temporary URL download, live Codex use of the shared plugin installation, or a resulting live RemNote write/readback. Those remain runtime checks and must not be inferred from unit tests or descriptor metadata.

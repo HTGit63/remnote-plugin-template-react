@@ -147,33 +147,6 @@ export interface ChatGptPairingSession {
   revokedAt?: string;
 }
 
-export interface CodexPairingSession {
-  pairingId: string;
-  userCodeHash: string;
-  codexClientHash: string;
-  status: 'pending' | 'approved' | 'expired' | 'revoked';
-  createdAt: string;
-  expiresAt: string;
-  approvedAt?: string;
-  linkedPairingId?: string;
-  linkedPluginInstanceId?: string;
-  linkedPluginConnectionId?: string;
-  linkedUserId?: string;
-  lastSeenAt?: string;
-  revokedAt?: string;
-}
-
-export interface CodexClientLink {
-  codexClientHash: string;
-  linkedPairingId: string;
-  linkedUserId: string;
-  linkedPluginInstanceId?: string;
-  linkedPluginConnectionId?: string;
-  createdAt: string;
-  updatedAt: string;
-  revokedAt?: string;
-}
-
 export interface StoredAuditEvent {
   id: string;
   type: string;
@@ -205,6 +178,40 @@ export interface IdempotencyRecord {
   startedAt: string;
   finishedAt?: string;
   errorCode?: string;
+}
+
+export type HostedMediaStorageDurability = 'memory_only' | 'persistent';
+
+export interface HostedMediaAsset {
+  assetId: string;
+  ownerId: string;
+  idempotencyKey: string;
+  sourceFileId: string;
+  sha256: string;
+  contentType:
+    | 'image/png'
+    | 'image/jpeg'
+    | 'image/webp'
+    | 'image/gif'
+    | 'audio/mpeg'
+    | 'video/mp4';
+  fileName: string;
+  bytes: Buffer;
+  createdAt: string;
+}
+
+export class HostedMediaIdempotencyConflictError extends Error {
+  readonly code = 'HOSTED_MEDIA_IDEMPOTENCY_CONFLICT';
+
+  constructor(
+    public readonly ownerId: string,
+    public readonly idempotencyKey: string
+  ) {
+    super(
+      `HOSTED_MEDIA_IDEMPOTENCY_CONFLICT: Hosted media key ${idempotencyKey} was already used with different bytes.`
+    );
+    this.name = 'HostedMediaIdempotencyConflictError';
+  }
 }
 
 export interface StorageProvider {
@@ -247,21 +254,17 @@ export interface StorageProvider {
   ): Promise<ChatGptPairingSession>;
   listChatGptPairingSessions(limit?: number): Promise<ChatGptPairingSession[]>;
 
-  // Codex bearer linking operations
-  createCodexPairingSession(session: CodexPairingSession): Promise<CodexPairingSession>;
-  getCodexPairingSessionById(pairingId: string): Promise<CodexPairingSession | null>;
-  getCodexPairingSessionByUserCode(userCode: string): Promise<CodexPairingSession | null>;
-  updateCodexPairingSession(
-    pairingId: string,
-    updates: Partial<Omit<CodexPairingSession, 'pairingId' | 'createdAt'>>
-  ): Promise<CodexPairingSession>;
-  getCodexClientLink(codexClientHash: string): Promise<CodexClientLink | null>;
-  upsertCodexClientLink(link: CodexClientLink): Promise<CodexClientLink>;
-
   // Audit and idempotency operations
   createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent>;
   createOrUpdateIdempotencyRecord(record: Omit<IdempotencyRecord, 'id'>): Promise<IdempotencyRecord>;
   getIdempotencyRecord(userId: string, tool: string, idempotencyKey: string): Promise<IdempotencyRecord | null>;
+
+  // Public opaque media assets referenced by native RemNote rich text
+  hostedMediaStorageDurability(): HostedMediaStorageDurability;
+  createHostedMediaAsset(asset: HostedMediaAsset): Promise<{ asset: HostedMediaAsset; created: boolean }>;
+  getHostedMediaAsset(assetId: string): Promise<HostedMediaAsset | null>;
+  getHostedMediaAssetByIdempotency(ownerId: string, idempotencyKey: string): Promise<HostedMediaAsset | null>;
+  deleteHostedMediaAsset(assetId: string, ownerId: string): Promise<boolean>;
 
   // Bulk import job durability
   bulkImportStorageDurability(): BulkImportJob['storageDurability'];

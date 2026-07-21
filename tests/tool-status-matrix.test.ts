@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   bridgeToolResult,
   failureToToolResult,
+  internalErrorToToolResult,
   type McpToolResult,
 } from '../server/src/tools/tool-context';
 import {
@@ -28,6 +29,21 @@ const problemTools = [
 ] as const;
 
 describe('tool status matrix policy', () => {
+  test('redacts unexpected internal exception messages from MCP output', () => {
+    const output = internalErrorToToolResult(
+      new Error('postgresql://bridge-user:super-secret@private-db/bridge')
+    );
+
+    expect(JSON.stringify(output)).not.toContain('super-secret');
+    expect(output.structuredContent).toMatchObject({
+      ok: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'Bridge tool call failed internally.',
+      },
+    });
+  });
+
   test('keeps the default profile focused on safe mass-note writing', () => {
     const tools = getPublicMcpToolNames(false, DEFAULT_TOOL_PROFILE);
 
@@ -42,6 +58,11 @@ describe('tool status matrix policy', () => {
       'get_rem_breadcrumbs',
       'search_rems',
       'get_document_or_folder_tree',
+      'insert_image_from_url',
+      'insert_image_from_file',
+      'insert_audio_from_file',
+      'insert_video_from_url',
+      'insert_video_from_file',
       'create_or_replace_note_from_markdown',
       'plan_note_import',
       'plan_note_import_from_file',

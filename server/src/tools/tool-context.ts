@@ -18,6 +18,10 @@ import type {
   BulkImportSourceFileLoader,
   BulkImportSourceFilePolicy,
 } from '../bulk-import/source-file-loader.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from '../media/hosted-image-loader.js';
 import { publicMcpToolNameForBridgeTool } from '../mcp-tool-map.js';
 import { getToolPerformanceBudgetMs } from '../performance/tool-budgets.js';
 
@@ -71,6 +75,15 @@ export interface ToolRegistrationContext {
   storage?: StorageProvider;
   sourceFilePolicy?: BulkImportSourceFilePolicy;
   sourceFileLoader?: BulkImportSourceFileLoader;
+  hostedMediaPolicy?: {
+    publicBaseUrl: string;
+    maxImageBytes: number;
+    maxAudioBytes?: number;
+    maxVideoBytes?: number;
+    remoteTimeoutMs: number;
+  };
+  hostedImageLoader?: HostedImageFileLoader;
+  hostedMediaLoader?: HostedMediaFileLoader;
 }
 
 export function annotationsFor(tool: BridgeToolName): BridgeToolAnnotations {
@@ -297,7 +310,7 @@ function statusFromFailure(failure: BridgeFailure, blockedByProfile = false): St
   if (['SDK_UNSUPPORTED', 'TOOL_UNSUPPORTED'].includes(failure.error.code)) {
     return 'UNSUPPORTED';
   }
-  if (['PLUGIN_NOT_CONNECTED', 'PLUGIN_NOT_PAIRED', 'NO_PAIRED_PLUGIN_SESSION', 'HOSTED_SESSION_MISSING', 'CODEX_PAIRING_REQUIRED', 'NO_ACTIVE_DEVICE', 'TIMEOUT', 'CLIENT_DISCONNECTED', 'REQUEST_CANCELLED', 'RETRYABLE_UNKNOWN_WRITE_STATUS', 'RETRYABLE_UNKNOWN_DELETE_STATUS'].includes(failure.error.code)) {
+  if (['PLUGIN_NOT_CONNECTED', 'PLUGIN_NOT_PAIRED', 'NO_PAIRED_PLUGIN_SESSION', 'HOSTED_SESSION_MISSING', 'NO_ACTIVE_DEVICE', 'TIMEOUT', 'CLIENT_DISCONNECTED', 'REQUEST_CANCELLED', 'RETRYABLE_UNKNOWN_WRITE_STATUS', 'RETRYABLE_UNKNOWN_DELETE_STATUS'].includes(failure.error.code)) {
     return 'PLATFORM_BLOCKED';
   }
   return 'FAIL';
@@ -524,8 +537,14 @@ export function failureToToolResult(failure: BridgeFailure, toolName?: string, b
 }
 
 export function internalErrorToToolResult(error: unknown): McpToolResult {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error('MCP bridge tool failed:', message);
+  const errorName = error instanceof Error ? error.name : typeof error;
+  const errorCode = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code: unknown }).code).replace(/[^A-Z0-9_-]/gi, '').slice(0, 64)
+    : undefined;
+  console.error('MCP bridge tool failed internally.', {
+    errorName,
+    ...(errorCode ? { errorCode } : {}),
+  });
   return failureToToolResult({
     id: 'unknown',
     ok: false,
@@ -533,7 +552,7 @@ export function internalErrorToToolResult(error: unknown): McpToolResult {
       code: 'INTERNAL_ERROR',
       message: 'Bridge tool call failed internally.',
       details: {
-        message,
+        layer: 'server_tool_execution',
       },
     },
   });

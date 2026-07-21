@@ -3,7 +3,6 @@ export type AuthMode =
   | 'local_no_token'
   | 'mcp_discovery_noauth'
   | 'connector_compat_noauth'
-  | 'codex_bearer'
   | 'hosted_oauth';
 
 export type ScopeGrant =
@@ -28,9 +27,6 @@ export interface AuthenticatedPrincipal {
   trustedWriteMode?: 'ask-every-write' | 'trusted-inside-scope';
   toolTier?: 'basic' | 'mass_note_writer' | 'note_writer' | 'power_user' | 'developer' | 'danger';
   requiresConnectorRefresh?: boolean;
-  codexClientHash?: string;
-  codexLinkId?: string;
-  codexPairingStatus?: 'linked' | 'not_linked' | 'pending' | 'expired' | 'revoked';
 }
 
 export type AuthResult =

@@ -6,9 +6,9 @@ import {
 } from '../../../shared/bridge/bulk-import.js';
 import type {
   ChatGptPairingSession,
-  CodexClientLink,
-  CodexPairingSession,
   IdempotencyRecord,
+  HostedMediaAsset,
+  HostedMediaStorageDurability,
   McpAuthorizationCode,
   McpClient,
   PairingChallenge,
@@ -18,7 +18,7 @@ import type {
   User,
   BulkImportJobSaveOptions,
 } from './types.js';
-import { BulkImportRevisionConflictError } from './types.js';
+import { BulkImportRevisionConflictError, HostedMediaIdempotencyConflictError } from './types.js';
 import { hashToken } from './crypto-utils.js';
 import { normalizeToolProfile } from '../tool-policy.js';
 
@@ -29,10 +29,10 @@ export class MemoryStorageProvider implements StorageProvider {
   private clients = new Map<string, McpClient>();
   private authorizationCodes = new Map<string, McpAuthorizationCode>();
   private chatGptPairingSessions = new Map<string, ChatGptPairingSession>();
-  private codexPairingSessions = new Map<string, CodexPairingSession>();
-  private codexClientLinks = new Map<string, CodexClientLink>();
   private auditEvents: StoredAuditEvent[] = [];
   private idempotencyRecords = new Map<string, IdempotencyRecord>();
+  private hostedMediaAssets = new Map<string, HostedMediaAsset>();
+  private hostedMediaIdempotency = new Map<string, string>();
   private bulkImportPlans = new Map<string, BulkImportPlan>();
   private bulkImportJobs = new Map<string, BulkImportJob>();
 
@@ -254,51 +254,6 @@ export class MemoryStorageProvider implements StorageProvider {
       .map((session) => this.clonePairing(session));
   }
 
-  async createCodexPairingSession(session: CodexPairingSession): Promise<CodexPairingSession> {
-    const stored = this.cloneCodexPairing(session);
-    this.codexPairingSessions.set(stored.pairingId, stored);
-    return this.cloneCodexPairing(stored);
-  }
-
-  async getCodexPairingSessionById(pairingId: string): Promise<CodexPairingSession | null> {
-    const session = this.codexPairingSessions.get(pairingId);
-    return session ? this.cloneCodexPairing(session) : null;
-  }
-
-  async getCodexPairingSessionByUserCode(userCode: string): Promise<CodexPairingSession | null> {
-    const targetHash = hashToken(userCode);
-    for (const session of this.codexPairingSessions.values()) {
-      if (session.userCodeHash === targetHash && !session.revokedAt) {
-        return this.cloneCodexPairing(session);
-      }
-    }
-    return null;
-  }
-
-  async updateCodexPairingSession(
-    pairingId: string,
-    updates: Partial<Omit<CodexPairingSession, 'pairingId' | 'createdAt'>>
-  ): Promise<CodexPairingSession> {
-    const session = this.codexPairingSessions.get(pairingId);
-    if (!session) {
-      throw new Error(`Codex pairing session with ID ${pairingId} not found.`);
-    }
-    const updated = this.cloneCodexPairing({ ...session, ...updates });
-    this.codexPairingSessions.set(pairingId, updated);
-    return this.cloneCodexPairing(updated);
-  }
-
-  async getCodexClientLink(codexClientHash: string): Promise<CodexClientLink | null> {
-    const link = this.codexClientLinks.get(codexClientHash);
-    return link ? this.cloneCodexLink(link) : null;
-  }
-
-  async upsertCodexClientLink(link: CodexClientLink): Promise<CodexClientLink> {
-    const stored = this.cloneCodexLink(link);
-    this.codexClientLinks.set(stored.codexClientHash, stored);
-    return this.cloneCodexLink(stored);
-  }
-
   async createAuditEvent(event: Omit<StoredAuditEvent, 'id' | 'createdAt'>): Promise<StoredAuditEvent> {
     const stored: StoredAuditEvent = {
       id: randomUUID(),
@@ -329,6 +284,49 @@ export class MemoryStorageProvider implements StorageProvider {
     idempotencyKey: string
   ): Promise<IdempotencyRecord | null> {
     return this.idempotencyRecords.get(this.idempotencyKey(userId, tool, idempotencyKey)) ?? null;
+  }
+
+  hostedMediaStorageDurability(): HostedMediaStorageDurability {
+    return 'memory_only';
+  }
+
+  async createHostedMediaAsset(asset: HostedMediaAsset): Promise<{ asset: HostedMediaAsset; created: boolean }> {
+    const key = this.hostedMediaKey(asset.ownerId, asset.idempotencyKey);
+    const existingAssetId = this.hostedMediaIdempotency.get(key);
+    if (existingAssetId) {
+      const existing = this.hostedMediaAssets.get(existingAssetId);
+      if (!existing) {
+        throw new Error(`Hosted media index points to missing asset ${existingAssetId}.`);
+      }
+      if (existing.sourceFileId !== asset.sourceFileId || existing.sha256 !== asset.sha256) {
+        throw new HostedMediaIdempotencyConflictError(asset.ownerId, asset.idempotencyKey);
+      }
+      return { asset: this.cloneHostedMediaAsset(existing), created: false };
+    }
+    const stored = this.cloneHostedMediaAsset(asset);
+    this.hostedMediaAssets.set(stored.assetId, stored);
+    this.hostedMediaIdempotency.set(key, stored.assetId);
+    return { asset: this.cloneHostedMediaAsset(stored), created: true };
+  }
+
+  async getHostedMediaAsset(assetId: string): Promise<HostedMediaAsset | null> {
+    const asset = this.hostedMediaAssets.get(assetId);
+    return asset ? this.cloneHostedMediaAsset(asset) : null;
+  }
+
+  async getHostedMediaAssetByIdempotency(ownerId: string, idempotencyKey: string): Promise<HostedMediaAsset | null> {
+    const assetId = this.hostedMediaIdempotency.get(this.hostedMediaKey(ownerId, idempotencyKey));
+    return assetId ? this.getHostedMediaAsset(assetId) : null;
+  }
+
+  async deleteHostedMediaAsset(assetId: string, ownerId: string): Promise<boolean> {
+    const asset = this.hostedMediaAssets.get(assetId);
+    if (!asset || asset.ownerId !== ownerId) {
+      return false;
+    }
+    this.hostedMediaAssets.delete(assetId);
+    this.hostedMediaIdempotency.delete(this.hostedMediaKey(asset.ownerId, asset.idempotencyKey));
+    return true;
   }
 
   bulkImportStorageDurability(): BulkImportJob['storageDurability'] {
@@ -371,6 +369,14 @@ export class MemoryStorageProvider implements StorageProvider {
     return `${userId}\u0000${tool}\u0000${idempotencyKey}`;
   }
 
+  private hostedMediaKey(ownerId: string, idempotencyKey: string): string {
+    return `${ownerId}\u0000${idempotencyKey}`;
+  }
+
+  private cloneHostedMediaAsset(asset: HostedMediaAsset): HostedMediaAsset {
+    return { ...asset, bytes: Buffer.from(asset.bytes) };
+  }
+
   private async findPairingByHash(
     key: 'pairingCodeHash' | 'authorizationCodeHash' | 'accessTokenHash' | 'refreshTokenHash' | 'pluginSessionSecretHash',
     hash: string
@@ -391,14 +397,6 @@ export class MemoryStorageProvider implements StorageProvider {
       toolTier: normalizeToolProfile(session.toolTier),
       requiresConnectorRefresh: false,
     };
-  }
-
-  private cloneCodexPairing(session: CodexPairingSession): CodexPairingSession {
-    return { ...session };
-  }
-
-  private cloneCodexLink(link: CodexClientLink): CodexClientLink {
-    return { ...link };
   }
 
   private cloneJson<T>(value: T): T {

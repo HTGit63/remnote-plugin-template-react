@@ -6,10 +6,8 @@ import {
 } from 'node:http';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { authorizeLocalMcpRequest } from '../auth/local-token.js';
-import { codexClientHashForRequest, hasValidCodexBearerToken } from '../auth/codex-token.js';
 import { validateDashboardSession } from '../auth/dashboard-session.js';
 import { handleChatGptPairingRoute } from '../auth/chatgpt-pairing-routes.js';
-import { handleCodexPairingRoute } from '../auth/codex-pairing-routes.js';
 import { handleDashboardRoute } from '../auth/dashboard-routes.js';
 import { handlePairingRoute } from '../auth/pairing-routes.js';
 import { buildOauthChallenge, handleOAuthRoute } from '../auth/oauth-routes.js';
@@ -40,6 +38,10 @@ import type { AuditLogger } from '../sessions/types.js';
 import { createStorageProvider, type ChatGptPairingSession, type StorageProvider } from '../storage/index.js';
 import { getAllPublicMcpToolNames, getToolRegistrySummary, isPublicMcpToolName, TOOL_REGISTRY_VERSION } from '../tool-registry.js';
 import { validateMcpToolPermission } from '../tool-permissions.js';
+import type {
+  HostedImageFileLoader,
+  HostedMediaFileLoader,
+} from '../media/hosted-image-loader.js';
 import {
   clampToolProfile,
   getToolPolicyEntry,
@@ -55,7 +57,101 @@ import { buildPublicUserDiagnosticSummary, redactDiagnosticValue } from '../diag
 
 const MCP_DISCOVERY_METHODS = new Set(['initialize', 'notifications/initialized', 'tools/list']);
 
-export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHub, storage: StorageProvider): HttpServer {
+type HostedMediaByteRange = { start: number; end: number };
+
+function parseHostedMediaRange(value: string, totalBytes: number): HostedMediaByteRange | null {
+  if (totalBytes < 1 || value.includes(',')) return null;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(value.trim());
+  if (!match || (!match[1] && !match[2])) return null;
+  if (!match[1]) {
+    const suffixLength = Number(match[2]);
+    if (!Number.isSafeInteger(suffixLength) || suffixLength < 1) return null;
+    return {
+      start: Math.max(0, totalBytes - suffixLength),
+      end: totalBytes - 1,
+    };
+  }
+  const start = Number(match[1]);
+  const requestedEnd = match[2] ? Number(match[2]) : totalBytes - 1;
+  if (
+    !Number.isSafeInteger(start)
+    || !Number.isSafeInteger(requestedEnd)
+    || start < 0
+    || start >= totalBytes
+    || requestedEnd < start
+  ) {
+    return null;
+  }
+  return { start, end: Math.min(requestedEnd, totalBytes - 1) };
+}
+
+export async function serveHostedMediaAsset(
+  storage: StorageProvider,
+  assetId: string,
+  method: 'GET' | 'HEAD',
+  res: ServerResponse,
+  rangeHeader?: string
+): Promise<void> {
+  const asset = await storage.getHostedMediaAsset(assetId);
+  if (!asset) {
+    writeText(res, 404, 'Not Found');
+    return;
+  }
+  const headers: Record<string, string> = {
+    'content-type': asset.contentType,
+    'cache-control': 'public, max-age=31536000, immutable',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'content-security-policy': "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+    'cross-origin-resource-policy': 'cross-origin',
+    'access-control-allow-origin': '*',
+    'accept-ranges': 'bytes',
+  };
+  if (rangeHeader) {
+    const range = parseHostedMediaRange(rangeHeader, asset.bytes.byteLength);
+    if (range) {
+      const bytes = asset.bytes.subarray(range.start, range.end + 1);
+      res.writeHead(206, {
+        ...headers,
+        'content-range': `bytes ${range.start}-${range.end}/${asset.bytes.byteLength}`,
+        'content-length': String(bytes.byteLength),
+      });
+      res.end(method === 'HEAD' ? undefined : bytes);
+      return;
+    }
+    res.writeHead(416, {
+      ...headers,
+      'content-range': `bytes */${asset.bytes.byteLength}`,
+      'content-length': '0',
+    });
+    res.end();
+    return;
+  }
+  res.writeHead(200, {
+    ...headers,
+    'content-length': String(asset.bytes.byteLength),
+  });
+  res.end(method === 'HEAD' ? undefined : asset.bytes);
+}
+
+export async function serveHostedImageAsset(
+  storage: StorageProvider,
+  assetId: string,
+  method: 'GET' | 'HEAD',
+  res: ServerResponse
+): Promise<void> {
+  return serveHostedMediaAsset(storage, assetId, method, res);
+}
+
+export function createMcpHttpServer(
+  config: CompanionServerConfig,
+  hub: BridgeHub,
+  storage: StorageProvider,
+  dependencies: {
+    hostedImageLoader?: HostedImageFileLoader;
+    hostedMediaLoader?: HostedMediaFileLoader;
+  } = {}
+): HttpServer {
   const auditLogger: AuditLogger | undefined = config.auditLog ? new ConsoleAuditLogger() : undefined;
   const startedAt = new Date().toISOString();
   const toolCallAuthMode = getToolCallAuthMode(config);
@@ -201,12 +297,14 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return {
         ...tool,
         exposed: summary.publicTools.includes(tool.name),
-        runtimeVerified: Boolean(lastSuccess) || Boolean(tool.serverLocalVerified),
+        runtimeVerified: Boolean(lastSuccess) || Boolean(tool.serverLocalVerified) || tool.runtimeVerified === true,
         runtimeVerifiedSource: lastSuccess
           ? 'recent_plugin_call'
           : tool.serverLocalVerified
             ? 'server_local'
-            : tool.runtimeVerifiedSource,
+            : tool.runtimeVerified === true
+              ? tool.runtimeVerifiedSource
+              : 'registry_only',
         lastSuccessTimestamp: lastSuccess?.finishedAt ?? null,
         lastFailureTimestamp: lastFailure?.finishedAt ?? null,
         lastSuccessAt: lastSuccess?.finishedAt ?? tool.lastSuccessAt ?? null,
@@ -398,81 +496,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     };
   }
 
-  function codexScopeGrants(session?: ChatGptPairingSession | null): ScopeGrant[] {
-    const allowed = new Set<ScopeGrant>([
-      'bridge:read',
-      'bridge:write',
-      'bridge:trusted_write',
-      'bridge:pair',
-    ]);
-    const grants = (session?.approvedScopes ?? [])
-      .filter((scope): scope is ScopeGrant => allowed.has(scope as ScopeGrant));
-    return grants.length ? grants : ['bridge:read', 'bridge:write'];
-  }
-
-  async function linkedCodexPairingContext(codexClientHash: string): Promise<{
-    linkId?: string;
-    session: ChatGptPairingSession | null;
-    status: 'linked' | 'not_linked' | 'revoked';
-  }> {
-    const link = await storage.getCodexClientLink(codexClientHash);
-    if (!link) {
-      return { session: null, status: 'not_linked' };
-    }
-    if (link.revokedAt) {
-      return { linkId: link.linkedPairingId, session: null, status: 'revoked' };
-    }
-    const session = await storage.getChatGptPairingSessionById(link.linkedPairingId);
-    if (!session || session.revokedAt) {
-      return { linkId: link.linkedPairingId, session: null, status: 'revoked' };
-    }
-    return { linkId: link.linkedPairingId, session, status: 'linked' };
-  }
-
-  async function authorizeCodexMcpRequest(req: Parameters<typeof authorizeLocalMcpRequest>[0]): Promise<AuthResult | null> {
-    if (config.deploymentMode !== 'hosted' || !config.codexToken || !hasValidCodexBearerToken(req, config)) {
-      return null;
-    }
-
-    const codexClientHash = codexClientHashForRequest(req, config);
-    if (!codexClientHash) {
-      return null;
-    }
-    const linked = await linkedCodexPairingContext(codexClientHash);
-    // A global bearer proves the Codex client identity only. RemNote authority
-    // comes exclusively from an explicit Codex-to-plugin pairing link.
-    const session = linked.session;
-    const codexSubject = `codex:${codexClientHash.slice(0, 16)}`;
-    return {
-      ok: true,
-      principal: {
-        subject: codexSubject,
-        userId: codexSubject,
-        authMode: 'codex_bearer',
-        scopeGrants: codexScopeGrants(session),
-        accessScope: session?.accessScope ?? 'current-rem-tree',
-        trustedWriteMode: session?.trustedWriteMode ?? 'ask-every-write',
-        toolTier: session?.toolTier ?? config.toolProfile,
-        requiresConnectorRefresh: false,
-        codexClientHash,
-        codexLinkId: linked.linkId,
-        codexPairingStatus: linked.status,
-      },
-    };
-  }
-
-  async function codexRoutingFields(principal?: AuthenticatedPrincipal) {
-    const routing = await hub.getCodexRoutingDiagnostics(principal);
-    return {
-      codexBearerRoutingAvailable: config.deploymentMode === 'hosted' && Boolean(config.codexToken),
-      codexBearerRoutingMode: routing.codexRoutingMode,
-      codexPairingSupported: config.deploymentMode === 'hosted' && config.hostedPairingEnabled && Boolean(config.codexToken),
-      codexPairingRequired: routing.pairingRequired,
-      codexPairingStatus: routing.codexPairingStatus,
-      sessionRouterStatus: routing.sessionRouterStatus,
-    };
-  }
-
   function writeUnknownToolCall(body: unknown, res: ServerResponse, toolProfile: ToolProfile): boolean {
     if (typeof body !== 'object' || body === null || Array.isArray(body)) {
       return false;
@@ -593,7 +616,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       };
     }
 
-    if (config.connectorCompatNoAuthTools && !config.codexToken && isMcpToolCallRequest(body)) {
+    if (config.connectorCompatNoAuthTools && isMcpToolCallRequest(body)) {
       return {
         ok: true,
         principal: connectorCompatPrincipal(),
@@ -601,11 +624,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
     }
 
     if (config.deploymentMode === 'hosted') {
-      const codexAuth = await authorizeCodexMcpRequest(req);
-      if (codexAuth) {
-        return codexAuth;
-      }
-
       return authorizeHostedMcpRequest(req, config, storage, requiredScopesForMcpRequest(body));
     }
 
@@ -654,6 +672,33 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       return;
     }
 
+    const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
+
+    const hostedMediaPrefix = ['/media/assets/', '/media/images/']
+      .find((prefix) => url.pathname.startsWith(prefix));
+    if (hostedMediaPrefix) {
+      if (!['GET', 'HEAD'].includes(req.method || '')) {
+        writeText(res, 405, 'Method Not Allowed');
+        return;
+      }
+      if (!rateLimitRequest(req, res, config, 'hosted-media')) {
+        return;
+      }
+      const assetId = url.pathname.slice(hostedMediaPrefix.length);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(assetId)) {
+        writeText(res, 404, 'Not Found');
+        return;
+      }
+      await serveHostedMediaAsset(
+        storage,
+        assetId,
+        req.method as 'GET' | 'HEAD',
+        res,
+        typeof req.headers.range === 'string' ? req.headers.range : undefined
+      );
+      return;
+    }
+
     if (
       req.headers.origin &&
       (!config.allowCors || !config.allowedOrigins.includes(String(req.headers.origin)))
@@ -670,8 +715,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       writeText(res, 403, 'Browser origin is not allowed.');
       return;
     }
-
-    const url = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
 
     if (
       url.pathname.startsWith('/oauth/') ||
@@ -789,31 +832,12 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       }
     }
 
-    if (url.pathname.startsWith('/codex/')) {
-      if (req.method === 'OPTIONS') {
-        const corsAllowed = applyCors(req, res, config);
-        setSecurityHeaders(res);
-        res.writeHead(corsAllowed ? 204 : 403);
-        res.end();
-        return;
-      }
-      applyCors(req, res, config);
-      if (!rateLimitRequest(req, res, config, 'pairing')) {
-        return;
-      }
-      const handled = await handleCodexPairingRoute(req, res, url, { config, storage });
-      if (handled) {
-        return;
-      }
-    }
-
     if (url.pathname === '/health' && req.method === 'GET') {
       const runtimeInfo = runtimeInfoForRequest(req);
       const chatGptPairing = await latestPairingSummary();
       const registry = registrySummary(undefined, chatGptPairing.toolTier ?? config.toolProfile);
       const bridgeStatus = hub.getStatus();
       const bridgeDiagnostics = hub.getDiagnostics();
-      const codexRouting = await codexRoutingFields();
       if (config.deploymentMode === 'hosted') {
         writeJson(res, 200, {
           ok: true,
@@ -831,7 +855,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
           connectorCompatNoAuthTools: config.connectorCompatNoAuthTools,
           connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
           activePluginConnectionCount: bridgeDiagnostics.activePluginConnectionCount ?? 0,
-          ...codexRouting,
+          sessionRouterStatus: bridgeDiagnostics.sessionRouter,
           lastErrorCode: diagnosticsSummary(registry, bridgeDiagnostics).lastErrorCode,
           lastRequestReachedPlugin: diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool
             ? Boolean(diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool?.pluginLifecycle?.length)
@@ -1119,7 +1143,6 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
       const toolProfile = requestedToolProfile(req, undefined, url) ?? config.toolProfile;
       const registry = registrySummary(undefined, toolProfile);
       const bridgeDiagnostics = hub.getDiagnostics();
-      const codexRouting = await codexRoutingFields();
       const summary = diagnosticsSummary(registry, bridgeDiagnostics);
       writeJson(res, 200, {
         ...runtimeInfoForRequest(req),
@@ -1136,7 +1159,7 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
         lastErrorCode: summary.lastErrorCode,
         lastRequestReachedPlugin: summary.lastFailedTool ? Boolean(summary.lastFailedTool.pluginLifecycle?.length) : null,
-        ...codexRouting,
+        sessionRouterStatus: bridgeDiagnostics.sessionRouter,
         connectorCompatibilityMode: config.connectorCompatNoAuthTools,
         browserGetMcpIsNotConnectorTest: true,
       });
@@ -1298,6 +1321,15 @@ export function createMcpHttpServer(config: CompanionServerConfig, hub: BridgeHu
         maxBytes: config.maxSourceFileBytes,
         remoteTimeoutMs: config.sourceFileRemoteTimeoutMs,
       },
+      hostedMediaPolicy: {
+        publicBaseUrl: config.publicBaseUrl,
+        maxImageBytes: config.maxHostedImageBytes,
+        maxAudioBytes: config.maxHostedAudioBytes,
+        maxVideoBytes: config.maxHostedVideoBytes,
+        remoteTimeoutMs: config.hostedImageRemoteTimeoutMs,
+      },
+      hostedImageLoader: dependencies.hostedImageLoader,
+      hostedMediaLoader: dependencies.hostedMediaLoader,
     });
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,

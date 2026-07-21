@@ -39,7 +39,7 @@ Runtime flow:
 ## Modes And Auth
 
 - Local mode: local bearer token required unless explicit dev bypass env set.
-- Hosted mode: OAuth/pairing/Codex bearer. Local bridge token not used for hosted MCP tool calls.
+- Hosted mode: shared plugin OAuth/pairing for ChatGPT and Codex. Local bridge token is not used for hosted MCP tool calls.
 - Canonical deployment env values are `REMNOTE_BRIDGE_DEPLOYMENT_MODE=local` and `REMNOTE_BRIDGE_DEPLOYMENT_MODE=hosted`.
 - Legacy mode aliases `local_dev`, `personal_hosted_token`, and `public_hosted_oauth` are still accepted by `server/src/config.ts` and covered by `npm run server:test:auth`; do not remove them without a migration test.
 - Render should use the canonical hosted value plus `REMNOTE_BRIDGE_ENABLE_HOSTED_PAIRING=1`, `SESSION_SECRET`, and hosted allowed origins.
@@ -50,27 +50,15 @@ Runtime flow:
 
 Important env/ops refs:
 
-- Render env: hosted deployment mode, hosted pairing enabled, secret bearer/token values.
+- Render env: hosted deployment mode, hosted pairing enabled, session/admin secrets, and OAuth configuration.
 - Docs formerly split across `CODEX_MCP_SETUP.md`, `DEPLOY_RENDER.md`, `render-deployment.md`, `oauth-setup.md`, `pairing-flow.md`, `release-hardening.md`.
 - Keep local/hosted semantics separate. Discovery remains unauthenticated; hosted unauthenticated `tools/call` returns an MCP `isError` OAuth challenge, while non-tool protected routes may use HTTP 401/403. Neither path reaches a tool handler.
 
-### Codex Bearer Setup
+### Shared ChatGPT And Codex Authentication
 
-`REMNOTE_CODEX_TOKEN` is a dedicated hosted Codex MCP credential. `REMNOTE_BRIDGE_TOKEN` is the separate local bridge/plugin credential. Never reuse either value for OAuth access/refresh tokens, pairing codes, `SESSION_SECRET`, or `ADMIN_DEBUG_SECRET`.
+The hosted plugin uses one OAuth installation and provider authorization for ChatGPT and Codex. Connect and authorize the plugin in ChatGPT; Codex then uses that same plugin connection. There is no second Codex-specific server secret, client credential, or pairing route.
 
-Set the same high-entropy Codex bearer in hosted server secret storage and the local environment that launches Codex. Codex reads it through its supported `bearer_token_env_var`; do not place the value in `config.toml`:
-
-```toml
-[mcp_servers.remnote]
-url = "https://your-render-service.onrender.com/mcp"
-bearer_token_env_var = "REMNOTE_CODEX_TOKEN"
-```
-
-```bash
-export REMNOTE_CODEX_TOKEN='<same dedicated hosted secret>'
-```
-
-The bearer proves Codex client identity only. An explicit `/codex/pair/*` link supplies RemNote session scope and trusted-write authority. Without that link, reads may use the sole active plugin route, but direct writes remain blocked with `TRUSTED_WRITE_REQUIRED`; normal `mass_note_writer` exposure never includes danger tools. Current Codex MCP config reference: [streamable HTTP servers](https://learn.chatgpt.com/docs/extend/mcp#streamable-http-servers).
+The shared authentication does not widen RemNote authority. Stored scopes, tool tier, trusted-write mode, plugin-session routing, and delete protection continue to apply to both clients. `REMNOTE_BRIDGE_TOKEN` remains only for local bridge development and must not be reused for OAuth access/refresh tokens, pairing codes, `SESSION_SECRET`, or `ADMIN_DEBUG_SECRET`.
 
 ## Safety Rules
 
@@ -115,7 +103,7 @@ The bearer proves Codex client identity only. An explicit `/codex/pair/*` link s
 ## File-Backed Imports
 
 - `plan_note_import_from_file` and `start_note_import_from_file` accept `sourceFilePath`, `filePath`, `path`, `sourceFileUri`, or `sourceFile`.
-- Local paths require an authenticated local bridge token or Codex bearer. `local_no_token`, connector-compatible no-auth, and hosted OAuth local-path reads are denied.
+- Local paths require an authenticated local bridge token. `local_no_token`, connector-compatible no-auth, and hosted OAuth local-path reads are denied.
 - Configure local roots with comma-separated absolute paths in `REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS`. Defaults are `/mnt/data` and `~/Downloads/Remnote`; nonexistent roots remain unavailable.
 - Local file checks use canonical paths. Relative traversal, encoded traversal, `file://` escape, connector URI escape, and symlink escape are denied.
 - `REMNOTE_MCP_SOURCE_FILE_MAX_BYTES` defaults to 2 MiB and is capped by `REMNOTE_BRIDGE_MAX_WS_MESSAGE_BYTES`. Oversized files fail before parsing; HTTP tool bodies remain capped separately by `REMNOTE_BRIDGE_MAX_BODY_BYTES` (128 KiB by default).
@@ -124,15 +112,33 @@ The bearer proves Codex client identity only. An explicit `/codex/pair/*` link s
 - Signed ChatGPT download URLs are temporary input only and are never returned in tool output or stored in the bulk plan.
 - Local automated tests prove descriptor shape, aliases, auth-lane separation, path/root/symlink denial, SSRF address denial, and size errors. Real ChatGPT Developer Mode file upload remains a separate live proof.
 
-Codex local file example:
+Local bridge file example:
 
 ```bash
-export REMNOTE_CODEX_TOKEN='<separate Codex bearer secret>'
+export REMNOTE_BRIDGE_TOKEN='<local bridge secret>'
 export REMNOTE_MCP_SOURCE_FILE_ALLOW_ROOTS='/absolute/path/to/imports'
 export REMNOTE_MCP_SOURCE_FILE_MAX_BYTES='2097152'
 ```
 
-Call `plan_note_import_from_file` with a path under that root and the authenticated MCP endpoint. The bearer authenticates Codex to the server; it does not widen RemNote scope or bypass plugin approval for later chunk writes.
+Call `plan_note_import_from_file` with a path under that root and the authenticated local MCP endpoint. Hosted ChatGPT and Codex clients must use the top-level `sourceFile` input instead of a server-local path.
+
+## Hosted ChatGPT Media
+
+- `insert_image_from_file`, `insert_audio_from_file`, and `insert_video_from_file` declare top-level `imageFile`, `audioFile`, and `videoFile` fields through `_meta["openai/fileParams"]`. Each accepts the official `download_url`, `file_id`, optional `mime_type`, and optional `file_name` object.
+- The tool requires hosted OAuth, trusted write scope, persistent PostgreSQL media storage, a public HTTPS base URL, and a stable idempotency key.
+- Downloads use HTTPS port 443, filter DNS results to public addresses, pin one validated public address, revalidate redirects, and enforce a 30-second default timeout. Private-only results remain blocked. Default caps are 10 MiB for images, 25 MiB for MP3, and 50 MiB for MP4, with hard caps of 20/50/100 MiB. Configure them with `REMNOTE_MCP_HOSTED_IMAGE_MAX_BYTES`, `REMNOTE_MCP_HOSTED_AUDIO_MAX_BYTES`, and `REMNOTE_MCP_HOSTED_VIDEO_MAX_BYTES`.
+- The server recognizes PNG, JPEG, WebP, GIF, MPEG Layer III audio, and ISO-BMFF MP4 from byte structure. It never trusts a file extension or claimed MIME type as proof. MP4 validation proves the container type, while RemNote/browser playback remains the codec compatibility check.
+- PostgreSQL stores the exact bytes and content hash. New assets use `/media/assets/:opaqueUuid`; the original `/media/images/:opaqueUuid` route remains compatible. Responses use immutable caching, `nosniff`, cross-origin resource policy, and single-range HTTP responses for audio/video playback.
+- Same-user, same-key, same-file retries reuse the existing asset without re-downloading the temporary ChatGPT URL. Reusing a key with another file or different bytes fails explicitly.
+- The final bridge step calls `insert_image_from_url`, which uses `plugin.richText.image` and verifies native rich-text readback. A returned file name or text URL is not success.
+- Hosted media URLs are intentionally public and unguessable because RemNote must fetch them. Do not use this path for confidential media.
+- The installed RemNote SDK exposes `richText.image(url, width?, height?)`; it does not expose binary media upload. Exact successful readback therefore proves RemNote still references the bridge URL, not that it copied the bytes.
+- Successful URL-backed writes retain required bytes and return `cleanupStatus: retained_remote_dependency`. Deleting them would make later rendering, another device, or a cold cache fail.
+- A newly created asset is deleted automatically only after a definitive plugin no-write failure. Unknown write status, partial failure, and pre-existing/replayed assets return `retained_uncertain_reference` and remain available.
+- The PostgreSQL delete is parameterized and owner-scoped by both `asset_id` and `owner_id`. There is no public media-delete endpoint.
+- SVG is rejected. The service does not serve active XML from the shared media origin and does not claim a sanitizer or isolated SVG-to-raster conversion path. Convert trusted SVG to PNG first.
+- A 1 GB database is usable for a small personal collection, but media bytes share that capacity with bridge state. Monitor database usage; this release does not claim an aggregate quota.
+- Local tests prove file-contract shape, byte validation, SSRF controls, durable idempotency, public byte serving, native bridge routing, and retry reuse. Connected RemNote rendering remains a separate live/human proof.
 
 ## Development Workflow
 

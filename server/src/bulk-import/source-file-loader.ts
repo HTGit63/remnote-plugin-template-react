@@ -494,7 +494,7 @@ export function createBulkImportSourceFileLoader(
     if (!principal || principal.authMode === 'local_no_token' || principal.authMode === 'connector_compat_noauth') {
       sourceError(
         'SOURCE_FILE_AUTH_REQUIRED',
-        'File-backed imports require authenticated local bearer, Codex bearer, or hosted OAuth access.'
+        'File-backed imports require authenticated local bridge or hosted OAuth access.'
       );
     }
     if (!principal.scopeGrants.includes('bridge:read')) {
@@ -505,16 +505,10 @@ export function createBulkImportSourceFileLoader(
     }
 
     if (reference.kind === 'local_file') {
-      if (principal.authMode !== 'local_bridge_token' && principal.authMode !== 'codex_bearer') {
+      if (principal.authMode !== 'local_bridge_token') {
         sourceError(
           'SOURCE_FILE_LOCAL_AUTH_REQUIRED',
-          'Local paths are accepted only for authenticated local bridge or Codex bearer calls.'
-        );
-      }
-      if (principal.authMode === 'codex_bearer' && principal.codexPairingStatus !== 'linked') {
-        sourceError(
-          'SOURCE_FILE_CODEX_PAIRING_REQUIRED',
-          'Local file-backed imports require an explicit active Codex-to-RemNote pairing.'
+          'Local paths are accepted only for authenticated local bridge calls.'
         );
       }
       return readLocalSourceFile(reference.value, options.policy);
@@ -523,7 +517,7 @@ export function createBulkImportSourceFileLoader(
     if (principal.authMode !== 'hosted_oauth') {
       sourceError(
         'SOURCE_FILE_CHATGPT_AUTH_REQUIRED',
-        'ChatGPT file references are accepted only on authenticated hosted OAuth calls.'
+        'Plugin file references are accepted only on authenticated hosted OAuth calls.'
       );
     }
     return await readChatGptSourceFile(reference.value, options.policy, options.signal, remoteDownloader);

@@ -1,13 +1,21 @@
 # RemNote MCP
 
-RemNote MCP connects ChatGPT and Codex to RemNote through a secure Model
-Context Protocol bridge. It can read focused notes, create structured content,
-preserve formulas and cards, resume long imports, apply supported formatting,
-insert media from public URLs, and verify its work through RemNote readback.
+RemNote MCP gives AI agents controlled, verifiable access to read, edit,
+structure, and extend an existing RemNote knowledge base. Through a secure
+Model Context Protocol bridge, ChatGPT and Codex can inspect focused notes,
+navigate hierarchy, search knowledge, create or update structured content,
+preserve formulas and cards, resume long imports, insert supported media, and
+verify changes through RemNote readback.
 
-RemNote is an ordered knowledge graph rather than a flat document store. The
-bridge therefore preserves Rem hierarchy, Concepts, Descriptors, cards, rich
-text, formulas, and stable IDs while preventing unsafe or duplicate writes.
+This is more than an AI note generator. RemNote is an ordered knowledge graph,
+so the bridge works with existing knowledge while preserving Rem hierarchy,
+Concepts, Descriptors, cards, rich text, formulas, and stable IDs. Scope,
+permission, idempotency, and readback controls prevent unsafe or duplicate
+writes.
+
+RemNote MCP grew from a real educational-content workflow in Phronesis, where
+AI-generated lessons needed to be integrated with and maintained inside an
+existing structured knowledge base instead of becoming disconnected documents.
 
 ## Features
 
@@ -16,7 +24,8 @@ text, formulas, and stable IDs while preventing unsafe or duplicate writes.
   post-write verification.
 - Resumable Markdown imports with persistent checkpoints when PostgreSQL is
   configured.
-- Image, audio, YouTube, and direct-video URL insertion.
+- Durable hosting and native insertion for ChatGPT-created or attached raster images, MP3 audio, and MP4 video.
+- Native image-URL, audio, YouTube, and direct-video insertion.
 - Separate local and hosted authentication flows.
 - Tool profiles that expose only the capabilities needed for a task.
 - A RemNote sidebar for connection, scope, write access, and diagnostics.
@@ -28,6 +37,8 @@ flowchart LR
   A[ChatGPT or Codex] -->|Streamable HTTP MCP| B[Companion server]
   B --> C[Authentication and tool policy]
   B --> D[Persistent import jobs]
+  B --> I[(PostgreSQL hosted media)]
+  I -->|Opaque immutable HTTPS URL| G
   B -->|Authenticated WebSocket| E[RemNote desktop plugin]
   E --> F[Scope and write approval]
   E --> G[RemNote Plugin SDK]
@@ -70,18 +81,10 @@ https://remnote-plugin-template-react.onrender.com/mcp
 Complete the displayed pairing flow in the RemNote plugin before using write
 tools. Refresh the client connection after changing tool profiles.
 
-For Codex, configure a remote Streamable HTTP server:
-
-```toml
-[mcp_servers.remnote_mcp]
-url = "https://remnote-plugin-template-react.onrender.com/mcp"
-bearer_token_env_var = "REMNOTE_CODEX_TOKEN"
-default_tools_approval_mode = "writes"
-```
-
-Set `REMNOTE_CODEX_TOKEN` in the process environment, never in the TOML file.
-The bearer authenticates Codex to the server; it does not bypass RemNote scope,
-pairing, or write approval.
+Codex uses the same installed ChatGPT plugin connection and provider
+authentication. No separate Codex secret or pairing route is required. Connect
+and authorize the plugin in ChatGPT, then use it from either ChatGPT or Codex;
+RemNote scope and write approvals still apply.
 
 ## Local development
 
@@ -122,11 +125,11 @@ Start with the smallest profile that supports the intended workflow.
 | Profile | Tools | Use |
 | --- | ---: | --- |
 | `basic` | 8 | Connection status and bounded reads |
-| `mass_note_writer` | 20 | Normal structured notes and resumable imports |
-| `note_writer` | 54 | Additional note and media operations |
-| `power_user` | 71 | Advanced formatting and repair |
-| `developer` | 76 | Diagnostics and the complete media set |
-| `danger` | 76 by default | Developer set while deletion remains disabled |
+| `mass_note_writer` | 25 | Normal notes, resumable imports, uploaded media, and YouTube |
+| `note_writer` | 57 | Additional note, audio, and media operations |
+| `power_user` | 74 | Advanced formatting and repair |
+| `developer` | 79 | Diagnostics and the complete media set |
+| `danger` | 79 by default | Developer set while deletion remains disabled |
 
 The delete tool is absent unless the server explicitly enables it. Never select
 `danger` merely to access media tools.
@@ -151,22 +154,43 @@ Long Markdown imports should use the planning and resumable-job tools instead
 of many unrelated small calls. Persistent resume across server restarts
 requires PostgreSQL.
 
-Media tools accept stable public HTTP(S) URLs. The bridge stores native RemNote
-rich-text media nodes; it does not download, proxy, generate, or host the media.
-Readback proves stored structure, while a person must still confirm visible
-rendering or playback in RemNote.
+For a ChatGPT-created or attached image, use `insert_image_from_file` with one
+stable idempotency key. The server consumes ChatGPT's temporary file reference,
+validates PNG/JPEG/WebP/GIF bytes, stores them persistently in PostgreSQL, serves
+an opaque immutable HTTPS asset, and inserts that URL through RemNote's native
+image builder. Retries reuse the hosted asset without re-downloading the
+temporary URL.
+
+For attached audio and video, use `insert_audio_from_file` for MP3 or
+`insert_video_from_file` for MP4. They use the same authenticated download,
+byte-validation, durable-hosting, idempotency, native-builder, and readback
+pipeline. Hosted audio/video responses support HTTP byte ranges for playback.
+SVG remains intentionally unsupported: accepting active XML on the shared media
+origin without a sanitizer or isolated rasterizer would weaken the security
+boundary. Convert trusted SVG artwork to PNG before insertion.
+
+RemNote's current plugin SDK image builder accepts a URL; it does not expose a
+binary upload API. A successful native readback therefore still depends on the
+bridge URL. The tool reports `retained_remote_dependency` and keeps those bytes
+so the image continues to render. It deletes only a newly created hosted orphan
+after a definitive plugin no-write failure. Unknown write status and existing
+assets are retained because deleting either could break a RemNote image.
+
+Existing image, audio, YouTube, and direct-video URLs use the native URL tools.
+A plain text link never counts as media insertion. Readback proves stored native
+structure; a person must still confirm visible rendering or playback in RemNote.
 
 ## Security and permissions
 
 - Choose the smallest scope and tool profile.
 - Keep write confirmation on until the workflow is trusted.
 - Keep deletion disabled for normal use.
-- Never place bridge tokens, bearer tokens, OAuth credentials, pairing codes,
+- Never place bridge tokens, OAuth credentials, pairing codes,
   session secrets, or database URLs in prompts or committed files.
 - Use TLS for remote connections and distinct high-entropy credentials for
-  plugin, Codex, OAuth, database, and administrative access.
+  local bridge, OAuth, database, and administrative access.
 - Treat remote note content and tool output as untrusted input.
-- Pairing and bearer authentication never replace RemNote-side scope and write
+- Shared OAuth authentication never replaces RemNote-side scope and write
   approval.
 
 See [TOOL_REFERENCE.md](TOOL_REFERENCE.md) for tool schemas, permission tiers,
@@ -177,9 +201,13 @@ timeouts, idempotency behavior, and failure responses.
 - RemNote desktop must be open and the plugin connected for SDK reads or writes.
 - The hosted ChatGPT connection uses a private Developer Mode app; this project
   is not a public ChatGPT App Store listing.
+- Hosted media bytes remain in PostgreSQL until an operator removes them; there
+  is no end-user media deletion or automatic expiry tool yet.
 - Client tool metadata may be cached after changing profiles; refresh or
   recreate the client connection when tools are missing.
-- Media insertion supports caller-supplied HTTP(S) URLs only.
+- Hosted file media requires hosted OAuth, PostgreSQL, and a public HTTPS base
+  URL. The opaque asset URL is public so RemNote can fetch it; do not host
+  confidential media through this path.
 - Persistent import recovery requires PostgreSQL.
 - Some RemNote SDK capabilities vary by installed desktop and SDK version.
   Unsupported operations return typed errors without mutating existing notes.

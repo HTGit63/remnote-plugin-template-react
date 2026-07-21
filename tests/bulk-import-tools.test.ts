@@ -480,41 +480,31 @@ describe('bulk import MCP tools', () => {
     }));
     expect(hostedLocalResult.errorCode).toBe('SOURCE_FILE_LOCAL_AUTH_REQUIRED');
 
-    const unlinkedCodex = makeHarness({ principal: principal('codex_bearer'), sourceFileAllowRoots: [allowedRoot] });
-    const unlinkedCodexLocalResult = text(await unlinkedCodex.handlers.plan_note_import_from_file({
+    const local = makeHarness({ principal: principal('local_bridge_token'), sourceFileAllowRoots: [allowedRoot] });
+    const localResult = text(await local.handlers.plan_note_import_from_file({
       sourceFilePath,
       targetRootId: 'Plugin Test',
     }));
-    expect(unlinkedCodexLocalResult.errorCode).toBe('SOURCE_FILE_CODEX_PAIRING_REQUIRED');
+    expect(localResult.status).toBe('PASS');
 
-    const codex = makeHarness({
-      principal: { ...principal('codex_bearer'), codexPairingStatus: 'linked', codexLinkId: 'pairing:file-owner' },
+    const localWithoutReadScope = makeHarness({
+      principal: { ...principal('local_bridge_token'), scopeGrants: [] },
       sourceFileAllowRoots: [allowedRoot],
     });
-    const codexLocalResult = text(await codex.handlers.plan_note_import_from_file({
-      sourceFilePath,
-      targetRootId: 'Plugin Test',
-    }));
-    expect(codexLocalResult.status).toBe('PASS');
-
-    const codexWithoutReadScope = makeHarness({
-      principal: { ...principal('codex_bearer'), scopeGrants: [] },
-      sourceFileAllowRoots: [allowedRoot],
-    });
-    const noReadScopeResult = text(await codexWithoutReadScope.handlers.plan_note_import_from_file({
+    const noReadScopeResult = text(await localWithoutReadScope.handlers.plan_note_import_from_file({
       sourceFilePath,
       targetRootId: 'Plugin Test',
     }));
     expect(noReadScopeResult.errorCode).toBe('SOURCE_FILE_READ_SCOPE_REQUIRED');
 
-    const codexChatGptResult = text(await codex.handlers.plan_note_import_from_file({
+    const localHostedFileResult = text(await local.handlers.plan_note_import_from_file({
       sourceFile: {
         download_url: 'https://files.example.invalid/chapter.md',
         file_id: 'file_stage8',
       },
       targetRootId: 'Plugin Test',
     }));
-    expect(codexChatGptResult.errorCode).toBe('SOURCE_FILE_CHATGPT_AUTH_REQUIRED');
+    expect(localHostedFileResult.errorCode).toBe('SOURCE_FILE_CHATGPT_AUTH_REQUIRED');
   });
 
   test('dry-run resume previews next chunk without mutating job state', async () => {

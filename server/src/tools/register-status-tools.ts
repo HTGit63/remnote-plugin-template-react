@@ -24,7 +24,6 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
       const registry = currentRegistry();
       const status = hub.getStatus();
       const diagnostics = hub.getDiagnostics();
-      const codexRouting = await hub.getCodexRoutingDiagnostics(principal);
       const operationId = `status-${Date.now().toString(36)}`;
       const phaseDurations = { totalMs: Date.now() - startedAt };
       return {
@@ -60,12 +59,9 @@ export function registerStatusTools({ hub, registerTool, currentRegistry, runtim
             activePluginConnectionCount: diagnostics.activePluginConnectionCount ?? 0,
             connectorCompatNoAuthTools: diagnostics.connectorCompatNoAuthTools ?? false,
             connectorCompatRouting: diagnostics.connectorCompatRouting ?? 'disabled',
-            codexBearerAuthenticated: principal?.authMode === 'codex_bearer',
-            codexRoutingMode: codexRouting.codexRoutingMode,
-            codexPairingStatus: codexRouting.codexPairingStatus,
-            codexPairingRequired: codexRouting.pairingRequired,
-            codexPairingSupported: runtimeInfo?.codexBearerAuthAvailable ?? false,
-            codexLinked: codexRouting.linked,
+            pluginAuthMode: principal?.authMode ?? 'unauthenticated_or_discovery',
+            sharedPluginAuthentication: principal?.authMode === 'hosted_oauth',
+            sessionRouterStatus: diagnostics.sessionRouter,
           },
           standard: {
             status: 'PASS',
