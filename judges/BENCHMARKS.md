@@ -4,26 +4,26 @@ Run date: 2026-07-21
 
 Branch: `judges/openai-build-week-v0.1.1`
 
-Audited code/deployment baseline: `4a5ee394ee536e3ccebbe141dd9d3a6856c16967`
+Audited code/deployment baseline: `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb`
 
 ## Verdict
 
-The current registry declares 82 tools. The normal developer profile exposes
-79. All 79 passed current schema/profile/server-local certification, and the
-three non-public entries have explicit gated, hidden, or unsupported reasons.
-Current connected read-only checks passed against `Plugin Test` without
-changing RemNote content.
+The registry declares 82 tools and exposes 79 in the developer profile. All 79
+passed schema/profile/server-local certification, while the three non-public
+entries retain explicit gated, hidden, or unsupported reasons.
 
-Uploaded MP3 and MP4 are not missing from the server: both tools are in the
-deployed 79-tool list. They are missing only from the already-open ChatGPT
-conversation's older 77-tool snapshot. Their end-to-end status in this pass is
-therefore `BLOCKED BY CLIENT DISCOVERY`, not `PASS`. Refresh the app and start a
-new conversation before the final live mutation test.
+The final connected acceptance closed the uploaded-media gap. The supplied
+MP3 and genuine MP4 were each accepted through ChatGPT file handling, stored
+persistently, inserted under the live `Plugin Test` Rem, verified by the write
+action, and independently read back from RemNote. Uploaded image, audio, and
+video insertion are now connected passes.
 
 ## Rules used for this report
 
 - `CONNECTED PASS` means a real hosted server, connected RemNote plugin, and
   SDK read returned successfully in this pass.
+- `CONNECTED MUTATION PASS` additionally means a real write was performed and
+  the created Rem was independently read back.
 - `PRIOR CONNECTED PASS` means a retained earlier mutation/readback result; it
   is not promoted to a current run.
 - `AUTOMATED PASS` means current schema, policy, local, or simulated-runtime
@@ -36,12 +36,13 @@ new conversation before the final live mutation test.
 
 | Field | Value |
 | --- | --- |
-| UTC benchmark start | `2026-07-21T16:50:54Z` |
+| Original all-tool benchmark start | `2026-07-21T16:50:54Z` |
+| Final connected media acceptance completed | `2026-07-21T19:36:40Z` |
 | OS | Linux `6.17.0-35-generic`, x86_64 |
 | Node.js | `v22.23.0` |
 | npm | `10.9.8` |
-| Local and remote judge-branch SHA before docs | `4a5ee394ee536e3ccebbe141dd9d3a6856c16967` |
-| Hosted deploy SHA | `4a5ee394ee536e3ccebbe141dd9d3a6856c16967` |
+| Judge-branch SHA before final docs | `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb` |
+| Hosted deploy SHA used for live media | `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb` |
 | Server / manifest version | `0.0.1 / 0.1.1` |
 | RemNote SDK | `0.0.46` |
 | Registry/schema | `2026-07-21.hosted-media-file-schemas-v2` |
@@ -58,7 +59,8 @@ new conversation before the final live mutation test.
 | --- | --- |
 | Clean dependency install | PASS: root and server `npm ci` |
 | Focused ChatGPT/media regression | PASS: 3 files, 62 tests |
-| Full Vitest suite | PASS: 43 files, 380 tests after documentation-contract repair |
+| Final documentation contract | RED: 4/4 failed on stale setup/evidence; GREEN: 4/4 passed after rewrite |
+| Full Vitest suite | PASS: 45 files, 389 tests |
 | Root type check | PASS |
 | RemNote SDK validation | PASS |
 | Plugin production build | PASS; existing non-blocking bundle-size warnings only |
@@ -73,22 +75,26 @@ new conversation before the final live mutation test.
 | Bulk storage, idempotency, trusted-write regression | PASS |
 | Performance, hosted E2E simulation, staged repair simulation | PASS |
 | Root production dependency audit | PASS: 0 vulnerabilities |
-| Server production dependency audit | PASS: 0 vulnerabilities after lockfile repair |
-| Full dependency audit | 1 low dev-only `esbuild` advisory in each package; no production path affected in this Linux deployment |
+| Server production dependency audit | High `fast-uri` advisory fixed at 3.1.4; 2 moderate `@hono/node-server` Windows-only advisories remain for the Linux deployment |
+| Server full dependency audit | The same 2 moderate findings plus 1 low Windows-only `esbuild` development finding |
+| Forced audit fix | NOT RUN: npm proposes a breaking MCP SDK downgrade; no force change was accepted during final verification |
 
-The fresh full suite initially found two documentation-contract failures caused
-by this rewrite: the public README lost its required general-user headings and
-used a retired authentication label. The README was corrected, the focused
-six-test contract rerun passed, and the complete suite was rerun before commit.
-This failure is included because the benchmark should show the repair loop, not
-only the final green line.
+The final documentation regression was run before the rewrite and failed all
+four checks for the expected reasons: both guides used the old launch command,
+and the benchmark/audit lacked the new connected Rem IDs. After the rewrite,
+the focused contract passed 4/4 and the complete suite passed 389/389. The red
+result is retained because this report should show the repair loop, not only
+the final green line.
 
-The security pass also found `body-parser 2.2.2` in the server lockfile. npm's
-minimal lockfile update moved it to the patched release. A root high-severity
-dev-only `brace-expansion` advisory was removed the same way. Production audits
-now report zero. The remaining low advisory is an `esbuild` Windows development
-server issue below the patched version available through the current toolchain;
-it was not force-upgraded during this final documentation pass.
+The earlier security pass updated `body-parser` and removed a root
+`brace-expansion` advisory. The final recheck found a new high-severity
+`fast-uri` advisory; the non-breaking audit repair updated it from 3.1.2 to
+3.1.4. Root production audit now reports zero. Server production audit retains
+two moderate `@hono/node-server` path-traversal findings; the full dependency
+audit also includes one low `esbuild` development-server finding. All three are
+specific to Windows behavior, while the deployed server is Linux. npm's
+remaining production remediation would force a breaking
+`@modelcontextprotocol/sdk` downgrade, so it was not applied.
 
 ## Local performance measurements
 
@@ -178,12 +184,46 @@ No write tool was called.
 | Uploaded PNG/JPEG → image | PASS | Prior July 21 native insert and readback PASS | PASS, not repeated here |
 | Image URL → image | PASS | Retained native readback/render PASS | PASS |
 | Public MP3 URL → audio | PASS | Retained native readback/playback PASS | PASS |
-| Uploaded MP3 → audio | PASS: descriptor, loader, storage, range, native route, cleanup tests | Current 77-tool conversation cannot call it | BLOCKED BY CLIENT DISCOVERY; refresh and new chat required |
+| Uploaded MP3 → audio | PASS: descriptor, loader, storage, range, native route, cleanup tests | Current connected mutation and independent native readback PASS | PASS |
 | YouTube URL → video | PASS | Retained native readback/playback PASS | PASS |
 | Direct MP4 URL → video | PASS | Retained native readback/playback PASS | PASS |
-| Uploaded real MP4 → video | PASS: descriptor, loader, storage, range, native route, cleanup tests | Current 77-tool conversation cannot call it | BLOCKED BY CLIENT DISCOVERY; use a genuine MP4 after refresh |
+| Uploaded real MP4 → video | PASS: descriptor, loader, storage, range, native route, cleanup tests | Current connected mutation and independent native readback PASS | PASS |
 | Mislabeled `.mp4` containing WebM/VP8 | rejection PASS | Reported file inspection only | UNSUPPORTED INPUT, correctly rejected |
 | SVG upload | rejection PASS | Prior rejection | UNSUPPORTED by design |
+
+### Uploaded MP3 connected acceptance
+
+| Evidence | Value |
+| --- | --- |
+| Source | `fiesta.mp3` |
+| Local bytes / SHA-256 | `1,481,572` / `82f6e9058205f3d3469807f2a79c6f285b32ee432c2a4417785eea5a0626d074` |
+| Local media inspection | MP3, 44.1 kHz stereo, about 84.79 seconds |
+| Tool / operation | `insert_audio_from_file` / `7d653c1c-ca3f-4455-99a6-10a938563198` |
+| Parent / created Rem | `OjLcSppWfIH0cpPoh` / `C4AUcbO4uXbJkAMZp` |
+| Hosted type / bytes | `audio/mpeg` / `1,481,572` |
+| Tool verification | created Rem found; media kind and URL matched |
+| Independent child readback | child index 3 under `Plugin Test` |
+| Raw native rich text | media node `i: "a"`, `onlyAudio: true` |
+| Asset state | persistent; `retained_remote_dependency` |
+
+### Uploaded MP4 connected acceptance
+
+| Evidence | Value |
+| --- | --- |
+| Source | `file_example_MP4_480_1_5MG.mp4` |
+| Local bytes / SHA-256 | `1,570,024` / `71944d7430c461f0cd6e7fd10cee7eb72786352a3678fc7bc0ae3d410f72aece` |
+| Local media inspection | ISO MP4, H.264 video, AAC audio, about 30.53 seconds |
+| Tool / operation | `insert_video_from_file` / `760ceaf0-2b0a-405d-8a9b-5d03cf90951d` |
+| Parent / created Rem | `OjLcSppWfIH0cpPoh` / `QyPyn0Ch6C6NdStoO` |
+| Hosted type / bytes | `video/mp4` / `1,570,024` |
+| Tool verification | created Rem found; media kind and URL matched |
+| Independent child readback | child index 4 under `Plugin Test` |
+| Raw native rich text | media node `i: "a"`, `onlyAudio: false` |
+| Asset state | persistent; `retained_remote_dependency` |
+
+The write tools and the separate `get_children`, `get_rem`, and raw-rich-text
+reads all returned `PASS`. This proves connected native mutation and readback.
+Human playback remains a separate UI-level check.
 
 ## Every declared tool
 
@@ -215,9 +255,9 @@ mutation was run in this pass.
 | 20 | `insert_image_from_url` | media / mass_note_writer | yes | AUTOMATED PASS; PRIOR CONNECTED PASS |
 | 21 | `insert_image_from_file` | media / mass_note_writer | yes | AUTOMATED PASS; PRIOR CONNECTED PASS |
 | 22 | `insert_audio_from_url` | media / note_writer | yes | AUTOMATED PASS; PRIOR CONNECTED PASS |
-| 23 | `insert_audio_from_file` | media / mass_note_writer | yes on server | AUTOMATED + HOSTED DISCOVERY PASS; CURRENT CLIENT BLOCKED |
+| 23 | `insert_audio_from_file` | media / mass_note_writer | yes | CONNECTED MUTATION PASS; Rem `C4AUcbO4uXbJkAMZp` |
 | 24 | `insert_video_from_url` | media / mass_note_writer | yes | AUTOMATED PASS; PRIOR CONNECTED YouTube/direct-video PASS |
-| 25 | `insert_video_from_file` | media / mass_note_writer | yes on server | AUTOMATED + HOSTED DISCOVERY PASS; CURRENT CLIENT BLOCKED |
+| 25 | `insert_video_from_file` | media / mass_note_writer | yes | CONNECTED MUTATION PASS; Rem `QyPyn0Ch6C6NdStoO` |
 | 26 | `update_rem` | repair / power_user | yes | AUTOMATED PASS; LIVE NOT RUN this pass |
 | 27 | `replace_rem` | danger / danger | no | HIDDEN until replacement guards are live-proven |
 | 28 | `move_rem` | repair / power_user | yes | AUTOMATED PASS; LIVE NOT RUN this pass |
@@ -340,7 +380,6 @@ conversation is required after tool metadata changes.
 The broad simulated certification is valuable because it exercises every
 registered handler deterministically, including failure and guard paths. It is
 not a claim that every tool mutated a real knowledge base on July 21. The
-connected read matrix proves the current live bridge. Prior mutation/readback
-and playback results are kept as prior evidence. Uploaded MP3/MP4 remain a
-clearly named live follow-up because the current conversation cannot discover
-them.
+connected read matrix proves the live bridge, while the final MP3 and MP4 tests
+add current connected mutation and independent native readback for those two
+uploaded-file actions. Human rendering and playback remain separate checks.

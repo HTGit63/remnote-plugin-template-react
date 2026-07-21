@@ -4,32 +4,27 @@ Date: 2026-07-21
 
 Branch: `judges/openai-build-week-v0.1.1`
 
-Code/deployment baseline audited: `4a5ee394ee536e3ccebbe141dd9d3a6856c16967`
+Code/deployment baseline audited: `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb`
 
 ## Verdict
 
 RemNote MCP is a real, non-trivial MCP and RemNote desktop integration with a
 large tested tool surface, explicit permission boundaries, resumable state,
-native RemNote structures, and connected-plugin evidence. The uploaded MP3 and
-MP4 server paths are implemented, registered, deployed, and covered by focused
-tests. The final reported failure is a client-discovery issue: the current
-conversation retained an older 77-tool snapshot even after the deployed server
-started returning 79 tools.
+native RemNote structures, and connected mutation evidence. The uploaded MP3
+and MP4 paths are implemented, registered, deployed, and now live-proven from
+ChatGPT file input through persistent hosting, RemNote SDK mutation, tool
+verification, independent child readback, and raw native rich-text readback.
 
-No additional application/media patch was justified during this audit. The
-correct recovery is to refresh the Developer Mode app and start a new
-conversation. Changing the media code again would not update an already-open
-chat. The only runtime dependency change is a minimal lockfile security update
-for the audited `body-parser` advisory.
+The earlier blocker was an old client discovery snapshot. After the hosted
+default and discovery updates were deployed and the app metadata refreshed,
+the current conversation exposed and successfully invoked both file tools. No
+additional media implementation change was required for the final acceptance.
 
 The repository is ready for judge evaluation through **Develop from
 localhost**, subject to these honest boundaries:
 
-- this pass performed read-only connected checks, not 79 live mutations;
-- `insert_audio_from_file` and `insert_video_from_file` still need a fresh-chat
-  connected acceptance run after the app refresh;
-- the reported `.mp4` fixture was actually Matroska/WebM with VP8 and is not a
-  valid MP4 input;
+- this campaign did not live-mutate all 79 public tools;
+- the earlier mislabeled WebM fixture remains a correctly rejected input;
 - native media readback still needs a human rendering/playback check;
 - the hosted-media origin is public-by-URL and is not for confidential files;
 - the personal PostgreSQL deployment has no aggregate per-owner quota yet.
@@ -38,9 +33,9 @@ localhost**, subject to these honest boundaries:
 
 The audit used repository history, current source, generated registry metadata,
 focused and full automated tests, a raw hosted MCP `tools/list`, live bridge
-diagnostics, read-only connected RemNote calls, prior retained connected test
-results, local file inspection, Devpost project data, and official OpenAI Apps
-SDK documentation.
+diagnostics, connected RemNote reads and media writes, independent readback,
+local file inspection, Devpost project data, and official OpenAI Apps SDK
+documentation.
 
 Evidence is labelled by layer:
 
@@ -135,7 +130,7 @@ Each input object declares `download_url`, `file_id`, `mime_type`, and
 `file_name`; `download_url` and `file_id` are required. Hosted OAuth scopes and
 non-destructive/idempotent annotations are present. The live bridge reported:
 
-- deployment commit `4a5ee394ee536e3ccebbe141dd9d3a6856c16967`;
+- deployment commit `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb`;
 - plugin connected and synchronized;
 - active `developer` profile with full workspace/trusted write access;
 - registry/schema/discovery version
@@ -145,33 +140,40 @@ non-destructive/idempotent annotations are present. The live bridge reported:
 
 ### What the current conversation exposes
 
-The already-open client tool snapshot contained 77 tools. It included
-`insert_image_from_file` and all three URL media tools, but not
-`insert_audio_from_file` or `insert_video_from_file`. A session cannot invoke a
-tool absent from its loaded registry, even when the server has since changed.
+The refreshed client exposes all three uploaded-file actions. The bridge
+reported 79 public developer tools, no registry mismatch, no required connector
+refresh, one connected plugin, and RemNote audio/video SDK capability. Both
+`insert_audio_from_file` and `insert_video_from_file` were invoked successfully
+against `Plugin Test`.
 
-The OpenAI Apps SDK deployment workflow requires rebuilding/restarting the MCP
-server and refreshing the app after a tool change. A new conversation is also
-needed to obtain the new tool snapshot. This is the remaining operational fix.
+This confirms the previous 77-tool result was stale client metadata rather
+than missing server implementation. The documented recovery remains important
+for future schema changes: redeploy, refresh the app, and start a new
+conversation before diagnosing a newly registered action as absent.
 
 ### File truth
 
-The supplied `NEW LINEN 新しいリネン.mp3` was inspected directly:
+The final supplied audio fixture, `fiesta.mp3`, was inspected directly:
 
 | Property | Value |
 | --- | --- |
-| Size | `2,970,931` bytes |
-| Container/codec | MPEG Layer III |
-| Bitrate | 192 kbps |
+| Size | `1,481,572` bytes |
+| Container/codec | MPEG Layer III with ID3 metadata |
+| Bitrate | 64 kbps |
 | Sample rate | 44.1 kHz |
 | Channels | stereo |
-| Duration | about 116.09 seconds |
+| Duration | about 84.79 seconds |
+| SHA-256 | `82f6e9058205f3d3469807f2a79c6f285b32ee432c2a4417785eea5a0626d074` |
 | Loader limit | 25 MiB |
 
-It is a valid supported fixture. The reported video sample had an `.mp4`
-filename but was identified as Matroska/WebM with VP8. The MP4 loader checks the
-actual `ftyp` container and accepted brands, so rejecting that file is correct.
-The next live test must use a real MP4.
+The final video fixture, `file_example_MP4_480_1_5MG.mp4`, is a genuine
+1,570,024-byte ISO MP4 with H.264 video, AAC audio, a duration of about 30.53
+seconds, and SHA-256
+`71944d7430c461f0cd6e7fd10cee7eb72786352a3678fc7bc0ae3d410f72aece`.
+
+The earlier `.mp4`-named fixture contained Matroska/WebM with VP8 and was
+correctly rejected. Accepting the genuine MP4 and rejecting the mislabeled
+WebM proves the loader validates bytes rather than trusting the extension.
 
 ### Why successful bytes are not deleted immediately
 
@@ -254,17 +256,19 @@ bypass or broad hostname allowlist was introduced.
 | SEC-MEDIA-05 | Low | Documented | Referenced assets cannot be deleted automatically while RemNote depends on their URLs. |
 | SEC-MEDIA-06 | Low | Intentional | SVG and mislabeled/non-MP4 video are rejected; conversion must happen outside the trusted media origin. |
 | SEC-DEP-01 | Low | Fixed | Server `body-parser 2.2.2` was updated to `2.3.0`; production dependency audits now report zero. |
-| SEC-DEP-02 | Low | Accepted dev-only | Current root/server test tooling retains an `esbuild` Windows development-server advisory; it is outside the Linux hosted production path and was not force-upgraded. |
+| SEC-DEP-02 | Low | Accepted platform boundary | Server tooling retains an `esbuild` Windows development-server file-read advisory; it is outside the Linux hosted path. |
+| SEC-DEP-03 | High | Fixed | `fast-uri` 3.1.2 had an IDN host-confusion advisory; the lockfile now resolves 3.1.4. |
+| SEC-DEP-04 | Moderate | Accepted platform boundary | The MCP SDK currently resolves `@hono/node-server` 1.19.14, which has a Windows encoded-backslash `serve-static` advisory. The deployment is Linux, and npm's proposed fix is a forced breaking SDK downgrade. |
 
 No known critical or unaccepted high-severity finding remains in the audited
-media path. Dependency-audit results are recorded fresh in the benchmark.
+media path. The remaining Windows-only transitive findings and the rejected
+forced downgrade are recorded in the benchmark.
 
-## Current connected read-only proof
+## Current connected proof
 
 The focused target was Rem `OjLcSppWfIH0cpPoh` (`Plugin Test`). Current calls
-passed for bridge status, plugin ping, current selection, focused Rem, direct
-Rem read, children, breadcrumbs, rich text, bounded tree, document/folder tree,
-workspace search, raw-rich-text diagnostics, and read-only health check.
+passed for bridge status, plugin status, focused Rem, direct children, direct
+Rem reads, and raw-rich-text diagnostics.
 
 The live timing benchmark used one warm-up plus ten measured calls for four
 representative routes. All bridge, ping, and focused-Rem calls returned PASS.
@@ -272,7 +276,18 @@ Nine of ten current-selection responses produced the normal structured status;
 one client response lacked the structured envelope and is reported as an
 outlier, not silently discarded. Full timings are in [BENCHMARKS.md](BENCHMARKS.md).
 
-No Rem was created, updated, moved, formatted, or deleted by this audit.
+The final acceptance created exactly two media children:
+
+| Workflow | Created Rem | Native readback |
+| --- | --- | --- |
+| `insert_audio_from_file` with `fiesta.mp3` | `C4AUcbO4uXbJkAMZp` | media node `i: "a"`, `onlyAudio: true`, hosted URL matched |
+| `insert_video_from_file` with a genuine H.264/AAC MP4 | `QyPyn0Ch6C6NdStoO` | media node `i: "a"`, `onlyAudio: false`, hosted URL matched |
+
+Both tools returned `PASS`, found the created Rem, matched the media kind and
+URL, and retained the persistent hosted dependency. Independent `get_children`
+confirmed both IDs under `Plugin Test`; separate `get_rem` and raw-rich-text
+calls also returned `PASS`. No existing Rem was modified, moved, formatted, or
+deleted.
 
 ## Codex contribution and session inventory
 
@@ -346,24 +361,23 @@ before this final documentation commit.
 | `22ae223` | Jul 21 | Repair safe public hosted-image downloads |
 | `66904f8` | Jul 21 | Add uploaded MP3 and MP4 media tools |
 | `4a5ee39` | Jul 21 | Refresh ChatGPT file schemas and discovery |
+| `e465ecf` | Jul 21 | Finalize the first media evaluation package |
+| `bc2e142` | Jul 21 | Make the hosted bridge the extension default |
 
 The `main` branch also contains `f6f043f` (`feat: reconcile production auth and
 hosted media`), which is not part of this judge branch's linear history and is
 therefore not counted above.
 
-## Release and artifact history
+## Release history
 
 | Evidence | Value |
 | --- | --- |
 | `v0.1.0` peeled commit | `c0a6ff9187debcad04d1f30f2b509bedd862e508` |
 | `v0.1.1` peeled commit | `417218945879148b842e16a465c0a8ac639b9985` |
-| `0.1.1` artifact commit | `c8b65b990e5ca3ecdfb47f032c6f9acdd1c7890c` |
-| Historical ZIP size | `630,748` bytes |
-| Historical ZIP SHA-256 | `207e1d5fd13cbe9c22e45555a36624d1fb7bc4475f9159f1c97191416527ea5b` |
+| Current judge source before final documentation | `bc2e142fe3f0a7348e9c5b6520345d97745fe0fb` |
 
-The ZIP remains immutable historical evidence. It is not the evaluation path
-for the current judge branch. Judges should load the branch through RemNote's
-localhost development workflow.
+The evaluation path is the current source branch loaded through RemNote
+desktop's **Develop from localhost** workflow at `http://localhost:8080`.
 
 ## Final acceptance checklist
 
@@ -371,24 +385,24 @@ Already completed in this audit:
 
 - compare local, remote branch, deployed SHA, raw `tools/list`, and current
   client snapshot;
-- inspect the exact MP3 and supplied PNG;
+- inspect the exact MP3 and genuine MP4 fixtures;
 - run focused ChatGPT/media tests;
 - run current connected read-only and timing checks;
+- insert uploaded MP3 and MP4 files through the hosted bridge;
+- independently read both native media Rems back;
 - review SSRF, bytes, MIME, redirects, auth, scope, ownership, error redaction,
   and active-content boundaries;
 - consolidate the old stage and media audits into this document.
 
-Judge or owner live follow-up:
+Judge or owner UI follow-up:
 
 1. Pull the final judge branch and use **Develop from localhost**.
-2. Refresh the ChatGPT Developer Mode app and start a new conversation.
-3. Confirm that all 79 tools include `insert_audio_from_file` and
-   `insert_video_from_file`.
-4. Insert the valid MP3 under a disposable Rem with a stable key and require
-   native audio readback plus human playback.
-5. Insert a genuine MP4 fixture the same way; do not use the mislabeled WebM.
-6. Confirm PostgreSQL usage and the retained dependency status.
-7. Do not broaden access or claim App Store publication from these results.
+2. Refresh the ChatGPT Developer Mode app if its tool list is older than the
+   deployed registry.
+3. Run the bounded read prompt before approving writes.
+4. Confirm visible image rendering and audio/video playback in RemNote.
+5. Monitor PostgreSQL usage and retained hosted dependencies.
+6. Do not broaden access or claim public listing from these results.
 
 ## Primary references
 
