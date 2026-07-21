@@ -6,22 +6,10 @@ import {
   createBridgeCommandIntent,
   type BridgeCommandIntentKind,
 } from './bridge-panel/command-intents';
-import { DEFAULT_BRIDGE_SERVER_URL } from '../bridge/status';
+import { companionHttpUrl, DEFAULT_BRIDGE_SERVER_URL } from '../bridge/endpoints';
 import { copyTextToClipboard } from './bridge-panel/runtime-actions';
 import { REMNOTE_MCP_LOGO_URL } from './bridge-panel/brand';
 import { startPluginBridgeRuntime, stopPluginBridgeRuntime } from '../bridge/plugin-runtime';
-
-function companionMcpUrl(serverUrl: string): string {
-  const url = new URL(serverUrl);
-  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  if (url.port === '47391') {
-    url.port = '47392';
-  }
-  url.pathname = '/mcp';
-  url.search = '';
-  url.hash = '';
-  return url.toString();
-}
 
 async function onActivate(plugin: ReactRNPlugin) {
   const bridgeTabIcon = REMNOTE_MCP_LOGO_URL;
@@ -36,7 +24,7 @@ async function onActivate(plugin: ReactRNPlugin) {
 
   const copyMcpUrl = async () => {
     const configuredUrl = await plugin.settings.getSetting<string>('bridge-server-url');
-    const mcpUrl = companionMcpUrl(configuredUrl?.trim() || DEFAULT_BRIDGE_SERVER_URL);
+    const mcpUrl = companionHttpUrl(configuredUrl?.trim() || DEFAULT_BRIDGE_SERVER_URL, '/mcp');
     await copyTextToClipboard(mcpUrl);
     await plugin.app.toast('RemnoteMCP URL copied.');
   };
@@ -44,8 +32,8 @@ async function onActivate(plugin: ReactRNPlugin) {
   await plugin.settings.registerStringSetting({
     id: 'bridge-server-url',
     title: 'Bridge Server URL',
-    description: 'Bridge WebSocket endpoint. Use localhost for local mode or the hosted WSS URL after pairing.',
-    defaultValue: 'ws://localhost:47391/remnote-bridge',
+    description: 'Bridge WebSocket endpoint. Hosted Render is the default; replace it only for explicit local or self-hosted development.',
+    defaultValue: DEFAULT_BRIDGE_SERVER_URL,
   });
 
   await plugin.settings.registerStringSetting({

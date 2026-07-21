@@ -19,13 +19,13 @@ import {
   BRIDGE_TOOL_NAMES,
 } from '../bridge/protocol';
 import {
-  DEFAULT_BRIDGE_SERVER_URL,
   HOSTED_PAIRING_START_INSTRUCTION,
   INITIAL_BRIDGE_STATUS,
   getBridgeNextAction,
   getBridgeStatusLabel,
   type BridgeStatusSnapshot,
 } from '../bridge/status';
+import { companionHttpUrl, DEFAULT_BRIDGE_SERVER_URL } from '../bridge/endpoints';
 import {
   BRIDGE_RUNTIME_APPROVAL_REQUEST_KEY,
   BRIDGE_RUNTIME_ENABLED_KEY,
@@ -175,18 +175,6 @@ function summarizeToolAvailability(publicTools: string[] | undefined, mode: Perm
   }
 
   return { free, gated, blocked };
-}
-
-function companionHttpUrl(serverUrl: string, pathname: '/health' | '/diagnostics' | '/mcp'): string {
-  const url = new URL(serverUrl);
-  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:';
-  if (url.port === '47391') {
-    url.port = '47392';
-  }
-  url.pathname = pathname;
-  url.search = '';
-  url.hash = '';
-  return url.toString();
 }
 
 function isHostedBridgeUrl(serverUrl: string): boolean {

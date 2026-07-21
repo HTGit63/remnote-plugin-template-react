@@ -12,7 +12,7 @@ import {
 } from './tool-policy.js';
 import { getToolHistoryEntry, getToolHistorySnapshot } from './tool-health-history.js';
 
-export const TOOL_REGISTRY_VERSION = '2026-07-21.hosted-media-file-schemas-v2';
+export const TOOL_REGISTRY_VERSION = '2026-07-21.hosted-default-callability-v3';
 export const MCP_DISCOVERY_VERSION = `mcp-discovery-${TOOL_REGISTRY_VERSION}`;
 export const BRIDGE_PLUGIN_PROTOCOL_VERSION = 1;
 export const PACKAGE_VERSION = process.env.npm_package_version ?? '0.0.1';
@@ -175,7 +175,7 @@ function buildToolStateEntry(
     declared: declaredToolNames().includes(name),
     registered,
     listed,
-    callable: registered && !sdkUnsupported && (liveVerified || serverLocalVerified),
+    callable: listed && registered && !sdkUnsupported,
     liveVerified,
     sdkUnsupported,
     hidden,
@@ -494,9 +494,12 @@ export function getToolRegistrySummary(
     (SERVER_LOCAL_MCP_TOOLS as readonly string[]).includes(tool)
   );
   const liveVerifiedTools = publicTools.filter((tool) => Boolean(getToolHistoryEntry(tool).lastSuccessAt));
-  const actualMcpCallableTools = Array.from(new Set([...serverLocalVerifiedTools, ...liveVerifiedTools]));
+  const runtimeVerifiedTools = Array.from(new Set([...serverLocalVerifiedTools, ...liveVerifiedTools]));
+  const actualMcpCallableTools = publicTools.filter(
+    (tool) => registeredTools.includes(tool) && !sdkUnsupportedTools.includes(tool)
+  );
   const runtimeUnverifiedTools = publicTools.filter(
-    (tool) => !sdkUnsupportedTools.includes(tool) && !actualMcpCallableTools.includes(tool)
+    (tool) => !sdkUnsupportedTools.includes(tool) && !runtimeVerifiedTools.includes(tool)
   );
   const sourceRegistryTools = declaredToolNames();
   const toolStates = sourceRegistryTools.map((tool) =>
@@ -625,9 +628,9 @@ export function getToolRegistrySummary(
     mcpRegisteredTools: [...registeredTools],
     mcpListedToolNames: [...publicTools],
     mcpListedTools: [...publicTools],
-    callabilitySource: 'runtime_matrix_not_live_execution' as const,
+    callabilitySource: 'mcp_registered_and_listed' as const,
     callabilitySourceExplanation:
-      'Registry lists discoverable tools. Runtime verification requires a recent successful server or plugin execution.',
+      'Callable means the tool is registered, listed, and not SDK-unsupported. Runtime verification is reported separately and requires a successful server or plugin execution.',
     serverLocalVerifiedTools,
     serverLocalVerifiedToolCount: serverLocalVerifiedTools.length,
     callableTools: [...actualMcpCallableTools],
@@ -648,8 +651,8 @@ export function getToolRegistrySummary(
         ? [...publicTools]
         : [],
     realPluginVerifiedTools: [...liveVerifiedTools],
-    runtimeVerifiedTools: [...actualMcpCallableTools],
-    verifiedToolCount: actualMcpCallableTools.length,
+    runtimeVerifiedTools: [...runtimeVerifiedTools],
+    verifiedToolCount: runtimeVerifiedTools.length,
     runtimeUnverifiedTools,
     runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
     sdkUnsupportedTools,
@@ -681,7 +684,7 @@ export function getToolRegistrySummary(
         declared: sourceRegistryTools.includes(tool),
         listed: true,
         registered,
-        callable: registered && !sdkUnsupported && (serverLocalVerified || Boolean(getToolHistoryEntry(tool).lastSuccessAt)),
+        callable: registered && !sdkUnsupported,
         liveVerified: Boolean(getToolHistoryEntry(tool).lastSuccessAt),
         hidden: false,
         blockedByTier: false,

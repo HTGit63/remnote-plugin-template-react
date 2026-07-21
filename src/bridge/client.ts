@@ -223,7 +223,7 @@ export class BrowserBridgeClient {
       return;
     }
 
-    this.updateStatus('connecting', 'Connecting to local companion server.');
+    this.updateStatus('connecting', 'Connecting to RemNote bridge server.');
 
     let socket: WebSocket;
     try {

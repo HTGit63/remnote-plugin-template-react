@@ -64,9 +64,10 @@ export function registerDiagnosticTools({
             .map((request) => request.mcpTool ?? publicMcpToolNameForBridgeTool(request.tool)),
         ])
       ).filter((tool) => registry.publicTools.includes(tool));
-      const callableTools = Array.from(new Set([...serverLocalTools, ...successfulPluginTools]));
+      const runtimeVerifiedTools = Array.from(new Set([...serverLocalTools, ...successfulPluginTools]));
+      const callableTools = [...registry.actualMcpCallableTools];
       const runtimeUnverifiedTools = registry.publicTools.filter(
-        (tool) => !callableTools.includes(tool) && !sdkUnsupportedTools.includes(tool)
+        (tool) => !runtimeVerifiedTools.includes(tool) && !sdkUnsupportedTools.includes(tool)
       );
       const lastSuccessfulToolCalls = diagnostics.recentRequests
         .filter((request) => request.ok)
@@ -155,12 +156,13 @@ export function registerDiagnosticTools({
         serverLocalVerifiedTools: serverLocalTools,
         serverLocalVerifiedToolCount: serverLocalTools.length,
         realPluginVerifiedTools: successfulPluginTools,
-        verifiedToolCount: successfulPluginTools.length,
+        verifiedToolCount: runtimeVerifiedTools.length,
         runtimeUnverifiedTools,
         runtimeUnverifiedToolCount: runtimeUnverifiedTools.length,
         sdkUnsupportedTools,
         callableTools,
         actualMcpCallableTools: callableTools,
+        runtimeVerifiedTools,
         unauthMcpCallableTools:
           registry.toolCallAuthMode === 'no_auth_allowed' ? callableTools : [],
         publicUserSummary,
@@ -183,7 +185,7 @@ export function registerDiagnosticTools({
         content: [
           {
             type: 'text',
-            text: `Bridge diagnostics: ${registry.publicToolCount} listed tools, ${successfulPluginTools.length} recently verified, ${diagnostics.status.pendingRequests} pending requests.`,
+            text: `Bridge diagnostics: ${registry.publicToolCount} listed tools, ${callableTools.length} callable tools, ${successfulPluginTools.length} recently live-verified, ${diagnostics.status.pendingRequests} pending requests.`,
           },
         ],
         structuredContent: {
