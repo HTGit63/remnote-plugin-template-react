@@ -127,6 +127,28 @@ function normalizeNestedNode(node: StyledRemTreeNode): StyledRemTreeNode {
   };
 }
 
+function applyExplicitHeadingFieldsToTree(
+  tree: StyledRemTreeNode,
+  fields: NoteStylePresetFields
+): StyledRemTreeNode {
+  const children = tree.children?.map((child) => {
+    const normalizedChild = normalizeNestedNode(child);
+    if (!fields.sectionHeadingLevel || isMathOrCardNode(normalizedChild)) {
+      return normalizedChild;
+    }
+    return withHeading(normalizedChild, fields.sectionHeadingLevel);
+  });
+
+  const normalizedTree: StyledRemTreeNode = {
+    ...tree,
+    children,
+  };
+
+  return fields.rootHeadingLevel
+    ? withHeading(normalizedTree, fields.rootHeadingLevel)
+    : normalizedTree;
+}
+
 function normalizeRootChildren(
   children: readonly StyledRemTreeNode[],
   preset: NormalizedNoteStylePreset
@@ -189,8 +211,15 @@ export function applyStylePresetToTree(
   fields: NoteStylePresetFields = {}
 ): StyledRemTreeNode {
   const preset = normalizeStylePresetFields(fields);
-  if (!preset || !fields.stylePreset) {
+  if (!preset) {
     return tree;
+  }
+
+  if (!fields.stylePreset) {
+    if (!fields.rootHeadingLevel && !fields.sectionHeadingLevel) {
+      return tree;
+    }
+    return applyExplicitHeadingFieldsToTree(tree, fields);
   }
 
   return withHeading(
