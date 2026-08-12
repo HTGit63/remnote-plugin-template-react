@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { applyStylePresetToTree } from '../shared/bridge/style-presets';
+import { existingRemHeadingStyleEnabled } from '../src/remnote/write/runtimeFlags';
 
 describe('native heading propagation', () => {
   test('applies explicit root and section heading fields without requiring a style preset', () => {
@@ -44,5 +45,17 @@ describe('native heading propagation', () => {
 
     expect(tree.children).toHaveLength(2);
     expect(tree.children?.map((child) => child.text)).toEqual(['Section A', 'Section B']);
+  });
+
+  test('enables existing-Rem heading repair in browser runtime when process env is unavailable', () => {
+    const runtime = globalThis as typeof globalThis & { process?: typeof process };
+    const originalProcess = runtime.process;
+
+    try {
+      runtime.process = undefined;
+      expect(existingRemHeadingStyleEnabled()).toBe(true);
+    } finally {
+      runtime.process = originalProcess;
+    }
   });
 });
