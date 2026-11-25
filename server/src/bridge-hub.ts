@@ -726,8 +726,14 @@ export class BridgeHub {
       return;
     }
 
+    const fromHostedSandbox = this.config.deploymentMode === 'hosted' && req?.headers.origin === 'null';
+    const registrationTimeout = fromHostedSandbox
+      ? setTimeout(() => socket.terminate(), 20_000).unref()
+      : undefined;
+    socket.once('close', () => clearTimeout(registrationTimeout));
     socket.once('message', (raw) => {
-      void this.handleInitialPluginMessage(socket, raw);
+      clearTimeout(registrationTimeout);
+      void this.handleInitialPluginMessage(socket, raw, fromHostedSandbox);
     });
   }
 
@@ -739,10 +745,14 @@ export class BridgeHub {
     return runtime;
   }
 
-  private async handleInitialPluginMessage(socket: WebSocket, raw: WebSocket.RawData) {
+  private async handleInitialPluginMessage(socket: WebSocket, raw: WebSocket.RawData, fromHostedSandbox: boolean) {
       const hello = this.parseClientMessage(raw);
       if (!this.isPluginHello(hello) && !this.isPluginRegister(hello)) {
         socket.close(1008, 'Expected plugin registration.');
+        return;
+      }
+      if (fromHostedSandbox && !this.isPluginRegister(hello)) {
+        socket.close(1008, 'Expected hosted plugin registration.');
         return;
       }
       if (this.config.deploymentMode !== 'hosted' && !this.isPluginHello(hello)) {
@@ -761,7 +771,6 @@ export class BridgeHub {
       }
 
       const pluginRuntime = this.extractPluginRuntimeInfo(hello);
-      this.pluginRuntimeInfo = pluginRuntime;
       let registeredToolTier = this.config.toolProfile;
       let requiresConnectorRefresh = false;
       if (this.config.deploymentMode === 'hosted') {
@@ -787,6 +796,7 @@ export class BridgeHub {
       } else {
         this.replacePluginSocket(socket);
       }
+      this.pluginRuntimeInfo = pluginRuntime;
 
       const toolCallAuthMode = getToolCallAuthMode(this.config);
       const serverHello: BridgeServerHello = {
@@ -1221,6 +1231,9 @@ export class BridgeHub {
     const origin = req?.headers.origin;
     if (!origin || this.config.deploymentMode === 'local') {
       return true;
+    }
+    if (origin === 'null') {
+      return this.config.allowCors && this.config.hostedPairingEnabled;
     }
     if (!this.config.allowedOrigins.length) {
       return false;
