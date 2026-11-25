@@ -11,6 +11,17 @@ const SECURITY_HEADERS = {
   'cross-origin-resource-policy': 'same-origin',
 };
 
+const HOSTED_PLUGIN_SANDBOX_METHODS = new Map<string, readonly string[]>([
+  ['/health', ['GET']],
+  ['/pairing/status', ['GET']],
+  ['/pairing/approve', ['POST']],
+  ['/pairing/deny', ['POST']],
+  ['/pairing/disconnect', ['POST']],
+  ['/api/plugin/tool-tier', ['GET', 'POST']],
+  ['/api/plugin/diagnostics', ['POST']],
+  ['/api/plugin/health-check', ['POST']],
+]);
+
 export function isLoopbackHost(hostHeader: string | undefined): boolean {
   if (!hostHeader) {
     return true;
@@ -86,7 +97,7 @@ export function applyCors(req: IncomingMessage, res: ServerResponse, config: Com
   }
 
   const origin = req.headers.origin;
-  if (!origin || !config.allowedOrigins.includes(origin)) {
+  if (!origin || origin === 'null' || !config.allowedOrigins.includes(origin)) {
     return false;
   }
 
@@ -98,6 +109,38 @@ export function applyCors(req: IncomingMessage, res: ServerResponse, config: Com
     'content-type, mcp-session-id, authorization, x-remnote-bridge-token, x-remnote-plugin-session-secret'
   );
   res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+  return true;
+}
+
+export function applyHostedPluginSandboxCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  config: CompanionServerConfig
+): boolean {
+  if (
+    req.headers.origin !== 'null' || !config.allowCors ||
+    config.deploymentMode !== 'hosted' || !config.hostedPairingEnabled ||
+    req.headers.cookie !== undefined || req.headers.authorization !== undefined
+  ) {
+    return false;
+  }
+
+  // Opaque origins do not identify a plugin. Limit them to the plugin's
+  // credential-based routes and the public health check.
+  const methods = HOSTED_PLUGIN_SANDBOX_METHODS.get(url.pathname);
+  const method = req.method === 'OPTIONS' ? req.headers['access-control-request-method'] : req.method;
+  if (!methods || typeof method !== 'string' || !methods.includes(method)) return false;
+  const contentType = req.headers['content-type']?.split(';', 1)[0].trim().toLowerCase();
+  if (req.method === 'POST' && contentType !== 'application/json') return false;
+  if (url.pathname === '/pairing/status' && (url.searchParams.size !== 1 || !url.searchParams.has('pairing_code'))) {
+    return false;
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', 'null');
+  res.setHeader('Vary', 'Origin, Access-Control-Request-Method, Access-Control-Request-Headers');
+  res.setHeader('Access-Control-Allow-Methods', methods.join(', '));
+  res.setHeader('Access-Control-Allow-Headers', 'content-type, x-remnote-plugin-session-secret');
   return true;
 }
 

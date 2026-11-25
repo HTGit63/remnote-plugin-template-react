@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { WebSocket } from 'ws';
 import type {
@@ -16,6 +17,7 @@ let nextId = 1;
 const publicBaseUrl = 'https://remnote-plugin-template-react.onrender.com';
 const redirectUri = 'https://chat.openai.com/aip/mock/remnote/callback';
 const codeVerifier = 'routing-smoke-verifier';
+const sandboxOrigin = { origin: 'null' };
 const fakeRem: SerializedRem = {
   remId: 'rem-hosted-routing-1',
   frontText: 'Hosted routing smoke Rem',
@@ -141,8 +143,12 @@ async function connectHostedMockPlugin(
   seenTools: BridgeToolName[]
 ): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(wsUrl, sandboxOrigin);
     const timer = setTimeout(() => reject(new Error('Hosted mock plugin did not receive server_hello.')), 3000);
+    ws.once('close', (code, reason) => {
+      clearTimeout(timer);
+      reject(new Error(`Hosted mock plugin closed before server_hello: ${code} ${reason.toString()}`));
+    });
     ws.on('open', () => {
       ws.send(JSON.stringify(register));
     });
@@ -160,6 +166,26 @@ async function connectHostedMockPlugin(
     ws.on('error', (error) => {
       clearTimeout(timer);
       reject(error);
+    });
+  });
+}
+
+async function rejectedPluginRegistration(wsUrl: string, origin: string, register: unknown) {
+  return new Promise<{ code: number; reason: string }>((resolve, reject) => {
+    const socket = new WebSocket(wsUrl, { origin, handshakeTimeout: 3000 });
+    const timeout = setTimeout(() => {
+      socket.terminate();
+      reject(new Error('Rejected plugin registration left the socket open.'));
+    }, 3000);
+    socket.once('open', () => socket.send(JSON.stringify(register)));
+    socket.once('message', () => {
+      socket.close();
+      reject(new Error('Rejected plugin registration received a server message.'));
+    });
+    socket.once('error', reject);
+    socket.once('close', (code, reason) => {
+      clearTimeout(timeout);
+      resolve({ code, reason: reason.toString() });
     });
   });
 }
@@ -185,6 +211,13 @@ async function createHostedAccessToken(baseUrl: string): Promise<{
     throw new Error(`Hosted pairing create failed: ${create.response.status} ${create.text}`);
   }
 
+  const lookup = await fetch(`${baseUrl}/pairing/status?pairing_code=${encodeURIComponent(create.json.pairingCode)}`, {
+    headers: sandboxOrigin,
+  });
+  assert.equal(lookup.status, 200, 'Sandboxed desktop pairing code lookup');
+  assert.equal(lookup.headers.get('access-control-allow-origin'), 'null');
+  assert.equal((await lookup.json()).status, 'pending');
+
   const pluginInstanceId = 'plugin-routing-smoke';
   const pluginConnectionId = 'conn-routing-smoke';
   const approve = await postJson(`${baseUrl}/pairing/approve`, {
@@ -194,10 +227,15 @@ async function createHostedAccessToken(baseUrl: string): Promise<{
     workspaceLabel: 'Routing smoke workspace',
     accessScope: 'focused-rem-only',
     trustedWriteMode: 'trusted-inside-scope',
-  });
+  }, sandboxOrigin);
   if (approve.response.status !== 200 || !approve.json?.sessionSecret) {
     throw new Error(`Hosted pairing approve failed: ${approve.response.status} ${approve.text}`);
   }
+  assert.equal(approve.response.headers.get('access-control-allow-origin'), 'null');
+  const staleDeny = await postJson(`${baseUrl}/pairing/deny`, {
+    pairingCode: create.json.pairingCode,
+  }, sandboxOrigin);
+  assert.equal(staleDeny.response.status, 409, 'An already approved code cannot deny the pairing from the sandbox');
 
   const status = await fetch(`${baseUrl}/pairing/status?pairing_id=${encodeURIComponent(create.json.pairingId)}`, {
     headers: { accept: 'application/json' },
@@ -258,9 +296,50 @@ const app = await startCompanionApp({
 
 const baseUrl = `http://127.0.0.1:${app.mcpPort}`;
 const mcpUrl = `${baseUrl}${app.config.mcpPath}`;
+const wsUrl = `ws://127.0.0.1:${app.mcpPort}${app.config.bridgePath}`;
 let ws: WebSocket | undefined;
 
 try {
+  const preflight = await fetch(`${baseUrl}/pairing/approve`, {
+    method: 'OPTIONS',
+    headers: {
+      ...sandboxOrigin,
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'content-type',
+    },
+  });
+  assert.equal(preflight.status, 204, 'Sandboxed desktop pairing approval preflight');
+  assert.equal(preflight.headers.get('access-control-allow-origin'), 'null');
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), null);
+
+  const wrongCode = await postJson(`${baseUrl}/pairing/approve`, {}, sandboxOrigin);
+  assert.equal(wrongCode.response.status, 404, 'Sandbox origin still requires a pairing code');
+  const noSession = await fetch(`${baseUrl}/api/plugin/tool-tier`, { headers: sandboxOrigin });
+  assert.equal(noSession.status, 401, 'Sandbox origin still requires a plugin session secret');
+  assert.equal(noSession.headers.get('access-control-allow-origin'), 'null');
+
+  for (const [path, method, headers] of [
+    ['/mcp', 'POST', {}],
+    ['/oauth/token', 'POST', {}],
+    ['/pairing/create', 'POST', {}],
+    ['/pairing/status?pairing_id=fixture', 'GET', {}],
+    ['/pairing/status?pairing_code=invalid&local_label=fixture', 'GET', {}],
+    ['/pairing/approve', 'GET', {}],
+    ['/pairing/approve', 'POST', { 'content-type': 'application/json', cookie: 'fixture=1' }],
+    ['/pairing/approve', 'POST', { 'content-type': 'application/json', authorization: 'Bearer fixture' }],
+    ['/pairing/approve', 'POST', { 'content-type': 'text/plain' }],
+    ['/debug/status', 'GET', {}],
+  ] as const) {
+    const denied = await fetch(`${baseUrl}${path}`, { method, headers: { ...sandboxOrigin, ...headers } });
+    assert.equal(denied.status, 403, `Sandbox origin must remain blocked for ${method} ${path}`);
+    assert.equal(denied.headers.get('access-control-allow-origin'), null);
+    await denied.body?.cancel();
+  }
+  const sandboxHealth = await fetch(`${baseUrl}/health`, { headers: sandboxOrigin });
+  assert.equal(sandboxHealth.status, 200);
+  assert.equal(sandboxHealth.headers.get('access-control-allow-origin'), 'null');
+  assert.equal((await sandboxHealth.json()).sessionRouterStatus, undefined);
+
   const health = await fetch(`${baseUrl}/health`);
   const healthText = await health.text();
   if (
@@ -315,6 +394,27 @@ try {
   }
 
   const pairing = await createHostedAccessToken(baseUrl);
+  const tier = await fetch(`${baseUrl}/api/plugin/tool-tier`, {
+    headers: { ...sandboxOrigin, 'x-remnote-plugin-session-secret': pairing.sessionSecret },
+  });
+  assert.equal(tier.status, 200, 'Paired sandboxed plugin can read its settings');
+  assert.equal(tier.headers.get('access-control-allow-origin'), 'null');
+  await tier.body?.cancel();
+
+  const invalidRegistration = {
+    type: 'plugin_register',
+    pluginInstanceId: pairing.pluginInstanceId,
+    pluginConnectionId: pairing.pluginConnectionId,
+    sessionSecret: 'invalid-sandbox-session',
+  };
+  assert.deepEqual(await rejectedPluginRegistration(wsUrl, 'https://example.invalid', invalidRegistration), {
+    code: 1008,
+    reason: 'WebSocket origin not allowed.',
+  });
+  assert.match((await rejectedPluginRegistration(wsUrl, 'null', invalidRegistration)).reason, /PLUGIN_SESSION_EXPIRED/);
+  assert.match((await rejectedPluginRegistration(wsUrl, 'null', {
+    type: 'plugin_hello', protocolVersion: 1, clientName: 'remnote-plugin',
+  })).reason, /Expected hosted plugin registration/);
 
   const statusCall = await mcpToolCall(mcpUrl, 'get_bridge_status', {}, pairing.accessToken);
   if (

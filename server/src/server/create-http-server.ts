@@ -24,6 +24,7 @@ import {
 } from '../config.js';
 import {
   applyCors,
+  applyHostedPluginSandboxCors,
   hasValidHeaderSecret,
   readJsonBody,
   setSecurityHeaders,
@@ -699,20 +700,28 @@ export function createMcpHttpServer(
       return;
     }
 
-    if (
-      req.headers.origin &&
-      (!config.allowCors || !config.allowedOrigins.includes(String(req.headers.origin)))
-    ) {
+    const sandboxCorsAllowed = applyHostedPluginSandboxCors(req, res, url, config);
+    const origin = req.headers.origin;
+    if (origin && (origin === 'null'
+      ? !sandboxCorsAllowed
+      : !config.allowCors || !config.allowedOrigins.includes(origin))) {
       auditLogger?.record({
         type: 'mcp_request_rejected',
         timestamp: new Date().toISOString(),
         method: req.method,
-        path: req.url,
+        path: url.pathname,
         remoteAddress: req.socket.remoteAddress,
         statusCode: 403,
         reason: 'cors_forbidden',
       });
       writeText(res, 403, 'Browser origin is not allowed.');
+      return;
+    }
+
+    if (sandboxCorsAllowed && req.method === 'OPTIONS') {
+      setSecurityHeaders(res);
+      res.writeHead(204);
+      res.end();
       return;
     }
 
@@ -855,7 +864,7 @@ export function createMcpHttpServer(
           connectorCompatNoAuthTools: config.connectorCompatNoAuthTools,
           connectorCompatRouting: bridgeDiagnostics.connectorCompatRouting,
           activePluginConnectionCount: bridgeDiagnostics.activePluginConnectionCount ?? 0,
-          sessionRouterStatus: bridgeDiagnostics.sessionRouter,
+          ...(sandboxCorsAllowed ? {} : { sessionRouterStatus: bridgeDiagnostics.sessionRouter }),
           lastErrorCode: diagnosticsSummary(registry, bridgeDiagnostics).lastErrorCode,
           lastRequestReachedPlugin: diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool
             ? Boolean(diagnosticsSummary(registry, bridgeDiagnostics).lastFailedTool?.pluginLifecycle?.length)

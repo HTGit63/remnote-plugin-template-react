@@ -503,6 +503,13 @@ poll().catch(() => { statusEl.textContent = 'Connection check failed. Keep this 
       writeJson(res, 404, { error: 'Wrong or expired pairing code.' });
       return true;
     }
+    if (req.headers.origin === 'null') {
+      const current = await expireIfNeeded(storage, session);
+      if (current.status !== 'pending') {
+        writeJson(res, 409, { error: `Pairing session is ${current.status}.` });
+        return true;
+      }
+    }
     await storage.updateChatGptPairingSession(session.pairingId, {
       status: 'denied',
       disconnectedAt: new Date().toISOString(),
